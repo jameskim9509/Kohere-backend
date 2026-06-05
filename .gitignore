@@ -1,0 +1,41 @@
+# Claude local files
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.jks
+
+# Build outputs
+build/
+dist/
+out/
+target/
+coverage/
+.generated/
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+.gradle/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read(./README.md)",
+      "Read(./CLAUDE.md)",
+      "Read(./docs/**)",
+      "Read(./src/**)",
+      "Read(./.claude/rules/**)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(bash scripts/quality/check.sh)",
+      "Bash(bash scripts/claude-hooks/pre-pr-check.sh)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./credentials/**)",
+      "Read(./**/*secret*)",
+      "Read(./**/*private*)",
+      "Bash(rm -rf *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(kubectl delete *)",
+      "Bash(aws *delete*)",
+      "Bash(aws *terminate*)",
+      "Bash(mysql *)",
+      "Bash(psql *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/claude-hooks/protect-sensitive-path.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/claude-hooks/format-after-edit.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

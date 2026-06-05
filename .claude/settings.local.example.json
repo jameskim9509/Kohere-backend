@@ -1,0 +1,13 @@
+{
+  "env": {
+    "PROJECT_ENV": "local"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(./gradlew test)",
+      "Bash(pytest)",
+      "Bash(go test ./...)"
+    ]
+  }
+}
