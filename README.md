@@ -163,8 +163,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | 파일 | 역할 | 설명 |
 | --- | --- | --- |
 | [docs/project/project-brief.md](docs/project/project-brief.md) | 프로젝트 개요 | 프로젝트의 목적·범위·주요 요구사항(가상 'Meetup' 도메인 예시). 확정 후 실제 프로젝트 내용으로 교체한다. |
-| [docs/project/glossary.md](docs/project/glossary.md) | 도메인 용어집 | 팀 간 커뮤니케이션 일관성을 위한 도메인 용어 정의(예시 포함, Spring Boot 기준). |
-| [docs/project/stakeholders.md](docs/project/stakeholders.md) | 이해관계자 | 주요 이해관계자·역할·책임 정의(예시 포함, Spring Boot 기준). |
 | [docs/requirements/non-functional-requirements.md](docs/requirements/non-functional-requirements.md) | 비기능 요구사항 | 성능·보안·확장성·가용성 등 품질 요구사항(예시 포함, Spring Boot 기준). |
 | [docs/requirements/user-story-template.md](docs/requirements/user-story-template.md) | 사용자 스토리 템플릿 | 사용자 스토리를 일관 형식으로 작성하기 위한 템플릿. |
 | [docs/requirements/acceptance-criteria-template.md](docs/requirements/acceptance-criteria-template.md) | 합격 기준 템플릿 | 스토리 완료 조건을 명확히 정의하기 위한 템플릿. |

@@ -112,7 +112,5 @@
 
 ## 관련 문서
 
-- [glossary](glossary.md) — 도메인 용어 정의
-- [stakeholders](stakeholders.md) — 역할/책임
 - [system-overview](../architecture/system-overview.md) — 시스템 구성
 - [non-functional-requirements](../requirements/non-functional-requirements.md) — 비기능 요구사항

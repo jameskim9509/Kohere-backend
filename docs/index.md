@@ -28,8 +28,6 @@
 | 문서 | 설명 |
 | --- | --- |
 | [project-brief](project/project-brief.md) | 프로젝트 목적, 범위(In/Out of scope), 핵심 기능, KPI, 마일스톤 |
-| [glossary](project/glossary.md) | 도메인 용어집 (용어/영문/정의) |
-| [stakeholders](project/stakeholders.md) | 이해관계자 목록과 RACI 책임 분담 |
 
 ### requirements — 요구사항 정의
 
