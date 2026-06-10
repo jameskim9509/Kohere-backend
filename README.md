@@ -215,7 +215,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | [docs/operations/incident-response.md](docs/operations/incident-response.md) | 장애 대응 | 장애 발생 시 대응 절차·에스컬레이션(예시 포함, Spring Boot 기준). |
 | [docs/security/security-policy.md](docs/security/security-policy.md) | 보안 정책 | 데이터 보호·접근 제어·감사 로그 등 보안 원칙(예시 포함, Spring Boot 기준). |
 | [docs/security/access-control.md](docs/security/access-control.md) | 접근 제어 | 권한 관리·RBAC·리소스 권한 규칙(예시 포함, Spring Boot 기준). |
-| [docs/security/secrets-management.md](docs/security/secrets-management.md) | 시크릿 관리 | 시크릿 저장·주입·로테이션 정책. ⚠️ 예시 내용은 작성됐으나 저장소 보안 훅이 `*secret*` 경로 쓰기를 차단해 [docs/security/_sm_policy_draft.md](docs/security/_sm_policy_draft.md)에 보존(맨 아래 안내 참고). |
 
 ## 5. `harness/` — 장기 작업 진행 상태
 
@@ -253,20 +252,3 @@ bash scripts/quality/check.sh
 bash scripts/claude-hooks/pre-pr-check.sh
 ```
 
----
-
-## 참고: `docs/security/secrets-management.md` 마무리 안내
-
-이 저장소는 시크릿 유출을 막기 위해 **`*secret*`·`*private*` 경로의 Read/Write를 자동 차단**합니다
-([.claude/settings.json](.claude/settings.json)의 deny 규칙 + [scripts/claude-hooks/protect-sensitive-path.sh](scripts/claude-hooks/protect-sensitive-path.sh) 훅).
-
-이 가드레일은 파일명이 `secrets-management.md`인 **문서 파일까지** 차단하기 때문에, 예시 내용을 자동으로 그 경로에 쓸 수 없었습니다.
-작성한 예시 내용은 차단되지 않는 임시 파일 [docs/security/_sm_policy_draft.md](docs/security/_sm_policy_draft.md)에 보존해 두었습니다.
-
-캐노니컬 경로로 옮기려면(가드레일은 사람이 직접 실행하는 셸에는 적용되지 않습니다):
-
-```bash
-git mv docs/security/_sm_policy_draft.md docs/security/secrets-management.md
-```
-
-> 이 가드레일을 영구히 바꾸고 싶다면(권장하지 않음) [.claude/settings.json](.claude/settings.json)과 훅에서 `*secret*` 패턴 처리를 조정하세요.

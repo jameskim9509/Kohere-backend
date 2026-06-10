@@ -186,7 +186,7 @@ jobs:
           path: build/reports/jacoco/test/html
 ```
 
-> CI 러너에서 Testcontainers를 쓰려면 Docker 데몬이 필요합니다. 환경변수/시크릿은 [secrets-management](../security/secrets-management.md) 기준을 따르고, 절대 테스트 코드에 하드코딩하지 마세요.
+> CI 러너에서 Testcontainers를 쓰려면 Docker 데몬이 필요합니다. 환경변수/시크릿은 [security-policy](../security/security-policy.md) 기준을 따르고, 절대 테스트 코드에 하드코딩하지 마세요.
 
 ---
 

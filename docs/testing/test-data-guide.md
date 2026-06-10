@@ -211,7 +211,7 @@ private final Random random = new Random(42);
 
 - 실제 토큰/비밀번호/주민번호/실명/실주소를 테스트 데이터로 쓰지 않는다.
 - 명백한 가짜 값만 사용: `user@example.com`, `Passw0rd!`, `<YOUR_VALUE>`, `INV-001`.
-- 외부 연동 자격증명은 환경변수/시크릿으로 주입한다([secrets-management](../security/secrets-management.md)).
+- 외부 연동 자격증명은 환경변수/시크릿으로 주입한다([security-policy](../security/security-policy.md)).
 
 ---
 

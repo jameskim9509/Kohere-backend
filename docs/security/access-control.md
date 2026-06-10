@@ -2,8 +2,7 @@
 
 > 예시(Spring Boot 3.x / Spring Security(JWT) / RBAC 기준)입니다.
 > 역할 이름, 권한 코드, 클레임 구조는 실제 도메인에 맞게 교체하세요.
-> 상위 보안 원칙은 [security-policy.md](./security-policy.md), 시크릿 취급은
-> [secrets-management.md](./secrets-management.md)를 참고합니다.
+> 상위 보안 원칙과 시크릿 취급은 [security-policy.md](./security-policy.md)를 참고합니다.
 
 ## 목적
 

@@ -189,7 +189,7 @@ private String uniqueEmail(String prefix) {
 
 ## 6. (참고) 별도 환경 도구 — k6 / Playwright
 
-배포된 환경을 대상으로 하는 부하·브라우저 E2E는 별도 도구로 분리할 수 있습니다. **시크릿은 환경변수로 주입**하고 절대 코드에 넣지 않습니다([secrets-management](../security/secrets-management.md)).
+배포된 환경을 대상으로 하는 부하·브라우저 E2E는 별도 도구로 분리할 수 있습니다. **시크릿은 환경변수로 주입**하고 절대 코드에 넣지 않습니다([security-policy](../security/security-policy.md)).
 
 ### k6 부하 테스트 스니펫 (예시)
 

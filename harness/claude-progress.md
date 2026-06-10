@@ -43,7 +43,7 @@
 
 - 예시 스택을 `Spring Boot 3.x / Java 17` 계열로 통일해 문서 간 일관성 확보. **단, 이는 예시이며 스택 확정 시 교체**한다.
 - 날짜는 실제 값을 임의 생성하지 않고 `<YYYY-MM-DD>` placeholder를 사용한다.
-- 비밀값·실주소·실명은 전부 가짜 예시(`example.com`, `<YOUR_VALUE>`)로 적는다. 근거: [docs/security/secrets-management.md](../docs/security/secrets-management.md)
+- 비밀값·실주소·실명은 전부 가짜 예시(`example.com`, `<YOUR_VALUE>`)로 적는다. 근거: [docs/security/security-policy.md](../docs/security/security-policy.md)
 
 ### Next Steps
 
