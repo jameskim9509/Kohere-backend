@@ -127,15 +127,13 @@ Warning: 299 - "GET /api/v1/meetings is deprecated. Migrate to /api/v2/meetings 
 
 ```json
 {
-  "error": {
-    "code": "API_VERSION_GONE",
-    "message": "이 API 버전은 2026-12-31에 종료되었습니다. /api/v2를 사용하세요.",
-    "status": 410,
-    "traceId": "abcdef0011223344556677889900aabb",
-    "timestamp": "2027-01-01T00:00:01+09:00",
-    "path": "/api/v1/meetings",
-    "errors": []
-  }
+  "code": "API_VERSION_GONE",
+  "message": "이 API 버전은 2026-12-31에 종료되었습니다. /api/v2를 사용하세요.",
+  "status": 410,
+  "path": "/api/v1/meetings",
+  "timestamp": "2027-01-01T00:00:01+09:00",
+  "traceId": "abcdef0011223344556677889900aabb",
+  "errors": []
 }
 ```
 
