@@ -132,47 +132,25 @@ class ArchitectureTest {
 
 ## 4. 트랜잭션 경계
 
-트랜잭션은 **애플리케이션 계층(Service)의 유스케이스 메서드**를 경계로 한다. Controller나 Repository에 트랜잭션을 두지 않는다.
+트랜잭션은 **애플리케이션 계층(Service)의 유스케이스 메서드**를 경계로 한다. Controller나 Repository에는 트랜잭션을 두지 않으며, **하나의 유스케이스 = 하나의 트랜잭션**을 기본으로 한다.
 
 ```java
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final OrderRepository orderRepository;   // 포트
-    private final PaymentGateway paymentGateway;     // 포트
+    private final OrderRepository orderRepository;
 
-    // 쓰기 유스케이스: 하나의 트랜잭션 경계
-    @Transactional
+    @Transactional   // 쓰기 유스케이스 = 하나의 트랜잭션 경계 (Controller/Repository에는 두지 않음)
     public OrderResult placeOrder(PlaceOrderCommand cmd) {
-        Order order = Order.create(cmd.userId(), cmd.items());  // 도메인 규칙
+        Order order = Order.create(cmd.userId(), cmd.items());
         orderRepository.save(order);
         return OrderResult.from(order);
-    }
-
-    // 읽기 전용: 성능/안전성 위해 readOnly 명시
-    @Transactional(readOnly = true)
-    public OrderResponse getOrder(Long orderId) {
-        return orderRepository.findById(orderId)
-            .map(OrderResponse::from)
-            .orElseThrow(() -> new OrderNotFoundException(orderId));
     }
 }
 ```
 
-**원칙**
-
-| 항목 | 규칙 |
-| --- | --- |
-| 경계 위치 | `@Service`의 public 유스케이스 메서드 |
-| 읽기 | `@Transactional(readOnly = true)` 명시 |
-| 외부 호출 | **트랜잭션 안에서 외부 HTTP 호출 금지** (커넥션 점유·롤백 불가). 트랜잭션 밖으로 분리하거나 이벤트/아웃박스 사용 |
-| 전파 | 기본 `REQUIRED`. 별도 트랜잭션 필요 시 `REQUIRES_NEW` 명시 |
-| 롤백 | 기본은 unchecked 예외에서 롤백. checked 롤백 필요 시 `rollbackFor` 명시 |
-| 긴 작업 | 트랜잭션은 짧게. 메일 발송 등은 커밋 후(`@TransactionalEventListener(AFTER_COMMIT)`) 처리 |
-
-- 트랜잭션 밖에서의 외부 연동 회복탄력성은 [external-integration](external-integration.md), DB 관점 정책은 [transaction-policy](../database/transaction-policy.md)를 참고한다.
-- 예외 발생 시 응답 변환은 [error-handling](error-handling.md)에서 일관 처리한다.
+읽기 전용(`readOnly`)·전파(propagation)·격리수준·락 전략·외부 호출 분리(커밋 후 처리/Outbox)·롤백 규칙 등 **트랜잭션 상세 정책은 [transaction-policy](../database/transaction-policy.md)를 정본으로 따른다.** 외부 연동 회복탄력성(타임아웃/재시도/서킷브레이커)은 [external-integration](external-integration.md), 예외→응답 변환은 [error-handling](error-handling.md)을 참고한다.
 
 ---
 
