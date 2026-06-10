@@ -124,9 +124,9 @@ And   참가자 수가 정원을 초과하지 않는다
 
 | AC 유형 | 권장 테스트 레벨 | 참고 |
 |---|---|---|
-| 입력 검증/도메인 규칙 | 단위 테스트 | [unit-test-guide](../testing/unit-test-guide.md) |
-| API 동작/상태코드/DB 변화 | 통합 테스트(Testcontainers) | [integration-test-guide](../testing/integration-test-guide.md) |
-| 사용자 흐름 전체 | E2E | [e2e-test-guide](../testing/e2e-test-guide.md) |
+| 입력 검증/도메인 규칙 | 단위 테스트 | [testing-strategy §6](../testing/testing-strategy.md) |
+| API 동작/상태코드/DB 변화 | 통합 테스트(Testcontainers) | [testing-strategy §7](../testing/testing-strategy.md) |
+| 사용자 흐름 전체 | E2E | [testing-strategy §8](../testing/testing-strategy.md) |
 | 동시성/멱등성 | 통합 + 동시성 테스트 | [non-functional-requirements](./non-functional-requirements.md) §7 |
 
 ---

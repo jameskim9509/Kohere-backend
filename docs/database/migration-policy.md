@@ -210,5 +210,5 @@ CREATE INDEX CONCURRENTLY ix_meetings_status_start_at ON meetings (status, start
 - [transaction-policy](./transaction-policy.md)
 - [deployment-guide](../operations/deployment-guide.md)
 - [rollback-guide](../operations/rollback-guide.md)
-- [integration-test-guide](../testing/integration-test-guide.md)
+- [testing-strategy](../testing/testing-strategy.md)
 - [database 규칙](../../.claude/rules/database.md)

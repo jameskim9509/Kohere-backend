@@ -200,10 +200,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | [docs/database/migration-policy.md](docs/database/migration-policy.md) | 마이그레이션 정책 | 스키마 변경·버전 관리·롤백 절차(예시 포함, Spring Boot 기준). |
 | [docs/database/transaction-policy.md](docs/database/transaction-policy.md) | 트랜잭션 정책 | 데이터 일관성·ACID·동시성 제어 규칙(예시 포함, Spring Boot 기준). |
 | [docs/testing/testing-strategy.md](docs/testing/testing-strategy.md) | 테스트 전략 | 단위/통합/E2E 피라미드·커버리지 기준(예시 포함, Spring Boot 기준). |
-| [docs/testing/unit-test-guide.md](docs/testing/unit-test-guide.md) | 단위 테스트 가이드 | 함수/메서드 단위 테스트 작성법·Mock 사용(예시 포함, Spring Boot 기준). |
-| [docs/testing/integration-test-guide.md](docs/testing/integration-test-guide.md) | 통합 테스트 가이드 | 모듈/계층 간 상호작용 테스트·DB 통합 테스트(예시 포함, Spring Boot 기준). |
-| [docs/testing/e2e-test-guide.md](docs/testing/e2e-test-guide.md) | E2E 테스트 가이드 | 사용자 시나리오 기반 엔드투엔드 테스트(예시 포함, Spring Boot 기준). |
-| [docs/testing/test-data-guide.md](docs/testing/test-data-guide.md) | 테스트 데이터 가이드 | Fixture 작성·데이터 생성/격리/정리 전략(예시 포함, Spring Boot 기준). |
 
 ### 4-5. `docs/operations/` · `docs/security/`
 

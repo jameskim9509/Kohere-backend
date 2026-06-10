@@ -77,11 +77,7 @@
 
 | 문서 | 설명 |
 | --- | --- |
-| [testing-strategy](testing/testing-strategy.md) | 테스트 전략/피라미드 |
-| [unit-test-guide](testing/unit-test-guide.md) | 단위 테스트 가이드 |
-| [integration-test-guide](testing/integration-test-guide.md) | 통합 테스트 가이드 |
-| [e2e-test-guide](testing/e2e-test-guide.md) | E2E 테스트 가이드 |
-| [test-data-guide](testing/test-data-guide.md) | 테스트 데이터 관리 |
+| [testing-strategy](testing/testing-strategy.md) | 테스트 전략 + 단위/통합/E2E/데이터 작성 가이드 |
 
 ### operations — 운영
 

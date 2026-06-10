@@ -135,7 +135,7 @@ export default function () {
 
 | 항목 | 목표값(예시) | 측정방법 | 현재값 |
 |---|---|---|---|
-| 테스트 커버리지 | 라인 ≥ 70%, 핵심 도메인 ≥ 85% | JaCoCo 리포트 | TBD |
+| 테스트 커버리지 | [testing-strategy §3](../testing/testing-strategy.md) 목표 준수(전체 ≥70%, 도메인·서비스 ≥80%) | JaCoCo 리포트 | TBD |
 | 빌드 시간 | CI 전체 ≤ 10분 | CI 파이프라인 소요 시간 | TBD |
 | 코드 스타일 | 포매터/린트 위반 0건(CI gate) | Spotless/Checkstyle CI | TBD |
 | 문서 신선도 | API 변경 시 동일 PR에서 문서 갱신 | PR 리뷰 체크리스트 | TBD |
