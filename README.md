@@ -165,7 +165,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | [docs/project/project-brief.md](docs/project/project-brief.md) | 프로젝트 개요 | 프로젝트의 목적·범위·주요 요구사항(가상 'Meetup' 도메인 예시). 확정 후 실제 프로젝트 내용으로 교체한다. |
 | [docs/requirements/non-functional-requirements.md](docs/requirements/non-functional-requirements.md) | 비기능 요구사항 | 성능·보안·확장성·가용성 등 품질 요구사항(예시 포함, Spring Boot 기준). |
 | [docs/requirements/user-story-template.md](docs/requirements/user-story-template.md) | 사용자 스토리 템플릿 | 사용자 스토리를 일관 형식으로 작성하기 위한 템플릿. |
-| [docs/requirements/acceptance-criteria-template.md](docs/requirements/acceptance-criteria-template.md) | 합격 기준 템플릿 | 스토리 완료 조건을 명확히 정의하기 위한 템플릿. |
 | [docs/adr/README.md](docs/adr/README.md) | ADR 저장소 안내 | 중요 기술 결정을 기록·추적하는 ADR 폴더의 목적·사용법 안내(예시 포함, Spring Boot 기준). |
 | [docs/adr/0000-adr-template.md](docs/adr/0000-adr-template.md) | ADR 표준 템플릿 | 모든 ADR이 따를 구조(Status·Context·Decision·Alternatives·Consequences·Validation)를 정의한다. |
 

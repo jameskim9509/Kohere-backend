@@ -14,7 +14,7 @@
 | 나는 누구인가 | 먼저 볼 문서 |
 | --- | --- |
 | 처음 합류한 백엔드 개발자 | [project-brief](project/project-brief.md) → [system-overview](architecture/system-overview.md) → [code-style](convention/code-style.md) |
-| API를 만드는 사람 | [api-design-guide](api/api-design-guide.md) → [error-response-guide](api/error-response-guide.md) → [acceptance-criteria-template](requirements/acceptance-criteria-template.md) |
+| API를 만드는 사람 | [api-design-guide](api/api-design-guide.md) → [error-response-guide](api/error-response-guide.md) → [user-story-template](requirements/user-story-template.md) |
 | DB/마이그레이션 담당 | [database-design](database/database-design.md) → [migration-policy](database/migration-policy.md) → [transaction-policy](database/transaction-policy.md) |
 | 운영/배포 담당 | [deployment-guide](operations/deployment-guide.md) → [runbook](operations/runbook.md) → [incident-response](operations/incident-response.md) |
 | 기술 결정을 남기는 사람 | [adr/README](adr/README.md) → [0000-adr-template](adr/0000-adr-template.md) |
@@ -33,8 +33,7 @@
 
 | 문서 | 설명 |
 | --- | --- |
-| [user-story-template](requirements/user-story-template.md) | 사용자 스토리 작성 템플릿 |
-| [acceptance-criteria-template](requirements/acceptance-criteria-template.md) | 인수 조건(Given/When/Then) 템플릿 |
+| [user-story-template](requirements/user-story-template.md) | 유저 스토리 + 인수 조건(Given/When/Then) 템플릿 |
 | [non-functional-requirements](requirements/non-functional-requirements.md) | 성능/가용성/보안 등 비기능 요구사항 |
 
 ### convention — 협업 컨벤션

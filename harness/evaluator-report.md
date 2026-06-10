@@ -22,7 +22,7 @@
 
 | # | 기준 | 핵심 질문 | 근거 문서 |
 | --- | --- | --- | --- |
-| 1 | 요구사항 | 수용 기준을 충족했는가? | [docs/requirements/acceptance-criteria-template.md](../docs/requirements/acceptance-criteria-template.md) |
+| 1 | 요구사항 | 수용 기준을 충족했는가? | [docs/requirements/user-story-template.md](../docs/requirements/user-story-template.md) |
 | 2 | 테스트 | happy/실패/경계 케이스가 있는가? | [docs/testing/testing-strategy.md](../docs/testing/testing-strategy.md) |
 | 3 | 문서 | API/DB/운영 변경이 문서화됐는가? | [docs/convention/documentation-convention.md](../docs/convention/documentation-convention.md) |
 | 4 | 보안 | 비밀 노출/인가/입력검증이 안전한가? | [docs/security/security-policy.md](../docs/security/security-policy.md) |

@@ -69,7 +69,7 @@ Accepted
 이 결정이 유효한지 다음으로 검증/관측한다.
 
 - **정합성 테스트**: "마지막 1자리를 두 명이 동시에 신청" 시나리오에서 초과 0건
-  ([acceptance-criteria-template](../requirements/acceptance-criteria-template.md) §2-3)을
+  ([user-story-template](../requirements/user-story-template.md) 예시2)을
   통합/동시성 테스트로 검증한다.
 - **성능 지표**: 단건 쿼리 p95 ≤ 50ms를 `pg_stat_statements`/slow query log로 관측한다.
 - **운영 지표**: 커넥션 풀 포화율, 복제 지연(읽기 복제 도입 시), 디스크 사용량 대시보드.
