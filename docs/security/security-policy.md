@@ -2,8 +2,8 @@
 
 > 예시(Spring Boot 3.x / Java 17 / Spring Security(JWT) / PostgreSQL 기준)입니다.
 > 코드/설정 예시는 실제 프로젝트의 스택과 정책에 맞게 교체하세요.
-> 저장소 루트의 취약점 신고 정책은 [SECURITY.md](../../SECURITY.md)를, 시크릿 취급은
-> [secrets-management.md](./secrets-management.md)를, 권한 모델은 [access-control.md](./access-control.md)를 참고합니다.
+> 시크릿 취급은 [secrets-management.md](./secrets-management.md)를, 권한 모델은
+> [access-control.md](./access-control.md)를 참고합니다.
 
 ## 목적
 
@@ -237,7 +237,7 @@ INFO  login success userId=10293 email=t***@example.com  // token/password 미�
 ## 시크릿 비커밋 원칙(No Secrets in Repo)
 
 원칙: **비밀값은 저장소에 절대 커밋하지 않는다.** 상세 절차/도구는
-[secrets-management.md](./secrets-management.md)와 [SECURITY.md](../../SECURITY.md)를 따릅니다.
+[secrets-management.md](./secrets-management.md)를 따릅니다.
 
 핵심 요약
 
@@ -263,7 +263,6 @@ INFO  login success userId=10293 email=t***@example.com  // token/password 미�
 
 보안 사고(취약점/유출/침해)는 운영 인시던트 프로세스와 연계합니다.
 
-- 신고 채널/책임자: [SECURITY.md](../../SECURITY.md)
 - 대응 절차/심각도 분류: [incident-response](../operations/incident-response.md)
 - 시크릿 유출 시 키 회전: [secrets-management.md](./secrets-management.md)
 

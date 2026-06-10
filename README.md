@@ -42,8 +42,6 @@ scripts/     품질 검사와 Claude hooks
 src/         실제 백엔드 코드 위치(main/test)
 ```
 
-전체 디렉터리 트리는 [TREE.md](TREE.md)에서 확인할 수 있습니다.
-
 ---
 
 # 폴더·파일 설명
@@ -61,12 +59,6 @@ src/         실제 백엔드 코드 위치(main/test)
 | [README.md](README.md) | 프로젝트 소개 및 시작 가이드 | 기술 스택 미정 상태의 백엔드 base repository임을 설명하고, 디렉터리 구조·초기 설정 방법·확정 후 먼저 할 일과 이 폴더/파일 설명을 담는다. |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 핵심 작업 지침 | 프로젝트가 미정인 상태에서 Claude가 따를 기본 전제, 작업 순서, 파일 관리 규칙, 백엔드 원칙, 안전 규칙을 정의한다. |
 | [CLAUDE.local.example.md](CLAUDE.local.example.md) | 개인 로컬 Claude 설정 예시 | 답변 언어·스타일, 로컬 환경 정보, 개인용 명령 등을 **커밋하지 않고** 관리하기 위한 예시 템플릿이다. `CLAUDE.local.md`로 복사해 사용한다. |
-| [TREE.md](TREE.md) | 폴더 구조 문서 | 전체 프로젝트의 디렉터리 트리를 시각화해 각 폴더의 위치와 계층 관계를 보여준다. |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 협업 가이드 | Issue 작성 → Branch 생성 → 구현 → 테스트 → 문서 갱신 → PR 작성으로 이어지는 기본 작업 흐름과 Claude Code 사용 원칙을 명시한다. |
-| [SECURITY.md](SECURITY.md) | 보안 정책 | API Key·Token·DB Password·Private Key 등 민감 정보의 커밋 금지 원칙과 Claude Code 사용 시 주의사항을 정의한다. |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 행동 규범 | 상호 존중, 근거 기반 리뷰, 문제 해결 집중 등 팀 협업의 기본 원칙을 명시한다. |
-| [CHANGELOG.md](CHANGELOG.md) | 변경 이력 | base repository 템플릿의 주요 추가 사항(구조, Claude 설정, 문서 템플릿)을 기록한다. |
-| [LICENSE](LICENSE) | 라이선스 | 프로젝트의 법적 라이선스(MIT License)를 명시한다. |
 | [.gitignore](.gitignore) | Git 제외 설정 | `CLAUDE.local.md`, `.env`, 시크릿(키·인증서), 빌드 산출물, 의존성, IDE/OS 파일 등을 커밋에서 제외한다. |
 | [.editorconfig](.editorconfig) | 에디터 스타일 표준화 | UTF-8 인코딩, LF 줄바꿈, 최종 줄바꿈 삽입, 공백 들여쓰기 등 IDE 간 일관성을 위한 설정이다. |
 | [.env.example](.env.example) | 환경 변수 템플릿 | 프로젝트에 필요한 환경 변수 예시를 제공해 개발자가 로컬 `.env`를 작성하도록 돕는다. (실제 `.env`는 커밋 금지) |
