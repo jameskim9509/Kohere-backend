@@ -5,7 +5,7 @@
 > 실제 스택(NestJS, FastAPI, Go 등)이 확정되면 코드 예시만 교체하고,
 > 설계 원칙과 응답 규약은 그대로 재사용한다.
 
-관련 문서: [error-response-guide](./error-response-guide.md) · [versioning-policy](./versioning-policy.md) · [api-convention](../convention/api-convention.md) · [system-overview](../architecture/system-overview.md)
+관련 문서: [error-response-guide](./error-response-guide.md) · [versioning-policy](./versioning-policy.md) · [system-overview](../architecture/system-overview.md)
 
 ---
 
@@ -40,7 +40,7 @@
 | `DELETE` | 삭제 | 없음 | O | `204 No Content` |
 
 > 부분 수정에는 `PATCH`를 권장한다. 단, 클라이언트/스펙 단순화를 위해 `PUT`만 사용하기로 했다면
-> 팀 컨벤션으로 [api-convention](../convention/api-convention.md)에 명시한다.
+> 팀 합의로 이 가이드에 명시한다.
 
 ---
 

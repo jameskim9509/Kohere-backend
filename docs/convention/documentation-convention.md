@@ -46,8 +46,8 @@ docs/
 
 | 항목 | 규칙 | 예시 |
 | --- | --- | --- |
-| 제목 | 파일당 H1(`#`)은 1개, 이후 H2(`##`)부터 계층 사용 | `# API Convention` |
-| 파일명 | 소문자 + 하이픈(kebab-case) | `api-convention.md` |
+| 제목 | 파일당 H1(`#`)은 1개, 이후 H2(`##`)부터 계층 사용 | `# API Design Guide` |
+| 파일명 | 소문자 + 하이픈(kebab-case) | `api-design-guide.md` |
 | 링크 | 문서 간은 **상대경로** 마크다운 링크 | `[system-overview](../architecture/system-overview.md)` |
 | 코드블록 | 언어 지정(```` ```java ````, ```` ```bash ````, ```` ```json ````) | 하이라이트/가독성 |
 | 표 | 의사결정/대조에 적극 사용 | 좋은예/나쁜예 표 |

@@ -18,7 +18,7 @@
 
 예) feat/user-login-api
     fix/order-null-pointer
-    docs/api-convention
+    docs/api-design-guide
 ```
 
 - 형식: `<type>/<short-description>`

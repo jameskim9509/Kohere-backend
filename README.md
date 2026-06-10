@@ -175,7 +175,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 
 | 파일 | 역할 | 설명 |
 | --- | --- | --- |
-| [docs/convention/api-convention.md](docs/convention/api-convention.md) | API 컨벤션 | API 개발 시 준수할 컨벤션(예시 포함, Spring Boot 기준). |
 | [docs/convention/branch-convention.md](docs/convention/branch-convention.md) | 브랜치 컨벤션 | 브랜치 네이밍·관리 규칙(예시 포함, Spring Boot 기준). |
 | [docs/convention/code-style.md](docs/convention/code-style.md) | 코드 스타일 | 네이밍·포맷팅 등 코드 작성 스타일(예시 포함, Spring Boot 기준). |
 | [docs/convention/commit-convention.md](docs/convention/commit-convention.md) | 커밋 컨벤션 | 커밋 메시지 작성 규칙(예시 포함, Spring Boot 기준). |

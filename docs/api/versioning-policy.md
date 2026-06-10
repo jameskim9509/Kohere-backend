@@ -4,7 +4,7 @@
 > 예시는 **Spring Boot 3.x + URI 버저닝(`/api/v1`)** 기준이다.
 > 스택이 확정되어도 정책 자체(호환성 규칙, 폐기 기간, 헤더)는 그대로 재사용한다.
 
-관련 문서: [api-design-guide](./api-design-guide.md) · [error-response-guide](./error-response-guide.md) · [api-convention](../convention/api-convention.md) · [adr 템플릿](../adr/0000-adr-template.md)
+관련 문서: [api-design-guide](./api-design-guide.md) · [error-response-guide](./error-response-guide.md) · [adr 템플릿](../adr/0000-adr-template.md)
 
 ---
 

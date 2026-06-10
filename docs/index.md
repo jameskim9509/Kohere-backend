@@ -44,7 +44,6 @@
 | 문서 | 설명 |
 | --- | --- |
 | [code-style](convention/code-style.md) | 코드 스타일/네이밍 규칙 |
-| [api-convention](convention/api-convention.md) | API 명명/구조 컨벤션 |
 | [branch-convention](convention/branch-convention.md) | 브랜치 네이밍 전략 |
 | [commit-convention](convention/commit-convention.md) | 커밋 메시지 규칙(Conventional Commits) |
 | [pr-convention](convention/pr-convention.md) | PR 작성/리뷰 규칙 |
