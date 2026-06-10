@@ -112,8 +112,7 @@ export default function () {
 | 취약점 | High/Critical 의존성 취약점 0건 유지 | 의존성 스캔(예: OWASP Dependency-Check) CI | TBD |
 | 입력 검증 | 모든 외부 입력 검증(Bean Validation) | 코드 리뷰 + 경계값 테스트 | TBD |
 
-> 상세 정책은 [security-policy](../security/security-policy.md),
-> [access-control](../security/access-control.md) 참고. Secret은 절대 문서/코드에 기재하지 않는다.
+> 상세 정책은 [security-policy](../security/security-policy.md) 참고. Secret은 절대 문서/코드에 기재하지 않는다.
 
 ---
 

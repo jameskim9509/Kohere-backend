@@ -118,7 +118,7 @@ void 비밀번호가_8자_미만이면_400을_반환한다() { /* 경계값: 7�
 | 5. 운영 리스크 | 4 | PASS | 스키마 변경 없음 |
 
 - 차단 사유: 보안 `FAIL`(IDOR) — 다른 사용자의 `id`로 조회 시 200 반환됨.
-- 권고: 소유권 검증 추가 후 재평가. 근거: [docs/security/access-control.md](../docs/security/access-control.md).
+- 권고: 소유권 검증 추가 후 재평가. 근거: [docs/security/security-policy.md](../docs/security/security-policy.md).
 - 후속: [task-board.md](./task-board.md) Blocked로 이동, 사유/해제 조건 기록.
 
 ---

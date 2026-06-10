@@ -2,7 +2,7 @@
 
 > 예시(Spring Boot 3.x / Java 17 / Spring Security(JWT) / PostgreSQL 기준)입니다.
 > 코드/설정 예시는 실제 프로젝트의 스택과 정책에 맞게 교체하세요.
-> 권한 모델은 [access-control.md](./access-control.md)를 참고합니다. (시크릿 관리는 본 문서 §시크릿 비커밋 원칙)
+> 인가/권한 모델은 본 문서 §인가, 시크릿 관리는 §시크릿 비커밋 원칙을 참고합니다.
 
 ## 목적
 
@@ -51,7 +51,7 @@
 | Refresh Token 수명 | 14일, 1회용 회전 | 재사용 감지 시 전체 무효화 |
 | 서명 알고리즘 | RS256(비대칭) 권장 / HS256(대칭) 가능 | 키는 시크릿 매니저 |
 | 토큰 전달 | `Authorization: Bearer <token>` | URL 쿼리스트링 금지 |
-| 클레임 | `sub, iss, aud, exp, iat, roles, scope` | 상세는 [access-control.md](./access-control.md) |
+| 클레임 | `sub, iss, aud, exp, iat, roles, scope` | 상세는 §인가 |
 
 비밀번호 해시 빈 예시
 
@@ -72,30 +72,92 @@ PasswordEncoder passwordEncoder() {
 
 ---
 
-## 인가(Authorization)
+## 인가(Authorization) — 접근 제어
 
-> 권한 모델(RBAC), 역할/권한 매트릭스, JWT 스코프, 검사 위치의 상세 예시는
-> [access-control.md](./access-control.md)에 있습니다. 여기서는 원칙만 요약합니다.
+> 예시: Spring Security(JWT) + **RBAC**. 역할/권한 코드/클레임은 실제 도메인에 맞게 교체한다.
 
-- 인가는 **인증 이후** 수행하며, "인증됨 == 허용됨"이 아니다(별개의 단계).
-- **거부 기본값**: 명시적으로 허용한 리소스/액션 외에는 거부.
-- 객체 수준 권한(소유자 검사)을 빠뜨리지 않는다. (예: 다른 사용자의 주문 조회 차단 = IDOR 방지)
+**원칙**
+
+- 인가는 **인증 이후** 수행하며, "인증됨 == 허용됨"이 아니다(별개 단계).
+- **거부 기본값**: 명시적으로 허용한 리소스/액션 외에는 거부(`anyRequest().authenticated()`).
 - 권한 판단은 **클라이언트 입력이 아니라 서버 측 신뢰 출처**(토큰 클레임/DB)로 한다.
+- 객체 수준 소유권 검사로 **IDOR(다른 사용자 리소스 접근)** 를 막는다.
 
-객체 소유권 검사 예시
+### 역할(Role) 계층
+
+역할 수는 적게 유지하고(역할 폭발 방지), 세분화는 권한(Permission)으로 표현한다. 상위 역할은 하위를 포함한다.
 
 ```java
-@PreAuthorize("hasRole('USER')")
-public OrderDto getMyOrder(Long orderId, Long currentUserId) {
+@Bean
+RoleHierarchy roleHierarchy() {
+    RoleHierarchyImpl h = new RoleHierarchyImpl();
+    h.setHierarchy("ROLE_ADMIN > ROLE_SUPPORT\nROLE_SUPPORT > ROLE_USER\nROLE_USER > ROLE_GUEST");
+    return h;   // ADMIN ⊇ SUPPORT ⊇ USER ⊇ GUEST
+}
+```
+
+### 역할 × 권한 매트릭스
+
+> `C/R/U/D`, `Own=본인 리소스만`, `R(masked)=마스킹 노출`, `-=불가`
+
+| 권한 | GUEST | USER | SUPPORT | ADMIN |
+| --- | :---: | :---: | :---: | :---: |
+| `user:read` | - | R(Own) | R | R |
+| `user:delete` | - | - | - | D |
+| `order:read` | - | R(Own) | R | R |
+| `order:cancel` | - | U(Own) | U | U |
+| `payment:read` | - | R(Own) | R(masked) | R |
+| `admin:role-assign` | - | - | - | CUD |
+| `public:catalog:read` | R | R | R | R |
+
+### JWT 클레임 / 스코프
+
+비밀값/실제 키는 포함하지 않는다(서명 키는 시크릿 매니저). **역할(roles)** = 직무/등급, **스코프(scope)** = 토큰에 위임된 세부 범위. 둘 다 검사할 수 있다.
+
+```jsonc
+{ "iss": "https://auth.example.com", "aud": "backend-api", "sub": "10293",
+  "exp": 1717920900, "jti": "f1c2e3a4-...", "roles": ["ROLE_USER"],
+  "scope": "orders.read orders.write profile.read" }
+```
+
+> `sub`는 객체 소유권 검사에 사용, `jti`는 블랙리스트/재사용 탐지, `exp`는 만료(시계 오차 허용).
+
+### 권한 검사 3계층 (심층 방어)
+
+단일 지점에만 의존하지 않고 중첩 적용한다.
+
+```text
+1) Filter Chain   : 인증/JWT 검증 + URL 패턴 권한  requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+2) Method Security: 메서드 단위 세밀한 권한          @PreAuthorize("hasAuthority('SCOPE_orders.write')")
+3) Object-level   : 객체 소유권/불변식              order.ownerId == currentUserId
+```
+
+```java
+// URL 단위 — 거부 기본값 + stateless
+http.csrf(c -> c.disable())
+    .sessionManagement(s -> s.sessionCreationPolicy(STATELESS))
+    .authorizeHttpRequests(a -> a
+        .requestMatchers("/api/v1/catalog/**", "/actuator/health").permitAll()
+        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+        .anyRequest().authenticated())           // ← 거부 기본값
+    .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()));
+
+// 메서드 + 객체 소유권(IDOR 방지) — URL/역할만으로는 IDOR를 못 막는다
+@PreAuthorize("hasRole('USER') and hasAuthority('SCOPE_orders.read')")
+public OrderDto getOrder(Long orderId, Long currentUserId) {
     Order order = orderRepository.findById(orderId)
         .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND"));
-    if (!order.getOwnerId().equals(currentUserId)) {
-        // 존재 여부 노출을 피하려면 404를 반환하기도 한다.
-        throw new ForbiddenException("ORDER_FORBIDDEN");
-    }
+    if (!order.getOwnerId().equals(currentUserId))   // 객체 수준 인가
+        throw new ForbiddenException("ORDER_FORBIDDEN");   // 권한부족 403, 인증실패 401
     return OrderDto.from(order);
 }
 ```
+
+### 운영 규칙 / 안티패턴
+
+- 권한 부여/회수는 `ROLE_ADMIN`만 + **감사 로그**(누가/언제/대상/사유). **자기 권한 상향 금지.**
+- 역할 변경은 Access 토큰 수명 동안 즉시 반영 안 될 수 있음 → 짧은 토큰 수명/`jti` 블랙리스트로 보완.
+- ❌ 클라이언트가 보낸 `role` 신뢰(권한 상승) / URL 권한만 검사·소유권 누락(IDOR) / 역할 문자열 하드코딩 / 광범위 `permitAll` / 권한 실패를 200으로 무마.
 
 ---
 

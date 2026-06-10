@@ -40,7 +40,7 @@
 
 | # | 항목 | 비고 |
 | --- | --- | --- |
-| 1 | 회원 가입/로그인 (JWT 기반) | [access-control](../security/access-control.md) 참고 |
+| 1 | 회원 가입/로그인 (JWT 기반) | [security-policy](../security/security-policy.md) 참고 |
 | 2 | 모임(Meeting) 생성/수정/삭제 | 호스트 권한 |
 | 3 | 초대코드 발급/참여 | 코드 만료/재발급 포함 |
 | 4 | 일정(Event) 생성/변경 및 참석 여부(RSVP) 집계 | 참석/불참/미정 |

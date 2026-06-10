@@ -91,7 +91,6 @@
 | 문서 | 설명 |
 | --- | --- |
 | [security-policy](security/security-policy.md) | 보안 정책 개요 |
-| [access-control](security/access-control.md) | 인증/인가/권한 경계 |
 
 ### adr — 아키텍처 결정 기록
 

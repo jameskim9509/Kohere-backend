@@ -61,7 +61,7 @@
 | `GET` | `/api/v1/meetings/{meetingId}/participants` | 참가자 목록 조회 | `200` | 필요 |
 | `POST` | `/api/v1/meetings/{meetingId}/participants` | 참가 신청 | `201` | 필요 |
 
-인증/인가 정책은 [access-control](../security/access-control.md)을 따른다.
+인증/인가 정책은 [security-policy](../security/security-policy.md)을 따른다.
 
 ---
 
@@ -268,7 +268,7 @@ GET /api/v1/meetings?size=20&cursor=eyJpZCI6IjhhMWYyYzM0In0
 | boolean | `isXxx` 명명 지양, 의미 있는 명사형 권장(`active`, `published`) |
 | null 처리 | 응답에서 의미 없는 `null` 필드는 생략 가능(팀 합의로 통일) |
 | 멱등 키 | 결제 등 중복 방지가 필요한 `POST`는 `Idempotency-Key` 헤더 사용 검토 |
-| 인증 헤더 | `Authorization: Bearer <ACCESS_TOKEN>` (JWT). 상세: [access-control](../security/access-control.md) |
+| 인증 헤더 | `Authorization: Bearer <ACCESS_TOKEN>` (JWT). 상세: [security-policy](../security/security-policy.md) |
 
 ---
 
@@ -328,4 +328,4 @@ public class MeetingController {
 - [ ] 날짜·식별자·enum 공통 규약을 따랐는가
 - [ ] 에러 응답이 [error-response-guide](./error-response-guide.md) 표준을 따르는가
 - [ ] breaking change 가능성을 [versioning-policy](./versioning-policy.md)로 검토했는가
-- [ ] 인증/인가 요구사항을 [access-control](../security/access-control.md)에 맞췄는가
+- [ ] 인증/인가 요구사항을 [security-policy](../security/security-policy.md)에 맞췄는가
