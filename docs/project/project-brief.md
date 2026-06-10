@@ -105,7 +105,7 @@
 | --- | --- | --- |
 | 가정 | 초기 트래픽은 소규모(동시 접속 < 1k) | 단일 인스턴스로 시작, 수평 확장 여지 확보 |
 | 가정 | 알림은 외부 푸시/메일 제공자 사용 | adapter로 격리, 장애 시 재시도 |
-| 리스크 | 외부 알림 제공자 장애 | 큐 + 재시도, [error-handling](../architecture/error-handling.md) |
+| 리스크 | 외부 알림 제공자 장애 | 큐 + 재시도, [error-response-guide](../api/error-response-guide.md) |
 | 리스크 | 스택 미확정으로 인한 초기 지연 | M0에서 ADR로 조기 확정 |
 
 ---

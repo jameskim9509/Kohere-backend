@@ -123,7 +123,7 @@
 - 계층 구조와 패키지: [backend-architecture](backend-architecture.md)
 - 모듈 경계와 금지 의존: [module-boundary](module-boundary.md)
 - 외부 연동 패턴: [external-integration](external-integration.md)
-- 예외/실패 처리: [error-handling](error-handling.md)
+- 예외/실패 처리: [error-response-guide](../api/error-response-guide.md)
 - 로그/메트릭/추적: [observability](observability.md)
 - 비기능 요구사항 정본: [non-functional-requirements](../requirements/non-functional-requirements.md)
 - 운영 모니터링 지표: [monitoring-metrics](../operations/monitoring-metrics.md)

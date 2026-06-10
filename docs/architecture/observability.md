@@ -68,7 +68,7 @@ public class MdcEnrichmentFilter extends OncePerRequestFilter {
 | 레벨 | ERROR(즉시 대응), WARN(예상된 실패), INFO(주요 이벤트), DEBUG(개발) |
 | 민감정보 | 비밀번호·토큰·카드번호 등 **절대 로깅 금지** (마스킹) — [security-policy](../security/security-policy.md) |
 | 비동기 경계 | 스레드/큐를 넘을 때 traceId를 전파(컨텍스트 복사) |
-| 예외 | 미분류 예외만 스택트레이스 포함 — [error-handling](error-handling.md) §4 |
+| 예외 | 미분류 예외만 스택트레이스 포함 — [error-response-guide](../api/error-response-guide.md) §8 |
 
 ---
 
@@ -170,7 +170,7 @@ hikaricp_connections_pending
 
 - 운영 모니터링 지표(정본): [monitoring-metrics](../operations/monitoring-metrics.md)
 - 장애 대응 프로세스: [incident-response](../operations/incident-response.md)
-- 예외/로깅 레벨: [error-handling](error-handling.md)
+- 예외/로깅 레벨: [error-response-guide](../api/error-response-guide.md)
 - 외부 호출 추적: [external-integration](external-integration.md)
 - 로그 마스킹/보안: [security-policy](../security/security-policy.md)
 - 비기능 요구사항: [non-functional-requirements](../requirements/non-functional-requirements.md)

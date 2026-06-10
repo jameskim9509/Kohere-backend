@@ -150,7 +150,7 @@ public class OrderService {
 }
 ```
 
-읽기 전용(`readOnly`)·전파(propagation)·격리수준·락 전략·외부 호출 분리(커밋 후 처리/Outbox)·롤백 규칙 등 **트랜잭션 상세 정책은 [transaction-policy](../database/transaction-policy.md)를 정본으로 따른다.** 외부 연동 회복탄력성(타임아웃/재시도/서킷브레이커)은 [external-integration](external-integration.md), 예외→응답 변환은 [error-handling](error-handling.md)을 참고한다.
+읽기 전용(`readOnly`)·전파(propagation)·격리수준·락 전략·외부 호출 분리(커밋 후 처리/Outbox)·롤백 규칙 등 **트랜잭션 상세 정책은 [transaction-policy](../database/transaction-policy.md)를 정본으로 따른다.** 외부 연동 회복탄력성(타임아웃/재시도/서킷브레이커)은 [external-integration](external-integration.md), 예외→응답 변환은 [error-response-guide](../api/error-response-guide.md)을 참고한다.
 
 ---
 
@@ -159,7 +159,7 @@ public class OrderService {
 - 시스템 전체 구성: [system-overview](system-overview.md)
 - 모듈 경계: [module-boundary](module-boundary.md)
 - 외부 연동: [external-integration](external-integration.md)
-- 예외 처리: [error-handling](error-handling.md)
+- 예외 처리: [error-response-guide](../api/error-response-guide.md)
 - 트랜잭션 정책(DB): [transaction-policy](../database/transaction-policy.md)
 - 코드 스타일: [code-style](../convention/code-style.md)
 

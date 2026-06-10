@@ -189,7 +189,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | [docs/architecture/system-overview.md](docs/architecture/system-overview.md) | 시스템 개요 | 시스템 전체의 고수준 구조 개요(컨텍스트 다이어그램 예시 포함). 확정 후 실제 시스템에 맞게 구체화한다. |
 | [docs/architecture/backend-architecture.md](docs/architecture/backend-architecture.md) | 백엔드 아키텍처 | 전체 아키텍처 패턴·계층 구조·기술 스택(예시 포함, Spring Boot 기준). |
 | [docs/architecture/module-boundary.md](docs/architecture/module-boundary.md) | 모듈 경계 | 모듈 책임 범위·의존성·통신 인터페이스(예시 포함, Spring Boot 기준). |
-| [docs/architecture/error-handling.md](docs/architecture/error-handling.md) | 에러 처리 전략 | 에러 분류·처리·재시도·로깅 표준(예시 포함, Spring Boot 기준). |
 | [docs/architecture/external-integration.md](docs/architecture/external-integration.md) | 외부 연동 | 외부 API 연동·인증·레이트 리미팅·동기화 패턴(예시 포함, Spring Boot 기준). |
 | [docs/architecture/observability.md](docs/architecture/observability.md) | 관찰성 | 로깅·메트릭·추적·알림 기준(예시 포함, Spring Boot 기준). |
 

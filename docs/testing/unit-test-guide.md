@@ -9,7 +9,7 @@
 단위 테스트는 **외부 의존성 없이 하나의 단위(클래스/메서드)의 로직**을 빠르게 검증합니다.
 도메인 규칙과 서비스 분기를 두텁게 덮어, 전체 테스트 피라미드의 토대를 만듭니다.
 
-관련 문서: [testing-strategy](./testing-strategy.md) · [test-data-guide](./test-data-guide.md) · [error-handling](../architecture/error-handling.md)
+관련 문서: [testing-strategy](./testing-strategy.md) · [test-data-guide](./test-data-guide.md) · [error-response-guide](../api/error-response-guide.md)
 
 ---
 

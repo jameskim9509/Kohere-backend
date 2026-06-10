@@ -183,7 +183,7 @@ public PaymentResult pay(PaymentCommand cmd) {
 ## 관련 문서
 
 - 어댑터 격리/의존 규칙: [backend-architecture](backend-architecture.md)
-- 예외 변환/재시도 분류: [error-handling](error-handling.md)
+- 예외 변환/재시도 분류: [error-response-guide](../api/error-response-guide.md)
 - 외부 호출 관측: [observability](observability.md)
 - 장애 대응 런북: [incident-response](../operations/incident-response.md)
 

@@ -187,7 +187,7 @@ public void onOrderPlaced(OrderPlacedEvent event) {
 
 - Spring 기본: **`RuntimeException`/`Error`에서 롤백, checked exception에서는 롤백 안 함.**
 - checked exception에서도 롤백하려면 `@Transactional(rollbackFor = SomeCheckedException.class)`.
-- 비즈니스 예외는 가급적 **unchecked(런타임) 예외**로 설계해 기본 롤백 동작과 일치시킨다([error-handling](../architecture/error-handling.md) 참고).
+- 비즈니스 예외는 가급적 **unchecked(런타임) 예외**로 설계해 기본 롤백 동작과 일치시킨다([error-response-guide](../api/error-response-guide.md) 참고).
 - 트랜잭션 안에서 예외를 잡아 **삼키면(swallow) 롤백이 안 일어날 수 있다**. 잡았으면 다시 던지거나 명시적으로 처리한다.
 
 ### 9. 하지 말아야 할 것(안티패턴 요약)
@@ -217,6 +217,6 @@ public void onOrderPlaced(OrderPlacedEvent event) {
 - [migration-policy](./migration-policy.md)
 - [backend-architecture](../architecture/backend-architecture.md)
 - [module-boundary](../architecture/module-boundary.md)
-- [error-handling](../architecture/error-handling.md)
+- [error-response-guide](../api/error-response-guide.md)
 - [external-integration](../architecture/external-integration.md)
 - [backend-architecture 규칙](../../.claude/rules/backend-architecture.md)

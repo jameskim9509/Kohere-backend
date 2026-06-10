@@ -16,7 +16,7 @@
 - E2E 테스트: [e2e-test-guide](./e2e-test-guide.md)
 - 테스트 데이터: [test-data-guide](./test-data-guide.md)
 - 아키텍처 계층: [backend-architecture](../architecture/backend-architecture.md)
-- 에러 처리: [error-handling](../architecture/error-handling.md)
+- 에러 처리: [error-response-guide](../api/error-response-guide.md)
 
 ---
 

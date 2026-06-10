@@ -63,7 +63,6 @@
 | [backend-architecture](architecture/backend-architecture.md) | 계층 분리/책임 경계 |
 | [module-boundary](architecture/module-boundary.md) | 모듈 경계와 의존 방향 |
 | [external-integration](architecture/external-integration.md) | 외부 시스템 연동 패턴 |
-| [error-handling](architecture/error-handling.md) | 예외/실패 처리 전략 |
 | [observability](architecture/observability.md) | 로그/메트릭/추적 기준 |
 
 ### database — 데이터베이스
