@@ -112,15 +112,6 @@
 | [adr/README](adr/README.md) | ADR 인덱스와 작성 방법 |
 | [0000-adr-template](adr/0000-adr-template.md) | ADR 작성 템플릿 |
 
-### ai-agent — Claude Code harness
-
-| 문서 | 설명 |
-| --- | --- |
-| [claude-code-usage](ai-agent/claude-code-usage.md) | Claude Code 사용법 |
-| [harness-design](ai-agent/harness-design.md) | harness 설계 |
-| [guardrails](ai-agent/guardrails.md) | 안전 가드레일 |
-| [prompt-examples](ai-agent/prompt-examples.md) | 프롬프트 예시 |
-
 ---
 
 ## 문서를 추가/수정할 때
