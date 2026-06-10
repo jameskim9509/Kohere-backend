@@ -206,7 +206,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | 파일 | 역할 | 설명 |
 | --- | --- | --- |
 | [docs/operations/deployment-guide.md](docs/operations/deployment-guide.md) | 배포 가이드 | 배포 과정을 단계별로 설명(예시 포함, Spring Boot 기준). |
-| [docs/operations/rollback-guide.md](docs/operations/rollback-guide.md) | 롤백 가이드 | 문제 발생 시 이전 버전 복귀 전략·절차(예시 포함, Spring Boot 기준). |
 | [docs/operations/runbook.md](docs/operations/runbook.md) | 운영 런북 | 반복적인 운영 작업·절차 기록(예시 포함, Spring Boot 기준). |
 | [docs/operations/incident-response.md](docs/operations/incident-response.md) | 장애 대응 | 장애 발생 시 대응 절차·에스컬레이션(예시 포함, Spring Boot 기준). |
 | [docs/security/security-policy.md](docs/security/security-policy.md) | 보안 정책 | 데이터 보호·접근 제어·감사 로그 등 보안 원칙(예시 포함, Spring Boot 기준). |

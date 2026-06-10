@@ -83,8 +83,7 @@
 
 | 문서 | 설명 |
 | --- | --- |
-| [deployment-guide](operations/deployment-guide.md) | 배포 절차 |
-| [rollback-guide](operations/rollback-guide.md) | 롤백 절차 |
+| [deployment-guide](operations/deployment-guide.md) | 배포 + 롤백 절차 |
 | [runbook](operations/runbook.md) | 운영 런북 |
 | [incident-response](operations/incident-response.md) | 장애 대응 프로세스 |
 

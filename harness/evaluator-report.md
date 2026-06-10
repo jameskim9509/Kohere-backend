@@ -93,7 +93,7 @@ void 비밀번호가_8자_미만이면_400을_반환한다() { /* 경계값: 7�
 **5. 운영 리스크 — 3점 / WARN**
 
 - 코멘트: 마이그레이션은 추가됐으나 되돌리기 절차가 없음. NOT NULL 컬럼 추가는 무중단 배포 시 주의 필요.
-- 권고(필수): [docs/database/migration-policy.md](../docs/database/migration-policy.md)에 따라 롤백 가능성 검토 결과를 PR에 기재하고, [docs/operations/rollback-guide.md](../docs/operations/rollback-guide.md)에 절차 링크.
+- 권고(필수): [docs/database/migration-policy.md](../docs/database/migration-policy.md)에 따라 롤백 가능성 검토 결과를 PR에 기재하고, [docs/operations/deployment-guide.md](../docs/operations/deployment-guide.md)에 절차 링크.
 
 ### 머지 전 체크리스트 (이 리포트 기준)
 

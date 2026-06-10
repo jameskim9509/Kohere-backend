@@ -9,7 +9,7 @@
 누구나 같은 방식으로, 안전하게 수행할 수 있도록 명령·권한·주의사항을 함께 기록한다.
 
 > 운영 데이터 변경, 시크릿 접근 등 민감 작업은 [Safety Rules](../../CLAUDE.md) / [security 규칙](../../.claude/rules/security.md)을 따른다.
-> 장애 상황이면 먼저 [incident-response](./incident-response.md)를, 배포/롤백은 [deployment-guide](./deployment-guide.md) / [rollback-guide](./rollback-guide.md)를 본다.
+> 장애 상황이면 먼저 [incident-response](./incident-response.md)를, 배포/롤백은 [deployment-guide](./deployment-guide.md)를 본다.
 
 ---
 

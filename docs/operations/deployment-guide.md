@@ -1,4 +1,4 @@
-# Deployment Guide
+# Deployment & Rollback Guide
 
 > **예시 스택 안내**: 이 문서의 명령어/설정 예시는 **Spring Boot 3.x / Java 17 / Gradle / PostgreSQL / Flyway** 기준입니다.
 > 실제 프로젝트의 스택이 확정되면 빌드 명령, 이미지 베이스, 환경변수 키 등을 프로젝트 값으로 교체하세요.
@@ -10,7 +10,7 @@
 배포 전략(롤링/블루그린)·환경 구분(dev/staging/prod)·환경변수·헬스체크 기준을 정의한다.
 
 배포 직전 점검은 반드시 [deployment-check 스킬](../../.claude/skills/deployment-check/SKILL.md)을 통해 수행한다.
-문제가 발생하면 [rollback-guide](./rollback-guide.md)와 [incident-response](./incident-response.md)를 따른다.
+문제가 발생하면 아래 §10 롤백과 [incident-response](./incident-response.md)를 따른다.
 
 ---
 
@@ -150,7 +150,7 @@ docker push "${IMAGE}:${SHA}"
 
 > 예시(Flyway 기준). Liquibase 등 다른 도구를 쓰면 절차를 교체한다.
 
-- 마이그레이션은 **expand-contract**(점진 확장→축소)로 작성해 무중단 배포를 가능하게 한다. 상세는 [rollback-guide](./rollback-guide.md#3-db-마이그레이션-롤백) 참고.
+- 마이그레이션은 **expand-contract**(점진 확장→축소)로 작성해 무중단 배포를 가능하게 한다. 패턴 상세는 [migration-policy §6](../database/migration-policy.md), 롤백 관점은 아래 §10.3 참고.
 - 애플리케이션 시작 시 Flyway가 `db/migration/V*.sql`을 순서대로 적용한다.
 - 운영에서 위험한 마이그레이션(대형 테이블 락, NOT NULL 추가 등)은 별도 윈도우/온라인 DDL로 분리한다. [database 규칙](../../.claude/rules/database.md) 준수.
 
@@ -237,7 +237,7 @@ docker push "${IMAGE}:${SHA}"
 - [ ] CI 테스트/정적분석 통과
 - [ ] 마이그레이션이 expand-contract로 안전한지 확인(`flywayInfo`)
 - [ ] 새/변경 환경변수가 대상 환경에 주입되어 있는지 확인(§5 표 갱신)
-- [ ] 롤백 계획 확인([rollback-guide](./rollback-guide.md))
+- [ ] 롤백 계획 확인(아래 §10 롤백)
 - [ ] (prod) 변경 윈도우/승인자 확보
 
 배포 중:
@@ -251,3 +251,57 @@ docker push "${IMAGE}:${SHA}"
 - [ ] 에러율/지연 정상 범위 복귀 확인(최소 15~30분 관찰)
 - [ ] 구버전/blue 환경 정리 또는 롤백 대비 유지
 - [ ] 배포 기록 남기기(버전, 시각, 담당자)
+
+---
+
+## 10. 롤백 (Rollback)
+
+배포 후 문제 발생 시 **빠르고 안전하게 이전 상태로 되돌리는** 절차. **"고칠 수 있다"는 확신이 없으면 먼저 롤백해 영향을 멈추고 원인 분석은 그 다음에 한다(완화 우선).** 심각도/대응 흐름은 [incident-response](./incident-response.md).
+
+### 10.1 롤백 판단 기준
+
+| 신호 | 임계 예시 | 판단 |
+| --- | --- | --- |
+| 에러율 급증 | 배포 전 대비 5xx +X%p 이상 | 즉시 롤백 검토 |
+| 지연 급증 | p99이 SLO(예: 800ms) 초과 지속 | 롤백 검토 |
+| 핵심 기능 장애 | 로그인/결제 등 주요 플로우 실패 | 즉시 롤백 |
+| 헬스체크 실패 | readiness 다수 인스턴스 지속 실패 | 자동/수동 롤백 |
+| 데이터 정합성 위험 | 잘못된 쓰기·손상 감지 | 롤백 + 데이터 검토(§10.3 주의) |
+
+### 10.2 애플리케이션 롤백
+
+- **롤링**: 직전 안정 버전의 **불변 태그**로 재배포(`latest` 금지).
+
+```bash
+PREV_SHA="abc1234"
+deploy set-image app="registry.example.com/team/app:${PREV_SHA}"
+deploy rollout status app   # readiness UP 확인까지 대기
+```
+
+- **블루그린**: 트래픽을 직전 색(blue)으로 전환(가장 빠름, 수초 내 복구). blue(구버전)는 안정화까지 유지한다.
+- 어느 경우든 되돌릴 버전이 **현재 DB 스키마와 호환**되는지 §10.3으로 확인한다.
+
+### 10.3 DB 마이그레이션 롤백
+
+이미 적용된 스키마/데이터 변경은 되돌릴 때 **데이터 손실**이 발생할 수 있다(컬럼 DROP을 되돌려도 값은 복구되지 않음). 따라서:
+
+- **forward-only 원칙**: 자동 down 마이그레이션에 의존하지 않고, 되돌리기도 **새 forward 마이그레이션**으로 작성한다(Flyway Community는 자동 down 없음).
+- **expand-contract로 롤백 가능성 확보**: EXPAND/MIGRATE 단계에서는 애플리케이션 롤백이 **안전**(DB는 그대로 둠), CONTRACT 이후에는 구버전 롤백 **불가** → forward hotfix. 패턴 상세·SQL 예시는 [migration-policy §6](../database/migration-policy.md) 정본을 따른다.
+- 데이터 손실 가능 작업(DROP/TRUNCATE) 전 **백업/스냅샷**을 확보한다. 운영 DB 직접 수정은 [Safety Rules](../../CLAUDE.md)에 따라 자동 수행하지 않는다.
+
+### 10.4 롤백 의사결정 흐름
+
+```text
+문제 감지 → DB 스키마 변경됐나?
+  ├ 아니오 → 애플리케이션만 롤백(§10.2) → 지표 정상화 확인
+  └ 예 → EXPAND/MIGRATE 단계인가?
+          ├ 예 → 앱 롤백 안전(§10.2), DB는 그대로 둠
+          └ 아니오(CONTRACT 완료) → 구버전 롤백 불가 → forward hotfix / 데이터 손상 시 백업 복구(IC 소집)
+```
+
+### 10.5 롤백 후 체크리스트
+
+- [ ] 핵심 지표(에러율/지연/포화)가 배포 전 수준으로 복귀했는지 확인
+- [ ] 스모크 테스트(주요 시나리오) 통과
+- [ ] 마이그레이션 상태 ↔ 애플리케이션 버전 호환성 재확인
+- [ ] 사용자 영향 범위/기간 집계, 타임라인·원인·재발방지를 [incident-response](./incident-response.md) 포스트모템에 기록

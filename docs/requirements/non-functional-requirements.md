@@ -83,7 +83,7 @@ export default function () {
 | 99.99% | ~52.6분 | ~4.4분 |
 
 > 참고: 장애 대응 절차는 [incident-response](../operations/incident-response.md),
-> 복구는 [rollback-guide](../operations/rollback-guide.md)를 따른다.
+> 복구는 [deployment-guide §10](../operations/deployment-guide.md)를 따른다.
 
 ---
 
