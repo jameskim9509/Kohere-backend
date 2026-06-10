@@ -61,7 +61,7 @@
 | `main` | 배포 가능한 안정 상태(기본 브랜치) | 직접 push 금지, PR 필수 |
 | `develop` *(선택)* | 통합 개발 브랜치 | 팀 규모가 커지면 도입 |
 
-> 본 base repository는 단일 `main` 트렁크 기반을 기본으로 한다. 릴리스 흐름이 복잡해지면 `develop`/`release/*` 도입을 ADR로 기록한다([docs/adr](../adr/index.md)).
+> 본 base repository는 단일 `main` 트렁크 기반을 기본으로 한다. 릴리스 흐름이 복잡해지면 `develop`/`release/*` 도입을 ADR로 기록한다([docs/adr](../adr/README.md)).
 
 ---
 

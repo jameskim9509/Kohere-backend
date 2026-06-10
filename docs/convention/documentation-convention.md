@@ -21,7 +21,7 @@ CLAUDE.md의 Repository Rules를 따른다.
 | 코드 작성 규칙 | `.claude/rules/` | Claude Code | [api-design.md](../../.claude/rules/api-design.md) |
 | 반복 작업 절차 | `.claude/skills/` | Claude Code | 스킬 정의 |
 | 전문 역할 | `.claude/agents/` | Claude Code | 에이전트 정의 |
-| 사람이 읽는 상세 문서 | `docs/` | 사람(팀) | 본 문서, [convention](./index.md) |
+| 사람이 읽는 상세 문서 | `docs/` | 사람(팀) | 본 문서, [convention](../index.md) |
 | 기술 결정 기록 | `docs/adr/` | 팀 | ADR 0001, 0002 ... |
 | 장기 작업 진행 상태 | `harness/` | 팀/Claude | `harness/claude-progress.md` |
 
@@ -102,7 +102,7 @@ i++; // i를 1 증가시킨다
 
 ## 4. ADR 작성 시점
 
-다음과 같은 **되돌리기 어렵거나 광범위한 영향**을 주는 결정은 ADR로 남긴다([docs/adr](../adr/index.md), 스킬: [update-adr]).
+다음과 같은 **되돌리기 어렵거나 광범위한 영향**을 주는 결정은 ADR로 남긴다([docs/adr](../adr/README.md), 스킬: [update-adr]).
 
 | ADR 작성 대상(예시) | ADR 불필요(예시) |
 | --- | --- |

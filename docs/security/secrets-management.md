@@ -4,7 +4,7 @@
 > 예시는 **Spring Boot 3.x** 기준으로 작성했으며, 시크릿 저장소(Vault/AWS Secrets Manager 등)는 예시다.
 > 스택·인프라가 확정되면 "저장소 종류"와 "주입 방법"만 교체하고, 원칙은 그대로 재사용한다.
 
-관련 문서: [security-policy](./security-policy.md) · 루트 [SECURITY.md](../../SECURITY.md) · [incident-response](../operations/incident-response.md)
+관련 문서: [security-policy](./security-policy.md) · [incident-response](../operations/incident-response.md)
 
 ---
 
