@@ -9,7 +9,7 @@
 심각도 등급(SEV1~3), 포스트모템 템플릿을 정의한다.
 
 핵심 원칙: **사용자 영향 최소화(완화)가 원인 분석보다 우선**한다.
-지표/알림은 [monitoring-metrics](./monitoring-metrics.md), 되돌리기는 [rollback-guide](./rollback-guide.md), 운영 작업은 [runbook](./runbook.md) 참고.
+지표/알림은 [observability](../architecture/observability.md), 되돌리기는 [rollback-guide](./rollback-guide.md), 운영 작업은 [runbook](./runbook.md) 참고.
 
 ---
 
@@ -56,7 +56,7 @@
 ### 3.1 DETECT (감지)
 
 - 알림(임계값 초과), 사용자 제보, 대시보드 이상으로 감지한다.
-- 알림 임계값은 [monitoring-metrics](./monitoring-metrics.md)의 골든 시그널 표를 따른다.
+- 알림 임계값은 [observability](../architecture/observability.md)의 골든 시그널 표를 따른다.
 
 ### 3.2 TRIAGE (분류)
 
@@ -163,7 +163,7 @@
 
 종료 후:
 
-- [ ] 지표 정상 복귀 확인([monitoring-metrics](./monitoring-metrics.md))
+- [ ] 지표 정상 복귀 확인([observability](../architecture/observability.md))
 - [ ] 사고 종료 공지
 - [ ] (SEV1/2) 포스트모템 작성(§5)
 - [ ] 재발 방지 액션 등록 및 추적

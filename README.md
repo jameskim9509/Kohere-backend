@@ -213,7 +213,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | [docs/operations/rollback-guide.md](docs/operations/rollback-guide.md) | 롤백 가이드 | 문제 발생 시 이전 버전 복귀 전략·절차(예시 포함, Spring Boot 기준). |
 | [docs/operations/runbook.md](docs/operations/runbook.md) | 운영 런북 | 반복적인 운영 작업·절차 기록(예시 포함, Spring Boot 기준). |
 | [docs/operations/incident-response.md](docs/operations/incident-response.md) | 장애 대응 | 장애 발생 시 대응 절차·에스컬레이션(예시 포함, Spring Boot 기준). |
-| [docs/operations/monitoring-metrics.md](docs/operations/monitoring-metrics.md) | 모니터링/메트릭 | 주요 메트릭·모니터링 설정·알림 규칙(예시 포함, Spring Boot 기준). |
 | [docs/security/security-policy.md](docs/security/security-policy.md) | 보안 정책 | 데이터 보호·접근 제어·감사 로그 등 보안 원칙(예시 포함, Spring Boot 기준). |
 | [docs/security/access-control.md](docs/security/access-control.md) | 접근 제어 | 권한 관리·RBAC·리소스 권한 규칙(예시 포함, Spring Boot 기준). |
 | [docs/security/secrets-management.md](docs/security/secrets-management.md) | 시크릿 관리 | 시크릿 저장·주입·로테이션 정책. ⚠️ 예시 내용은 작성됐으나 저장소 보안 훅이 `*secret*` 경로 쓰기를 차단해 [docs/security/_sm_policy_draft.md](docs/security/_sm_policy_draft.md)에 보존(맨 아래 안내 참고). |

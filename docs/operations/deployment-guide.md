@@ -208,7 +208,7 @@ docker push "${IMAGE}:${SHA}"
 ## 8. 헬스체크
 
 > 예시(Spring Boot Actuator 기준). 엔드포인트 경로는 프로젝트 설정에 맞춘다.
-> 지표/관측은 [monitoring-metrics](./monitoring-metrics.md), [architecture/observability](../architecture/observability.md) 참고.
+> 지표/관측은 [observability](../architecture/observability.md) 참고.
 
 | 프로브 | 엔드포인트(예시) | 용도 | 실패 시 동작 |
 | --- | --- | --- | --- |
@@ -243,7 +243,7 @@ docker push "${IMAGE}:${SHA}"
 배포 중:
 
 - [ ] 신버전 헬스체크(readiness `UP`) 확인 후 트래픽 전환
-- [ ] 골든 시그널(에러율/지연/포화) 실시간 관찰([monitoring-metrics](./monitoring-metrics.md))
+- [ ] 골든 시그널(에러율/지연/포화) 실시간 관찰([observability](../architecture/observability.md))
 
 배포 후:
 

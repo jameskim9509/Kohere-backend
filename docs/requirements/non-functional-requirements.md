@@ -127,8 +127,7 @@ export default function () {
 | 알림 | SLA 위반 시 5분 내 알림 발송 | 알림 룰 테스트(합성 장애 주입) | TBD |
 | 로그 보존 | 운영 로그 ≥ 30일 보존 | 로그 저장소 설정 확인 | TBD |
 
-> 메트릭/대시보드 기준은 [monitoring-metrics](../operations/monitoring-metrics.md),
-> [observability](../architecture/observability.md) 참고.
+> 메트릭/대시보드/관측 기준은 [observability](../architecture/observability.md) 참고.
 
 ---
 
@@ -165,5 +164,5 @@ export default function () {
 - [ ] 각 측정방법에 사용할 도구/대시보드가 실제로 존재하거나 도입 계획이 있다.
 - [ ] 성능/가용성 위반 시 알림 룰이 정의되어 있다.
 - [ ] 보안 항목에 실제 Secret/주소가 들어가지 않았다 (가짜 예시 값만).
-- [ ] 관련 문서([monitoring-metrics](../operations/monitoring-metrics.md), [security-policy](../security/security-policy.md), [testing-strategy](../testing/testing-strategy.md))와 상호 링크되어 있다.
+- [ ] 관련 문서([observability](../architecture/observability.md), [security-policy](../security/security-policy.md), [testing-strategy](../testing/testing-strategy.md))와 상호 링크되어 있다.
 - [ ] 프로젝트 확정 후 갱신

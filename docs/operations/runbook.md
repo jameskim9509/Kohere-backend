@@ -70,7 +70,7 @@ deploy logs app --since 15m --follow
 # query 예: traceId = "abc123def456"
 ```
 
-연계: 분산 추적/로그 표준은 [architecture/observability](../architecture/observability.md), 지표는 [monitoring-metrics](./monitoring-metrics.md).
+연계: 분산 추적/로그/지표 표준은 [observability](../architecture/observability.md).
 주의: 로그에 PII/시크릿이 남지 않도록 한다. 노출 발견 시 보안 사고로 처리.
 
 ### 2.4 로그 레벨 임시 변경
@@ -104,7 +104,7 @@ redis-cli --scan --pattern 'user:profile:*' | xargs -r redis-cli DEL
 주의:
 
 - **`FLUSHALL`/`FLUSHDB` 전체 삭제 금지**(전 사용자 영향, 스탬피드). 필요 시 IC 승인.
-- 비운 직후 DB/원본 부하가 급증할 수 있으니 지표를 관찰한다([monitoring-metrics](./monitoring-metrics.md)).
+- 비운 직후 DB/원본 부하가 급증할 수 있으니 지표를 관찰한다([observability](../architecture/observability.md)).
 - 가능하면 키 패턴 단위로 최소 범위만 무효화한다.
 
 ### 2.6 스케일 조정

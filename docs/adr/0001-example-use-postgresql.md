@@ -60,7 +60,7 @@ Accepted
 - 후속 작업
   - Flyway 마이그레이션 베이스라인 작성([migration-policy](../database/migration-policy.md)).
   - 커넥션 풀(HikariCP) 크기 산정 및 모니터링 지표 추가
-    ([monitoring-metrics](../operations/monitoring-metrics.md)).
+    ([observability](../architecture/observability.md)).
   - 백업/PITR 정책 수립(RPO ≤ 15분 목표,
     [non-functional-requirements](../requirements/non-functional-requirements.md) §7).
 

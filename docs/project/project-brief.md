@@ -80,7 +80,7 @@
 | 초대 전환율 | 초대코드 발급 대비 실제 참여 비율 | **60% 이상** | 이벤트 로그 |
 | 일정 응답률 | 일정 1건당 RSVP 응답 비율 | **70% 이상** | RSVP 테이블 |
 | 알림 도달률 | 발송 대비 성공 수신 비율 | **95% 이상** | 알림 발송 로그 |
-| p95 응답시간 | 핵심 API p95 지연 | **300ms 이하** | [monitoring-metrics](../operations/monitoring-metrics.md) |
+| p95 응답시간 | 핵심 API p95 지연 | **300ms 이하** | [observability](../architecture/observability.md) |
 
 ---
 

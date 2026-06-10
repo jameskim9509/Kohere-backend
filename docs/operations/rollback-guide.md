@@ -64,7 +64,7 @@ deploy rollout status app   # readiness UP 확인까지 대기
 - [ ] 되돌릴 직전 안정 버전(SHA/태그) 확인
 - [ ] 해당 버전이 **현재 DB 스키마와 호환**되는지 확인(§3)
 - [ ] 롤백 배포 → readiness `UP` 확인
-- [ ] 에러율/지연 정상 복귀 확인([monitoring-metrics](./monitoring-metrics.md))
+- [ ] 에러율/지연 정상 복귀 확인([observability](../architecture/observability.md))
 - [ ] 사용자 영향/타임라인 기록([incident-response](./incident-response.md) 포스트모템)
 
 ---

@@ -90,7 +90,6 @@
 | [deployment-guide](operations/deployment-guide.md) | 배포 절차 |
 | [rollback-guide](operations/rollback-guide.md) | 롤백 절차 |
 | [runbook](operations/runbook.md) | 운영 런북 |
-| [monitoring-metrics](operations/monitoring-metrics.md) | 모니터링 지표 |
 | [incident-response](operations/incident-response.md) | 장애 대응 프로세스 |
 
 ### security — 보안
