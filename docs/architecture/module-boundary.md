@@ -96,7 +96,6 @@ static final ArchRule modules_only_use_public_api =
 
 - 계층 구조와 의존 규칙: [backend-architecture](backend-architecture.md)
 - 시스템 전체 구성: [system-overview](system-overview.md)
-- 외부 연동 격리: [external-integration](external-integration.md)
 - ADR 작성: [adr/README](../adr/README.md)
 
 ---

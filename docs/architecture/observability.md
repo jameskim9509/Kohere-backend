@@ -143,7 +143,7 @@ hikaricp_connections_active / hikaricp_connections_max
 
 - Spring Boot 3 + Micrometer Tracing(Bridge: OpenTelemetry/Brave)이 인입/아웃바운드 호출에 `traceparent`를 자동 전파한다.
 - 로그의 `traceId` ↔ 추적 백엔드(Tempo) ↔ 메트릭을 상호 연결하면 "느린 요청 1건"을 로그·스팬·지표로 한 번에 추적할 수 있다.
-- 외부 어댑터([external-integration](external-integration.md))도 같은 traceId를 전파해 외부 호출 지연을 추적에 포함한다.
+- 외부 어댑터도 같은 traceId를 전파해 외부 호출 지연을 추적에 포함한다.
 - 디버깅 순서: **지표 → 해당 시간대 trace → 로그**로 좁힌다([runbook §2.3](../operations/runbook.md#23-로그-확인)).
 
 ---
@@ -201,7 +201,6 @@ hikaricp_connections_active / hikaricp_connections_max
 - 장애 대응 프로세스: [incident-response](../operations/incident-response.md)
 - 운영 작업 절차: [runbook](../operations/runbook.md)
 - 예외/로깅 레벨: [error-response-guide](../api/error-response-guide.md)
-- 외부 호출 추적: [external-integration](external-integration.md)
 - 로그 마스킹/보안: [security-policy](../security/security-policy.md)
 - 비기능 요구사항(목표값): [non-functional-requirements](../requirements/non-functional-requirements.md)
 

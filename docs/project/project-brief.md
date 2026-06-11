@@ -44,7 +44,7 @@
 | 2 | 모임(Meeting) 생성/수정/삭제 | 호스트 권한 |
 | 3 | 초대코드 발급/참여 | 코드 만료/재발급 포함 |
 | 4 | 일정(Event) 생성/변경 및 참석 여부(RSVP) 집계 | 참석/불참/미정 |
-| 5 | 일정 변경 알림 (푸시/이메일) | 외부 연동, [external-integration](../architecture/external-integration.md) |
+| 5 | 일정 변경 알림 (푸시/이메일) | 외부 연동 |
 
 ### Out of scope (이번 범위에서 제외)
 

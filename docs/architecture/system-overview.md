@@ -59,7 +59,7 @@
 ```
 
 - **인바운드 경계**: 클라이언트 → Gateway → Backend. 인증은 JWT 검증으로 Backend 진입 시점에 수행한다.
-- **아웃바운드 경계**: 외부 시스템 호출은 모두 **Gateway/Adapter** 로 격리한다. 자세한 패턴은 [external-integration](external-integration.md) 참고.
+- **아웃바운드 경계**: 외부 시스템 호출은 모두 **Gateway/Adapter** 로 격리한다(격리 원칙은 [backend-architecture](backend-architecture.md) 참고).
 - **데이터 경계**: 영속 데이터는 PostgreSQL, 휘발성/캐시/분산락은 Redis. 스키마 변경은 Flyway로만 적용한다.
 
 ---
@@ -122,7 +122,6 @@
 
 - 계층 구조와 패키지: [backend-architecture](backend-architecture.md)
 - 모듈 경계와 금지 의존: [module-boundary](module-boundary.md)
-- 외부 연동 패턴: [external-integration](external-integration.md)
 - 예외/실패 처리: [error-response-guide](../api/error-response-guide.md)
 - 로그/메트릭/추적/운영 지표: [observability](observability.md)
 - 비기능 요구사항 정본: [non-functional-requirements](../requirements/non-functional-requirements.md)

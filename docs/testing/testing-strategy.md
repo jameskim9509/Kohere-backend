@@ -8,7 +8,7 @@
 
 "무엇을, 어디서, 어느 수준까지 검증할지"에 대한 팀의 합의(전략)와, 계층별 **실전 작성 방법(단위/통합/E2E/데이터)** 을 한 문서에 정의한다.
 
-관련 문서: [backend-architecture](../architecture/backend-architecture.md) · [error-response-guide](../api/error-response-guide.md) · [database-design](../database/database-design.md) · [external-integration](../architecture/external-integration.md)
+관련 문서: [backend-architecture](../architecture/backend-architecture.md) · [error-response-guide](../api/error-response-guide.md) · [database-design](../database/database-design.md)
 
 ---
 

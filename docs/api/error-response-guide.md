@@ -3,7 +3,7 @@
 > 본 문서는 모든 API가 공유하는 **표준 에러 응답 형식 / 에러 코드 체계**와, 그것을 만들어내는 **서버 내부 처리 전략(예외 분류·계층·전역 핸들러·로깅·재시도)** 을 함께 정의하는 **에러 처리 정본**이다.
 > 예시는 **Spring Boot 3.x / `@RestControllerAdvice`** 기준이며, 스택이 확정되면 핸들러 코드만 교체하고 응답 스키마·코드 체계·정책은 그대로 재사용한다.
 
-관련 문서: [api-design-guide](./api-design-guide.md) · [versioning-policy](./versioning-policy.md) · [observability](../architecture/observability.md) · [external-integration](../architecture/external-integration.md)
+관련 문서: [api-design-guide](./api-design-guide.md) · [versioning-policy](./versioning-policy.md) · [observability](../architecture/observability.md)
 
 ---
 
@@ -282,7 +282,7 @@ public class GlobalExceptionHandler {
 | 상황 | 재시도 | 방법 |
 | --- | --- | --- |
 | 4xx(검증/도메인) | 불가 | 요청 수정 후 재요청 |
-| 외부 5xx/타임아웃 | 가능(멱등 연산만) | 지수 백오프 + 서킷브레이커 — [external-integration](../architecture/external-integration.md) |
+| 외부 5xx/타임아웃 | 가능(멱등 연산만) | 지수 백오프 + 서킷브레이커 |
 | DB 일시 오류(deadlock 등) | 제한적 가능 | 짧은 재시도, 트랜잭션 재실행 |
 | 결제 등 비멱등 | 신중 | idempotency key로 중복 방지 후 재시도 |
 
