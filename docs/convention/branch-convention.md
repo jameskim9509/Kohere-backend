@@ -83,7 +83,8 @@
 | Create a merge commit | `develop` → `main` 등 공용 브랜치 통합 | 분기 이력 보존 |
 
 - Squash 시 최종 커밋 제목은 PR 제목이 되므로, PR 제목은 [commit-convention](./commit-convention.md) 형식을 따른다.
-- 병합 후 원격 feature 브랜치는 삭제한다(자동 삭제 설정 권장).
+- **병합 후에도 feature 브랜치는 삭제하지 않고 보존한다.** Squash 머지는 원본 커밋들을
+  develop에 1개로 압축하므로, 작업 과정의 원본 커밋 이력은 feature 브랜치가 보관한다.
 
 ---
 
@@ -97,7 +98,7 @@
 5. fork로 push        git push origin feature/12-user-login-api
 6. PR 생성            base: upstream/develop, 본문에 Closes #12
 7. 리뷰 통과 후 머지  Squash and merge → 이슈 자동 종료
-8. 브랜치 삭제        로컬/원격 삭제 후 develop 동기화
+8. develop 동기화     feature 브랜치는 보존하고 develop만 upstream과 동기화
 ```
 
 ---
@@ -109,4 +110,4 @@
 - [ ] `type`이 허용 목록 중 하나다
 - [ ] 설명이 영문 소문자 kebab-case다
 - [ ] PR 본문에 `Closes #이슈번호`로 이슈를 연결했다
-- [ ] 병합 후 로컬/원격 브랜치를 삭제했다
+- [ ] 병합 후 develop을 동기화했다 (feature 브랜치는 보존)

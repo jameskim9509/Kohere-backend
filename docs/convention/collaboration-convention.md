@@ -145,11 +145,12 @@ git checkout develop
 git fetch upstream
 git merge upstream/develop
 git push origin develop
-
-# 작업 브랜치 삭제
-git branch -d feature/12-order-create
-git push origin --delete feature/12-order-create
 ```
+
+- **작업 브랜치(`feature/*`)는 삭제하지 않고 보존한다.** Squash 머지로 develop에는 압축 커밋
+  1개만 남으므로, 원본 커밋 이력은 feature 브랜치에서 확인한다([branch-convention](./branch-convention.md) §5).
+- develop이 upstream과 갈라진 경우(develop 직접 커밋 등)에는 merge 대신
+  `git reset --hard upstream/develop` 후 `git push --force-with-lease origin develop`으로 맞춘다.
 
 > GitHub UI의 **Sync fork** 기능을 사용해도 된다.
 
@@ -285,4 +286,4 @@ leader/project:feature/34-payment-confirm → PR → team/project:develop
 - [ ] PR이 하나의 이슈만 다루고, 400줄 이하이거나 예외 사유를 본문에 적었다
 - [ ] 모든 리뷰 코멘트에 반응했고 `P1`/`P2`를 반영하거나 합의했다
 - [ ] 원본 `main`/`develop`에 직접 push하지 않았다
-- [ ] merge 후 fork를 최신화하고 작업 브랜치를 삭제했다
+- [ ] merge 후 fork develop을 최신화했다 (feature 브랜치는 보존)
