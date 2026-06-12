@@ -1,0 +1,5 @@
+# 모든 텍스트 파일은 working tree에서도 LF를 사용한다 (.editorconfig·Spotless와 일치)
+* text=auto eol=lf
+/gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary

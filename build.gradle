@@ -1,0 +1,52 @@
+plugins {
+  id 'java'
+  id 'org.springframework.boot' version '4.1.0'
+  id 'io.spring.dependency-management' version '1.1.7'
+  id 'com.diffplug.spotless' version '8.6.0'
+}
+
+group = 'com.kohere'
+version = '0.0.1-SNAPSHOT'
+
+java {
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(21)
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+ext {
+  set('springModulithVersion', '2.1.0')
+}
+
+dependencies {
+  implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+  implementation 'org.springframework.modulith:spring-modulith-starter-core'
+  testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+  testImplementation 'org.springframework.modulith:spring-modulith-starter-test'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+  imports {
+    mavenBom "org.springframework.modulith:spring-modulith-bom:${springModulithVersion}"
+  }
+}
+
+// 코드 포맷 자동화 (docs/convention/code-style.md §1)
+// 적용: ./gradlew spotlessApply / 검사: ./gradlew spotlessCheck
+spotless {
+  java {
+    googleJavaFormat('1.35.0')
+    removeUnusedImports()
+    trimTrailingWhitespace()
+    endWithNewline()
+  }
+}
+
+tasks.named('test') {
+  useJUnitPlatform()
+}

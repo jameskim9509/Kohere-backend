@@ -21,23 +21,28 @@
 
 ### 1-1. Gradle 설정 (`build.gradle`)
 
+실제 설정은 [build.gradle](../../build.gradle)을 본다. 핵심 부분:
+
 ```groovy
 plugins {
-    id 'java'
-    id 'org.springframework.boot' version '3.3.+'
-    id 'io.spring.dependency-management' version '1.1.+'
-    id 'com.diffplug.spotless' version '6.25.0'
+  id 'java'
+  id 'org.springframework.boot' version '4.1.0'
+  id 'io.spring.dependency-management' version '1.1.7'
+  id 'com.diffplug.spotless' version '8.6.0'
 }
 
 spotless {
-    java {
-        googleJavaFormat('1.22.0')   // 2칸 들여쓰기 = .editorconfig와 일치
-        removeUnusedImports()
-        trimTrailingWhitespace()
-        endWithNewline()
-    }
+  java {
+    googleJavaFormat('1.35.0')   // 2칸 들여쓰기 = .editorconfig와 일치
+    removeUnusedImports()
+    trimTrailingWhitespace()
+    endWithNewline()
+  }
 }
 ```
+
+> google-java-format 1.29.0+는 **JDK 21 이상에서만 실행**되므로, 빌드 JDK는 21로 고정한다
+> (`java.toolchain.languageVersion = 21`, CI의 setup-java도 21).
 
 ### 1-2. 사용법
 
@@ -47,10 +52,10 @@ spotless {
 | `./gradlew spotlessCheck` | 포맷 위반 검사 (위반 시 빌드 실패)     |
 
 - 커밋 전 `spotlessApply`로 정렬하는 것을 습관화한다.
-- **CI에 `spotlessCheck`를 추가**해 머지 게이트로 삼는다([ci.yml](../../.github/workflows/ci.yml)에 빌드/포맷 단계 추가). 현재 CI는 editorconfig만 검사하므로, Gradle 도입 시 함께 보강한다.
+- CI([ci.yml](../../.github/workflows/ci.yml))의 `build` job이 PR마다 `./gradlew spotlessCheck build`를 실행한다 — 포맷 위반이나 빌드/테스트 실패 시 머지가 막힌다.
 
 > **결정 메모(들여쓰기):** 한국 Spring 현업에서는 4칸(네이버 핵데이 컨벤션)도 많이 쓴다.
-> 4칸으로 바꾸려면 `.editorconfig`의 `indent_size`를 4로 올리고 `googleJavaFormat('1.22.0').aosp()`를 쓴다.
+> 4칸으로 바꾸려면 `.editorconfig`의 `indent_size`를 4로 올리고 `googleJavaFormat('1.35.0').aosp()`를 쓴다.
 > **현재 합의는 2칸(.editorconfig 유지)** 이며, 바꾸려면 팀 합의 후 두 곳을 함께 변경한다.
 
 ---

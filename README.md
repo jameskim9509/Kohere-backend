@@ -9,7 +9,7 @@
 - 컨벤션/설계/요구사항/ADR 문서 템플릿
 - Claude Code 권한·보안 설정
 
-> **참고:** 기술 스택(언어·프레임워크·DB·배포 방식)은 아직 미정입니다. Spring Boot, NestJS, FastAPI, Go, Django 등으로 확장될 수 있으며, 스택이 확정되기 전까지 임의로 프로젝트를 초기화하지 않습니다.
+> **기술 스택:** **Java 21 · Spring Boot 4.1 · Spring Modulith 2.1 · Gradle 9.5** (모듈러 모놀리식 + DDD 계층, [code-style](docs/convention/code-style.md) 참고). DB·배포 방식은 미정이며 확정 시 이 문단과 관련 문서를 갱신합니다.
 
 ## 사용 방법
 
@@ -82,7 +82,7 @@ src/         실제 백엔드 코드 위치(main/test)
 
 | 파일                                | 역할                         | 설명                                                                                                                                       |
 | ----------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [README.md](README.md)                 | 프로젝트 소개 및 시작 가이드 | 기술 스택 미정 상태의 백엔드 base repository임을 설명하고, 디렉터리 구조·초기 설정 방법·확정 후 먼저 할 일과 이 폴더/파일 설명을 담는다. |
+| [README.md](README.md)                 | 프로젝트 소개 및 시작 가이드 | 기술 스택·디렉터리 구조·초기 설정 방법과 이 폴더/파일 설명을 담는다. |
 | [.gitignore](.gitignore)               | Git 제외 설정                | `CLAUDE.local.md`, `.env`, 시크릿(키·인증서), 빌드 산출물, 의존성, IDE/OS 파일 등을 커밋에서 제외한다.                                |
 | [.editorconfig](.editorconfig)         | 에디터 스타일 표준화         | UTF-8 인코딩, LF 줄바꿈, 최종 줄바꿈 삽입, 공백 들여쓰기 등 IDE 간 일관성을 위한 설정이다.                                                 |
 | [.mcp.example.json](.mcp.example.json) | MCP 서버 설정 예시           | Claude Code가 사용할 MCP 서버(filesystem, github)를 `npx`로 설치하고 토큰 환경변수를 주입하는 설정 예시다.                               |
@@ -101,7 +101,7 @@ PR/이슈 템플릿과 GitHub Actions 자동화를 정의합니다.
 | [.github/ISSUE_TEMPLATE/task.md](.github/ISSUE_TEMPLATE/task.md)                       | 일반 작업 템플릿        | 일반 업무 작업을 위한 이슈 양식이다.                                                                                                  |
 | [.github/ISSUE_TEMPLATE/refactoring.md](.github/ISSUE_TEMPLATE/refactoring.md)         | 리팩토링 템플릿         | 코드 리팩토링 작업을 위한 이슈 양식이다.                                                                                              |
 | [.github/ISSUE_TEMPLATE/documentation.md](.github/ISSUE_TEMPLATE/documentation.md)     | 문서 작업 템플릿        | 문서 작성·갱신을 위한 이슈 양식이다.                                                                                                 |
-| [.github/workflows/ci.yml](.github/workflows/ci.yml)                                   | 기본 CI 파이프라인      | PR 및 `main`/`develop` 푸시 시 editorconfig-checker로 에디터 설정 준수를 검사한다. 스택 확정 후 실제 빌드/테스트 단계를 추가한다. |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml)                                   | 기본 CI 파이프라인      | PR 및 `main`/`develop` 푸시 시 editorconfig 검사와 Gradle 빌드(`spotlessCheck build`: 포맷·컴파일·테스트)를 실행한다. |
 
 ## 3. `.claude/` — Claude Code 설정
 
@@ -156,13 +156,18 @@ Claude Code 에이전트의 권한과 보안 경계를 정의합니다.
 
 ## 5. `src/` — 실제 백엔드 코드 위치
 
-| 파일                                | 역할               | 설명                                                                               |
-| ----------------------------------- | ------------------ | ---------------------------------------------------------------------------------- |
-| [src/main/.gitkeep](src/main/.gitkeep) | 메인 소스 자리표시 | 빈 파일로 `src/main/` 디렉터리를 git에 유지한다. 실제 백엔드 코드가 들어갈 자리. |
-| [src/test/.gitkeep](src/test/.gitkeep) | 테스트 자리표시    | 빈 파일로 `src/test/` 디렉터리를 git에 유지한다. 실제 테스트 코드가 들어갈 자리. |
+| 경로 | 역할 | 설명 |
+| --- | --- | --- |
+| [src/main/java/com/kohere/](src/main/java/com/kohere/) | 메인 소스 | `KohereApplication` + 도메인 모듈 패키지(모듈러 모놀리식, [code-style](docs/convention/code-style.md) §3). |
+| [src/test/java/com/kohere/](src/test/java/com/kohere/) | 테스트 소스 | 컨텍스트 로드 테스트와 모듈 경계 검증(`ModularityTest`). |
 
 ---
 
 ## 검증
 
-현재 CI는 [.editorconfig](.editorconfig) 준수 여부(editorconfig-checker)만 검사합니다. 기술 스택이 확정되면 실제 빌드/테스트/린트 명령을 [.github/workflows/ci.yml](.github/workflows/ci.yml)에 추가합니다.
+CI([.github/workflows/ci.yml](.github/workflows/ci.yml))는 두 가지를 검사합니다.
+
+- **editorconfig** — [.editorconfig](.editorconfig) 준수 여부(editorconfig-checker)
+- **build** — `./gradlew spotlessCheck build` (포맷 검사 → 컴파일 → 테스트 → 모듈 경계 검증)
+
+로컬에서는 커밋 전에 `./gradlew spotlessApply`로 포맷을 정렬하고 `./gradlew build`로 검증합니다 (JDK 21 필요).
