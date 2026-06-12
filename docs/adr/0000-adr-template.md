@@ -4,7 +4,6 @@
 사용법: 이 파일을 docs/adr/NNNN-kebab-case-title.md 로 복사한 뒤 채운다.
 - NNNN 은 다음 일련번호(4자리 0패딩), 제목 동사로 시작 권장.
 - 작성/상태 규칙은 ./README.md 참고.
-- 작성된 실제 예시는 ./0001-example-use-postgresql.md 참고.
 -->
 
 | 항목 | 값 |
