@@ -24,13 +24,13 @@
 
 ## 2. 기본 용어
 
-| 용어           | 의미                                                        | 예시                      |
-| -------------- | ----------------------------------------------------------- | ------------------------- |
-| upstream       | 팀 공유 원본 저장소                                         | `team/project`            |
-| origin         | 개인이 fork한 자신의 저장소                                 | `member/project`          |
-| fork           | 원본을 개인 공간으로 복사한 저장소                          | —                         |
-| feature branch | 기능 단위 작업 브랜치(개인 fork에 생성, **이슈 번호 포함**) | `feature/12-order-create` |
-| Pull Request   | fork의 feature 브랜치를 원본 develop/main에 반영 요청       | —                         |
+| 용어           | 의미                                                             | 예시                        |
+| -------------- | ---------------------------------------------------------------- | --------------------------- |
+| upstream       | 팀 공유 원본 저장소                                              | `team/project`            |
+| origin         | 개인이 fork한 자신의 저장소                                      | `member/project`          |
+| fork           | 원본을 개인 공간으로 복사한 저장소                               | —                          |
+| feature branch | 기능 단위 작업 브랜치(개인 fork에 생성,**이슈 번호 포함**) | `feature/12-order-create` |
+| Pull Request   | fork의 feature 브랜치를 원본 develop/main에 반영 요청            | —                          |
 
 ---
 
@@ -118,8 +118,8 @@ git push origin feature/12-order-create
 
 GitHub에서 다음과 같이 PR을 만든다.
 
-| 항목            | 값                        |
-| --------------- | ------------------------- |
+| 항목            | 값                          |
+| --------------- | --------------------------- |
 | base repository | `team/project`            |
 | base branch     | `develop`                 |
 | head repository | `member/project`          |
@@ -203,8 +203,8 @@ Squash merge 시 **PR 제목이 develop의 최종 커밋 메시지가 된다**([
 같은 무게로 대응하느라 소모되는 것을 막고, 중요한 지적에 집중하게 한다.
 (출처: [코드 리뷰 in 뱅크샐러드 — 4년 간의 변천사](https://blog.banksalad.com/tech/banksalad-code-review-culture/))
 
-| 라벨 | 의미                     | 효력                |
-| ---- | ------------------------ | ------------------- |
+| 라벨   | 의미                     | 효력                |
+| ------ | ------------------------ | ------------------- |
 | `P1` | 꼭 반영해주세요          | 반영 전 머지 불가   |
 | `P2` | 적극적으로 고려해주세요  | 미반영 시 사유 설명 |
 | `P3` | 가능하면 반영해주세요    | 작성자 판단         |
@@ -217,13 +217,13 @@ Squash merge 시 **PR 제목이 develop의 최종 커밋 메시지가 된다**([
 
 아래를 모두 만족해야 머지한다. 대부분 Ruleset([§7-2](#7-2-ruleset))으로 강제된다.
 
-| 조건                                    | 강제 수단     |
-| --------------------------------------- | ------------- |
-| 1명 이상 approve                        | Ruleset       |
-| 모든 리뷰 코멘트(conversation) resolved | Ruleset       |
-| CI 통과                                 | Ruleset / CI  |
-| base(`develop`)와 충돌 없음             | GitHub        |
-| `P1`/`P2` 코멘트 반영 또는 합의         | 리뷰어 확인   |
+| 조건                                    | 강제 수단    |
+| --------------------------------------- | ------------ |
+| 1명 이상 approve                        | Ruleset      |
+| 모든 리뷰 코멘트(conversation) resolved | Ruleset      |
+| CI 통과                                 | Ruleset / CI |
+| base(`develop`)와 충돌 없음           | GitHub       |
+| `P1`/`P2` 코멘트 반영 또는 합의     | 리뷰어 확인  |
 
 - 머지 방식은 **Squash and merge**를 기본으로 한다([branch-convention](./branch-convention.md) §5).
 - 머지는 approve한 리뷰어 또는 maintainer가 수행한다.
