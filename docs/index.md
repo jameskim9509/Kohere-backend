@@ -5,7 +5,7 @@
 이 문서는 `docs/` 전체의 목차이자 네비게이션이다. "어떤 주제를 어디서 보는가"를 한눈에 안내한다.
 처음 합류한 팀원은 이 페이지에서 시작해 필요한 영역으로 이동한다.
 
-> 안내: 이 저장소는 백엔드 base repository이며, 일부 예시 문서는 **예시 스택(Spring Boot 3.x / Java 17 / Gradle / Spring Data JPA / PostgreSQL / Flyway / JUnit5 + Mockito + Testcontainers / Spring Security(JWT))** 기준으로 작성되어 있다. 실제 프로젝트 스택이 확정되면 각 문서의 값을 교체한다. 기술 스택 확정 전 규칙은 [CLAUDE.md](../CLAUDE.md)와 [.claude/rules/tech-stack.md](../.claude/rules/tech-stack.md)를 따른다.
+> 안내: 이 저장소는 백엔드 base repository이며, `docs/` 문서는 **템플릿 상태**다. 프로젝트/스택이 확정되면 각 문서의 `TBD`를 실제 값으로 채운다.
 
 ---
 
@@ -13,10 +13,10 @@
 
 | 나는 누구인가 | 먼저 볼 문서 |
 | --- | --- |
+| 협업을 시작하는 사람 | [collaboration-convention](convention/collaboration-convention.md) → [branch-convention](convention/branch-convention.md) → [pr-convention](convention/pr-convention.md) |
 | 처음 합류한 백엔드 개발자 | [project-brief](project/project-brief.md) → [system-overview](architecture/system-overview.md) → [code-style](convention/code-style.md) |
 | API를 만드는 사람 | [api-design-guide](api/api-design-guide.md) → [error-response-guide](api/error-response-guide.md) → [user-story-template](requirements/user-story-template.md) |
-| DB/마이그레이션 담당 | [database-design](database/database-design.md) → [migration-policy](database/migration-policy.md) → [transaction-policy](database/transaction-policy.md) |
-| 운영/배포 담당 | [deployment-guide](operations/deployment-guide.md) → [runbook](operations/runbook.md) → [incident-response](operations/incident-response.md) |
+| DB/마이그레이션 담당 | [database-design](database/database-design.md) → [migration-policy](database/migration-policy.md) |
 | 기술 결정을 남기는 사람 | [adr/README](adr/README.md) → [0000-adr-template](adr/0000-adr-template.md) |
 
 ---
@@ -40,6 +40,7 @@
 
 | 문서 | 설명 |
 | --- | --- |
+| [collaboration-convention](convention/collaboration-convention.md) | Fork 기반 PR 워크플로우(브랜치 전략·git 플로우·Ruleset) |
 | [code-style](convention/code-style.md) | 코드 스타일/네이밍 규칙 |
 | [branch-convention](convention/branch-convention.md) | 브랜치 네이밍 전략 |
 | [commit-convention](convention/commit-convention.md) | 커밋 메시지 규칙(Conventional Commits) |
@@ -52,44 +53,19 @@
 | --- | --- |
 | [api-design-guide](api/api-design-guide.md) | REST API 설계 가이드 |
 | [error-response-guide](api/error-response-guide.md) | 에러 응답 표준 포맷 |
-| [versioning-policy](api/versioning-policy.md) | API 버저닝/하위 호환 정책 |
 
 ### architecture — 아키텍처
 
 | 문서 | 설명 |
 | --- | --- |
 | [system-overview](architecture/system-overview.md) | 시스템 전체 구성도/컴포넌트 |
-| [backend-architecture](architecture/backend-architecture.md) | 계층 분리/책임 경계 |
-| [module-boundary](architecture/module-boundary.md) | 모듈 경계와 의존 방향 |
-| [observability](architecture/observability.md) | 로그/메트릭/추적 기준 |
 
 ### database — 데이터베이스
 
 | 문서 | 설명 |
 | --- | --- |
 | [database-design](database/database-design.md) | 스키마/ERD 설계 |
-| [migration-policy](database/migration-policy.md) | 마이그레이션 정책(Flyway 등) |
-| [transaction-policy](database/transaction-policy.md) | 트랜잭션 경계 정책 |
-
-### testing — 테스트
-
-| 문서 | 설명 |
-| --- | --- |
-| [testing-strategy](testing/testing-strategy.md) | 테스트 전략 + 단위/통합/E2E/데이터 작성 가이드 |
-
-### operations — 운영
-
-| 문서 | 설명 |
-| --- | --- |
-| [deployment-guide](operations/deployment-guide.md) | 배포 + 롤백 절차 |
-| [runbook](operations/runbook.md) | 운영 런북 |
-| [incident-response](operations/incident-response.md) | 장애 대응 프로세스 |
-
-### security — 보안
-
-| 문서 | 설명 |
-| --- | --- |
-| [security-policy](security/security-policy.md) | 보안 정책 개요 |
+| [migration-policy](database/migration-policy.md) | 마이그레이션 정책(도구 확정 후 갱신) |
 
 ### adr — 아키텍처 결정 기록
 
@@ -105,4 +81,4 @@
 - 새 문서를 만들면 위 표에 한 줄 설명과 상대링크를 추가한다.
 - 기술 결정이 바뀌면 [adr/README](adr/README.md)에 ADR을 추가하고 관련 문서를 갱신한다.
 - 문서 작성 규칙은 [documentation-convention](convention/documentation-convention.md)을 따른다.
-- 코드/정책 변경 시 영향받는 문서를 함께 갱신한다([CLAUDE.md](../CLAUDE.md) "How To Work" 참고).
+- 코드/정책 변경 시 영향받는 문서를 함께 갱신한다.
