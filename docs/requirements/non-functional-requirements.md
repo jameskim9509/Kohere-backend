@@ -83,7 +83,7 @@ export default function () {
 | 99.99% | ~52.6분 | ~4.4분 |
 
 > 참고: 장애 대응 절차는 [incident-response](../operations/incident-response.md),
-> 복구는 [rollback-guide](../operations/rollback-guide.md)를 따른다.
+> 복구는 [deployment-guide §10](../operations/deployment-guide.md)를 따른다.
 
 ---
 
@@ -112,8 +112,7 @@ export default function () {
 | 취약점 | High/Critical 의존성 취약점 0건 유지 | 의존성 스캔(예: OWASP Dependency-Check) CI | TBD |
 | 입력 검증 | 모든 외부 입력 검증(Bean Validation) | 코드 리뷰 + 경계값 테스트 | TBD |
 
-> 상세 정책은 [security-policy](../security/security-policy.md),
-> [access-control](../security/access-control.md) 참고. Secret은 절대 문서/코드에 기재하지 않는다.
+> 상세 정책은 [security-policy](../security/security-policy.md) 참고. Secret은 절대 문서/코드에 기재하지 않는다.
 
 ---
 
@@ -127,8 +126,7 @@ export default function () {
 | 알림 | SLA 위반 시 5분 내 알림 발송 | 알림 룰 테스트(합성 장애 주입) | TBD |
 | 로그 보존 | 운영 로그 ≥ 30일 보존 | 로그 저장소 설정 확인 | TBD |
 
-> 메트릭/대시보드 기준은 [monitoring-metrics](../operations/monitoring-metrics.md),
-> [observability](../architecture/observability.md) 참고.
+> 메트릭/대시보드/관측 기준은 [observability](../architecture/observability.md) 참고.
 
 ---
 
@@ -136,7 +134,7 @@ export default function () {
 
 | 항목 | 목표값(예시) | 측정방법 | 현재값 |
 |---|---|---|---|
-| 테스트 커버리지 | 라인 ≥ 70%, 핵심 도메인 ≥ 85% | JaCoCo 리포트 | TBD |
+| 테스트 커버리지 | [testing-strategy §3](../testing/testing-strategy.md) 목표 준수(전체 ≥70%, 도메인·서비스 ≥80%) | JaCoCo 리포트 | TBD |
 | 빌드 시간 | CI 전체 ≤ 10분 | CI 파이프라인 소요 시간 | TBD |
 | 코드 스타일 | 포매터/린트 위반 0건(CI gate) | Spotless/Checkstyle CI | TBD |
 | 문서 신선도 | API 변경 시 동일 PR에서 문서 갱신 | PR 리뷰 체크리스트 | TBD |
@@ -165,5 +163,5 @@ export default function () {
 - [ ] 각 측정방법에 사용할 도구/대시보드가 실제로 존재하거나 도입 계획이 있다.
 - [ ] 성능/가용성 위반 시 알림 룰이 정의되어 있다.
 - [ ] 보안 항목에 실제 Secret/주소가 들어가지 않았다 (가짜 예시 값만).
-- [ ] 관련 문서([monitoring-metrics](../operations/monitoring-metrics.md), [security-policy](../security/security-policy.md), [testing-strategy](../testing/testing-strategy.md))와 상호 링크되어 있다.
+- [ ] 관련 문서([observability](../architecture/observability.md), [security-policy](../security/security-policy.md), [testing-strategy](../testing/testing-strategy.md))와 상호 링크되어 있다.
 - [ ] 프로젝트 확정 후 갱신

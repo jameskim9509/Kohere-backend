@@ -4,7 +4,7 @@
 > 예시는 **Spring Boot 3.x** 기준으로 작성했으며, 시크릿 저장소(Vault/AWS Secrets Manager 등)는 예시다.
 > 스택·인프라가 확정되면 "저장소 종류"와 "주입 방법"만 교체하고, 원칙은 그대로 재사용한다.
 
-관련 문서: [security-policy](./security-policy.md) · [access-control](./access-control.md) · 루트 [SECURITY.md](../../SECURITY.md) · [incident-response](../operations/incident-response.md)
+관련 문서: [security-policy](./security-policy.md) · [incident-response](../operations/incident-response.md)
 
 ---
 
@@ -36,7 +36,7 @@
 1. **커밋 금지**: 시크릿은 Git에 절대 커밋하지 않는다. → [.gitignore](../../.gitignore)가 `.env`, `*secret*`, `*private*` 등을 차단.
 2. **단일 출처**: 시크릿은 시크릿 매니저(예: AWS Secrets Manager, HashiCorp Vault, GCP Secret Manager) 또는 배포 플랫폼의 secret store에만 둔다.
 3. **런타임 주입**: 애플리케이션은 환경변수 또는 시크릿 매니저 SDK로 **기동 시점에 주입**받는다. 코드/이미지에 박지 않는다.
-4. **최소 권한**: 각 환경/서비스는 자신에게 필요한 시크릿에만 접근한다. → [access-control](./access-control.md)
+4. **최소 권한**: 각 환경/서비스는 자신에게 필요한 시크릿에만 접근한다. → [security-policy](./security-policy.md)
 5. **로테이션 가능**: 모든 시크릿은 무중단으로 교체할 수 있어야 한다(아래 6절).
 6. **로그 비노출**: 시크릿은 로그·에러 응답·트레이스에 남기지 않는다. → [security-policy](./security-policy.md)
 

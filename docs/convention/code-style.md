@@ -158,7 +158,7 @@ if (status.equals("CANCELED")) { ... } // 오타/대소문자 위험
 ## 7. 예외 처리
 
 - 예외는 **의미 있는 이름과 메시지**를 가진다(`RuntimeException` 그대로 던지지 않기).
-- 도메인 예외는 도메인 패키지에 정의하고, 응답 변환은 전역 핸들러에서 한다([api-convention](./api-convention.md) §6).
+- 도메인 예외는 도메인 패키지에 정의하고, 응답 변환은 전역 핸들러에서 한다([error-response-guide](../api/error-response-guide.md)).
 - 예외 메시지에 secret/내부 정보를 노출하지 않는다([.claude/rules/security.md](../../.claude/rules/security.md)).
 
 ```java

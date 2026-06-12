@@ -181,7 +181,7 @@ CREATE INDEX CONCURRENTLY ix_meetings_status_start_at ON meetings (status, start
 
 - **하위호환 스키마 변경(컬럼 추가 등)**: 스키마 먼저 → 앱 나중. 구버전 앱이 새 컬럼을 무시해도 동작한다.
 - **파괴적 변경(컬럼 삭제 등)**: 앱에서 그 컬럼 사용을 먼저 제거·배포 → 충분히 안정화 후 스키마에서 삭제.
-- 배포·롤백 절차 전반은 [deployment-guide](../operations/deployment-guide.md), [rollback-guide](../operations/rollback-guide.md)를 따른다.
+- 배포·롤백 절차 전반은 [deployment-guide](../operations/deployment-guide.md)를 따른다.
 
 ### 9. 마이그레이션 PR 체크리스트(리뷰어용)
 
@@ -209,6 +209,6 @@ CREATE INDEX CONCURRENTLY ix_meetings_status_start_at ON meetings (status, start
 - [database-design](./database-design.md)
 - [transaction-policy](./transaction-policy.md)
 - [deployment-guide](../operations/deployment-guide.md)
-- [rollback-guide](../operations/rollback-guide.md)
-- [integration-test-guide](../testing/integration-test-guide.md)
+- [deployment-guide §10](../operations/deployment-guide.md)
+- [testing-strategy](../testing/testing-strategy.md)
 - [database 규칙](../../.claude/rules/database.md)

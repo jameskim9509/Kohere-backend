@@ -117,7 +117,7 @@ v1 클라이언트는 v2 마이그레이션이 필요하다. 마이그레이션 
 ```
 
 - `BREAKING CHANGE:`가 있으면 SemVer **major**를 올린다.
-- API breaking change는 [api-convention](./api-convention.md) §7의 versioning/migration plan과 연계한다.
+- API breaking change는 [versioning-policy](../api/versioning-policy.md)의 versioning/migration plan과 연계한다.
 
 ---
 

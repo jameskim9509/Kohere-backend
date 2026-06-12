@@ -9,7 +9,7 @@
 심각도 등급(SEV1~3), 포스트모템 템플릿을 정의한다.
 
 핵심 원칙: **사용자 영향 최소화(완화)가 원인 분석보다 우선**한다.
-지표/알림은 [monitoring-metrics](./monitoring-metrics.md), 되돌리기는 [rollback-guide](./rollback-guide.md), 운영 작업은 [runbook](./runbook.md) 참고.
+지표/알림은 [observability](../architecture/observability.md), 되돌리기는 [deployment-guide §10](./deployment-guide.md), 운영 작업은 [runbook](./runbook.md) 참고.
 
 ---
 
@@ -56,7 +56,7 @@
 ### 3.1 DETECT (감지)
 
 - 알림(임계값 초과), 사용자 제보, 대시보드 이상으로 감지한다.
-- 알림 임계값은 [monitoring-metrics](./monitoring-metrics.md)의 골든 시그널 표를 따른다.
+- 알림 임계값은 [observability](../architecture/observability.md)의 골든 시그널 표를 따른다.
 
 ### 3.2 TRIAGE (분류)
 
@@ -69,7 +69,7 @@
 
 | 수단 | 참고 |
 | --- | --- |
-| 직전 안정 버전으로 롤백 | [rollback-guide](./rollback-guide.md) |
+| 직전 안정 버전으로 롤백 | [deployment-guide §10](./deployment-guide.md) |
 | 인스턴스 스케일 아웃(포화 시) | [runbook §2.6](./runbook.md#26-스케일-조정) |
 | 문제 인스턴스 트래픽 제외 | [runbook §2.7](./runbook.md#27-인스턴스-트래픽-제외) |
 | 기능 플래그 off / 비핵심 기능 차단 | (기능 플래그 운영 시) |
@@ -103,7 +103,7 @@
 ```text
 [SEV2 / 진행 중] 결제 조회 API 에러율 상승
 - 영향: 결제 내역 조회 일부 실패(약 X% 요청)
-- 현재 조치: 직전 버전으로 롤백 진행 중 (rollback-guide)
+- 현재 조치: 직전 버전으로 롤백 진행 중 (deployment-guide §10)
 - 다음 업데이트: 1시간 내 / IC: <이름>
 ```
 
@@ -163,7 +163,7 @@
 
 종료 후:
 
-- [ ] 지표 정상 복귀 확인([monitoring-metrics](./monitoring-metrics.md))
+- [ ] 지표 정상 복귀 확인([observability](../architecture/observability.md))
 - [ ] 사고 종료 공지
 - [ ] (SEV1/2) 포스트모템 작성(§5)
 - [ ] 재발 방지 액션 등록 및 추적

@@ -40,11 +40,11 @@
 
 | # | 항목 | 비고 |
 | --- | --- | --- |
-| 1 | 회원 가입/로그인 (JWT 기반) | [access-control](../security/access-control.md) 참고 |
+| 1 | 회원 가입/로그인 (JWT 기반) | [security-policy](../security/security-policy.md) 참고 |
 | 2 | 모임(Meeting) 생성/수정/삭제 | 호스트 권한 |
 | 3 | 초대코드 발급/참여 | 코드 만료/재발급 포함 |
 | 4 | 일정(Event) 생성/변경 및 참석 여부(RSVP) 집계 | 참석/불참/미정 |
-| 5 | 일정 변경 알림 (푸시/이메일) | 외부 연동, [external-integration](../architecture/external-integration.md) |
+| 5 | 일정 변경 알림 (푸시/이메일) | 외부 연동 |
 
 ### Out of scope (이번 범위에서 제외)
 
@@ -80,7 +80,7 @@
 | 초대 전환율 | 초대코드 발급 대비 실제 참여 비율 | **60% 이상** | 이벤트 로그 |
 | 일정 응답률 | 일정 1건당 RSVP 응답 비율 | **70% 이상** | RSVP 테이블 |
 | 알림 도달률 | 발송 대비 성공 수신 비율 | **95% 이상** | 알림 발송 로그 |
-| p95 응답시간 | 핵심 API p95 지연 | **300ms 이하** | [monitoring-metrics](../operations/monitoring-metrics.md) |
+| p95 응답시간 | 핵심 API p95 지연 | **300ms 이하** | [observability](../architecture/observability.md) |
 
 ---
 
@@ -105,14 +105,12 @@
 | --- | --- | --- |
 | 가정 | 초기 트래픽은 소규모(동시 접속 < 1k) | 단일 인스턴스로 시작, 수평 확장 여지 확보 |
 | 가정 | 알림은 외부 푸시/메일 제공자 사용 | adapter로 격리, 장애 시 재시도 |
-| 리스크 | 외부 알림 제공자 장애 | 큐 + 재시도, [error-handling](../architecture/error-handling.md) |
+| 리스크 | 외부 알림 제공자 장애 | 큐 + 재시도, [error-response-guide](../api/error-response-guide.md) |
 | 리스크 | 스택 미확정으로 인한 초기 지연 | M0에서 ADR로 조기 확정 |
 
 ---
 
 ## 관련 문서
 
-- [glossary](glossary.md) — 도메인 용어 정의
-- [stakeholders](stakeholders.md) — 역할/책임
 - [system-overview](../architecture/system-overview.md) — 시스템 구성
 - [non-functional-requirements](../requirements/non-functional-requirements.md) — 비기능 요구사항

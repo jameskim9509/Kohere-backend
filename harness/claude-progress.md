@@ -43,7 +43,7 @@
 
 - 예시 스택을 `Spring Boot 3.x / Java 17` 계열로 통일해 문서 간 일관성 확보. **단, 이는 예시이며 스택 확정 시 교체**한다.
 - 날짜는 실제 값을 임의 생성하지 않고 `<YYYY-MM-DD>` placeholder를 사용한다.
-- 비밀값·실주소·실명은 전부 가짜 예시(`example.com`, `<YOUR_VALUE>`)로 적는다. 근거: [docs/security/secrets-management.md](../docs/security/secrets-management.md)
+- 비밀값·실주소·실명은 전부 가짜 예시(`example.com`, `<YOUR_VALUE>`)로 적는다. 근거: [docs/security/security-policy.md](../docs/security/security-policy.md)
 
 ### Next Steps
 
@@ -87,27 +87,7 @@
 
 ---
 
-## (예시) 새 세션 추가 템플릿 — 복사해서 위에 붙여넣기
+## 새 세션 추가 방법
 
-```markdown
-## Session N — <한 줄 제목>
-
-- **Date**: <YYYY-MM-DD>
-- **Goal**: <이번 세션의 목표 한 줄>
-- **Status**: 진행중 | 완료 | 차단
-
-### Completed
-- <끝낸 일>
-
-### In Progress
-- <진행 중인 일과 현재 위치>
-
-### Blocked
-- <차단 항목 + 사유 + 해제 조건> (없으면 "없음")
-
-### Decisions
-- <내린 결정과 근거> (정식 결정은 docs/adr/ 에 ADR 추가)
-
-### Next Steps
-- [ ] <다음에 할 일>
-```
+새 세션 블록 양식은 **단일 원본**인 [.claude/harness/progress-template.md](../.claude/harness/progress-template.md)에 있다.
+그 파일의 "세션 블록"을 복사해 이 파일 **맨 위**(최신이 위)에 붙이고 채운다.

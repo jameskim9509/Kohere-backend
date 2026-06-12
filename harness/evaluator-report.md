@@ -22,7 +22,7 @@
 
 | # | 기준 | 핵심 질문 | 근거 문서 |
 | --- | --- | --- | --- |
-| 1 | 요구사항 | 수용 기준을 충족했는가? | [docs/requirements/acceptance-criteria-template.md](../docs/requirements/acceptance-criteria-template.md) |
+| 1 | 요구사항 | 수용 기준을 충족했는가? | [docs/requirements/user-story-template.md](../docs/requirements/user-story-template.md) |
 | 2 | 테스트 | happy/실패/경계 케이스가 있는가? | [docs/testing/testing-strategy.md](../docs/testing/testing-strategy.md) |
 | 3 | 문서 | API/DB/운영 변경이 문서화됐는가? | [docs/convention/documentation-convention.md](../docs/convention/documentation-convention.md) |
 | 4 | 보안 | 비밀 노출/인가/입력검증이 안전한가? | [docs/security/security-policy.md](../docs/security/security-policy.md) |
@@ -93,7 +93,7 @@ void 비밀번호가_8자_미만이면_400을_반환한다() { /* 경계값: 7�
 **5. 운영 리스크 — 3점 / WARN**
 
 - 코멘트: 마이그레이션은 추가됐으나 되돌리기 절차가 없음. NOT NULL 컬럼 추가는 무중단 배포 시 주의 필요.
-- 권고(필수): [docs/database/migration-policy.md](../docs/database/migration-policy.md)에 따라 롤백 가능성 검토 결과를 PR에 기재하고, [docs/operations/rollback-guide.md](../docs/operations/rollback-guide.md)에 절차 링크.
+- 권고(필수): [docs/database/migration-policy.md](../docs/database/migration-policy.md)에 따라 롤백 가능성 검토 결과를 PR에 기재하고, [docs/operations/deployment-guide.md](../docs/operations/deployment-guide.md)에 절차 링크.
 
 ### 머지 전 체크리스트 (이 리포트 기준)
 
@@ -118,7 +118,7 @@ void 비밀번호가_8자_미만이면_400을_반환한다() { /* 경계값: 7�
 | 5. 운영 리스크 | 4 | PASS | 스키마 변경 없음 |
 
 - 차단 사유: 보안 `FAIL`(IDOR) — 다른 사용자의 `id`로 조회 시 200 반환됨.
-- 권고: 소유권 검증 추가 후 재평가. 근거: [docs/security/access-control.md](../docs/security/access-control.md).
+- 권고: 소유권 검증 추가 후 재평가. 근거: [docs/security/security-policy.md](../docs/security/security-policy.md).
 - 후속: [task-board.md](./task-board.md) Blocked로 이동, 사유/해제 조건 기록.
 
 ---

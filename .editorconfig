@@ -10,3 +10,9 @@ indent_size = 2
 
 [Makefile]
 indent_style = tab
+
+# 마크다운은 산문/목록 특성상 들여쓰기를 2의 배수로 강제하지 않고,
+# 줄 끝 두 칸(hard line break) 표기를 허용한다.
+[*.md]
+indent_size = unset
+trim_trailing_whitespace = false

@@ -42,8 +42,6 @@ scripts/     품질 검사와 Claude hooks
 src/         실제 백엔드 코드 위치(main/test)
 ```
 
-전체 디렉터리 트리는 [TREE.md](TREE.md)에서 확인할 수 있습니다.
-
 ---
 
 # 폴더·파일 설명
@@ -61,12 +59,6 @@ src/         실제 백엔드 코드 위치(main/test)
 | [README.md](README.md) | 프로젝트 소개 및 시작 가이드 | 기술 스택 미정 상태의 백엔드 base repository임을 설명하고, 디렉터리 구조·초기 설정 방법·확정 후 먼저 할 일과 이 폴더/파일 설명을 담는다. |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 핵심 작업 지침 | 프로젝트가 미정인 상태에서 Claude가 따를 기본 전제, 작업 순서, 파일 관리 규칙, 백엔드 원칙, 안전 규칙을 정의한다. |
 | [CLAUDE.local.example.md](CLAUDE.local.example.md) | 개인 로컬 Claude 설정 예시 | 답변 언어·스타일, 로컬 환경 정보, 개인용 명령 등을 **커밋하지 않고** 관리하기 위한 예시 템플릿이다. `CLAUDE.local.md`로 복사해 사용한다. |
-| [TREE.md](TREE.md) | 폴더 구조 문서 | 전체 프로젝트의 디렉터리 트리를 시각화해 각 폴더의 위치와 계층 관계를 보여준다. |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 협업 가이드 | Issue 작성 → Branch 생성 → 구현 → 테스트 → 문서 갱신 → PR 작성으로 이어지는 기본 작업 흐름과 Claude Code 사용 원칙을 명시한다. |
-| [SECURITY.md](SECURITY.md) | 보안 정책 | API Key·Token·DB Password·Private Key 등 민감 정보의 커밋 금지 원칙과 Claude Code 사용 시 주의사항을 정의한다. |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 행동 규범 | 상호 존중, 근거 기반 리뷰, 문제 해결 집중 등 팀 협업의 기본 원칙을 명시한다. |
-| [CHANGELOG.md](CHANGELOG.md) | 변경 이력 | base repository 템플릿의 주요 추가 사항(구조, Claude 설정, 문서 템플릿)을 기록한다. |
-| [LICENSE](LICENSE) | 라이선스 | 프로젝트의 법적 라이선스(MIT License)를 명시한다. |
 | [.gitignore](.gitignore) | Git 제외 설정 | `CLAUDE.local.md`, `.env`, 시크릿(키·인증서), 빌드 산출물, 의존성, IDE/OS 파일 등을 커밋에서 제외한다. |
 | [.editorconfig](.editorconfig) | 에디터 스타일 표준화 | UTF-8 인코딩, LF 줄바꿈, 최종 줄바꿈 삽입, 공백 들여쓰기 등 IDE 간 일관성을 위한 설정이다. |
 | [.env.example](.env.example) | 환경 변수 템플릿 | 프로젝트에 필요한 환경 변수 예시를 제공해 개발자가 로컬 `.env`를 작성하도록 돕는다. (실제 `.env`는 커밋 금지) |
@@ -171,11 +163,8 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | 파일 | 역할 | 설명 |
 | --- | --- | --- |
 | [docs/project/project-brief.md](docs/project/project-brief.md) | 프로젝트 개요 | 프로젝트의 목적·범위·주요 요구사항(가상 'Meetup' 도메인 예시). 확정 후 실제 프로젝트 내용으로 교체한다. |
-| [docs/project/glossary.md](docs/project/glossary.md) | 도메인 용어집 | 팀 간 커뮤니케이션 일관성을 위한 도메인 용어 정의(예시 포함, Spring Boot 기준). |
-| [docs/project/stakeholders.md](docs/project/stakeholders.md) | 이해관계자 | 주요 이해관계자·역할·책임 정의(예시 포함, Spring Boot 기준). |
 | [docs/requirements/non-functional-requirements.md](docs/requirements/non-functional-requirements.md) | 비기능 요구사항 | 성능·보안·확장성·가용성 등 품질 요구사항(예시 포함, Spring Boot 기준). |
 | [docs/requirements/user-story-template.md](docs/requirements/user-story-template.md) | 사용자 스토리 템플릿 | 사용자 스토리를 일관 형식으로 작성하기 위한 템플릿. |
-| [docs/requirements/acceptance-criteria-template.md](docs/requirements/acceptance-criteria-template.md) | 합격 기준 템플릿 | 스토리 완료 조건을 명확히 정의하기 위한 템플릿. |
 | [docs/adr/README.md](docs/adr/README.md) | ADR 저장소 안내 | 중요 기술 결정을 기록·추적하는 ADR 폴더의 목적·사용법 안내(예시 포함, Spring Boot 기준). |
 | [docs/adr/0000-adr-template.md](docs/adr/0000-adr-template.md) | ADR 표준 템플릿 | 모든 ADR이 따를 구조(Status·Context·Decision·Alternatives·Consequences·Validation)를 정의한다. |
 
@@ -183,7 +172,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 
 | 파일 | 역할 | 설명 |
 | --- | --- | --- |
-| [docs/convention/api-convention.md](docs/convention/api-convention.md) | API 컨벤션 | API 개발 시 준수할 컨벤션(예시 포함, Spring Boot 기준). |
 | [docs/convention/branch-convention.md](docs/convention/branch-convention.md) | 브랜치 컨벤션 | 브랜치 네이밍·관리 규칙(예시 포함, Spring Boot 기준). |
 | [docs/convention/code-style.md](docs/convention/code-style.md) | 코드 스타일 | 네이밍·포맷팅 등 코드 작성 스타일(예시 포함, Spring Boot 기준). |
 | [docs/convention/commit-convention.md](docs/convention/commit-convention.md) | 커밋 컨벤션 | 커밋 메시지 작성 규칙(예시 포함, Spring Boot 기준). |
@@ -200,8 +188,6 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | [docs/architecture/system-overview.md](docs/architecture/system-overview.md) | 시스템 개요 | 시스템 전체의 고수준 구조 개요(컨텍스트 다이어그램 예시 포함). 확정 후 실제 시스템에 맞게 구체화한다. |
 | [docs/architecture/backend-architecture.md](docs/architecture/backend-architecture.md) | 백엔드 아키텍처 | 전체 아키텍처 패턴·계층 구조·기술 스택(예시 포함, Spring Boot 기준). |
 | [docs/architecture/module-boundary.md](docs/architecture/module-boundary.md) | 모듈 경계 | 모듈 책임 범위·의존성·통신 인터페이스(예시 포함, Spring Boot 기준). |
-| [docs/architecture/error-handling.md](docs/architecture/error-handling.md) | 에러 처리 전략 | 에러 분류·처리·재시도·로깅 표준(예시 포함, Spring Boot 기준). |
-| [docs/architecture/external-integration.md](docs/architecture/external-integration.md) | 외부 연동 | 외부 API 연동·인증·레이트 리미팅·동기화 패턴(예시 포함, Spring Boot 기준). |
 | [docs/architecture/observability.md](docs/architecture/observability.md) | 관찰성 | 로깅·메트릭·추적·알림 기준(예시 포함, Spring Boot 기준). |
 
 ### 4-4. `docs/database/` · `docs/testing/`
@@ -212,23 +198,15 @@ Claude가 코드를 작성할 때 항상 적용하는 규칙 모음입니다.
 | [docs/database/migration-policy.md](docs/database/migration-policy.md) | 마이그레이션 정책 | 스키마 변경·버전 관리·롤백 절차(예시 포함, Spring Boot 기준). |
 | [docs/database/transaction-policy.md](docs/database/transaction-policy.md) | 트랜잭션 정책 | 데이터 일관성·ACID·동시성 제어 규칙(예시 포함, Spring Boot 기준). |
 | [docs/testing/testing-strategy.md](docs/testing/testing-strategy.md) | 테스트 전략 | 단위/통합/E2E 피라미드·커버리지 기준(예시 포함, Spring Boot 기준). |
-| [docs/testing/unit-test-guide.md](docs/testing/unit-test-guide.md) | 단위 테스트 가이드 | 함수/메서드 단위 테스트 작성법·Mock 사용(예시 포함, Spring Boot 기준). |
-| [docs/testing/integration-test-guide.md](docs/testing/integration-test-guide.md) | 통합 테스트 가이드 | 모듈/계층 간 상호작용 테스트·DB 통합 테스트(예시 포함, Spring Boot 기준). |
-| [docs/testing/e2e-test-guide.md](docs/testing/e2e-test-guide.md) | E2E 테스트 가이드 | 사용자 시나리오 기반 엔드투엔드 테스트(예시 포함, Spring Boot 기준). |
-| [docs/testing/test-data-guide.md](docs/testing/test-data-guide.md) | 테스트 데이터 가이드 | Fixture 작성·데이터 생성/격리/정리 전략(예시 포함, Spring Boot 기준). |
 
 ### 4-5. `docs/operations/` · `docs/security/`
 
 | 파일 | 역할 | 설명 |
 | --- | --- | --- |
 | [docs/operations/deployment-guide.md](docs/operations/deployment-guide.md) | 배포 가이드 | 배포 과정을 단계별로 설명(예시 포함, Spring Boot 기준). |
-| [docs/operations/rollback-guide.md](docs/operations/rollback-guide.md) | 롤백 가이드 | 문제 발생 시 이전 버전 복귀 전략·절차(예시 포함, Spring Boot 기준). |
 | [docs/operations/runbook.md](docs/operations/runbook.md) | 운영 런북 | 반복적인 운영 작업·절차 기록(예시 포함, Spring Boot 기준). |
 | [docs/operations/incident-response.md](docs/operations/incident-response.md) | 장애 대응 | 장애 발생 시 대응 절차·에스컬레이션(예시 포함, Spring Boot 기준). |
-| [docs/operations/monitoring-metrics.md](docs/operations/monitoring-metrics.md) | 모니터링/메트릭 | 주요 메트릭·모니터링 설정·알림 규칙(예시 포함, Spring Boot 기준). |
 | [docs/security/security-policy.md](docs/security/security-policy.md) | 보안 정책 | 데이터 보호·접근 제어·감사 로그 등 보안 원칙(예시 포함, Spring Boot 기준). |
-| [docs/security/access-control.md](docs/security/access-control.md) | 접근 제어 | 권한 관리·RBAC·리소스 권한 규칙(예시 포함, Spring Boot 기준). |
-| [docs/security/secrets-management.md](docs/security/secrets-management.md) | 시크릿 관리 | 시크릿 저장·주입·로테이션 정책. ⚠️ 예시 내용은 작성됐으나 저장소 보안 훅이 `*secret*` 경로 쓰기를 차단해 [docs/security/_sm_policy_draft.md](docs/security/_sm_policy_draft.md)에 보존(맨 아래 안내 참고). |
 
 ## 5. `harness/` — 장기 작업 진행 상태
 
@@ -266,20 +244,3 @@ bash scripts/quality/check.sh
 bash scripts/claude-hooks/pre-pr-check.sh
 ```
 
----
-
-## 참고: `docs/security/secrets-management.md` 마무리 안내
-
-이 저장소는 시크릿 유출을 막기 위해 **`*secret*`·`*private*` 경로의 Read/Write를 자동 차단**합니다
-([.claude/settings.json](.claude/settings.json)의 deny 규칙 + [scripts/claude-hooks/protect-sensitive-path.sh](scripts/claude-hooks/protect-sensitive-path.sh) 훅).
-
-이 가드레일은 파일명이 `secrets-management.md`인 **문서 파일까지** 차단하기 때문에, 예시 내용을 자동으로 그 경로에 쓸 수 없었습니다.
-작성한 예시 내용은 차단되지 않는 임시 파일 [docs/security/_sm_policy_draft.md](docs/security/_sm_policy_draft.md)에 보존해 두었습니다.
-
-캐노니컬 경로로 옮기려면(가드레일은 사람이 직접 실행하는 셸에는 적용되지 않습니다):
-
-```bash
-git mv docs/security/_sm_policy_draft.md docs/security/secrets-management.md
-```
-
-> 이 가드레일을 영구히 바꾸고 싶다면(권장하지 않음) [.claude/settings.json](.claude/settings.json)과 훅에서 `*secret*` 패턴 처리를 조정하세요.

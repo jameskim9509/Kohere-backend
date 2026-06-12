@@ -4,7 +4,7 @@
 > 예시는 **Spring Boot 3.x + URI 버저닝(`/api/v1`)** 기준이다.
 > 스택이 확정되어도 정책 자체(호환성 규칙, 폐기 기간, 헤더)는 그대로 재사용한다.
 
-관련 문서: [api-design-guide](./api-design-guide.md) · [error-response-guide](./error-response-guide.md) · [api-convention](../convention/api-convention.md) · [adr 템플릿](../adr/0000-adr-template.md)
+관련 문서: [api-design-guide](./api-design-guide.md) · [error-response-guide](./error-response-guide.md) · [adr 템플릿](../adr/0000-adr-template.md)
 
 ---
 
@@ -127,15 +127,13 @@ Warning: 299 - "GET /api/v1/meetings is deprecated. Migrate to /api/v2/meetings 
 
 ```json
 {
-  "error": {
-    "code": "API_VERSION_GONE",
-    "message": "이 API 버전은 2026-12-31에 종료되었습니다. /api/v2를 사용하세요.",
-    "status": 410,
-    "traceId": "abcdef0011223344556677889900aabb",
-    "timestamp": "2027-01-01T00:00:01+09:00",
-    "path": "/api/v1/meetings",
-    "errors": []
-  }
+  "code": "API_VERSION_GONE",
+  "message": "이 API 버전은 2026-12-31에 종료되었습니다. /api/v2를 사용하세요.",
+  "status": 410,
+  "path": "/api/v1/meetings",
+  "timestamp": "2027-01-01T00:00:01+09:00",
+  "traceId": "abcdef0011223344556677889900aabb",
+  "errors": []
 }
 ```
 

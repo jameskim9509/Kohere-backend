@@ -14,7 +14,7 @@
 | 나는 누구인가 | 먼저 볼 문서 |
 | --- | --- |
 | 처음 합류한 백엔드 개발자 | [project-brief](project/project-brief.md) → [system-overview](architecture/system-overview.md) → [code-style](convention/code-style.md) |
-| API를 만드는 사람 | [api-design-guide](api/api-design-guide.md) → [error-response-guide](api/error-response-guide.md) → [acceptance-criteria-template](requirements/acceptance-criteria-template.md) |
+| API를 만드는 사람 | [api-design-guide](api/api-design-guide.md) → [error-response-guide](api/error-response-guide.md) → [user-story-template](requirements/user-story-template.md) |
 | DB/마이그레이션 담당 | [database-design](database/database-design.md) → [migration-policy](database/migration-policy.md) → [transaction-policy](database/transaction-policy.md) |
 | 운영/배포 담당 | [deployment-guide](operations/deployment-guide.md) → [runbook](operations/runbook.md) → [incident-response](operations/incident-response.md) |
 | 기술 결정을 남기는 사람 | [adr/README](adr/README.md) → [0000-adr-template](adr/0000-adr-template.md) |
@@ -28,15 +28,12 @@
 | 문서 | 설명 |
 | --- | --- |
 | [project-brief](project/project-brief.md) | 프로젝트 목적, 범위(In/Out of scope), 핵심 기능, KPI, 마일스톤 |
-| [glossary](project/glossary.md) | 도메인 용어집 (용어/영문/정의) |
-| [stakeholders](project/stakeholders.md) | 이해관계자 목록과 RACI 책임 분담 |
 
 ### requirements — 요구사항 정의
 
 | 문서 | 설명 |
 | --- | --- |
-| [user-story-template](requirements/user-story-template.md) | 사용자 스토리 작성 템플릿 |
-| [acceptance-criteria-template](requirements/acceptance-criteria-template.md) | 인수 조건(Given/When/Then) 템플릿 |
+| [user-story-template](requirements/user-story-template.md) | 유저 스토리 + 인수 조건(Given/When/Then) 템플릿 |
 | [non-functional-requirements](requirements/non-functional-requirements.md) | 성능/가용성/보안 등 비기능 요구사항 |
 
 ### convention — 협업 컨벤션
@@ -44,7 +41,6 @@
 | 문서 | 설명 |
 | --- | --- |
 | [code-style](convention/code-style.md) | 코드 스타일/네이밍 규칙 |
-| [api-convention](convention/api-convention.md) | API 명명/구조 컨벤션 |
 | [branch-convention](convention/branch-convention.md) | 브랜치 네이밍 전략 |
 | [commit-convention](convention/commit-convention.md) | 커밋 메시지 규칙(Conventional Commits) |
 | [pr-convention](convention/pr-convention.md) | PR 작성/리뷰 규칙 |
@@ -65,8 +61,6 @@
 | [system-overview](architecture/system-overview.md) | 시스템 전체 구성도/컴포넌트 |
 | [backend-architecture](architecture/backend-architecture.md) | 계층 분리/책임 경계 |
 | [module-boundary](architecture/module-boundary.md) | 모듈 경계와 의존 방향 |
-| [external-integration](architecture/external-integration.md) | 외부 시스템 연동 패턴 |
-| [error-handling](architecture/error-handling.md) | 예외/실패 처리 전략 |
 | [observability](architecture/observability.md) | 로그/메트릭/추적 기준 |
 
 ### database — 데이터베이스
@@ -81,20 +75,14 @@
 
 | 문서 | 설명 |
 | --- | --- |
-| [testing-strategy](testing/testing-strategy.md) | 테스트 전략/피라미드 |
-| [unit-test-guide](testing/unit-test-guide.md) | 단위 테스트 가이드 |
-| [integration-test-guide](testing/integration-test-guide.md) | 통합 테스트 가이드 |
-| [e2e-test-guide](testing/e2e-test-guide.md) | E2E 테스트 가이드 |
-| [test-data-guide](testing/test-data-guide.md) | 테스트 데이터 관리 |
+| [testing-strategy](testing/testing-strategy.md) | 테스트 전략 + 단위/통합/E2E/데이터 작성 가이드 |
 
 ### operations — 운영
 
 | 문서 | 설명 |
 | --- | --- |
-| [deployment-guide](operations/deployment-guide.md) | 배포 절차 |
-| [rollback-guide](operations/rollback-guide.md) | 롤백 절차 |
+| [deployment-guide](operations/deployment-guide.md) | 배포 + 롤백 절차 |
 | [runbook](operations/runbook.md) | 운영 런북 |
-| [monitoring-metrics](operations/monitoring-metrics.md) | 모니터링 지표 |
 | [incident-response](operations/incident-response.md) | 장애 대응 프로세스 |
 
 ### security — 보안
@@ -102,8 +90,6 @@
 | 문서 | 설명 |
 | --- | --- |
 | [security-policy](security/security-policy.md) | 보안 정책 개요 |
-| [access-control](security/access-control.md) | 인증/인가/권한 경계 |
-| [secrets-management](security/secrets-management.md) | 시크릿/키 관리 |
 
 ### adr — 아키텍처 결정 기록
 
@@ -111,15 +97,6 @@
 | --- | --- |
 | [adr/README](adr/README.md) | ADR 인덱스와 작성 방법 |
 | [0000-adr-template](adr/0000-adr-template.md) | ADR 작성 템플릿 |
-
-### ai-agent — Claude Code harness
-
-| 문서 | 설명 |
-| --- | --- |
-| [claude-code-usage](ai-agent/claude-code-usage.md) | Claude Code 사용법 |
-| [harness-design](ai-agent/harness-design.md) | harness 설계 |
-| [guardrails](ai-agent/guardrails.md) | 안전 가드레일 |
-| [prompt-examples](ai-agent/prompt-examples.md) | 프롬프트 예시 |
 
 ---
 
