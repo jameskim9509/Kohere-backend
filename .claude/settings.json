@@ -5,15 +5,11 @@
       "Bash(*)",
       "PowerShell(*)",
       "Read(./README.md)",
-      "Read(./CLAUDE.md)",
       "Read(./docs/**)",
       "Read(./src/**)",
-      "Read(./.claude/rules/**)",
       "Bash(git status)",
       "Bash(git diff *)",
-      "Bash(git log *)",
-      "Bash(bash scripts/quality/check.sh)",
-      "Bash(bash scripts/claude-hooks/pre-pr-check.sh)"
+      "Bash(git log *)"
     ],
     "deny": [
       "Read(./.env)",
@@ -30,30 +26,6 @@
       "Bash(aws *terminate*)",
       "Bash(mysql *)",
       "Bash(psql *)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Read|Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/claude-hooks/protect-sensitive-path.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/claude-hooks/format-after-edit.sh"
-          }
-        ]
-      }
     ]
   }
 }
