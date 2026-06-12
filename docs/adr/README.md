@@ -1,7 +1,6 @@
 # Architecture Decision Records
 
 > 중요한 기술/아키텍처 결정을 기록하는 ADR 폴더입니다.
-> 작성 규칙은 [documentation-convention](../convention/documentation-convention.md)을 따릅니다.
 
 ## 목적
 
