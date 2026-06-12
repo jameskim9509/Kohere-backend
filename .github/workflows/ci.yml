@@ -9,6 +9,19 @@ jobs:
   editorconfig:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run editorconfig-checker
-        run: docker run --rm --volume="${{ github.workspace }}:/check" mstruebing/editorconfig-checker:latest
+        run: docker run --rm --volume="${{ github.workspace }}:/check" mstruebing/editorconfig-checker:v3.7.0
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      # 의존성 캐싱 + gradle-wrapper.jar 무결성 검증을 함께 수행한다
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Check format and build
+        run: ./gradlew spotlessCheck build
