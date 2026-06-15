@@ -1,0 +1,91 @@
+# Kohere 로컬 개발 스택 (M0-C) — app + MySQL + MongoDB + Redis 일괄 기동
+#
+#   전체 기동:   docker compose up --build
+#   인프라만:    docker compose up -d mysql mongo redis   # 앱은 ./gradlew bootRun 으로 따로 실행
+#   종료:        docker compose down            # 데이터 보존
+#                docker compose down -v          # 볼륨(데이터)까지 삭제
+#
+# 영속 배치(ADR-0005): MySQL=auth·user / MongoDB=listing·diagnosis / Redis=refresh 토큰(ADR-0006).
+# 컨테이너는 서비스명(mysql·mongo·redis)으로 서로를 찾는다. 기본 자격증명은 .env 로 덮어쓸 수 있다.
+name: kohere
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: kohere-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-kohere}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kohere}
+      MYSQL_USER: ${MYSQL_USER:-kohere}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-kohere}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mongo:
+    image: mongo:7
+    container_name: kohere-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7
+    container_name: kohere-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # 앱 이미지는 Dockerfile 로 빌드(로컬·클라우드 공통 동일 이미지).
+  # 아래 SPRING_* 값은 M0-A·M0-B 에서 영속 의존성이 추가되면 그대로 사용된다(현재 골격에서는 무시됨).
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kohere-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-kohere}?serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-kohere}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-kohere}
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/kohere
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql-data:
+  mongo-data:
+  redis-data:
