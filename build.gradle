@@ -24,7 +24,15 @@ ext {
 
 dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+  implementation 'org.springframework.boot:spring-boot-starter-validation'
   implementation 'org.springframework.modulith:spring-modulith-starter-core'
+
+  // 생성자 주입 보일러플레이트 제거 (docs/convention/code-style.md §3-4)
+  compileOnly 'org.projectlombok:lombok'
+  annotationProcessor 'org.projectlombok:lombok'
+  testCompileOnly 'org.projectlombok:lombok'
+  testAnnotationProcessor 'org.projectlombok:lombok'
+
   testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
   testImplementation 'org.springframework.modulith:spring-modulith-starter-test'
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
