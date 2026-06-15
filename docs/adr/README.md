@@ -28,6 +28,7 @@
 | [0002](./0002-inter-module-communication-via-events.md) | 모듈 간 통신은 도메인 이벤트(Application Events) 기반으로 한다 | Accepted | 2026-06-15 |
 | [0003](./0003-jwt-auth-after-oauth-login.md) | OAuth(OIDC) 로그인 이후 인증은 서버 발급 JWT(stateless) 방식으로 한다 | Accepted | 2026-06-15 |
 | [0004](./0004-api-response-envelope.md) | API 응답을 공통 래퍼(`{ success, data, error }`)로 표준화한다 | Accepted | 2026-06-15 |
+| [0005](./0005-polyglot-persistence.md) | 영속은 폴리글랏으로 — 데이터 특성에 따라 MongoDB와 MySQL로 나눈다 | Accepted | 2026-06-15 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
