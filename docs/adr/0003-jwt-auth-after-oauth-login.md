@@ -5,7 +5,7 @@
 | 번호 | ADR-0003 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-06-15 |
-| 관련 문서 | [01-auth-onboarding](../api/specs/01-auth-onboarding.md), [error-response-guide §3·§4](../api/error-response-guide.md), [ADR-0001](./0001-bounded-context-module-decomposition.md), [code-style §3](../convention/code-style.md) |
+| 관련 문서 | [01-auth-onboarding](../api/specs/01-auth-onboarding.md), [error-response-guide §3·§4](../api/error-response-guide.md), [ADR-0001](./0001-bounded-context-module-decomposition.md), [code-style §3](../convention/code-style.md), [ADR-0006](./0006-refresh-token-store-redis.md) |
 
 ## Status
 
@@ -67,7 +67,7 @@ Accepted
   - 서명 **키 관리·회전** 운영 부담(아래 후속).
 - **후속 작업**
   - 서명 알고리즘 결정: 대칭 **HS256**(단일 서버, 단순) vs 비대칭 **RS256/ES256**(검증 측 분리·키 회전 유리) → 별도 ADR/메모.
-  - access/refresh **만료 시간**, refresh **회전 정책**, refresh **저장소**(DB vs Redis) 확정(스펙의 "확인 필요" 항목).
+  - access/refresh **만료 시간**, refresh **회전 정책**, refresh **저장소**는 **[ADR-0006](./0006-refresh-token-store-redis.md)에서 Redis로 확정**(스펙의 "확인 필요" 항목).
   - JWT **검증 횡단 필터**(Spring Security 필터 체인) 배치 — 인증 메커니즘 ADR로 분리.
   - 키/시크릿 주입(환경변수/시크릿 매니저), 키 회전 절차.
 
