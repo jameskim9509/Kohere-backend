@@ -22,8 +22,12 @@
 ## ADR 인덱스
 
 | 번호 | 제목 | 상태 | 날짜 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | [0000](./0000-adr-template.md) | ADR 템플릿 | — (템플릿) | — |
+| [0001](./0001-bounded-context-module-decomposition.md) | 도메인(Bounded Context) 기준으로 모듈을 분해한다 | Accepted | 2026-06-15 |
+| [0002](./0002-inter-module-communication-via-events.md) | 모듈 간 통신은 도메인 이벤트(Application Events) 기반으로 한다 | Accepted | 2026-06-15 |
+| [0003](./0003-jwt-auth-after-oauth-login.md) | OAuth(OIDC) 로그인 이후 인증은 서버 발급 JWT(stateless) 방식으로 한다 | Accepted | 2026-06-15 |
+| [0004](./0004-api-response-envelope.md) | API 응답을 공통 래퍼(`{ success, data, error }`)로 표준화한다 | Accepted | 2026-06-15 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
