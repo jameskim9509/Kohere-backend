@@ -1,0 +1,10 @@
+# 이미지 빌드 컨텍스트에서 제외 (빌드에 불필요/오염 방지)
+.git
+.gradle
+build
+**/build
+.idea
+.vscode
+*.iml
+docs
+*.md
