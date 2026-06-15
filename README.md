@@ -9,7 +9,7 @@
 - 컨벤션/설계/요구사항/ADR 문서 템플릿
 - Claude Code 권한·보안 설정
 
-> **기술 스택:** **Java 21 · Spring Boot 4.1 · Spring Modulith 2.1 · Gradle 9.5** (모듈러 모놀리식 + DDD 계층, [code-style](docs/convention/code-style.md) 참고). DB·배포 방식은 미정이며 확정 시 이 문단과 관련 문서를 갱신합니다.
+> **기술 스택:** **Java 21 · Spring Boot 4.1 · Spring Modulith 2.1 · Gradle 9.5** (모듈러 모놀리식 + DDD 계층, [code-style](docs/convention/code-style.md) 참고). 배포는 **M0–M6 전 구간 로컬 컨테이너(docker-compose) 기반으로 개발하고 M7에서 AWS로 이전·배포**합니다(동일 Docker 이미지, 인프라만 로컬↔매니지드 교체 — [project-brief §7 마일스톤](docs/project/project-brief.md#7-마일스톤-milestones)). DB는 결정 사항이 확정 시 관련 문서를 갱신합니다.
 
 ## 사용 방법
 

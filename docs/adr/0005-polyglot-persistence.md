@@ -5,7 +5,7 @@
 | 번호 | ADR-0005 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-06-15 |
-| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [project-brief §7](../project/project-brief.md), [database-design](../database/database-design.md), [listings spec](../api/specs/03-listings-favorites.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md) |
+| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [project-brief §7](../project/project-brief.md), [database-design](../database/database-design.md), [listings spec](../api/specs/03-listings-favorites.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md), [ADR-0006](./0006-refresh-token-store-redis.md) |
 
 ## Status
 
@@ -35,6 +35,8 @@ Accepted
 |---|---|---|---|
 | **MongoDB** (Spring Data MongoDB) | `listing`(+`favorite`·`recent-listing`), `diagnosis` | `Listing`, `Favorite`, `RecentListing`, `Diagnosis` | 지오·가변 스키마·대량 읽기 / 문서형 애그리거트·임베드 배열·조인 불필요·단일 도큐먼트 원자적 쓰기 |
 | **MySQL** (Spring Data JPA) | `auth`, `user`, `community` | `RefreshToken`, `User`, `Post`/`Comment`/`PostLike` | 계정·토큰 트랜잭션 / 유니크 제약(`PostLike`)·다엔티티 카운트 정합 |
+
+> **보완([ADR-0006](./0006-refresh-token-store-redis.md), 2026-06-15):** `RefreshToken`의 **저장은 Redis**로 옮긴다(불투명 토큰의 회전·TTL 적합성, [ADR-0003](./0003-jwt-auth-after-oauth-login.md)의 "refresh 저장소" 후속이 닫힘). `auth`의 계정·소셜 연동은 MySQL 유지 — 즉 `auth`는 **MySQL(계정) + Redis(refresh)** 혼합이다.
 
 세부 정책:
 
