@@ -1,0 +1,434 @@
+# 매물 탐색 · 찜 API Spec
+
+> [api-design-guide](../api-design-guide.md) · [error-response-guide](../error-response-guide.md)를 따른다. 모든 응답은 공통 래퍼.
+> 관련 유저 스토리: [user-stories](../../requirements/user-stories.md)
+
+매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다.
+
+공통 enum:
+
+- `ListingType`: `GOSIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
+- `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
+- `ConditionTag`(주거 환경 조건 9종, 필터 칩·편의시설 태그 공용): `IMMEDIATE_MOVE_IN`(즉시 입주), `FEMALE_ONLY`(여성 전용), `PRIVATE_TOILET`(개인 화장실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_AVAILABLE`(영어 소통 가능), `RESIDENT_REGISTRATION`(전입신고 가능), `NO_MAINTENANCE_FEE`(관리비 없음), `MEALS_PROVIDED`(식사 제공), `DOUBLE_ROOM`(2인실)
+- `ContractTerm`(계약기간, 개월): `ONE_MONTH`, `THREE_MONTHS`, `SIX_MONTHS`, `TWELVE_MONTHS`
+- `MatchedPlaceType`(키워드 검색 매칭 분류): `UNIVERSITY`, `REGION`, `SUBWAY_STATION`
+
+> `ListingSort`는 api-design-guide §6의 일반 `?sort=field,(asc|desc)` 형식이 아닌 **이름 기반 정렬 프리셋**이다(추천 정렬 등 단일 필드로 표현되지 않는 정렬이 있어 enum으로 둔다). 단순 시간 정렬을 쓰는 찜 목록은 일반 `field,dir` 형식을 사용한다.
+
+## 엔드포인트 요약
+
+| Method | Path | 설명 | 인증 | 성공 status |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
+| GET | `/api/v1/listings/map` | 지도 검색(bbox 또는 center+radius, 클러스터 집계) | 선택 | 200 |
+| GET | `/api/v1/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
+| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회(로그인 시 최근 본 매물 기록) | 선택 | 200 |
+| POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
+| DELETE | `/api/v1/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
+| GET | `/api/v1/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
+| GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(7일 이내, 최대 5건) | 필수 | 200 |
+
+> 인증 "선택"은 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 찜·찜 목록·최근 본 매물은 모두 `me` 스코프라 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(인증 실패는 `401`).
+
+## 상세
+
+### GET /api/v1/listings — 매물 리스트
+
+- 설명: 필터·정렬을 적용한 매물 요약 목록을 오프셋 페이지로 반환한다.
+- 인증: 선택 (로그인 시 각 항목 `favorited` 채움)
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- | --- |
+| `minBudget` | integer(KRW) | 선택 | — | 월세 하한(원). `maxBudget` 이하여야 함 |
+| `maxBudget` | integer(KRW) | 선택 | — | 월세 상한(원) |
+| `type` | `ListingType` | 선택 | — | 매물 유형. 다중 값 콤마 구분(`GOSIWON,CO_LIVING`) |
+| `conditions` | `ConditionTag[]` | 선택 | — | 조건 칩. 콤마 구분, AND 매칭 |
+| `arcRequired` | boolean | 선택 | — | `false`면 ARC 없이 입주 가능 매물만 |
+| `residentRegistration` | boolean | 선택 | — | `true`면 전입신고 가능 매물만(= `conditions`의 `RESIDENT_REGISTRATION` 단축) |
+| `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 프리셋. `DISTANCE`는 `centerLat`·`centerLng` 필수 |
+| `centerLat` | number | 조건부 | — | `sort=DISTANCE`일 때 기준 위도(또는 `distanceMeters` 계산용) |
+| `centerLng` | number | 조건부 | — | `sort=DISTANCE`일 때 기준 경도(또는 `distanceMeters` 계산용) |
+| `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
+| `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "listingId": 1024,
+        "title": "신촌 도보 5분 1인실 고시원",
+        "type": "GOSIWON",
+        "monthlyRent": 450000,
+        "deposit": 0,
+        "thumbnailUrl": "https://cdn.kohere.app/listings/1024/thumb.jpg",
+        "location": { "lat": 37.555134, "lng": 126.936893, "address": "서울 서대문구 ..." },
+        "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION"],
+        "distanceMeters": 320,
+        "favorited": true,
+        "favoriteCount": 12
+      }
+    ],
+    "page": {
+      "number": 0,
+      "size": 20,
+      "totalElements": 137,
+      "totalPages": 7,
+      "hasNext": true
+    }
+  },
+  "error": null
+}
+```
+
+- `distanceMeters`는 `centerLat/centerLng`가 제공된 경우(또는 `sort=DISTANCE`)에만 채워지고, 그 외에는 `null`이다.
+- 비로그인 시 `favorited`는 `false`로 고정한다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과 |
+| 400 | `LISTING_INVALID_SORT_PARAM` | `sort=DISTANCE`인데 `centerLat`/`centerLng` 누락 |
+| 400 | `MALFORMED_REQUEST` | 타입 불일치(숫자 파라미터에 비숫자 등) |
+
+### GET /api/v1/listings/map — 지도 검색
+
+- 설명: bbox 또는 center+radius 영역 내 매물을 줌 레벨에 따라 클러스터로 집계해 반환한다.
+- 인증: 선택
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `swLat` | number | bbox 모드 필수 | 남서 위도 |
+| `swLng` | number | bbox 모드 필수 | 남서 경도 |
+| `neLat` | number | bbox 모드 필수 | 북동 위도(`swLat` 이상) |
+| `neLng` | number | bbox 모드 필수 | 북동 경도(`swLng` 이상) |
+| `centerLat` | number | 반경 모드 필수 | 중심 위도 |
+| `centerLng` | number | 반경 모드 필수 | 중심 경도 |
+| `radius` | integer(m) | 반경 모드 필수 | 반경(미터) |
+| `zoom` | integer | 선택 | 지도 줌 레벨(클러스터 격자 크기 산정용) |
+| `cluster` | boolean | 선택(기본 `true`) | `true`면 서버 집계, `false`면 개별 마커(상한 초과 시 에러) |
+| `minBudget`/`maxBudget`/`type`/`conditions`/`arcRequired`/`residentRegistration` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용 |
+
+> bbox 모드와 반경 모드는 **상호 배타**다. 둘 다 제공하거나 어느 쪽도 완전하지 않으면 `LISTING_INVALID_BBOX`.
+
+Request Body: 없음
+
+성공 Response (200, `cluster=true`):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "clusters": [
+      { "lat": 37.5512, "lng": 126.9369, "count": 23, "listingId": null },
+      { "lat": 37.5489, "lng": 126.9412, "count": 1, "listingId": 2087 }
+    ],
+    "total": 24
+  },
+  "error": null
+}
+```
+
+- `count == 1`인 클러스터는 `listingId`로 단건을 가리킨다. `count > 1`이면 `listingId`는 `null`이다.
+- `cluster=false`이고 결과 수가 상한(서버 설정값, 예: 500) 이하이면 `data.content[]`(리스트 항목과 동일 스키마)로 반환한다. 비클러스터 항목의 `favorited`는 비로그인 시 `false`다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/모순(`swLat>neLat` 등) 또는 bbox·반경 모드 혼용 |
+| 400 | `LISTING_AREA_TOO_LARGE` | `cluster=false`인데 결과 수가 상한 초과(클러스터 사용 유도) |
+| 400 | `INVALID_INPUT` | 필터 enum/범위 위반, `radius` 음수 등 |
+
+### GET /api/v1/listings/search — 키워드 검색
+
+- 설명: 학교명·지역명·지하철역명을 키워드로 매칭해 해당 위치와 주변 매물을 오프셋 페이지로 반환한다.
+- 인증: 선택
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- | --- |
+| `keyword` | string | 필수 | — | 검색어(학교/지역/역). 1~50자 |
+| `sort` | `ListingSort` | 선택 | `DISTANCE` | 매칭 위치 기준 정렬 프리셋 |
+| `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
+| `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "matchedPlace": {
+      "type": "UNIVERSITY",
+      "name": "연세대학교",
+      "lat": 37.565784,
+      "lng": 126.938572
+    },
+    "content": [ /* 리스트 항목과 동일 스키마 */ ],
+    "page": {
+      "number": 0,
+      "size": 20,
+      "totalElements": 42,
+      "totalPages": 3,
+      "hasNext": true
+    }
+  },
+  "error": null
+}
+```
+
+- `matchedPlace.type`은 `MatchedPlaceType`(`UNIVERSITY`/`REGION`/`SUBWAY_STATION`) 중 하나다.
+- 매칭 결과가 없으면 `matchedPlace=null`, `content=[]`로 `200 OK`(404 아님).
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | 키워드 누락/공백/길이(1~50자) 위반, `size` 범위 초과 |
+
+### GET /api/v1/listings/{listingId} — 매물 상세
+
+- 설명: 단건 매물 상세를 반환한다. 인증 사용자면 최근 본 매물에 upsert한다.
+- 인증: 선택 (로그인 시 `favorited` 채움 + 최근 본 매물 기록)
+
+Path 파라미터:
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `listingId` | Long | 필수 | 매물 식별자 |
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "listingId": 1024,
+    "title": "신촌 도보 5분 1인실 고시원",
+    "type": "GOSIWON",
+    "imageUrls": [
+      "https://cdn.kohere.app/listings/1024/1.jpg",
+      "https://cdn.kohere.app/listings/1024/2.jpg"
+    ],
+    "monthlyRent": 450000,
+    "deposit": 0,
+    "contractTermOptions": ["ONE_MONTH", "THREE_MONTHS", "SIX_MONTHS"],
+    "location": {
+      "lat": 37.555134,
+      "lng": 126.936893,
+      "address": "서울 서대문구 신촌로 ...",
+      "addressDetail": "3층 305호"
+    },
+    "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION", "PRIVATE_TOILET"],
+    "arcRequired": false,
+    "landlord": {
+      "landlordId": 77,
+      "name": "김임대",
+      "contactChannel": "CHAT"
+    },
+    "favorited": true,
+    "favoriteCount": 12,
+    "createdAt": "2026-05-30T02:11:00Z"
+  },
+  "error": null
+}
+```
+
+- `landlord.contactChannel`은 항상 `CHAT`이며, 전화번호 등 직접 연락처는 노출하지 않는다(채팅으로만 연결).
+- 비로그인 시 `favorited=false`, 최근 본 매물 기록은 생성하지 않는다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제된 매물 |
+
+### POST /api/v1/listings/{listingId}/favorite — 찜 등록(토글)
+
+- 설명: 매물을 찜한다. (userId, listingId) 유니크로 멱등 보장.
+- 인증: 필수
+
+Path 파라미터:
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `listingId` | Long | 필수 | 매물 식별자 |
+
+Request Body: 없음
+
+성공 Response — 201 Created (신규 찜) / 200 OK (이미 찜):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "favorited": true,
+    "favoriteCount": 13
+  },
+  "error": null
+}
+```
+
+- 신규로 찜이 **생성**되면 `201 Created`로 반환한다(생성=201, api-design-guide §1).
+- 이미 찜한 상태에서 다시 호출하면 생성이 일어나지 않으므로 `200 OK`로 현재 상태(`favorited: true`)를 멱등하게 반환한다(중복 행 미생성, 별도 충돌 에러 아님). 이는 04-booking-inquiry-chat 스펙의 문의 생성(신규 201 / 기존 200) 패턴과 일관된다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+| 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제된 매물 |
+
+### DELETE /api/v1/listings/{listingId}/favorite — 찜 해제(토글)
+
+- 설명: 찜을 해제한다. 찜하지 않은 매물 해제도 멱등하게 처리한다.
+- 인증: 필수
+
+Path 파라미터: `listingId` (위와 동일)
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "favorited": false,
+    "favoriteCount": 12
+  },
+  "error": null
+}
+```
+
+> 토글 액션은 변경 후 현재 상태(`favorited`, `favoriteCount`)를 `data`에 담아야 하므로 본문 없는 `204`가 아닌 `200`을 사용한다(api-design-guide §3-2 토글성 액션 — 일반 삭제 `204` 규칙의 명시적 예외). 찜하지 않은 매물 해제도 에러 없이 멱등하게 `favorited: false`를 반환한다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+| 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제된 매물 |
+
+### GET /api/v1/users/me/favorites — 내 찜한 매물 목록
+
+- 설명: 로그인 사용자가 찜한 매물 목록을 오프셋 페이지로 반환한다.
+- 인증: 필수
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- | --- |
+| `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
+| `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
+| `sort` | string | 선택 | `favoritedAt,desc` | 찜한 시각 기준 정렬(api-design-guide §6 `field,dir` 형식) |
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "listingId": 1024,
+        "title": "신촌 도보 5분 1인실 고시원",
+        "type": "GOSIWON",
+        "monthlyRent": 450000,
+        "deposit": 0,
+        "thumbnailUrl": "https://cdn.kohere.app/listings/1024/thumb.jpg",
+        "location": { "lat": 37.555134, "lng": 126.936893, "address": "서울 서대문구 ..." },
+        "conditions": ["ENGLISH_AVAILABLE"],
+        "favorited": true,
+        "favoriteCount": 13,
+        "favoritedAt": "2026-06-10T11:20:00Z"
+      }
+    ],
+    "page": { "number": 0, "size": 20, "totalElements": 8, "totalPages": 1, "hasNext": false }
+  },
+  "error": null
+}
+```
+
+- 항목 모두 `favorited=true`다. 비어 있으면 `content=[]`, `200 OK`.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `size` 범위 초과, `sort` 형식 오류 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+
+### GET /api/v1/users/me/recent-listings — 최근 본 매물
+
+- 설명: 7일 이내에 조회한 매물을 최신순 최대 5건 반환한다(요구사항 정의서 기준). 페이지네이션 없이 고정 상한이므로 `content` 배열만 반환하고 `page` 객체는 두지 않는다.
+- 인증: 필수
+
+Query 파라미터: 없음 (상한 5건 고정)
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "listingId": 2087,
+        "title": "홍대입구 코리빙 2인실",
+        "type": "CO_LIVING",
+        "monthlyRent": 600000,
+        "deposit": 1000000,
+        "thumbnailUrl": "https://cdn.kohere.app/listings/2087/thumb.jpg",
+        "location": { "lat": 37.5571, "lng": 126.9245, "address": "서울 마포구 ..." },
+        "favorited": false,
+        "viewedAt": "2026-06-15T01:30:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+- 7일이 지난 기록은 응답에서 제외한다(만료 즉시 숨김 + 배치 삭제, 정리 주기는 운영 설정값).
+- 같은 매물 재조회는 새 항목을 만들지 않고 `viewedAt`만 갱신한다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+
+## 도메인 에러 코드
+
+> prefix는 `LISTING`. 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN` 등)는 [error-response-guide](../error-response-guide.md) §4를 그대로 쓰며 여기서 재정의하지 않는다.
+
+| code | status | 의미 |
+| --- | --- | --- |
+| `LISTING_NOT_FOUND` | 404 | 존재하지 않거나 비공개/삭제된 매물 |
+| `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 `centerLat`/`centerLng`가 누락됨 |
+| `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/모순(`swLat>neLat` 등) 또는 bbox·반경 모드 혼용 |
+| `LISTING_AREA_TOO_LARGE` | 400 | 비클러스터 지도 검색 결과가 상한을 초과(클러스터 사용 유도) |
+
+> `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다.
+> 이미 찜/미찜 상태에서의 토글은 별도 충돌 에러(`LISTING_ALREADY_FAVORITED` 등)로 보지 않고 멱등하게 현재 상태를 반환한다(등록은 신규 201 / 기존 200, 해제는 항상 200). 만약 "이미 찜" 충돌을 명시적으로 알리는 정책이 정해지면 `409`로 별도 코드를 추가한다.

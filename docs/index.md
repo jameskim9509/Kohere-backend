@@ -15,7 +15,7 @@
 | --- | --- |
 | 협업을 시작하는 사람 | [collaboration-convention](convention/collaboration-convention.md) → [branch-convention](convention/branch-convention.md) → [commit-convention](convention/commit-convention.md) |
 | 처음 합류한 백엔드 개발자 | [project-brief](project/project-brief.md) → [system-overview](architecture/system-overview.md) → [code-style](convention/code-style.md) |
-| API를 만드는 사람 | [api-design-guide](api/api-design-guide.md) → [error-response-guide](api/error-response-guide.md) → [user-story-template](requirements/user-story-template.md) |
+| API를 만드는 사람 | [api-design-guide](api/api-design-guide.md) → [error-response-guide](api/error-response-guide.md) → [user-stories](requirements/user-stories.md) → [api/specs](api/specs/README.md) |
 | DB/마이그레이션 담당 | [database-design](database/database-design.md) → [migration-policy](database/migration-policy.md) |
 | 기술 결정을 남기는 사람 | [adr/README](adr/README.md) → [0000-adr-template](adr/0000-adr-template.md) |
 
@@ -34,6 +34,7 @@
 | 문서 | 설명 |
 | --- | --- |
 | [user-story-template](requirements/user-story-template.md) | 유저 스토리 + 인수 조건(Given/When/Then) 템플릿 |
+| [user-stories](requirements/user-stories.md) | 핵심 기능 7종의 백엔드 유저 스토리 + 인수 조건(AC) |
 | [non-functional-requirements](requirements/non-functional-requirements.md) | 성능/가용성/보안 등 비기능 요구사항 |
 
 ### convention — 협업 컨벤션
@@ -51,12 +52,14 @@
 | --- | --- |
 | [api-design-guide](api/api-design-guide.md) | REST API 설계 가이드 |
 | [error-response-guide](api/error-response-guide.md) | 에러 응답 표준 포맷 |
+| [api/specs](api/specs/README.md) | 도메인별 API 상세 스펙(핵심 기능 7종) |
 
 ### architecture — 아키텍처
 
 | 문서 | 설명 |
 | --- | --- |
 | [system-overview](architecture/system-overview.md) | 시스템 전체 구성도/컴포넌트 |
+| [sequence-diagrams](architecture/sequence-diagrams/README.md) | 유저 스토리별 사용자→앱→백엔드 **모듈** 시퀀스 다이어그램(모듈 분해·이벤트/호출 구분, 29종) |
 
 ### database — 데이터베이스
 
