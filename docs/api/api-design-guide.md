@@ -5,7 +5,7 @@
 
 ## 목적
 
-클라이언트(모바일 앱)와 서버가 합의한 **일관된 요청/응답 규약**을 정의해, 엔드포인트마다 형식이 달라지는 것을 막는다. 스택은 **Spring Boot 4.1 / Spring MVC / Spring Modulith**이며, 에러 응답의 정본은 [error-response-guide](./error-response-guide.md)다.
+클라이언트(모바일 앱)와 서버가 합의한 **일관된 요청/응답 규약**을 정의해, 엔드포인트마다 형식이 달라지는 것을 막는다. 스택은 **Spring Boot 3.5 / Spring MVC / Spring Modulith**이며, 에러 응답의 정본은 [error-response-guide](./error-response-guide.md)다.
 
 ## 1. RESTful 설계 원칙
 

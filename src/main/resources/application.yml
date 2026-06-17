@@ -1,3 +1,39 @@
 spring:
   application:
     name: kohere
+
+  # 활성 프로파일 미지정 시 로컬(개발 편의). 운영은 SPRING_PROFILES_ACTIVE=prod, 테스트는 @ActiveProfiles("test").
+  profiles:
+    default: local
+
+  # 스키마는 Flyway가 소유(ADR-0008). Hibernate는 검증만 — 엔티티↔스키마 불일치를 기동 시 차단.
+  # datasource·redis 접속값은 프로파일별 파일(local/test/prod)에서 주입한다.
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  jackson:
+    time-zone: UTC
+
+# 인증·토큰 정책값(비밀 아님). 시크릿·환경 의존값(secret·pepper·oidc audience·datasource)은
+# 프로파일별 파일에서 주입한다 — base에는 운영-위험 기본값(시크릿 폴백·접속정보)을 두지 않는다.
+app:
+  jwt:
+    issuer: kohere
+    access-ttl-seconds: 3600 # access 1시간 (ADR-0011)
+    onboarding-ttl-seconds: 1800 # 온보딩 임시 토큰 30분 (ADR-0011)
+  auth:
+    refresh-ttl-seconds: 1209600 # refresh 14일 (ADR-0011)
+  terms:
+    version: v1.0 # 약관 버전 정본 — 온보딩 완료 시 서버가 기록 (ADR-0012)
+  oidc:
+    # 소셜 OIDC 검증(JWKS). audience(우리 client ID)는 환경 의존값이라 프로파일별로 주입.
+    google:
+      issuer: https://accounts.google.com
+      jwk-set-uri: https://www.googleapis.com/oauth2/v3/certs
+    apple:
+      issuer: https://appleid.apple.com
+      jwk-set-uri: https://appleid.apple.com/auth/keys

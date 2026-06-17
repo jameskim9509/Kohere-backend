@@ -1,0 +1,13 @@
+# 통합 테스트 프로파일(@ActiveProfiles("test")). datasource·redis는 Testcontainers
+# @ServiceConnection이 동적으로 주입하므로 여기 두지 않는다. Flyway가 컨테이너에 V1을 적용하고
+# Hibernate validate가 엔티티↔스키마 일치를 검증한다(ADR-0008). 시크릿은 테스트 전용 고정값.
+app:
+  jwt:
+    secret: test-only-hs256-secret-please-override-32bytes-minimum!!
+  auth:
+    refresh-pepper: test-refresh-pepper
+  oidc:
+    google:
+      audience: test-google-client-id
+    apple:
+      audience: test-apple-client-id

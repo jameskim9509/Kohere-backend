@@ -5,12 +5,14 @@
  * <p>도메인 에러 코드 prefix: {@code AUTH}. 스펙: docs/api/specs/01-auth-onboarding.md (인증 부분:
  * /api/v1/auth).
  *
- * <p>모듈 경계·계층 규칙은 docs/convention/code-style.md §3을 따른다. 공유 커널 {@code common}에만 의존한다.
+ * <p>모듈 경계·계층 규칙은 docs/convention/code-style.md §3을 따른다. 공유 커널 {@code common}과 user 공개 API({@code
+ * user :: api})에만 의존한다.
  *
- * <p>TODO: 사용자 생성/상태 전이(PENDING→ACTIVE)는 user 모듈과 협력한다. 다른 모듈 타입을 직접 import 하지 않고 공개 API·이벤트로
- * 연결한다(예: 온보딩 완료 시 도메인 이벤트 발행 → user 모듈이 구독).
+ * <p>사용자 생성/상태 전이(PENDING→ACTIVE)는 user 공개 API({@link com.kohere.user.api.UserAccountService})를 동기
+ * 호출하고, 탈퇴는 user가 발행하는 {@link com.kohere.user.api.UserWithdrawnEvent}를 구독해 social_accounts
+ * 삭제·refresh 무효화로 협력한다(ADR-0002). user 내부 도메인 타입은 import 하지 않는다.
  */
 @org.springframework.modulith.ApplicationModule(
     displayName = "Auth",
-    allowedDependencies = {"common"})
+    allowedDependencies = {"common", "user :: api"})
 package com.kohere.auth;

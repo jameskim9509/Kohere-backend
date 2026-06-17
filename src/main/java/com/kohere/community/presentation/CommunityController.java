@@ -1,6 +1,5 @@
 package com.kohere.community.presentation;
 
-import com.kohere.common.response.ApiResponse;
 import com.kohere.common.response.PageResponse;
 import com.kohere.community.application.CommunityService;
 import com.kohere.community.application.dto.CommentResponse;
@@ -29,7 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 커뮤니티(게시판·동네친구) REST 컨트롤러. 입력 검증·DTO 변환만 담당하고 비즈니스 로직은 응용 계층에 위임한다 (docs/convention/code-style.md
- * §3-3). 응답은 공통 래퍼로 감싼다.
+ * §3-3). 도메인 DTO만 반환하고, 공통 래퍼는 {@link com.kohere.common.response.ApiResponseWrapper}가 자동
+ * 적용한다(ADR-0013).
  *
  * <p>스펙: docs/api/specs/05-community.md. 인증 주체(userId)는 SecurityContext에서 가져온다(TODO: 보안 설정 후 연동) —
  * 서비스 시그니처에는 경로·바디 파라미터만 전달한다.
@@ -42,40 +42,39 @@ public class CommunityController {
   private final CommunityService communityService;
 
   @GetMapping
-  public ApiResponse<PageResponse<PostSummaryResponse>> list(
+  public PageResponse<PostSummaryResponse> list(
       @RequestParam(required = false) BoardType boardType,
       @RequestParam(defaultValue = "createdAt,desc") String sort,
       @RequestParam(required = false) String keyword,
       @RequestParam(required = false) String hashtag,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return ApiResponse.success(
-        communityService.list(boardType, sort, keyword, hashtag, page, size));
+    return communityService.list(boardType, sort, keyword, hashtag, page, size);
   }
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<PostDetailResponse> create(@Valid @RequestBody CreatePostRequest request) {
-    return ApiResponse.success(communityService.create(request));
+  public PostDetailResponse create(@Valid @RequestBody CreatePostRequest request) {
+    return communityService.create(request);
   }
 
   @GetMapping("/me")
-  public ApiResponse<PageResponse<PostSummaryResponse>> myPosts(
+  public PageResponse<PostSummaryResponse> myPosts(
       @RequestParam(required = false) BoardType boardType,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return ApiResponse.success(communityService.myPosts(boardType, page, size));
+    return communityService.myPosts(boardType, page, size);
   }
 
   @GetMapping("/{postId}")
-  public ApiResponse<PostDetailResponse> detail(@PathVariable Long postId) {
-    return ApiResponse.success(communityService.detail(postId));
+  public PostDetailResponse detail(@PathVariable Long postId) {
+    return communityService.detail(postId);
   }
 
   @PatchMapping("/{postId}")
-  public ApiResponse<PostDetailResponse> update(
+  public PostDetailResponse update(
       @PathVariable Long postId, @Valid @RequestBody UpdatePostRequest request) {
-    return ApiResponse.success(communityService.update(postId, request));
+    return communityService.update(postId, request);
   }
 
   @DeleteMapping("/{postId}")
@@ -85,28 +84,28 @@ public class CommunityController {
   }
 
   @PostMapping("/{postId}/like")
-  public ApiResponse<LikeToggleResponse> toggleLike(@PathVariable Long postId) {
-    return ApiResponse.success(communityService.toggleLike(postId));
+  public LikeToggleResponse toggleLike(@PathVariable Long postId) {
+    return communityService.toggleLike(postId);
   }
 
   @PostMapping("/{postId}/share")
-  public ApiResponse<ShareResponse> share(@PathVariable Long postId) {
-    return ApiResponse.success(communityService.share(postId));
+  public ShareResponse share(@PathVariable Long postId) {
+    return communityService.share(postId);
   }
 
   @GetMapping("/{postId}/comments")
-  public ApiResponse<PageResponse<CommentResponse>> listComments(
+  public PageResponse<CommentResponse> listComments(
       @PathVariable Long postId,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return ApiResponse.success(communityService.listComments(postId, page, size));
+    return communityService.listComments(postId, page, size);
   }
 
   @PostMapping("/{postId}/comments")
   @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<CommentResponse> addComment(
+  public CommentResponse addComment(
       @PathVariable Long postId, @Valid @RequestBody CreateCommentRequest request) {
-    return ApiResponse.success(communityService.addComment(postId, request));
+    return communityService.addComment(postId, request);
   }
 
   @DeleteMapping("/{postId}/comments/{commentId}")
@@ -122,7 +121,7 @@ public class CommunityController {
    */
   @PostMapping("/{postId}/chat")
   @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<NeighborChatResponse> startNeighborChat(@PathVariable Long postId) {
-    return ApiResponse.success(communityService.startNeighborChat(postId));
+  public NeighborChatResponse startNeighborChat(@PathVariable Long postId) {
+    return communityService.startNeighborChat(postId);
   }
 }

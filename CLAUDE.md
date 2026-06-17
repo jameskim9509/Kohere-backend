@@ -8,7 +8,7 @@
 
 ## 스택
 
-- **Java 21**, **Spring Boot 4.1**, Spring MVC, **Spring Modulith**(모듈러 모놀리식), **Gradle**.
+- **Java 21**, **Spring Boot 3.5**, Spring MVC, **Spring Modulith**(모듈러 모놀리식), **Gradle**. (Boot 4.1→3.5 다운그레이드 경위는 [ADR-0016](docs/adr/0016-downgrade-to-spring-boot-3.md))
 - Lombok, Bean Validation. 포맷은 **Spotless + google-java-format(2-space)**.
 - 영속(JPA/DB)·보안(Security) 스택은 도입 진행 중 — 정확한 의존성은 [build.gradle](build.gradle) 참조. 인증 토큰 전략은 [ADR-0003](docs/adr/0003-jwt-auth-after-oauth-login.md).
 - **영속은 폴리글랏**: 문서·지오성(매물 `listing`+`favorite`+`recent-listing`, 진단 `diagnosis`)은 **MongoDB**, 관계·트랜잭션성(`auth`·`user`·`community`)은 **MySQL**. cross-store 조인·트랜잭션 금지(애플리케이션 레벨 조인). 결정: [ADR-0005](docs/adr/0005-polyglot-persistence.md). 단, **refresh 토큰 저장은 Redis**(회전·TTL): [ADR-0006](docs/adr/0006-refresh-token-store-redis.md).

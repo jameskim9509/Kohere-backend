@@ -4,7 +4,7 @@
 >
 > **영속(ADR-0005, 데이터 특성 기준):** `listing`(+`favorite`·`recent-listing`)·`diagnosis` → **MongoDB**, `auth`·`user` → **MySQL**.
 > **본 문서의 추가 결정(팀 확정):** ① **refresh 토큰 → Redis** — **[ADR-0006](../adr/0006-refresh-token-store-redis.md)** 으로 확정(ADR-0005 `RefreshToken` 배치 보완, ADR-0003 후속 닫힘). ② **임대인 연락 = F-03 신청하기 → 인앱 채팅방 기록**(booking→chat 이벤트). 실시간 WebSocket·푸시는 추후, booking·chat 저장소 추후 결정.
-> **스택 상태:** 현재 배선된 의존성 정본은 [build.gradle](../../build.gradle)(현재 `webmvc`·`validation`·`spring-modulith-starter-core`·`lombok` + 테스트 `webmvc-test`·`modulith-starter-test`·`junit-platform-launcher`만). `추후`=1차 MVP 이후.
+> **스택 상태:** 현재 배선된 의존성 정본은 [build.gradle](../../build.gradle)(`web`·`validation`·`data-jpa`·`data-redis`·`security`·`oauth2-jose`·`jjwt`·`spring-modulith-starter-core` + 테스트 `test`·`modulith-starter-test`·Testcontainers·REST Docs/restdocs-api-spec). `추후`=1차 MVP 이후.
 
 ## 목적
 
@@ -229,7 +229,7 @@ flowchart TB
 | 영역        | 채택                                                                           | 상태   |
 | ----------- | ------------------------------------------------------------------------------ | ------ |
 | 언어/런타임 | Java 21 (Temurin), toolchain 21                                                | 배선됨 |
-| 프레임워크  | Spring Boot 4.1, Spring MVC                                                    | 배선됨 |
+| 프레임워크  | Spring Boot 3.5, Spring MVC                                                    | 배선됨 |
 | 모듈러리티  | Spring Modulith (BOM 2.1.0,`-starter-core`), `ApplicationModules.verify()` | 배선됨 |
 | 빌드/포맷   | Gradle, Spotless + google-java-format(2-space), Lombok                         | 배선됨 |
 
@@ -276,10 +276,10 @@ flowchart TB
 | 영역            | 채택                                                                                     | 상태   | 비고                                                                                                                                                                                      |
 | --------------- | ---------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 테스트          | JUnit 5 · AssertJ · Mockito · Modulith test                                           | 배선됨 | —                                                                                                                                                                                        |
-| 통합 테스트     | **Testcontainers(MySQL + MongoDB)** + Redis(Testcontainers/embedded)               | 도입   | 스택 분리(JPA가 Mongo 패키지 미스캔) 검증, 2dsphere `explain`                                                                                                                           |
+| 통합 테스트     | **Testcontainers** — MySQL·Redis(`@ServiceConnection`)                              | ✅ 배선 | auth-onboarding 통합/문서 테스트가 실제 MySQL·Redis로 검증(Docker 필요; TC **1.21.4**로 신버전 Docker 호환, [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)). MongoDB는 listing·diagnosis 도입 시 추가 |
 | 로깅            | Logback(평문→JSON), traceId/X-Request-Id, PII 마스킹                                    | 도입   | [error-response-guide §6](../api/error-response-guide.md). 4xx WARN/5xx ERROR                                                                                                               |
 | 메트릭/트레이싱 | Actuator(health)                                                                         | 도입   | Micrometer/Prometheus → 추후                                                                                                                                                             |
-| API 문서        | **Spring REST Docs**(테스트 기반 스니펫 → AsciiDoc/HTML)                          | 도입   | [ADR-0007](../adr/0007-api-docs-spring-rest-docs.md). [api/specs](../api/specs/README.md) Markdown은 설계 정본 유지, REST Docs가 테스트로 실제 동작 검증(드리프트 차단). Swagger/springdoc 대신 |
+| API 문서        | **REST Docs**(HTML) + **OpenAPI3(restdocs-api-spec)→Swagger UI**                   | ✅ 배선   | [ADR-0007](../adr/0007-api-docs-spring-rest-docs.md)·[ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md). 같은 테스트로 `/docs/index.html`(HTML)·`/swagger-ui/index.html`(try-it-out) 생성. 어노테이션 미사용(드리프트 0). [api/specs](../api/specs/README.md) Markdown은 설계 정본 |
 | DTO 매핑        | 수동 정적 팩토리(`of(...)`)                                                            | 도입   | MapStruct → 추후                                                                                                                                                                         |
 | 시간            | UTC 강제(`jackson.time-zone`, `hibernate.jdbc.time_zone`); Mongo 문서도 UTC ISO-8601 | 도입   | [api-design-guide §6](../api/api-design-guide.md)                                                                                                                                           |
 | i18n            | 클라이언트 code→text 매핑                                                               | 결정됨 | 서버 MessageSource → 추후                                                                                                                                                                |
@@ -322,7 +322,7 @@ ADR-0005가 **cross-store 조인·트랜잭션을 금지**하므로 단일 엔�
 - [api-design-guide](../api/api-design-guide.md) · [error-response-guide](../api/error-response-guide.md) · [non-functional-requirements](../requirements/non-functional-requirements.md)(템플릿)
 - [domain-model](domain-model.md) — 모듈별 애그리거트 카탈로그(루트·식별자·불변식·저장소 매핑) · [sequence-diagrams](sequence-diagrams/README.md)
 
-> **남은 갱신:** build.gradle(`data-jpa`+드라이버·`data-mongodb`·`data-redis` + REST Docs `restdocs-mockmvc`·`asciidoctor` 추가).
+> **배선 완료(auth-onboarding 구현, 스택 Boot 3.5 — [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)):** `web`·`data-jpa`+`mysql-connector-j`·`data-redis`(refresh Redis 어댑터, ADR-0006)·`spring-security`·`oauth2-jose`·`jjwt` + API 문서(`restdocs-mockmvc`·`asciidoctor`·`restdocs-api-spec`·`swagger-ui` webjar, ADR-0017) + 통합 테스트 Testcontainers 1.21.4(MySQL·Redis). **남은 갱신:** `data-mongodb`(listing·diagnosis).
 
 ## 체크리스트
 

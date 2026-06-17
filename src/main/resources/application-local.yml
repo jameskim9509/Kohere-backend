@@ -1,0 +1,25 @@
+# 로컬 개발 프로파일(기본). docker-compose(mysql:3306·redis:6379) 또는 로컬 설치 인프라.
+# Flyway가 스키마를 적용한다(ADR-0008). 시크릿은 dev 폴백 제공 — 운영에서는 절대 쓰지 않는다.
+# 주의: 이전에 ddl-auto=update로 만든 로컬 DB가 있으면 Flyway 도입 후 충돌할 수 있다 →
+#       `docker compose down -v`로 초기화 후 재기동(Flyway가 V1부터 생성).
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/kohere?serverTimezone=UTC
+    username: kohere
+    password: kohere
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+app:
+  jwt:
+    # HS256 시크릿: 최소 256bit(32byte). 운영은 prod 프로파일이 폴백 없이 JWT_SECRET을 강제한다.
+    secret: ${JWT_SECRET:local-dev-only-hs256-secret-please-override-32bytes-min!!}
+  auth:
+    refresh-pepper: ${REFRESH_PEPPER:local-dev-refresh-pepper} # SHA-256(token+pepper) (ADR-0006)
+  oidc:
+    google:
+      audience: ${GOOGLE_CLIENT_ID:}
+    apple:
+      audience: ${APPLE_CLIENT_ID:}

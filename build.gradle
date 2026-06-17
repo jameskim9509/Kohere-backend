@@ -1,8 +1,12 @@
 plugins {
   id 'java'
-  id 'org.springframework.boot' version '4.1.0'
+  id 'org.springframework.boot' version '3.5.8'
   id 'io.spring.dependency-management' version '1.1.7'
   id 'com.diffplug.spotless' version '8.6.0'
+  // API 문서 — REST Docs 스니펫을 HTML로 렌더 (ADR-0007)
+  id 'org.asciidoctor.jvm.convert' version '4.0.4'
+  // REST Docs 테스트 → OpenAPI3 yaml 생성 (Swagger UI 서빙용, ADR-0016)
+  id 'com.epages.restdocs-api-spec' version '0.19.4'
 }
 
 group = 'com.kohere'
@@ -19,13 +23,35 @@ repositories {
 }
 
 ext {
-  set('springModulithVersion', '2.1.0')
+  set('springModulithVersion', '1.4.1')
+  set('swaggerUiVersion', '5.18.2')
 }
 
 dependencies {
-  implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+  implementation 'org.springframework.boot:spring-boot-starter-web'
   implementation 'org.springframework.boot:spring-boot-starter-validation'
   implementation 'org.springframework.modulith:spring-modulith-starter-core'
+
+  // 영속 — auth·user=MySQL/JPA(ADR-0005), refresh=Redis(ADR-0006). 운영은 Flyway+validate(ADR-0008)
+  implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+  implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+  runtimeOnly 'com.mysql:mysql-connector-j'
+
+  // MySQL 스키마 마이그레이션 — Flyway가 DDL 소유, Hibernate는 validate (ADR-0008)
+  implementation 'org.flywaydb:flyway-core'
+  implementation 'org.flywaydb:flyway-mysql'
+
+  // 보안 — JWT 검증 보안 필터 (ADR-0010), 소셜 OIDC idToken 검증용 Nimbus JwtDecoder
+  implementation 'org.springframework.boot:spring-boot-starter-security'
+  implementation 'org.springframework.security:spring-security-oauth2-jose'
+
+  // 서버 JWT(access/온보딩) 발급·검증 — HS256 (ADR-0009/0011)
+  implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+  runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+  runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+  // API 문서 — Swagger UI 정적 자산(webjar). 우리 openapi3.yaml을 끼워 서빙 (ADR-0016)
+  implementation "org.webjars:swagger-ui:${swaggerUiVersion}"
 
   // 생성자 주입 보일러플레이트 제거 (docs/convention/code-style.md §3-4)
   compileOnly 'org.projectlombok:lombok'
@@ -33,14 +59,24 @@ dependencies {
   testCompileOnly 'org.projectlombok:lombok'
   testAnnotationProcessor 'org.projectlombok:lombok'
 
-  testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+  testImplementation 'org.springframework.boot:spring-boot-starter-test'
   testImplementation 'org.springframework.modulith:spring-modulith-starter-test'
+  testImplementation 'org.springframework.security:spring-security-test'
+  // API 문서 — 테스트 기반 REST Docs(HTML, ADR-0007) + OpenAPI3 캡처(Swagger UI, ADR-0016)
+  testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
+  testImplementation 'com.epages:restdocs-api-spec-mockmvc:0.19.4'
+  // 통합 테스트 — 실제 엔진(MySQL·Redis)으로 검증 (test-strategy §4)
+  testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+  testImplementation 'org.testcontainers:junit-jupiter'
+  testImplementation 'org.testcontainers:mysql'
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 dependencyManagement {
   imports {
     mavenBom "org.springframework.modulith:spring-modulith-bom:${springModulithVersion}"
+    // 신버전 Docker 데몬(29.x) 호환 docker-java가 포함된 Testcontainers로 고정(Boot 관리 버전 오버라이드)
+    mavenBom "org.testcontainers:testcontainers-bom:1.21.4"
   }
 }
 
@@ -55,6 +91,59 @@ spotless {
   }
 }
 
+ext {
+  snippetsDir = file("build/generated-snippets")
+}
+
 tasks.named('test') {
   useJUnitPlatform()
+  // REST Docs 스니펫 출력 디렉터리 (ADR-0007)
+  outputs.dir snippetsDir
+}
+
+// 스니펫(test 산출물) → AsciiDoc/HTML 렌더 (ADR-0007)
+tasks.named('asciidoctor') {
+  inputs.dir snippetsDir
+  dependsOn test
+  attributes 'snippets': snippetsDir
+}
+
+// REST Docs 테스트로 캡처한 자원 → OpenAPI3 yaml(Swagger UI가 읽음, ADR-0016)
+openapi3 {
+  setServer('http://localhost:8080')
+  title = 'Kohere API — 인증·온보딩'
+  description = 'REST Docs 테스트로 생성된 OpenAPI 3 명세'
+  version = project.version.toString()
+  format = 'yaml'
+}
+
+// Swagger UI 정적 자산(webjar) + 우리 openapi3.yaml + 우리 initializer 를 한 디렉터리로 모음
+tasks.register('prepareSwaggerUi', Copy) {
+  dependsOn tasks.named('openapi3')
+  into layout.buildDirectory.dir('swagger-ui')
+  // webjar dist 추출(경로 prefix 제거), petstore용 기본 initializer 는 제외
+  from({
+    configurations.runtimeClasspath
+        .filter { it.name.startsWith('swagger-ui-') }
+        .collect { zipTree(it) }
+  }) {
+    include "META-INF/resources/webjars/swagger-ui/${swaggerUiVersion}/**"
+    exclude '**/swagger-initializer.js'
+    eachFile { it.path = it.path.replaceFirst(".*/swagger-ui/${swaggerUiVersion}/", '') }
+    includeEmptyDirs = false
+  }
+  // 우리 명세 + 우리 명세를 가리키는 initializer
+  from(layout.buildDirectory.dir('api-spec')) { include 'openapi3.yaml' }
+  from('src/main/resources/swagger-ui-initializer.js') { rename { 'swagger-initializer.js' } }
+}
+
+// 렌더된 REST Docs HTML(/docs) + Swagger UI(/swagger-ui)를 실행 jar의 정적 리소스로 번들
+tasks.named('bootJar') {
+  dependsOn tasks.named('asciidoctor'), tasks.named('prepareSwaggerUi')
+  from(layout.buildDirectory.dir('docs/asciidoc')) {
+    into 'BOOT-INF/classes/static/docs'
+  }
+  from(layout.buildDirectory.dir('swagger-ui')) {
+    into 'BOOT-INF/classes/static/swagger-ui'
+  }
 }
