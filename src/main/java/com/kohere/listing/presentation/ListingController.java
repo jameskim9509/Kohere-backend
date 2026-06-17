@@ -1,6 +1,5 @@
 package com.kohere.listing.presentation;
 
-import com.kohere.common.response.ApiResponse;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
@@ -19,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 매물 탐색·찜 REST 컨트롤러. 입력 검증·DTO 변환만 담당하고 비즈니스 로직은 응용 계층에 위임한다 (docs/convention/code-style.md §3-3).
- * 응답은 공통 래퍼로 감싼다.
+ * 도메인 DTO만 반환하고, 공통 래퍼는 {@link com.kohere.common.response.ApiResponseWrapper}가 자동 적용한다(ADR-0013).
  *
  * <p>스펙: docs/api/specs/03-listings-favorites.md. TODO: 지도(GET /map)·키워드 검색(GET /search), 필터 쿼리
  * 파라미터 전체를 채운다.
@@ -32,28 +31,28 @@ public class ListingController {
   private final ListingService listingService;
 
   @GetMapping
-  public ApiResponse<PageResponse<ListingSummaryResponse>> getListings(
+  public PageResponse<ListingSummaryResponse> getListings(
       @RequestParam(required = false) Integer minBudget,
       @RequestParam(required = false) Integer maxBudget,
       @RequestParam(defaultValue = "RECOMMENDED") ListingSort sort,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return ApiResponse.success(listingService.getListings(page, size));
+    return listingService.getListings(page, size);
   }
 
   @GetMapping("/{listingId}")
-  public ApiResponse<ListingSummaryResponse> getListing(@PathVariable Long listingId) {
-    return ApiResponse.success(listingService.getListing(listingId));
+  public ListingSummaryResponse getListing(@PathVariable Long listingId) {
+    return listingService.getListing(listingId);
   }
 
   @PostMapping("/{listingId}/favorite")
   @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<FavoriteToggleResponse> addFavorite(@PathVariable Long listingId) {
-    return ApiResponse.success(listingService.addFavorite(listingId));
+  public FavoriteToggleResponse addFavorite(@PathVariable Long listingId) {
+    return listingService.addFavorite(listingId);
   }
 
   @DeleteMapping("/{listingId}/favorite")
-  public ApiResponse<FavoriteToggleResponse> removeFavorite(@PathVariable Long listingId) {
-    return ApiResponse.success(listingService.removeFavorite(listingId));
+  public FavoriteToggleResponse removeFavorite(@PathVariable Long listingId) {
+    return listingService.removeFavorite(listingId);
   }
 }

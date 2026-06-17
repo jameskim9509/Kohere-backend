@@ -1,0 +1,23 @@
+# 운영 프로파일(SPRING_PROFILES_ACTIVE=prod). 모든 환경 의존값·시크릿은 환경변수/Secrets Manager로 주입한다.
+# 폴백 기본값을 두지 않는다 — 누락 시 기동이 실패(fail-fast)해 "조용히 커밋된 시크릿 사용" 사고를 막는다.
+# 스키마는 Flyway가 적용하고 Hibernate는 validate만 한다(ADR-0008).
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET} # 폴백 없음 — 미설정 시 기동 실패 (ADR-0011 D5)
+  auth:
+    refresh-pepper: ${REFRESH_PEPPER} # 폴백 없음 (ADR-0006)
+  oidc:
+    google:
+      audience: ${GOOGLE_CLIENT_ID}
+    apple:
+      audience: ${APPLE_CLIENT_ID}

@@ -25,7 +25,7 @@ public enum ErrorCode {
 
   // --- 인증·회원 (auth/user) — docs/api/specs/01-auth-onboarding.md ---
   AUTH_INVALID_SOCIAL_TOKEN(HttpStatus.UNAUTHORIZED, "소셜 토큰 검증에 실패했습니다."),
-  AUTH_REQUIRED_AGREEMENT_MISSING(HttpStatus.UNPROCESSABLE_CONTENT, "필수 약관에 동의해야 합니다."),
+  AUTH_REQUIRED_AGREEMENT_MISSING(HttpStatus.UNPROCESSABLE_ENTITY, "필수 약관에 동의해야 합니다."),
   AUTH_ONBOARDING_REQUIRED(HttpStatus.FORBIDDEN, "온보딩을 완료해야 합니다."),
   AUTH_ONBOARDING_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 온보딩을 완료했습니다."),
   AUTH_INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."),
@@ -44,29 +44,29 @@ public enum ErrorCode {
 
   // --- 신청·채팅 (booking/chat) — docs/api/specs/04-booking-inquiry-chat.md ---
   BOOKING_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신청한 매물입니다."),
-  BOOKING_INVALID_MOVE_IN_DATE(HttpStatus.UNPROCESSABLE_CONTENT, "입주 희망일이 올바르지 않습니다."),
-  BOOKING_SELF_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_CONTENT, "본인 소유 매물에는 신청할 수 없습니다."),
+  BOOKING_INVALID_MOVE_IN_DATE(HttpStatus.UNPROCESSABLE_ENTITY, "입주 희망일이 올바르지 않습니다."),
+  BOOKING_SELF_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 소유 매물에는 신청할 수 없습니다."),
   CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
-  CHAT_SELF_INQUIRY_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_CONTENT, "본인 소유 매물에는 문의할 수 없습니다."),
-  CHAT_ROOM_INACTIVE(HttpStatus.UNPROCESSABLE_CONTENT, "비활성 채팅방입니다."),
-  CHAT_MESSAGE_NOT_IN_ROOM(HttpStatus.UNPROCESSABLE_CONTENT, "해당 방의 메시지가 아닙니다."),
+  CHAT_SELF_INQUIRY_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 소유 매물에는 문의할 수 없습니다."),
+  CHAT_ROOM_INACTIVE(HttpStatus.UNPROCESSABLE_ENTITY, "비활성 채팅방입니다."),
+  CHAT_MESSAGE_NOT_IN_ROOM(HttpStatus.UNPROCESSABLE_ENTITY, "해당 방의 메시지가 아닙니다."),
 
   // --- 커뮤니티 (community) — docs/api/specs/05-community.md ---
   POST_NOT_FOUND(HttpStatus.NOT_FOUND, "게시글을 찾을 수 없습니다."),
   COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "댓글을 찾을 수 없습니다."),
-  POST_CHAT_SELF_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_CONTENT, "본인 게시글에는 채팅을 시작할 수 없습니다."),
-  POST_CHAT_AUTHOR_UNAVAILABLE(HttpStatus.UNPROCESSABLE_CONTENT, "작성자와 채팅할 수 없습니다."),
+  POST_CHAT_SELF_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 게시글에는 채팅을 시작할 수 없습니다."),
+  POST_CHAT_AUTHOR_UNAVAILABLE(HttpStatus.UNPROCESSABLE_ENTITY, "작성자와 채팅할 수 없습니다."),
   POST_CHAT_BLOCKED(HttpStatus.FORBIDDEN, "차단 관계로 채팅을 시작할 수 없습니다."),
 
   // --- 게이미피케이션 (gamification) — docs/api/specs/06-gamification.md ---
   QUIZ_NOT_FOUND(HttpStatus.NOT_FOUND, "퀴즈를 찾을 수 없습니다."),
-  QUIZ_NOT_TODAY(HttpStatus.UNPROCESSABLE_CONTENT, "오늘의 퀴즈가 아닙니다."),
+  QUIZ_NOT_TODAY(HttpStatus.UNPROCESSABLE_ENTITY, "오늘의 퀴즈가 아닙니다."),
   QUIZ_ALREADY_SUBMITTED(HttpStatus.CONFLICT, "이미 제출한 퀴즈입니다."),
 
   // --- 신고 (report) — docs/api/specs/07-reports.md ---
   REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "신고 대상을 찾을 수 없습니다."),
   REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신고한 대상입니다."),
-  REPORT_SELF_TARGET(HttpStatus.UNPROCESSABLE_CONTENT, "본인 콘텐츠는 신고할 수 없습니다.");
+  REPORT_SELF_TARGET(HttpStatus.UNPROCESSABLE_ENTITY, "본인 콘텐츠는 신고할 수 없습니다.");
 
   private final HttpStatus httpStatus;
   private final String defaultMessage;
