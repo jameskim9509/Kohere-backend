@@ -32,7 +32,7 @@ Accepted
 1. **근거 — 단일 신뢰 경계**: 발급(`auth`)과 검증(`common` 필터)이 같은 프로세스·배포에 있어 시크릿이 **한 경계 안에만** 머문다. 이 경우 "검증키=서명키"인 HS256이 안전하고, 키쌍·JWKS·공개키 캐시 같은 운영 부담이 없다.
 2. **수평 확장과 무관**: access 무상태라 인스턴스를 N개로 확장해도([ADR-0003](./0003-jwt-auth-after-oauth-login.md)) **같은 배포·같은 시크릿이면 여전히 단일 신뢰 경계** → HS256 유지(인스턴스 수는 트리거가 아니다).
 3. **`common` 공유 ≠ 키 공유**: `common`은 **검증 코드/메커니즘**(필터)만 공유한다. **키(시크릿/공개키)는 코드가 아니라 런타임 주입**이다. 같은 `common`을 써도 서명 능력은 시크릿을 받은 쪽에만 생긴다.
-4. **시크릿 위생**: 충분한 길이의 무작위 시크릿, **신뢰 경계 밖으로 절대 반출 금지**, 회전 절차 마련([ADR-0003](./0003-jwt-auth-after-oauth-login.md) 후속/키 관리).
+4. **시크릿 위생**: 충분한 길이의 무작위 시크릿(≥256bit, [ADR-0011](./0011-token-lifetime-and-secret-policy.md)), **신뢰 경계 밖으로 절대 반출 금지**, 회전 절차 마련([ADR-0003](./0003-jwt-auth-after-oauth-login.md) 후속/키 관리).
 5. **전환 트리거 (미리 명시)** — 다음 중 하나가 발생하면 **RS256/ES256 + JWKS**로 전환한다:
    - (a) 진짜 **MSA로 분해**되어 `listing`·`booking`·`chat`… 각 서비스가 **토큰을 자체 검증**(내부 zero-trust/defense-in-depth)하게 됨, 또는
    - (b) `auth` 발급을 신뢰하지 않는 **외부/서드파티 검증자**가 토큰을 검증해야 함.
@@ -56,7 +56,7 @@ Accepted
   - 시크릿이 **발급·검증 공용**이라 신뢰 경계 밖으로 새면 곧 위조 권한 유출 → **MSA 분해/외부 검증자 도입 시 즉시 RS256 전환 필수**.
   - HS256 시크릿 **강도·회전** 규율 필요.
 - **후속 작업**
-  - [build.gradle](../../build.gradle) jjwt 추가 시 HS256 서명/검증 배선. 시크릿 길이·회전 절차 확정([ADR-0003](./0003-jwt-auth-after-oauth-login.md) 후속).
+  - [build.gradle](../../build.gradle) jjwt 추가 시 HS256 서명/검증 배선. 시크릿 길이·주입은 [ADR-0011](./0011-token-lifetime-and-secret-policy.md)에서 확정(≥256bit, env 주입), 무중단 회전 절차는 운영 후속.
   - [system-overview §3-3](../architecture/system-overview.md) 서버 JWT 서명 항목 갱신(✅ 본 결정).
   - **아키텍처 변경(서비스 분해/외부 검증자) 리뷰 시 트리거 점검** → RS256/ES256+JWKS 전환 ADR.
 

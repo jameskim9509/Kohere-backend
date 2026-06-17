@@ -6,7 +6,11 @@
 > 표기 규약:
 >
 > - **모듈 간 통신**(code-style §3): 상태 전파·후속 처리는 **비동기 이벤트(`-)`)**, 단순 조회/질의는 **동기 호출(`->>` / `-->>`)**. (예: 신청→채팅 = 이벤트, 진단→매물·커뮤니티→채팅방 생성 = 호출)
-> - **공통 JWT 인증**은 컨트롤러 앞단의 `공통 보안 필터(participant SEC)`로 표기한다: `C->>SEC`(Bearer) → SEC가 JWT 검증 → `SEC->>모듈`(인증된 요청 전달). 토큰 무효/만료는 **SEC가 401**(`UNAUTHENTICATED`/`TOKEN_EXPIRED`) 반환, 권한·스코프 부족(403)·비즈니스 규칙(409/422)은 **모듈**이 판단. 공개/비로그인 허용 엔드포인트(`social-login`·`reissue`·목록/상세/검색)는 SEC를 거치지 않고 모듈로 직접 간다.
+> - **공통 JWT 인증**은 컨트롤러 앞단의 `공통 보안 필터(participant SEC)`로 표기한다: `C->>SEC`(Bearer) → SEC가 JWT 검증 → `SEC->>모듈`(`userId`+온보딩 스코프 주입 후 요청 전달). 보호경로 인가는 **3티어**([ADR-0010](../../adr/0010-jwt-authentication-filter.md)):
+>   - **공개(permitAll)**: `social-login`·`reissue`·목록/상세/검색·**actuator**. 미인증도 익명으로 모듈에 전달된다 — 필터를 **우회하는 게 아니라** 필터는 통과하되 인증을 요구하지 않을 뿐이므로, 다이어그램 표기상 SEC를 생략한다(필터 미통과가 아님).
+>   - **온보딩 스코프(ROLE_ONBOARDING) 토큰만 통과**: `onboarding`·`DELETE /users/me`. 온보딩 임시 토큰(또는 정식 토큰)으로 접근 가능한 티어.
+>   - **정식 자원(ROLE_USER)**: 나머지 보호 엔드포인트. **PENDING(온보딩 스코프) 토큰으로 ROLE_USER 자원에 접근하면 SEC가 403 `AUTH_ONBOARDING_REQUIRED`**(`AccessDeniedHandler`, 모듈 도달 전).
+> - 인증 실패 경계: 토큰 무효/만료/누락은 **EntryPoint가 401**(`UNAUTHENTICATED`/`TOKEN_EXPIRED`). **스코프 부족 403은 SEC(AccessDeniedHandler) 책임**, **리소스 소유권 403(`FORBIDDEN`)은 모듈 책임**으로 구분한다. 비즈니스 규칙(409/422)도 **모듈**이 판단한다.
 > - **도메인 상태 영속**은 가장 오른쪽의 `저장소(participant)` 컴포넌트로 표기한다(`모듈->>저장소` 저장/조회/갱신, `저장소-->>모듈` 결과). 저장소 배치는 **폴리글랏으로 확정**됐다([ADR-0005](../../adr/0005-polyglot-persistence.md)·[ADR-0006](../../adr/0006-refresh-token-store-redis.md)) — 각 `모듈->>저장소` 화살표는 **그 화살표 왼쪽 모듈이 소유한 저장소**를 가리킨다:
 >   - **MongoDB**: `listing`(+`favorite`·`recent-listing`)·`diagnosis`
 >   - **MySQL**: `auth`(계정·소셜·회원상태)·`user`(프로필)·`community`

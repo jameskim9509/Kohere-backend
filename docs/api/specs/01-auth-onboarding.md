@@ -97,7 +97,7 @@
 }
 ```
 
-> `expiresIn`은 access 토큰 만료까지의 초(seconds). 신규 회원에게 주는 access 토큰은 온보딩 API만 통과시킨다(클레임 `onboardingCompleted=false`, refresh 미발급). (확인 필요: 온보딩 전용 임시 토큰 만료시간)
+> `expiresIn`은 access 토큰 만료까지의 초(seconds). 신규 회원에게 주는 access 토큰은 온보딩 API만 통과시킨다(클레임 `onboardingCompleted=false`, refresh 미발급). 온보딩 전용 임시 토큰 만료 1800초(30분), 정식 access 3600초(1시간) — [ADR-0011](../../adr/0011-token-lifetime-and-secret-policy.md)에서 확정.
 
 #### 발생 가능한 에러
 
@@ -114,6 +114,8 @@
 ### 2. POST `/api/v1/auth/onboarding` — 온보딩 제출(가입 완료)
 
 `PENDING` 사용자가 필수 프로필과 약관 동의를 제출해 가입을 완료한다. 성공 시 `ACTIVE`로 전이하고 정식 access/refresh 토큰을 발급한다. 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다.
+
+> 약관 버전(termsVersion)은 서버 설정값을 온보딩 완료 시 서버가 기록한다([ADR-0012](../../adr/0012-terms-version-management.md)).
 
 - **인증**: 필수 — 소셜 로그인 단계에서 받은 온보딩 토큰(`onboardingCompleted=false`).
 - Path/Query 파라미터: 없음.
@@ -190,7 +192,7 @@
 
 ### 3. POST `/api/v1/auth/reissue` — 토큰 재발급
 
-유효한 refresh 토큰으로 새 access 토큰을 재발급한다. 회전 정책 적용 시 새 refresh 토큰도 함께 발급하고 기존 것은 무효화한다. 폐기된 토큰을 다시 제출하는 재사용이 탐지되면 해당 사용자의 모든 refresh 토큰을 무효화한다.
+유효한 refresh 토큰으로 새 access 토큰을 재발급한다. 항상 회전한다 — 새 refresh 토큰도 함께 발급하고 제출한 refresh는 무효화(ROTATED)한다([ADR-0006](../../adr/0006-refresh-token-store-redis.md)). 폐기된 토큰을 다시 제출하는 재사용이 탐지되면 해당 사용자의 모든 refresh 토큰을 무효화한다.
 
 - **인증**: 불필요(헤더 access 토큰 없이 본문 refresh 토큰으로 처리). 만료된 access 토큰 보유 클라이언트가 이 엔드포인트로 갱신한다.
 - Path/Query 파라미터: 없음.
@@ -222,7 +224,7 @@
 }
 ```
 
-> 회전 미적용 시 `refreshToken`은 기존 값을 그대로 반환할 수 있다. (확인 필요: refresh 회전 적용 여부)
+> reissue는 항상 회전한다: 제출한 refresh는 무효화(ROTATED)하고 새 access·refresh를 함께 발급한다([ADR-0006](../../adr/0006-refresh-token-store-redis.md)).
 
 #### 발생 가능한 에러
 
@@ -365,7 +367,7 @@
 
 #### 성공 Response — 204 No Content
 
-본문 없음. (개인정보 파기/익명화는 정책 — 확인 필요: 보존 기간)
+본문 없음. 개인정보(이름·전화·비자)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)).
 
 #### 발생 가능한 에러
 

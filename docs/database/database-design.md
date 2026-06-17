@@ -146,6 +146,7 @@
 | `marketing_agreed` | BOOLEAN | NOT NULL DEFAULT FALSE · VO `Consent` |
 | `agreed_at` | DATETIME(6) | NULL · VO `Consent` 동의 시각 |
 | `terms_version` | VARCHAR(20) | NULL · VO `Consent` 동의 약관 버전 |
+| `withdrawn_at` | DATETIME(6) | NULL · 탈퇴 시각 — 탈퇴 시 PII 즉시 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)) |
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
@@ -153,7 +154,7 @@
 
 - **자연키**: 소셜 신원·이메일은 **auth `social_accounts` 소관**이라 users엔 두지 않는다(회원은 `id`로만 식별).
 - **교차 모듈 no-FK**: auth(소셜연동·refresh)와 `userId` 값만 공유.
-- **소프트삭제 대신 상태**: 탈퇴=`status=WITHDRAWN`(+토큰 일괄 무효화). WITHDRAWN/없음 조회는 `USER_NOT_FOUND`(404). 개인정보 파기/익명화 보존정책 확정 시 `withdrawn_at`/익명화 컬럼 검토([§6](#6-결정-필요-open-questions)).
+- **소프트삭제 대신 상태**: 탈퇴=`status=WITHDRAWN`+`withdrawn_at` 기록, PII 즉시 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md))(+토큰 일괄 무효화). WITHDRAWN/없음 조회는 `USER_NOT_FOUND`(404).
 - **민감정보**: `phone_number`·`visa_type`·(auth)`email`은 응답·로그 마스킹. 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
 
 ### 4-3. `listing`
@@ -400,11 +401,10 @@
 
 1. **저장소 ADR 4건**: `booking`·`chat`·`gamification`·`report`의 스토어(MySQL vs MongoDB) 미결정 → 식별자(BIGINT vs ObjectId)·임베드 VO(`booking_card`/`listing_snapshot`/`choices`) 표현·단일 트랜잭션 보장이 이에 종속.
 2. **store별 물리 식별자**: Mongo 모듈(`listing`·`diagnosis`)은 `_id ObjectId`, 추후결정 모듈은 store 확정 시. 외부 노출 식별자(API path)를 ObjectId(string)로 노출할지 별도 숫자키를 둘지 결정.
-3. **민감정보 암호화**(`user` phone/visa, `social_accounts` email) 도입 여부 → 도입 시 `VARCHAR` 길이 재산정. **탈퇴 보존/익명화** 정책(보존기간·`withdrawn_at`).
-4. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
-5. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
-6. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.
-7. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
+3. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
+4. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
+5. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.
+6. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
 
 > refresh 토큰 저장(Redis)·회전·재사용 탐지·TTL(=만료)은 [ADR-0006](../adr/0006-refresh-token-store-redis.md)으로 **확정**돼 결정 필요 항목이 아니다(§4-1 참조).
 
