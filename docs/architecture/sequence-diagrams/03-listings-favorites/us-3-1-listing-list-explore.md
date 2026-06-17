@@ -11,7 +11,7 @@ sequenceDiagram
 
     U->>C: 예산·조건 칩 선택, 정렬/페이지 설정
     C->>LIST: GET /api/v1/listings<br/>minBudget=300000&maxBudget=700000<br/>&conditions=ENGLISH_AVAILABLE<br/>&sort=PRICE_ASC&page=0&size=20<br/>(Authorization 선택)
-    Note over LIST: 필터를 SQL 조건으로 평탄화<br/>sort=DISTANCE면 centerLat/centerLng 필수<br/>로그인 시 본인 찜 여부로 favorited 채움
+    Note over LIST: 필터를 MongoDB 질의 조건으로 평탄화<br/>sort=DISTANCE면 centerLat/centerLng 필수<br/>로그인 시 본인 찜 여부로 favorited 채움
     alt 정상 (필터/정렬 유효)
         LIST->>DB: 필터·정렬로 매물 목록 조회<br/>(로그인 시 본인 찜 여부 포함)
         DB-->>LIST: 매물 페이지 + favorited/favoriteCount

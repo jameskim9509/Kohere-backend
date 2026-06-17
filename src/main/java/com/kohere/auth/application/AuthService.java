@@ -1,5 +1,6 @@
 package com.kohere.auth.application;
 
+import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
@@ -19,6 +20,7 @@ import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.UserAccountService;
+import com.kohere.user.api.UserProfileView;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -87,23 +89,26 @@ public class AuthService {
 
   /** 온보딩 완료. 필수 약관 검증(422) 후 user에 ACTIVE 전이를 위임하고 정식 토큰을 발급한다. */
   @Transactional
-  public TokenResponse onboarding(long userId, OnboardingRequest request) {
+  public OnboardingResponse onboarding(long userId, OnboardingRequest request) {
     if (!Boolean.TRUE.equals(request.termsOfServiceAgreed())
         || !Boolean.TRUE.equals(request.privacyPolicyAgreed())) {
       throw new RequiredAgreementMissingException();
     }
-    userAccountService.completeOnboarding(
-        userId,
-        new OnboardingProfile(
-            request.firstName(),
-            request.lastName(),
-            request.gender(),
-            request.birthDate(),
-            request.countryCode(),
-            request.phoneNumber(),
-            request.visaType(),
-            Boolean.TRUE.equals(request.marketingAgreed())));
-    return issueFullTokens(userId);
+    UserProfileView user =
+        userAccountService.completeOnboarding(
+            userId,
+            new OnboardingProfile(
+                request.firstName(),
+                request.lastName(),
+                request.gender(),
+                request.birthDate(),
+                request.countryCode(),
+                request.phoneNumber(),
+                request.visaType(),
+                Boolean.TRUE.equals(request.marketingAgreed())));
+    TokenResponse tokens = issueFullTokens(userId);
+    return new OnboardingResponse(
+        user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
   }
 
   /**

@@ -15,7 +15,7 @@ public interface UserAccountService {
    * @throws com.kohere.user.domain.OnboardingAlreadyCompletedException 이미 ACTIVE인 경우(409)
    * @throws com.kohere.common.exception.InvalidInputException gender·visaType 값이 유효하지 않은 경우(400)
    */
-  UserAccountView completeOnboarding(long userId, OnboardingProfile profile);
+  UserProfileView completeOnboarding(long userId, OnboardingProfile profile);
 
   /**
    * 계정 식별·상태 조회(소셜 로그인 분기 판정용).

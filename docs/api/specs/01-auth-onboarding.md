@@ -38,7 +38,7 @@
 | DELETE | `/api/v1/users/me` | 회원 탈퇴(WITHDRAWN 전이, 토큰 일괄 무효화) | 필수 | 204 |
 
 > `auth/onboarding`은 신규 리소스 생성이 아니라 social-login 단계에서 만든 PENDING 사용자를 ACTIVE로 전이하는 상태 액션이므로 `200`을 쓴다(api-design-guide §1 — "생성 아닌 액션").
-> 인증 "필수" 엔드포인트는 access 토큰 만료 시 `401 TOKEN_EXPIRED`로 재발급을 유도한다. 온보딩 미완료(PENDING) 토큰으로 `GET`/`PATCH /users/me` 보호 API에 접근하면 `403 AUTH_ONBOARDING_REQUIRED`를 반환한다(단, `DELETE /users/me`(탈퇴)는 PENDING 사용자도 허용).
+> 인증 "필수" 엔드포인트는 access 토큰 만료 시 `401 TOKEN_EXPIRED`로 재발급을 유도한다. 온보딩 미완료(PENDING) 토큰으로 `GET`/`PATCH /users/me`·`POST /auth/logout`(모두 `ROLE_USER` 필요) 보호 API에 접근하면 `403 AUTH_ONBOARDING_REQUIRED`를 반환한다(단, `DELETE /users/me`(탈퇴)·`POST /auth/onboarding`은 PENDING 사용자도 허용).
 
 ---
 
@@ -62,7 +62,7 @@
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `provider` | string(enum) | 필수 | `APPLE` \| `GOOGLE` 중 하나(외 값은 `INVALID_INPUT`) |
+| `provider` | string(enum) | 필수 | `APPLE` \| `GOOGLE` 중 하나(누락은 `INVALID_INPUT`, 허용 외 값은 역직렬화 실패로 `MALFORMED_REQUEST`) |
 | `idToken` | string | 필수 | provider 발급 OIDC ID 토큰. 빈 문자열 불가 |
 
 #### 성공 Response — 기존 회원 (200 OK)
@@ -103,11 +103,11 @@
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `provider` 누락/enum 불일치(`APPLE`/`GOOGLE` 외), `idToken` 누락/빈값 |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
-| 401 | `AUTH_INVALID_SOCIAL_TOKEN` | 소셜 `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패 |
-| 502 | `UPSTREAM_ERROR` | provider 공개키 조회/검증 연동 실패 |
-| 503 | `SERVICE_UNAVAILABLE` | provider 일시 불가(타임아웃 등, error-response-guide §3) |
+| 400 | `INVALID_INPUT` | `provider` 누락(null), `idToken` 누락/빈값 (Bean Validation: `@NotNull`/`@NotBlank`) |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치. **`provider`가 허용 외 enum 문자열(`APPLE`/`GOOGLE` 외)이면 역직렬화 단계에서 거부되어 이 코드로 처리**된다 |
+| 401 | `AUTH_INVALID_SOCIAL_TOKEN` | 소셜 `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패. **provider JWKS 조회 실패 등 OIDC 연동 오류도 현재 구현은 이 코드로 통합 처리**한다(아래 노트) |
+
+> **연동 실패 처리(현행)**: `OidcTokenVerifierImpl`은 JWKS 조회 실패·provider 응답 오류를 포함한 모든 OIDC 검증 실패를 `401 AUTH_INVALID_SOCIAL_TOKEN`으로 변환한다. 따라서 이 엔드포인트는 `502 UPSTREAM_ERROR`/`503 SERVICE_UNAVAILABLE`를 반환하지 않는다(시퀀스 [US-1-1](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-1-social-login.md)·REST Docs 스니펫과 정합). 외부 연동 견고화(타임아웃·재시도·서킷브레이커) 도입 시 연동 실패를 `502`/`503`으로 분리하는 것을 검토한다([error-response-guide](../error-response-guide.md) §3).
 
 ---
 
@@ -266,6 +266,7 @@
 | 400 | `INVALID_INPUT` | `refreshToken` 누락/빈값 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | access 토큰 누락/위조 / 만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(PENDING) 토큰으로 접근(logout은 `ROLE_USER` 필요) |
 
 ---
 
@@ -381,7 +382,7 @@
 
 ## 도메인 에러 코드
 
-> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `RESOURCE_NOT_FOUND`, `UPSTREAM_ERROR`, `SERVICE_UNAVAILABLE` 등)는 [error-response-guide](../error-response-guide.md) §3·§4를 따르며 여기서 재정의하지 않는다. provider enum 불일치 등 입력 형식 위반은 공통 `INVALID_INPUT`을 쓰고 별도 도메인 코드를 만들지 않는다. 아래는 auth/user 도메인 고유 코드만 정의한다. prefix는 `AUTH` / `USER`.
+> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `RESOURCE_NOT_FOUND` 등)는 [error-response-guide](../error-response-guide.md) §3·§4를 따르며 여기서 재정의하지 않는다. provider/idToken 등 입력 형식 위반은 별도 도메인 코드 없이 공통 코드로 처리한다 — Bean Validation 위반(누락·빈값)은 `INVALID_INPUT`, 역직렬화 실패(허용 외 enum 문자열 등)는 `MALFORMED_REQUEST`. 아래는 auth/user 도메인 고유 코드만 정의한다. prefix는 `AUTH` / `USER`.
 
 | code | status | 의미 |
 | --- | --- | --- |

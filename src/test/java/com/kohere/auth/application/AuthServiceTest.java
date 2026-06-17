@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
@@ -29,6 +30,7 @@ import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserAccountView;
+import com.kohere.user.api.UserProfileView;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -133,13 +135,18 @@ class AuthServiceTest {
   }
 
   @Test
-  void onboarding_completesAndIssuesFullTokens() {
+  void onboarding_completesAndIssuesFullTokensWithProfile() {
     when(jwtTokenService.issueAccessToken(40L)).thenReturn("access-token");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
+    when(userAccountService.completeOnboarding(eq(40L), any(OnboardingProfile.class)))
+        .thenReturn(profileView(40L));
 
-    TokenResponse response = authService.onboarding(40L, onboardingRequest(true, true));
+    OnboardingResponse response = authService.onboarding(40L, onboardingRequest(true, true));
 
+    assertThat(response.user()).isNotNull();
+    assertThat(response.user().id()).isEqualTo(40L);
+    assertThat(response.user().status()).isEqualTo("ACTIVE");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
     verify(userAccountService).completeOnboarding(eq(40L), any(OnboardingProfile.class));
@@ -251,6 +258,21 @@ class AuthServiceTest {
         .userId(userId)
         .linkedAt(Instant.now())
         .build();
+  }
+
+  private static UserProfileView profileView(long id) {
+    return new UserProfileView(
+        id,
+        "Gil",
+        "Hong",
+        "MALE",
+        LocalDate.of(1990, 1, 1),
+        "+82",
+        "1012345678",
+        "VISA_WORK",
+        "ACTIVE",
+        false,
+        Instant.now());
   }
 
   private static OnboardingRequest onboardingRequest(boolean terms, boolean privacy) {
