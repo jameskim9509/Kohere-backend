@@ -59,7 +59,7 @@ Accepted
   - 표준(ProblemDetail)에서 벗어나므로 외부 연동/공개 API 시 변환이 필요할 수 있다.
 - **후속 작업**
   - `common` 모듈에 `ApiResponse<T>`·`error` 모델 구현, 전역 핸들러가 동일 래퍼로 변환([error-response-guide §5](../api/error-response-guide.md)).
-  - 성공 응답 자동 래핑(`ResponseBodyAdvice`) 적용 여부 결정(컨트롤러 보일러플레이트 추가 축소).
+  - 성공 응답 자동 래핑(`ResponseBodyAdvice`) — [ADR-0013](./0013-response-auto-wrapping.md)에서 채택 확정.
   - 페이지 응답(`content`/`page`/`nextCursor`) 공통 타입 정의.
 
 ## Validation

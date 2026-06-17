@@ -112,14 +112,15 @@
 | `consent` | VO `Consent` | 이용약관·개인정보처리방침·마케팅 동의 3종(동의 여부·시각·약관 버전) |
 | `createdAt` | Instant | 생성 시각(UTC) |
 | `updatedAt` | Instant | 최종 수정 시각(UTC) |
+| `withdrawnAt` | Instant(UTC), nullable | 탈퇴 시각(탈퇴 시 기록) |
 
-**불변식:** 상태 전이는 `PENDING → ACTIVE → WITHDRAWN`만 허용(역전이·건너뛰기 금지); 온보딩 제출은 `PENDING`에서만 가능하며 성공 시 `ACTIVE`로 전이하면서 `name`·`gender`·`birthDate`·`phone`·`visaType`·`consent`를 한 번에 확정(이미 `ACTIVE` 재요청은 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`); 온보딩 완료에는 이용약관·개인정보처리방침 동의가 모두 필요(미동의 `422 AUTH_REQUIRED_AGREEMENT_MISSING`), 마케팅 동의는 선택(기본 미동의); 필수 약관 동의는 프로필 수정으로 철회 불가(탈퇴 경로로만); 프로필 부분 수정은 `ACTIVE`에서만, 전송 필드만 변경(미전송 ≠ 비움), `birthDate`는 과거만; 탈퇴는 `PENDING`/`ACTIVE`에서 `WITHDRAWN`으로(이미 `WITHDRAWN` 재요청 `409 USER_ALREADY_WITHDRAWN`); `WITHDRAWN`·부재 사용자 조회·수정은 `404 USER_NOT_FOUND`; 모든 변경은 `updatedAt`을 갱신; `phoneNumber`·`visaType`은 민감정보로 외부 노출 시 마스킹.
+**불변식:** 상태 전이는 `PENDING → ACTIVE → WITHDRAWN`만 허용(역전이·건너뛰기 금지); 온보딩 제출은 `PENDING`에서만 가능하며 성공 시 `ACTIVE`로 전이하면서 `name`·`gender`·`birthDate`·`phone`·`visaType`·`consent`를 한 번에 확정(이미 `ACTIVE` 재요청은 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`); 온보딩 완료에는 이용약관·개인정보처리방침 동의가 모두 필요(미동의 `422 AUTH_REQUIRED_AGREEMENT_MISSING`), 마케팅 동의는 선택(기본 미동의); 필수 약관 동의는 프로필 수정으로 철회 불가(탈퇴 경로로만); 프로필 부분 수정은 `ACTIVE`에서만, 전송 필드만 변경(미전송 ≠ 비움), `birthDate`는 과거만; 탈퇴는 `PENDING`/`ACTIVE`에서 `WITHDRAWN`으로(이미 `WITHDRAWN` 재요청 `409 USER_ALREADY_WITHDRAWN`); `WITHDRAWN`·부재 사용자 조회·수정은 `404 USER_NOT_FOUND`; 모든 변경은 `updatedAt`을 갱신; 탈퇴(`WITHDRAWN`) 시 `withdrawnAt`을 기록하고 식별 PII(이름·전화·비자·생년월일)를 즉시 익명화한다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)); `phoneNumber`·`visaType`은 민감정보로 외부 노출 시 마스킹.
 
 **값 객체(VO):**
 
 - `FullName` — `firstName`(String)·`lastName`(String). 둘 다 빈 문자열 불가.
 - `PhoneContact` — `countryCode`(String, 예 `+84`)·`phoneNumber`(String, 국가번호 제외 숫자). 둘 다 빈 문자열 불가. 민감정보.
-- `Consent` — `termsOfServiceAgreed`·`privacyPolicyAgreed`·`marketingAgreed`(boolean)·`agreedAt`(Instant)·`termsVersion`(String). 동의 3종과 동의 시점·약관 버전을 기록.
+- `Consent` — `termsOfServiceAgreed`·`privacyPolicyAgreed`·`marketingAgreed`(boolean)·`agreedAt`(Instant)·`termsVersion`(String, 서버 설정값을 온보딩 완료 시 서버가 기록 — [ADR-0012](../adr/0012-terms-version-management.md)). 동의 3종과 동의 시점·약관 버전을 기록.
 
 **상태(enum):**
 

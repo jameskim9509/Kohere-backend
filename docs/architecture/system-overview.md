@@ -208,7 +208,7 @@ flowchart TB
 | 컴포넌트            | 책임                                                                                                      | 저장소                          | 기술                                                   |
 | ------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------ |
 | 공통 보안 필터      | 보호 요청 JWT(서명·만료·클레임) 검증,`userId`·온보딩 스코프 주입                                     | —                              | Spring Security + 커스텀 `OncePerRequestFilter`      |
-| presentation        | REST 엔드포인트, DTO, 형식 검증, 공통 래퍼 응답                                                           | —                              | Spring MVC, Bean Validation                            |
+| presentation        | REST 엔드포인트, DTO, 형식 검증, 공통 래퍼 응답(ResponseBodyAdvice 자동 적용, [ADR-0013](../adr/0013-response-auto-wrapping.md)) | —                              | Spring MVC, Bean Validation                            |
 | application         | 유스케이스 조율, 트랜잭션 경계, 이벤트 발행                                                               | —                              | `@Service`, `@Transactional`                       |
 | domain              | Aggregate·VO·도메인 규칙,**Repository 인터페이스**                                                | —                              | POJO, enum                                             |
 | infrastructure      | **Repository 구현**, 외부 어댑터(OIDC)                                                              | 모듈별 저장소                   | Spring Data JPA / Data MongoDB / Data Redis            |
@@ -245,19 +245,19 @@ flowchart TB
 | 지도 검색                                                     | MongoDB**2dsphere**($geoWithin/$near/$geoNear) + 서버 격자 클러스터               | 도입               | 비클러스터 결과 상한(`LISTING_AREA_TOO_LARGE`)                                                                                                            |
 | 텍스트 검색(커뮤니티)                                         | MySQL**FULLTEXT + ngram parser**                                                    | **MVP 이후** | 한국어 토큰화. 규모 확장 시 Elasticsearch → 추후                                                                                                           |
 | MySQL 마이그레이션                                            | **Flyway**(`flyway-core`,`flyway-mysql`)                                        | 도입               | **[ADR-0008](../adr/0008-mysql-migration-flyway.md)** 확정(+ JPA `ddl-auto=validate`). MongoDB=인덱스 부트스트랩+`schemaVersion`, Redis=키스페이스 버전(스키마 없음). 정본 [migration-policy](../database/migration-policy.md)                                       |
-| 소프트삭제·PII 보존                                          | 정책 결정 필요(선행)                                                                      | 도입               | 스키마·검색 가시성의 전제 → ADR 필요                                                                                                                      |
+| 소프트삭제·PII 보존                                          | [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)/[ADR-0015](../adr/0015-sensitive-column-encryption.md) 확정 | 도입               | 탈퇴=status=WITHDRAWN 전이+withdrawn_at 기록+PII 즉시 익명화+social_accounts 매핑 삭제(행 보존). 민감 컬럼 암호화는 MVP 미도입, 마스킹+at-rest 암호화로 갈음 |
 | 데이터 설계 정본                                              | [database-design](../database/database-design.md)(초안)                                      | 도입               | 모듈별 스키마 작성됨(MySQL ERD / Mongo 컬렉션 / Redis 키스페이스). 영속 도입 시 식별자·미모델링 갭 정합                                                    |
 
 ### 3-3. 인증 · 보안
 
 | 영역            | 채택                                                                                    | 상태   | 비고                                                                    |
 | --------------- | --------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------- |
-| 인증 토큰       | JWT access(무상태) + 불투명 refresh(해시 저장)                                          | 결정됨 | [ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md)                      |
+| 인증 토큰       | JWT access(무상태) + 불투명 refresh(해시 저장)                                          | 결정됨 | [ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md). 수명: access 1h·온보딩 임시 30m·refresh 14d [ADR-0011](../adr/0011-token-lifetime-and-secret-policy.md) 확정 |
 | refresh 저장    | **Redis**(TTL), 해시 SHA-256(+pepper)                                             | 도입   | 내구성은 §3-7                                                          |
-| 보안 프레임워크 | **Spring Security** + 커스텀 `JwtAuthenticationFilter`                          | 도입   | M0-A 산출물. ADR 필요(ADR-0003 후속)                                    |
+| 보안 프레임워크 | **Spring Security** + 커스텀 `JwtAuthenticationFilter`                          | 도입   | M0-A 산출물. [ADR-0010](../adr/0010-jwt-authentication-filter.md) 확정(ADR-0003 후속)                                    |
 | 소셜 OIDC 검증  | provider별 Nimbus `JwtDecoder`(JWKS 캐시), **MVP는 Google 우선**(Apple 여유 시) | 도입   | Boot 4 스타터명 `spring-boot-starter-security-oauth2-*`               |
 | 서버 JWT 서명   | jjwt(`io.jsonwebtoken`), **HS256**(대칭, HMAC-SHA256)           | 도입   | **[ADR-0009](../adr/0009-jwt-signing-algorithm-hs256.md)** 확정. MSA 분해·외부 검증자 도입 시 RS256/ES256+JWKS 전환(트리거)   |
-| 시크릿/키 관리  | env vars + AWS Secrets Manager/SSM                                                      | 도입   | 키 회전 절차 ADR 필요                                                   |
+| 시크릿/키 관리  | env vars + AWS Secrets Manager/SSM                                                      | 도입   | 길이·주입 [ADR-0011](../adr/0011-token-lifetime-and-secret-policy.md) 확정(≥256bit env 주입), 무중단 회전 절차 운영 후속 |
 | 레이트리밋      | **Bucket4j(인메모리)**                                                            | 도입   | auth·share 등 429 + Retry-After. 다중 인스턴스 시 Redis 백엔드 → 추후 |
 | HTTP 헤더·CORS | Spring Security 헤더 + 명시적 CORS origin                                               | 도입   | HSTS·nosniff·X-Frame-Options                                          |
 
@@ -286,7 +286,7 @@ flowchart TB
 
 ### 3-6. 결정 필요 항목(ADR/문서 갱신)
 
-- **신규/갱신 ADR**: 소프트삭제·PII 보존, 추천 랭킹 알고리즘, **booking·chat 저장소(F-03)**.
+- **신규/갱신 ADR(미결)**: 추천 랭킹 알고리즘, **booking·chat 저장소(F-03)**.
 - **brief §7 결정(7/10 사수)**: 커뮤니티 사진 업로드 in/out.
 
 ### 3-7. 폴리글랏 영속 — 주의 / 위험

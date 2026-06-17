@@ -33,6 +33,12 @@
 | [0007](./0007-api-docs-spring-rest-docs.md) | API 문서는 테스트 기반 Spring REST Docs로 생성한다(Swagger 대비) | Accepted | 2026-06-16 |
 | [0008](./0008-mysql-migration-flyway.md) | MySQL 스키마 마이그레이션은 Flyway로 관리한다(폴리글랏 전략) | Accepted | 2026-06-16 |
 | [0009](./0009-jwt-signing-algorithm-hs256.md) | 서버 JWT 서명은 HS256으로 한다(MSA/외부 검증자 시 RS256+JWKS 전환) | Accepted | 2026-06-16 |
+| [0010](./0010-jwt-authentication-filter.md) | JWT 검증은 common의 횡단 보안 필터로 처리한다(Spring Security 필터 체인·인증 컨텍스트·보호 경로) | Accepted | 2026-06-17 |
+| [0011](./0011-token-lifetime-and-secret-policy.md) | 토큰 수명(TTL)과 HS256 시크릿 정책값을 확정한다 | Accepted | 2026-06-17 |
+| [0012](./0012-terms-version-management.md) | 약관 버전(termsVersion)은 서버 설정값을 정본으로 기록한다 | Accepted | 2026-06-17 |
+| [0013](./0013-response-auto-wrapping.md) | 성공 응답은 ResponseBodyAdvice로 공통 래퍼를 자동 적용한다 | Accepted | 2026-06-17 |
+| [0014](./0014-withdrawal-pii-anonymization.md) | 회원 탈퇴는 상태 전이 + PII 즉시 익명화로 처리한다 | Accepted | 2026-06-17 |
+| [0015](./0015-sensitive-column-encryption.md) | 민감정보 컬럼 암호화는 MVP에서 도입하지 않고 마스킹·저장소 암호화로 갈음한다 | Accepted | 2026-06-17 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
