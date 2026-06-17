@@ -133,13 +133,13 @@
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
 | `id` | BIGINT | PK, AUTO_INCREMENT |
-| `first_name` | VARCHAR(100) | NOT NULL · VO `FullName` |
-| `last_name` | VARCHAR(100) | NOT NULL · VO `FullName` |
-| `gender` | VARCHAR(16) (enum `Gender`) | NOT NULL |
-| `birth_date` | DATE | NOT NULL · 과거만(앱 검증) |
-| `country_code` | VARCHAR(8) | NOT NULL · VO `PhoneContact` |
-| `phone_number` | VARCHAR(20) | NOT NULL · VO `PhoneContact` · 민감정보 |
-| `visa_type` | VARCHAR(32) (enum `VisaType`) | NOT NULL · 민감정보 |
+| `first_name` | VARCHAR(100) | NULL · VO `FullName`(PII — 아래 註) |
+| `last_name` | VARCHAR(100) | NULL · VO `FullName`(PII) |
+| `gender` | VARCHAR(16) (enum `Gender`) | NULL(PII) |
+| `birth_date` | DATE | NULL · 과거만(앱 검증)(PII) |
+| `country_code` | VARCHAR(8) | NULL · VO `PhoneContact`(PII) |
+| `phone_number` | VARCHAR(20) | NULL · VO `PhoneContact` · 민감정보(PII) |
+| `visa_type` | VARCHAR(32) (enum `VisaType`) | NULL · 민감정보(PII) |
 | `status` | VARCHAR(16) (enum `UserStatus`) | NOT NULL · 신규 `PENDING` |
 | `terms_of_service_agreed` | BOOLEAN | NOT NULL · VO `Consent` |
 | `privacy_policy_agreed` | BOOLEAN | NOT NULL · VO `Consent` |
@@ -155,6 +155,7 @@
 - **자연키**: 소셜 신원·이메일은 **auth `social_accounts` 소관**이라 users엔 두지 않는다(회원은 `id`로만 식별).
 - **교차 모듈 no-FK**: auth(소셜연동·refresh)와 `userId` 값만 공유.
 - **소프트삭제 대신 상태**: 탈퇴=`status=WITHDRAWN`+`withdrawn_at` 기록, PII 즉시 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md))(+토큰 일괄 무효화). WITHDRAWN/없음 조회는 `USER_NOT_FOUND`(404).
+- **PII 컬럼은 NULL 허용**(`first_name`·`last_name`·`gender`·`birth_date`·`country_code`·`phone_number`·`visa_type`): 회원은 온보딩 *전*(`PENDING`)에 프로필 없이 생성되고, 탈퇴 시 즉시 **익명화(NULL)**되기 때문이다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)). "온보딩 완료(`ACTIVE`) 시 채워져야 한다"는 **상태 불변식**(앱·서버 검증)이지 컬럼 NOT NULL 제약이 아니다 — Flyway baseline([V1](../../src/main/resources/db/migration/V1__baseline_users_social_accounts.sql))은 이 컬럼들을 NULL 허용으로 둔다.
 - **민감정보**: `phone_number`·`visa_type`·(auth)`email`은 응답·로그 마스킹. 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
 
 ### 4-3. `listing`

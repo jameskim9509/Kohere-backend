@@ -39,6 +39,8 @@
 | [0013](./0013-response-auto-wrapping.md) | 성공 응답은 ResponseBodyAdvice로 공통 래퍼를 자동 적용한다 | Accepted | 2026-06-17 |
 | [0014](./0014-withdrawal-pii-anonymization.md) | 회원 탈퇴는 상태 전이 + PII 즉시 익명화로 처리한다 | Accepted | 2026-06-17 |
 | [0015](./0015-sensitive-column-encryption.md) | 민감정보 컬럼 암호화는 MVP에서 도입하지 않고 마스킹·저장소 암호화로 갈음한다 | Accepted | 2026-06-17 |
+| [0016](./0016-downgrade-to-spring-boot-3.md) | Spring Boot를 4.1에서 3.5로 다운그레이드한다(생태계·도구 호환성) | Accepted | 2026-06-17 |
+| [0017](./0017-openapi-swagger-ui-from-restdocs.md) | 테스트 기반 OpenAPI(restdocs-api-spec)로 Swagger UI를 서빙한다(ADR-0007 확장) | Accepted | 2026-06-17 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

@@ -11,7 +11,7 @@
 
 Accepted
 
-> 현재 API 정본은 [docs/api/specs](../api/specs/README.md)의 **수기 Markdown**이다(설계·합의용). 코드↔문서 드리프트를 막고 컨트롤러를 깨끗하게 유지하면서 API 레퍼런스를 생성·발행할 도구를 정한다. 본 ADR은 **런타임 어노테이션 기반(Swagger UI / springdoc-openapi)** 과 **테스트 기반(Spring REST Docs)** 중 후자를 택한다.
+> 현재 API 정본은 [docs/api/specs](../api/specs/README.md)의 **수기 Markdown**이다(설계·합의용). 코드↔문서 드리프트를 막고 컨트롤러를 깨끗하게 유지하면서 API 레퍼런스를 생성·발행할 도구를 정한다. 본 ADR은 **런타임 어노테이션 기반(Swagger UI / springdoc-openapi)** 과 **테스트 기반(Spring REST Docs)** 중 후자를 택한다. (인터랙티브 Swagger UI(try-it-out)는 [ADR-0017](./0017-openapi-swagger-ui-from-restdocs.md)이 **같은 테스트**로 OpenAPI를 생성해 보완 — 어노테이션은 여전히 미사용.)
 
 ## Context
 
