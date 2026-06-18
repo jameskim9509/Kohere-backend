@@ -1,6 +1,7 @@
 package com.kohere.auth.presentation;
 
 import com.kohere.auth.application.AuthService;
+import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.presentation.dto.LogoutRequest;
@@ -37,7 +38,7 @@ public class AuthController {
   }
 
   @PostMapping("/onboarding")
-  public TokenResponse onboarding(
+  public OnboardingResponse onboarding(
       @AuthenticationPrincipal AuthPrincipal principal,
       @Valid @RequestBody OnboardingRequest request) {
     return authService.onboarding(principal.userId(), request);

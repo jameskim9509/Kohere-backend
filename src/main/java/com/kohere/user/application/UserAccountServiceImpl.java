@@ -4,6 +4,7 @@ import com.kohere.common.exception.InvalidInputException;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserAccountView;
+import com.kohere.user.api.UserProfileView;
 import com.kohere.user.domain.Gender;
 import com.kohere.user.domain.User;
 import com.kohere.user.domain.UserNotFoundException;
@@ -38,7 +39,7 @@ public class UserAccountServiceImpl implements UserAccountService {
 
   @Override
   @Transactional
-  public UserAccountView completeOnboarding(long userId, OnboardingProfile profile) {
+  public UserProfileView completeOnboarding(long userId, OnboardingProfile profile) {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
     Gender gender = parseEnum(Gender.class, profile.gender());
     VisaType visaType = parseEnum(VisaType.class, profile.visaType());
@@ -55,7 +56,18 @@ public class UserAccountServiceImpl implements UserAccountService {
             termsVersion,
             Instant.now());
     User saved = userRepository.save(active);
-    return new UserAccountView(saved.getId(), saved.getStatus().name());
+    return new UserProfileView(
+        saved.getId(),
+        saved.getFirstName(),
+        saved.getLastName(),
+        saved.getGender().name(),
+        saved.getBirthDate(),
+        saved.getCountryCode(),
+        saved.getPhoneNumber(),
+        saved.getVisaType().name(),
+        saved.getStatus().name(),
+        saved.isMarketingAgreed(),
+        saved.getCreatedAt());
   }
 
   @Override

@@ -48,19 +48,19 @@
   Then `200 OK` + `data.onboardingRequired=true`로 응답하고, 서버는 provider/providerUserId/email만 보유한 **온보딩 미완료(PENDING)** 사용자 레코드를 생성한다. 이때 발급되는 access 토큰은 온보딩 API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). (확인 필요: 온보딩 전용 임시 토큰 만료시간)
 
 - **입력 검증 실패**
-  Given `provider`가 누락되었거나 `APPLE`/`GOOGLE` 외 값이거나 `idToken`이 빈 문자열이면
+  Given `provider`가 누락(null)이거나 `idToken`이 빈 문자열이면
   When `POST /api/v1/auth/social-login`을 호출하면
-  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다. (provider enum 불일치는 별도 도메인 코드가 아니라 표준 입력 검증 실패로 처리한다)
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다. (`provider`가 `APPLE`/`GOOGLE` 외 enum 문자열이면 역직렬화 단계에서 거부되어 `400` + `error.code=MALFORMED_REQUEST`로 처리한다 — 둘 다 별도 도메인 코드가 아닌 표준 입력 오류)
 
 - **인증·권한 — 소셜 검증 실패**
   Given `idToken`의 서명이 위조되었거나 `aud`/`iss`가 우리 앱과 불일치하거나 `exp`가 지났으면
   When `POST /api/v1/auth/social-login`을 호출하면
   Then `401` + `error.code=AUTH_INVALID_SOCIAL_TOKEN`을 반환하고, 토큰 원문은 로그에 남기지 않는다(마스킹).
 
-- **경계·시스템 — provider 연동 장애**
-  Given Apple/Google 공개키 조회 또는 검증 요청이 타임아웃/네트워크 오류로 실패하면
+- **인증·권한 — provider 연동 실패도 검증 실패로 처리**
+  Given Apple/Google 공개키(JWKS) 조회 또는 검증 요청이 타임아웃/네트워크 오류로 실패하면
   When `POST /api/v1/auth/social-login`을 호출하면
-  Then `502` + `error.code=UPSTREAM_ERROR`(일시 불가 시 `503` + `SERVICE_UNAVAILABLE`)를 반환하고, 회원 레코드를 생성하지 않는다.
+  Then 연동 실패를 포함한 모든 OIDC 검증 실패를 `401` + `error.code=AUTH_INVALID_SOCIAL_TOKEN`으로 처리하고, 회원 레코드를 생성하지 않는다.
 
 ---
 
@@ -392,7 +392,7 @@
 **So that** 내 조건(예산·생활 조건)에 맞는 매물을 한눈에 비교하고 더 볼 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 목록 조회 응답시간 목표(NFR 미정), 무상태 조회로 수평 확장 가능
-- 데이터 관점: 필터는 서버에서 SQL 조건으로 평탄화, `sort=DISTANCE`는 `centerLat/centerLng`가 있어야 의미 있음, `page.totalElements`는 동일 필터 조건으로 산출
+- 데이터 관점: 필터는 서버에서 MongoDB 질의 조건으로 평탄화(매물은 MongoDB 저장, ADR-0005), `sort=DISTANCE`는 `centerLat/centerLng`가 있어야 의미 있음, `page.totalElements`는 동일 필터 조건으로 산출
 
 **AC (Given / When / Then)**
 

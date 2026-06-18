@@ -8,6 +8,8 @@
 
 테스트로 생성된 스니펫 기반 API 문서다(ADR-0007, Spring REST Docs). 모든 응답은 공통 래퍼 `{ success, data, error }`이며 시각은 ISO-8601 UTC다. 인증은 `Authorization: Bearer <accessToken>`.
 
+실패 응답은 모두 공통 에러 래퍼(`success=false`, `data=null`, `error.code`/`error.message`/`error.errors`)를 따른다. 클라이언트는 HTTP status로 큰 분기, `error.code`로 세부 분기한다(메시지로 분기 금지 — error-response-guide §7). 각 엔드포인트의 "주요 에러 응답"은 테스트가 status·code를 단정해 생성한 스니펫이다.
+
 == 소셜 로그인
 
 `POST /api/v1/auth/social-login` — 공개. 소셜 `idToken`을 검증하고 신규/기존을 분기한다. 신규·온보딩 미완료는 온보딩 임시 토큰(`refreshToken` 없음, `onboardingRequired=true`)을, 기존 ACTIVE는 정식 access+refresh를 발급한다.
@@ -15,8 +17,29 @@
 .요청
 include::{snippets}/auth-social-login/http-request.adoc[]
 
+.요청 필드
+include::{snippets}/auth-social-login/request-fields.adoc[]
+
 .응답
 include::{snippets}/auth-social-login/http-response.adoc[]
+
+.응답 필드
+include::{snippets}/auth-social-login/response-fields.adoc[]
+
+.주요 에러 응답
+[%collapsible]
+====
+*400 INVALID_INPUT* — `idToken` 누락/빈값
+include::{snippets}/auth-social-login-invalid-input/http-response.adoc[]
+
+*400 MALFORMED_REQUEST* — JSON 파싱 불가/타입 불일치
+include::{snippets}/auth-social-login-malformed/http-response.adoc[]
+
+*401 AUTH_INVALID_SOCIAL_TOKEN* — 소셜 `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패
+include::{snippets}/auth-social-login-invalid-token/http-response.adoc[]
+
+NOTE: 스펙의 `502 UPSTREAM_ERROR`/`503 SERVICE_UNAVAILABLE`는 현재 구현이 provider 연동 실패를 포함한 모든 OIDC 검증 실패를 `401 AUTH_INVALID_SOCIAL_TOKEN`으로 처리하므로 실제 응답 경로가 없어 문서화하지 않는다.
+====
 
 == 온보딩
 
@@ -25,8 +48,36 @@ include::{snippets}/auth-social-login/http-response.adoc[]
 .요청
 include::{snippets}/auth-onboarding/http-request.adoc[]
 
+.요청 필드
+include::{snippets}/auth-onboarding/request-fields.adoc[]
+
 .응답
 include::{snippets}/auth-onboarding/http-response.adoc[]
+
+.응답 필드
+include::{snippets}/auth-onboarding/response-fields.adoc[]
+
+.주요 에러 응답
+[%collapsible]
+====
+*400 INVALID_INPUT* — 필수 필드 누락/형식·날짜·enum 위반
+include::{snippets}/auth-onboarding-invalid-input/http-response.adoc[]
+
+*400 MALFORMED_REQUEST* — JSON 파싱 불가/타입 불일치
+include::{snippets}/auth-onboarding-malformed/http-response.adoc[]
+
+*401 UNAUTHENTICATED* — 토큰 누락/위조
+include::{snippets}/auth-onboarding-unauthenticated/http-response.adoc[]
+
+*401 TOKEN_EXPIRED* — 액세스(온보딩) 토큰 만료
+include::{snippets}/auth-onboarding-token-expired/http-response.adoc[]
+
+*409 AUTH_ONBOARDING_ALREADY_COMPLETED* — 이미 ACTIVE인 사용자의 온보딩 재요청
+include::{snippets}/auth-onboarding-already-completed/http-response.adoc[]
+
+*422 AUTH_REQUIRED_AGREEMENT_MISSING* — 필수 약관(이용약관/개인정보처리방침) 미동의
+include::{snippets}/auth-onboarding-agreement-missing/http-response.adoc[]
+====
 
 == 토큰 재발급
 
@@ -35,8 +86,27 @@ include::{snippets}/auth-onboarding/http-response.adoc[]
 .요청
 include::{snippets}/auth-reissue/http-request.adoc[]
 
+.요청 필드
+include::{snippets}/auth-reissue/request-fields.adoc[]
+
 .응답
 include::{snippets}/auth-reissue/http-response.adoc[]
+
+.응답 필드
+include::{snippets}/auth-reissue/response-fields.adoc[]
+
+.주요 에러 응답
+[%collapsible]
+====
+*400 INVALID_INPUT* — `refreshToken` 누락/빈값
+include::{snippets}/auth-reissue-invalid-input/http-response.adoc[]
+
+*400 MALFORMED_REQUEST* — JSON 파싱 불가/타입 불일치
+include::{snippets}/auth-reissue-malformed/http-response.adoc[]
+
+*401 AUTH_INVALID_REFRESH_TOKEN* — refresh 토큰 만료/위조/무효화/재사용 탐지
+include::{snippets}/auth-reissue-invalid-token/http-response.adoc[]
+====
 
 == 로그아웃
 
@@ -45,8 +115,30 @@ include::{snippets}/auth-reissue/http-response.adoc[]
 .요청
 include::{snippets}/auth-logout/http-request.adoc[]
 
+.요청 필드
+include::{snippets}/auth-logout/request-fields.adoc[]
+
 .응답
 include::{snippets}/auth-logout/http-response.adoc[]
+
+.주요 에러 응답
+[%collapsible]
+====
+*400 INVALID_INPUT* — `refreshToken` 누락/빈값
+include::{snippets}/auth-logout-invalid-input/http-response.adoc[]
+
+*400 MALFORMED_REQUEST* — JSON 파싱 불가/타입 불일치
+include::{snippets}/auth-logout-malformed/http-response.adoc[]
+
+*401 UNAUTHENTICATED* — 토큰 누락/위조
+include::{snippets}/auth-logout-unauthenticated/http-response.adoc[]
+
+*401 TOKEN_EXPIRED* — 액세스 토큰 만료
+include::{snippets}/auth-logout-token-expired/http-response.adoc[]
+
+*403 AUTH_ONBOARDING_REQUIRED* — 온보딩 미완료(PENDING) 토큰 접근
+include::{snippets}/auth-logout-onboarding-required/http-response.adoc[]
+====
 
 == 내 프로필 조회
 
@@ -58,6 +150,25 @@ include::{snippets}/user-get-me/http-request.adoc[]
 .응답
 include::{snippets}/user-get-me/http-response.adoc[]
 
+.응답 필드
+include::{snippets}/user-get-me/response-fields.adoc[]
+
+.주요 에러 응답
+[%collapsible]
+====
+*401 UNAUTHENTICATED* — 토큰 누락/위조
+include::{snippets}/user-get-me-unauthenticated/http-response.adoc[]
+
+*401 TOKEN_EXPIRED* — 액세스 토큰 만료
+include::{snippets}/user-get-me-token-expired/http-response.adoc[]
+
+*403 AUTH_ONBOARDING_REQUIRED* — 온보딩 미완료(PENDING) 토큰 접근
+include::{snippets}/user-get-me-onboarding-required/http-response.adoc[]
+
+*404 USER_NOT_FOUND* — 사용자가 WITHDRAWN이거나 삭제되어 없음
+include::{snippets}/user-get-me-not-found/http-response.adoc[]
+====
+
 == 내 프로필 부분 수정
 
 `PATCH /api/v1/users/me` — 인증 필요. 전송한 필드만 변경하고 미전송 필드는 유지한다.
@@ -65,8 +176,36 @@ include::{snippets}/user-get-me/http-response.adoc[]
 .요청
 include::{snippets}/user-patch-me/http-request.adoc[]
 
+.요청 필드
+include::{snippets}/user-patch-me/request-fields.adoc[]
+
 .응답
 include::{snippets}/user-patch-me/http-response.adoc[]
+
+.응답 필드
+include::{snippets}/user-patch-me/response-fields.adoc[]
+
+.주요 에러 응답
+[%collapsible]
+====
+*400 INVALID_INPUT* — `birthDate` 미래 등 형식·범위 위반
+include::{snippets}/user-patch-me-invalid-input/http-response.adoc[]
+
+*400 MALFORMED_REQUEST* — enum 매핑 실패 등 JSON 파싱 불가/타입 불일치
+include::{snippets}/user-patch-me-malformed/http-response.adoc[]
+
+*401 UNAUTHENTICATED* — 토큰 누락/위조
+include::{snippets}/user-patch-me-unauthenticated/http-response.adoc[]
+
+*401 TOKEN_EXPIRED* — 액세스 토큰 만료
+include::{snippets}/user-patch-me-token-expired/http-response.adoc[]
+
+*403 AUTH_ONBOARDING_REQUIRED* — 온보딩 미완료(PENDING) 토큰 접근
+include::{snippets}/user-patch-me-onboarding-required/http-response.adoc[]
+
+*404 USER_NOT_FOUND* — 사용자가 WITHDRAWN이거나 삭제되어 없음
+include::{snippets}/user-patch-me-not-found/http-response.adoc[]
+====
 
 == 회원 탈퇴
 
@@ -77,3 +216,19 @@ include::{snippets}/user-withdraw/http-request.adoc[]
 
 .응답
 include::{snippets}/user-withdraw/http-response.adoc[]
+
+.주요 에러 응답
+[%collapsible]
+====
+*401 UNAUTHENTICATED* — 토큰 누락/위조
+include::{snippets}/user-withdraw-unauthenticated/http-response.adoc[]
+
+*401 TOKEN_EXPIRED* — 액세스 토큰 만료
+include::{snippets}/user-withdraw-token-expired/http-response.adoc[]
+
+*404 USER_NOT_FOUND* — 대상 사용자가 없음
+include::{snippets}/user-withdraw-not-found/http-response.adoc[]
+
+*409 USER_ALREADY_WITHDRAWN* — 이미 WITHDRAWN된 사용자의 탈퇴 재요청
+include::{snippets}/user-withdraw-already-withdrawn/http-response.adoc[]
+====
