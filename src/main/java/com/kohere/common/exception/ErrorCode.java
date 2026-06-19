@@ -26,6 +26,9 @@ public enum ErrorCode {
   // --- 인증·회원 (auth/user) — docs/api/specs/01-auth-onboarding.md ---
   AUTH_INVALID_SOCIAL_TOKEN(HttpStatus.UNAUTHORIZED, "소셜 토큰 검증에 실패했습니다."),
   AUTH_REQUIRED_AGREEMENT_MISSING(HttpStatus.UNPROCESSABLE_ENTITY, "필수 약관에 동의해야 합니다."),
+  AUTH_TERMS_AGREEMENT_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "약관 동의가 선행되어야 합니다."),
+  AUTH_EMAIL_VERIFICATION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증번호가 올바르지 않거나 만료되었습니다."),
+  AUTH_EMAIL_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증이 필요합니다."),
   AUTH_ONBOARDING_REQUIRED(HttpStatus.FORBIDDEN, "온보딩을 완료해야 합니다."),
   AUTH_ONBOARDING_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 온보딩을 완료했습니다."),
   AUTH_INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."),

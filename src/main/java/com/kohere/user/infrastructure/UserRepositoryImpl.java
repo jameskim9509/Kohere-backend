@@ -22,6 +22,11 @@ public class UserRepositoryImpl implements UserRepository {
   }
 
   @Override
+  public boolean existsByNickname(String nickname) {
+    return jpaRepository.existsByNickname(nickname);
+  }
+
+  @Override
   public User save(User user) {
     return toDomain(jpaRepository.save(toEntity(user)));
   }
@@ -31,10 +36,12 @@ public class UserRepositoryImpl implements UserRepository {
         .id(e.getId())
         .firstName(e.getFirstName())
         .lastName(e.getLastName())
+        .nickname(e.getNickname())
         .gender(e.getGender())
         .birthDate(e.getBirthDate())
-        .countryCode(e.getCountryCode())
-        .phoneNumber(e.getPhoneNumber())
+        .country(e.getCountry())
+        .occupation(e.getOccupation())
+        .email(e.getEmail())
         .visaType(e.getVisaType())
         .status(e.getStatus())
         .termsOfServiceAgreed(e.isTermsOfServiceAgreed())
@@ -53,10 +60,12 @@ public class UserRepositoryImpl implements UserRepository {
         .id(u.getId())
         .firstName(u.getFirstName())
         .lastName(u.getLastName())
+        .nickname(u.getNickname())
         .gender(u.getGender())
         .birthDate(u.getBirthDate())
-        .countryCode(u.getCountryCode())
-        .phoneNumber(u.getPhoneNumber())
+        .country(u.getCountry())
+        .occupation(u.getOccupation())
+        .email(u.getEmail())
         .visaType(u.getVisaType())
         .status(u.getStatus())
         .termsOfServiceAgreed(u.isTermsOfServiceAgreed())

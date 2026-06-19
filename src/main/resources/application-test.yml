@@ -1,11 +1,19 @@
 # 통합 테스트 프로파일(@ActiveProfiles("test")). datasource·redis는 Testcontainers
 # @ServiceConnection이 동적으로 주입하므로 여기 두지 않는다. Flyway가 컨테이너에 V1을 적용하고
 # Hibernate validate가 엔티티↔스키마 일치를 검증한다(ADR-0008). 시크릿은 테스트 전용 고정값.
+spring:
+  # 전체 컨텍스트 부팅 테스트(KohereApplicationTests)는 SmtpVerificationEmailSender를 그대로 구성하므로
+  # JavaMailSender 빈이 필요하다. host만 지정하면 MailSenderAutoConfiguration이 빈을 만들고(부팅 시 접속하지
+  # 않음, 실제 발송 시에만 연결) — 메일을 실제 발송하는 테스트는 VerificationEmailSender 포트를 @MockitoBean으로 대체한다.
+  mail:
+    host: localhost
+    port: 3025
 app:
   jwt:
     secret: test-only-hs256-secret-please-override-32bytes-minimum!!
   auth:
     refresh-pepper: test-refresh-pepper
+    email-pepper: test-email-pepper # 인증번호 해시(테스트 고정). 메일 발송은 VerificationEmailSender를 @MockBean으로 대체
   oidc:
     google:
       audience: test-google-client-id

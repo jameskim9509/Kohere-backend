@@ -3,15 +3,16 @@ package com.kohere.user.api;
 import java.time.LocalDate;
 
 /**
- * 온보딩 프로필 입력(모듈 간 전달용). gender·visaType은 user 소유 enum이라 타입을 공유하지 않고 원시 문자열로 받는다(domain-model §1).
- * 필수 약관 동의 검증은 호출자(auth)가 선행하므로 여기서는 마케팅 동의만 변수로 받는다.
+ * 온보딩 프로필 입력(모듈 간 전달용). gender·occupation·visaType은 user 소유 enum이라 타입을 공유하지 않고 원시 문자열로
+ * 받는다(domain-model §1). {@code country}는 ISO 3166-1 alpha-2 코드, {@code email}은 auth가 인증 완료를 선행 확인한
+ * 값이다. 닉네임은 서버가 생성하므로 입력에 없다. 약관 동의는 약관 동의 단계(POST /auth/terms)에서 이미 처리됐다.
  */
 public record OnboardingProfile(
     String firstName,
     String lastName,
     String gender,
     LocalDate birthDate,
-    String countryCode,
-    String phoneNumber,
-    String visaType,
-    boolean marketingAgreed) {}
+    String country,
+    String occupation,
+    String email,
+    String visaType) {}

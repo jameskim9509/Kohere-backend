@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 전역 예외 핸들러. 모든 예외를 공통 래퍼 에러 응답으로 일관되게 변환한다.
@@ -59,8 +60,9 @@ public class GlobalExceptionHandler {
     return errorResponse(ErrorCode.METHOD_NOT_ALLOWED);
   }
 
-  @ExceptionHandler(NoHandlerFoundException.class)
-  public ResponseEntity<ApiResponse<Void>> handleNotFound(NoHandlerFoundException e) {
+  // 미매핑 경로(NoHandlerFoundException)·정적 리소스 미존재(NoResourceFoundException, Boot 3) 모두 404로.
+  @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+  public ResponseEntity<ApiResponse<Void>> handleNotFound(Exception e) {
     return errorResponse(ErrorCode.RESOURCE_NOT_FOUND);
   }
 

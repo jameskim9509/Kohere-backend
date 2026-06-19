@@ -1,13 +1,19 @@
 package com.kohere.auth.presentation;
 
 import com.kohere.auth.application.AuthService;
+import com.kohere.auth.application.dto.EmailVerificationCodeResponse;
+import com.kohere.auth.application.dto.EmailVerifyResponse;
 import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
+import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
+import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
+import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.security.AuthPrincipal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +41,26 @@ public class AuthController {
   @PostMapping("/social-login")
   public SocialLoginResponse socialLogin(@Valid @RequestBody SocialLoginRequest request) {
     return authService.socialLogin(request);
+  }
+
+  @PostMapping("/terms")
+  public TermsResponse agreeToTerms(
+      @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody TermsRequest request) {
+    return authService.agreeToTerms(principal.userId(), request);
+  }
+
+  @PostMapping("/email/verification-code")
+  public EmailVerificationCodeResponse sendEmailVerificationCode(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @Valid @RequestBody EmailVerificationCodeRequest request) {
+    return authService.sendEmailVerificationCode(principal.userId(), request);
+  }
+
+  @PostMapping("/email/verify")
+  public EmailVerifyResponse verifyEmail(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @Valid @RequestBody EmailVerifyRequest request) {
+    return authService.verifyEmail(principal.userId(), request);
   }
 
   @PostMapping("/onboarding")
