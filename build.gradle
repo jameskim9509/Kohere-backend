@@ -32,10 +32,16 @@ dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-validation'
   implementation 'org.springframework.modulith:spring-modulith-starter-core'
 
+  // 운영 헬스 체크 — /actuator/health (SecurityConfig permitAll, 로컬 기동 확인·M7 ALB 헬스체크용)
+  implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
   // 영속 — auth·user=MySQL/JPA(ADR-0005), refresh=Redis(ADR-0006). 운영은 Flyway+validate(ADR-0008)
   implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
   implementation 'org.springframework.boot:spring-boot-starter-data-redis'
   runtimeOnly 'com.mysql:mysql-connector-j'
+
+  // 메일 — 온보딩 이메일 인증번호 SMTP 발송(VerificationEmailSender). provider/secrets는 환경변수로 주입
+  implementation 'org.springframework.boot:spring-boot-starter-mail'
 
   // MySQL 스키마 마이그레이션 — Flyway가 DDL 소유, Hibernate는 validate (ADR-0008)
   implementation 'org.flywaydb:flyway-core'
@@ -135,6 +141,21 @@ tasks.register('prepareSwaggerUi', Copy) {
   // 우리 명세 + 우리 명세를 가리키는 initializer
   from(layout.buildDirectory.dir('api-spec')) { include 'openapi3.yaml' }
   from('src/main/resources/swagger-ui-initializer.js') { rename { 'swagger-initializer.js' } }
+}
+
+// bootRun(개발 실행)에서도 Swagger UI(/swagger-ui)·REST Docs(/docs)를 보기 위한 생성물 모음.
+// 무거운 생성(test→openapi3/asciidoctor)과 분리 — 필요할 때 한 번 `./gradlew prepareDevStatic` 실행 후
+// bootRun 하면 serve된다(미실행 시 그냥 없음 → 빠른 dev 루프 유지).
+tasks.register('prepareDevStatic', Copy) {
+  dependsOn tasks.named('prepareSwaggerUi'), tasks.named('asciidoctor')
+  into layout.buildDirectory.dir('devstatic/static')
+  from(layout.buildDirectory.dir('swagger-ui')) { into 'swagger-ui' }
+  from(layout.buildDirectory.dir('docs/asciidoc')) { into 'docs' }
+}
+
+// prepareDevStatic 으로 생성해두면 bootRun 이 classpath:/static/** 로 노출한다(dir 없으면 무시).
+tasks.named('bootRun') {
+  classpath += files(layout.buildDirectory.dir('devstatic'))
 }
 
 // 렌더된 REST Docs HTML(/docs) + Swagger UI(/swagger-ui)를 실행 jar의 정적 리소스로 번들
