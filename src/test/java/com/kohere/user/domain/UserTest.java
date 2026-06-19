@@ -8,8 +8,8 @@ import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link User} 도메인 불변식 — 상태 전이(PENDING→ACTIVE→WITHDRAWN)·부분 수정·탈퇴 PII 익명화(domain-model §2,
- * ADR-0014).
+ * {@link User} 도메인 불변식 — 상태 전이(PENDING→TERMS_AGREED→ACTIVE→WITHDRAWN)·약관 동의·온보딩 선행조건·부분 수정·탈퇴 PII
+ * 익명화(domain-model §2, ADR-0014).
  */
 class UserTest {
 
@@ -24,28 +24,72 @@ class UserTest {
   }
 
   @Test
-  void completeOnboarding_transitionsPendingToActive() {
-    User pending = User.createPending(NOW);
+  void agreeToTerms_transitionsPendingToTermsAgreed() {
+    User agreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
+
+    assertThat(agreed.getStatus()).isEqualTo(UserStatus.TERMS_AGREED);
+    assertThat(agreed.isTermsOfServiceAgreed()).isTrue();
+    assertThat(agreed.isPrivacyPolicyAgreed()).isTrue();
+    assertThat(agreed.isMarketingAgreed()).isTrue();
+    assertThat(agreed.getTermsVersion()).isEqualTo("v1.0");
+    assertThat(agreed.getAgreedAt()).isEqualTo(NOW);
+  }
+
+  @Test
+  void agreeToTerms_whenAlreadyTermsAgreed_isIdempotent() {
+    User agreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
+
+    User again = agreed.agreeToTerms(false, "v1.0", NOW);
+
+    assertThat(again.getStatus()).isEqualTo(UserStatus.TERMS_AGREED);
+    assertThat(again).isSameAs(agreed);
+  }
+
+  @Test
+  void completeOnboarding_transitionsTermsAgreedToActive() {
+    User termsAgreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
 
     User active =
-        pending.completeOnboarding(
+        termsAgreed.completeOnboarding(
             "Gil",
             "Hong",
+            "BraveOtter",
             Gender.MALE,
             LocalDate.of(1990, 1, 1),
-            "+82",
-            "1012345678",
+            "KR",
+            Occupation.STUDENT,
+            "gil@example.com",
             VisaType.VISA_WORK,
-            true,
-            "v1.0",
             NOW);
 
     assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
     assertThat(active.getFirstName()).isEqualTo("Gil");
+    assertThat(active.getNickname()).isEqualTo("BraveOtter");
+    assertThat(active.getCountry()).isEqualTo("KR");
+    assertThat(active.getOccupation()).isEqualTo(Occupation.STUDENT);
+    assertThat(active.getEmail()).isEqualTo("gil@example.com");
+    // 동의는 약관 동의 단계에서 이미 확정됨
     assertThat(active.isTermsOfServiceAgreed()).isTrue();
-    assertThat(active.isPrivacyPolicyAgreed()).isTrue();
-    assertThat(active.isMarketingAgreed()).isTrue();
-    assertThat(active.getTermsVersion()).isEqualTo("v1.0");
+  }
+
+  @Test
+  void completeOnboarding_whenPending_throwsTermsAgreementRequired() {
+    User pending = User.createPending(NOW);
+
+    assertThatThrownBy(
+            () ->
+                pending.completeOnboarding(
+                    "Gil",
+                    "Hong",
+                    "BraveOtter",
+                    Gender.MALE,
+                    LocalDate.of(1990, 1, 1),
+                    "KR",
+                    Occupation.STUDENT,
+                    "gil@example.com",
+                    VisaType.VISA_WORK,
+                    NOW))
+        .isInstanceOf(TermsAgreementRequiredException.class);
   }
 
   @Test
@@ -57,13 +101,13 @@ class UserTest {
                 active.completeOnboarding(
                     "A",
                     "B",
+                    "CalmFox",
                     Gender.FEMALE,
                     LocalDate.of(1995, 5, 5),
-                    "+82",
-                    "1099998888",
+                    "VN",
+                    Occupation.EMPLOYEE,
+                    "a@example.com",
                     VisaType.VISA_STUDENT,
-                    false,
-                    "v1.0",
                     NOW))
         .isInstanceOf(OnboardingAlreadyCompletedException.class);
   }
@@ -76,6 +120,7 @@ class UserTest {
 
     assertThat(updated.getFirstName()).isEqualTo("Updated");
     assertThat(updated.getLastName()).isEqualTo(active.getLastName());
+    assertThat(updated.getCountry()).isEqualTo(active.getCountry());
     assertThat(updated.getVisaType()).isEqualTo(active.getVisaType());
   }
 
@@ -89,7 +134,10 @@ class UserTest {
     assertThat(withdrawn.getWithdrawnAt()).isEqualTo(NOW);
     assertThat(withdrawn.getFirstName()).isNull();
     assertThat(withdrawn.getLastName()).isNull();
-    assertThat(withdrawn.getPhoneNumber()).isNull();
+    assertThat(withdrawn.getNickname()).isNull();
+    assertThat(withdrawn.getCountry()).isNull();
+    assertThat(withdrawn.getOccupation()).isNull();
+    assertThat(withdrawn.getEmail()).isNull();
     assertThat(withdrawn.getVisaType()).isNull();
     assertThat(withdrawn.getBirthDate()).isNull();
   }
@@ -104,16 +152,17 @@ class UserTest {
 
   private static User activeUser() {
     return User.createPending(NOW)
+        .agreeToTerms(true, "v1.0", NOW)
         .completeOnboarding(
             "Gil",
             "Hong",
+            "BraveOtter",
             Gender.MALE,
             LocalDate.of(1990, 1, 1),
-            "+82",
-            "1012345678",
+            "KR",
+            Occupation.STUDENT,
+            "gil@example.com",
             VisaType.VISA_WORK,
-            true,
-            "v1.0",
             NOW);
   }
 }
