@@ -1,4 +1,4 @@
-# US-1-2 — 필수 온보딩 정보·약관 동의 제출하기
+# US-1-2 — 필수 온보딩 정보 제출하기
 
 > 모듈: 소셜 로그인 · 온보딩 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/01-auth-onboarding.md)
 
@@ -12,31 +12,46 @@ sequenceDiagram
     participant SQL as MySQL
     participant RDS as Redis
 
-    U->>C: 이름·성별·생년월일·연락처·비자정보 입력 및 약관 동의
-    C->>SEC: POST /api/v1/auth/onboarding<br/>Authorization: Bearer 온보딩토큰<br/>{ firstName, lastName, gender, birthDate,<br/>countryCode, phoneNumber, visaType,<br/>termsOfServiceAgreed, privacyPolicyAgreed, marketingAgreed }
+    Note over U,C: 약관 동의(US-1-7)·이메일 인증(US-1-6) 사전 완료
+    U->>C: 이름·성별·생년월일·국적·직업·이메일·비자정보 입력
+    C->>SEC: POST /api/v1/auth/onboarding<br/>Authorization: Bearer 온보딩토큰<br/>{ firstName, lastName, gender, birthDate,<br/>country, occupation, email, visaType }
     Note over SEC: JWT 검증 (서명·만료·클레임)<br/>온보딩 스코프(ROLE_ONBOARDING) 주입<br/>onboarding 경로 인가
     SEC->>AUTH: 인증된 요청 전달 (userId + 온보딩 스코프)
-    Note over AUTH: 필드 검증<br/>민감정보(전화·비자)는 응답·로그에서만 마스킹(저장은 원문)
-    alt 필수 약관 동의 누락
-        AUTH-->>C: 422 AUTH_REQUIRED_AGREEMENT_MISSING
-        C-->>U: 약관 동의 안내
-    else 정상 제출
-        AUTH->>USER: 온보딩 완료 공개명령<br/>(프로필·동의 boolean 전달)
-        Note over USER: 약관버전은 서버가 app.terms.version 기록<br/>(클라이언트 미전송)
+    Note over AUTH: 필드 검증<br/>민감정보(이메일·비자)는 응답·로그에서만 마스킹(저장은 원문)
+    AUTH->>RDS: email-verify:verified:{userId} 조회(제출 email 대조)
+    RDS-->>AUTH: VERIFIED 이메일(있음/없음)
+    alt 이메일 미인증·불일치
+        AUTH-->>C: 422 AUTH_EMAIL_NOT_VERIFIED
+        C-->>U: 이메일 인증 안내(US-1-6)
+    else 이메일 인증 확인됨
+        AUTH->>USER: 온보딩 완료 공개명령<br/>(프로필·검증 email 전달)
+        Note over USER: 약관·termsVersion은 US-1-7에서 기록 완료(이 요청에 약관 필드 없음)
         USER->>SQL: 회원 조회 (상태 확인)
         SQL-->>USER: 현재 상태
         alt 이미 ACTIVE
             USER-->>AUTH: 409 AUTH_ONBOARDING_ALREADY_COMPLETED
             AUTH-->>C: 409 AUTH_ONBOARDING_ALREADY_COMPLETED
             C-->>U: 이미 온보딩 완료 안내
-        else PENDING (정상 전이)
-            USER->>SQL: PENDING→ACTIVE 전이<br/>프로필·동의 확정·termsVersion=app.terms.version 기록
+        else PENDING (약관 미동의)
+            USER-->>AUTH: 422 AUTH_TERMS_AGREEMENT_REQUIRED
+            AUTH-->>C: 422 AUTH_TERMS_AGREEMENT_REQUIRED
+            C-->>U: 약관 동의 안내(US-1-7)
+        else TERMS_AGREED (정상 전이)
+            loop 닉네임 생성(NicknameGenerator) — UNIQUE 충돌 시 재조합, 상한 N
+                USER->>SQL: 형용사 풀·사물 풀에서 active 단어 무작위 각 1개 조회
+                SQL-->>USER: 형용사·사물 → "형용사 + 사물" 후보
+                USER->>SQL: users.nickname 중복 확인(UNIQUE)
+                SQL-->>USER: 사용 가능 / 중복(→ 재조합)
+            end
+            Note over USER,SQL: 동시 온보딩 경합은 users.nickname UNIQUE 제약이 최종 차단(위반 시 재조합)<br/>재시도 상한 초과 시 fallback(예: 숫자 접미사)
+            USER->>SQL: TERMS_AGREED→ACTIVE 전이<br/>프로필·email·nickname 확정(country=ISO 코드, countries.code 검증)
             SQL-->>USER: 갱신 완료
-            USER-->>AUTH: 온보딩 완료 (user{ status: ACTIVE })
+            Note over USER,SQL: country(코드)로 countries 조회 → countryName·countryFlag resolve(응답용)<br/>countryFlag=국기 이미지 URL(flagcdn.com)
+            USER-->>AUTH: 온보딩 완료 (user{ status: ACTIVE, nickname })
             Note over AUTH: 정식 accessToken+refreshToken 발급
             AUTH->>RDS: refreshToken 해시 저장
             RDS-->>AUTH: 저장 완료
-            AUTH-->>C: 200 OK<br/>{ user{ status: ACTIVE, ... }, tokenType: Bearer,<br/>accessToken, refreshToken, expiresIn: 3600 }
+            AUTH-->>C: 200 OK<br/>{ user{ status: ACTIVE, nickname, country, countryName, countryFlag, occupation, email, ... },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
             C-->>U: 가입 완료, 서비스 진입
         end
     end
@@ -44,8 +59,7 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- PENDING 사용자가 온보딩 토큰으로 필수 프로필과 약관 동의(boolean)를 담아 `POST /api/v1/auth/onboarding`을 호출하며, 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증하고 **온보딩 스코프(`ROLE_ONBOARDING`)를 주입·onboarding 경로 인가**를 마친 뒤 `userId + 온보딩 스코프`를 `auth 모듈`로 전달한다.
-- `auth 모듈`이 요청을 수신해 필드를 검증하고, **온보딩 완료 공개명령으로 `user 모듈`을 호출**한다. 민감정보(전화·비자)는 **저장은 원문**이며 **응답·로그에서만 마스킹**한다.
-- 필수 약관(`termsOfServiceAgreed`/`privacyPolicyAgreed`) 미동의면 `422 AUTH_REQUIRED_AGREEMENT_MISSING`으로 거절한다. 약관 버전은 **클라이언트가 보내지 않고**(동의 boolean만 전송), 온보딩 완료 시 **서버가 `app.terms.version`을 `termsVersion`에 기록**한다.
-- 이미 `ACTIVE`인 사용자가 다시 제출하면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`로 거절한다.
-- 정상(PENDING)이면 `user 모듈`이 **MySQL에서 상태를 PENDING→ACTIVE로 전이하며 프로필·동의·`termsVersion`을 확정**하고, `auth 모듈`이 정식 access/refresh 토큰을 발급하여 **Redis에 refreshToken 해시를 저장**한 뒤 `200 OK`(`expiresIn: 3600`)로 완성 프로필과 토큰을 반환한다.
+- **선행 단계**: 약관 동의(US-1-7, `PENDING`→`TERMS_AGREED`)와 이메일 인증(US-1-6)이 끝난 상태에서 진행한다. `TERMS_AGREED` 사용자가 온보딩 토큰으로 필수 프로필만 담아(약관 필드 없음) `POST /api/v1/auth/onboarding`을 호출하며, 공통 보안 필터(SEC)가 JWT 검증·**온보딩 스코프(`ROLE_ONBOARDING`) 인가**를 마친 뒤 `userId`를 `auth 모듈`로 전달한다.
+- `auth 모듈`이 요청을 수신해 필드를 검증하고, **제출 `email`이 사전 인증(US-1-6, Redis `email-verify:verified:{userId}`)된 값과 일치**하는지 먼저 확인한 뒤 **온보딩 완료 공개명령으로 `user 모듈`을 호출**한다. 미인증·불일치면 `422 AUTH_EMAIL_NOT_VERIFIED`로 거절한다. 민감정보(이메일·비자)는 **저장은 원문**이며 **응답·로그에서만 마스킹**한다.
+- `user 모듈`이 상태를 확인해 **약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`**(약관 동의 US-1-7 선행 필요), 이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`로 거절한다. 약관 동의·`termsVersion`은 이 단계가 아니라 **약관 동의 단계(US-1-7)에서 이미 기록**된다.
+- 정상(`TERMS_AGREED`)이면 `user 모듈`이 **MySQL에서 상태를 `TERMS_AGREED`→`ACTIVE`로 전이하며 프로필·`email`을 확정**한다. `nickname`은 **`NicknameGenerator`가 형용사 풀·사물 풀의 active 단어에서 무작위로 각 1개를 골라 `형용사 + 사물`로 조합하고, `users.nickname` 유니크 충돌 시 재조합·재시도(상한 초과 시 fallback; 동시 경합은 UNIQUE 제약이 최종 차단)** 해 자동 배정한다. 이어 `auth 모듈`이 정식 access/refresh 토큰을 발급하여 **Redis에 refreshToken 해시를 저장**한 뒤 `200 OK`(`expiresIn: 3600`)로 완성 프로필과 토큰을 반환한다.

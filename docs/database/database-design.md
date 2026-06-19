@@ -13,8 +13,8 @@
 
 | 모듈 | 스토어 | 테이블/컬렉션(키스페이스) | MVP |
 | --- | --- | --- | --- |
-| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}` / `social_accounts` | ✅ |
-| [`user`](#4-2-user) | **MySQL** | `users` | ✅ |
+| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}` / `social_accounts` | ✅ |
+| [`user`](#4-2-user) | **MySQL** | `users`·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses` | ✅ |
 | [`booking`](#4-5-booking) | **저장소(추후 결정)** | `bookings` | ✅ |
@@ -68,9 +68,9 @@
 ### 2-4. 제약·무결성 (공통)
 
 - **FK는 같은 모듈 안에서만.** 교차 모듈 참조는 **store가 같아도 FK 금지** — 식별자 값만 보유한다(Modulith 독립성·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 교차 스토어 조인·FK·분산 트랜잭션 금지([ADR-0005](../adr/0005-polyglot-persistence.md) D5·D6) → 애플리케이션 레벨 조인/이벤트.
-- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `favorites(userId,listingId)` · `post_likes(post_id,user_id)` · `quiz_submissions(user_id,quiz_date)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
+- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `post_likes(post_id,user_id)` · `quiz_submissions(user_id,quiz_date)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
 - **카운트 정합**(`community` like/comment/share, `listings.favoriteCount`)은 단일 store 트랜잭션 또는 원자적 증감 + 배치 재계산으로 유지(음수 방지).
-- **민감정보**(전화번호·비자·이메일·토큰 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
+- **민감정보**(비자·이메일·토큰 원문·인증번호 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
 
 ## 3. 마이그레이션
 
@@ -104,6 +104,22 @@
 > - **로그아웃/탈퇴**: 해당 토큰(들)을 `REVOKED`로 전이(멱등). 보존은 TTL로 자동 만료.
 > - 이는 [ADR-0006](../adr/0006-refresh-token-store-redis.md)의 **재사용 탐지 목표**를 실현한다(ADR의 `revoked` 플래그를 3-상태 `status`로 일반화 — ADR의 "회전 시 기존 키 삭제"는 폐기 토큰을 못 남겨 재사용 탐지가 불가하므로 status 전이로 대체).
 
+#### (A-2) Redis — 이메일 인증(`EmailVerification`)
+
+온보딩 중 이메일 소유 확인. 인증번호는 **SHA-256(+pepper)** 해시로만 보관(원문 미보관)하고, TTL로 자동 소멸한다. 사용자(온보딩 중 PENDING) 단위로 1건이다. domain-model `EmailVerification`.
+
+**키스페이스** (Redis · AWS ElastiCache)
+
+| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
+| --- | --- | --- | --- | --- |
+| `email-verify:code:{userId}` | Hash | `email` · `codeHash` · `attempts`(int) · `issuedAt` · `expiresAt` · `status`(enum `PENDING`/`VERIFIED`) | 인증번호 만료(예: 5분 — 확인 필요) | 인증번호 발송·검증. 검증 시 `codeHash` 대조 + `attempts` 증가, 일치 시 `VERIFIED` 전이 |
+| `email-verify:verified:{userId}` | String/Hash | 검증 완료 `email` | 온보딩 토큰 만료(예: 30분 — 확인 필요) | 온보딩 제출 시 제출 `email`과 대조해 미인증 거름(`AUTH_EMAIL_NOT_VERIFIED`) |
+
+- **발송**: 인증번호 메일을 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SES/SMTP — 확인 필요)로 **동기 발송**하고, **발송 성공 시에만** `email-verify:code:{userId}`를 (재)설정한다(발송 실패 시 챌린지 미저장 + `502 UPSTREAM_ERROR`로 응답·재시도 유도). 재발송·검증 시도는 레이트리밋·`attempts` 상한(확인 필요)으로 보호, 초과 시 `429 TOO_MANY_REQUESTS`.
+- **검증**: 입력 인증번호 해시가 `codeHash`와 일치하고 미만료·시도 미초과면 `email-verify:verified:{userId}`에 이메일 기록(코드 키는 만료/삭제). 불일치·만료는 `422 AUTH_EMAIL_VERIFICATION_FAILED`.
+- **온보딩 제출**: `auth`가 `email-verify:verified:{userId}`의 이메일과 제출 `email`을 대조 → 일치해야 `user` 온보딩 완료 명령 진행. 확정 `email`은 `users.email`로 영속(아래 §4-2), 인증 흔적은 TTL로 소멸한다(영속 안 함).
+- **민감정보**: `email`은 응답·로그 마스킹, 인증번호 원문은 보관·로그하지 않는다(해시만).
+
 #### (B) MySQL — 소셜 연동(`social_accounts`)
 
 소셜 제공자 자격을 회원에 묶는다(domain-model `SocialAccount`).
@@ -126,7 +142,7 @@
 
 ### 4-2. `user`
 
-> 스토어: **MySQL** (회원 프로필·계정 lifecycle, [ADR-0005](../adr/0005-polyglot-persistence.md)). domain-model `User`(VO `FullName`·`PhoneContact`·`Consent`를 컬럼으로 평탄화).
+> 스토어: **MySQL** (회원 프로필·계정 lifecycle, [ADR-0005](../adr/0005-polyglot-persistence.md)). domain-model `User`(VO `FullName`·`Consent`를 컬럼으로 평탄화, `nickname`·`country`·`occupation`·`email`은 단일 컬럼).
 
 `users`
 
@@ -135,10 +151,12 @@
 | `id` | BIGINT | PK, AUTO_INCREMENT |
 | `first_name` | VARCHAR(100) | NULL · VO `FullName`(PII — 아래 註) |
 | `last_name` | VARCHAR(100) | NULL · VO `FullName`(PII) |
+| `nickname` | VARCHAR(50) | NULL · **UNIQUE** · 시스템 배정(`형용사 + 사물`) · 탈퇴 시 익명화 |
 | `gender` | VARCHAR(16) (enum `Gender`) | NULL(PII) |
 | `birth_date` | DATE | NULL · 과거만(앱 검증)(PII) |
-| `country_code` | VARCHAR(8) | NULL · VO `PhoneContact`(PII) |
-| `phone_number` | VARCHAR(20) | NULL · VO `PhoneContact` · 민감정보(PII) |
+| `country` | CHAR(2) | NULL · 국적 ISO 3166-1 alpha-2 코드 · → `countries.code`(같은 모듈) · 표시명·국기는 `countries`에서 확보(PII) |
+| `occupation` | VARCHAR(32) (enum `Occupation`) | NULL · 임시 분류값(확인 필요)(PII) |
+| `email` | VARCHAR(255) | NULL · 인증 완료 연락 이메일 · 민감정보(PII). 소셜 제공자 이메일(`social_accounts.email`)과 별개 |
 | `visa_type` | VARCHAR(32) (enum `VisaType`) | NULL · 민감정보(PII) |
 | `status` | VARCHAR(16) (enum `UserStatus`) | NOT NULL · 신규 `PENDING` |
 | `terms_of_service_agreed` | BOOLEAN | NOT NULL · VO `Consent` |
@@ -150,13 +168,61 @@
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
-**인덱스**: PK `id`(`findById`) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
+**인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
 
-- **자연키**: 소셜 신원·이메일은 **auth `social_accounts` 소관**이라 users엔 두지 않는다(회원은 `id`로만 식별).
-- **교차 모듈 no-FK**: auth(소셜연동·refresh)와 `userId` 값만 공유.
-- **소프트삭제 대신 상태**: 탈퇴=`status=WITHDRAWN`+`withdrawn_at` 기록, PII 즉시 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md))(+토큰 일괄 무효화). WITHDRAWN/없음 조회는 `USER_NOT_FOUND`(404).
-- **PII 컬럼은 NULL 허용**(`first_name`·`last_name`·`gender`·`birth_date`·`country_code`·`phone_number`·`visa_type`): 회원은 온보딩 *전*(`PENDING`)에 프로필 없이 생성되고, 탈퇴 시 즉시 **익명화(NULL)**되기 때문이다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)). "온보딩 완료(`ACTIVE`) 시 채워져야 한다"는 **상태 불변식**(앱·서버 검증)이지 컬럼 NOT NULL 제약이 아니다 — Flyway baseline([V1](../../src/main/resources/db/migration/V1__baseline_users_social_accounts.sql))은 이 컬럼들을 NULL 허용으로 둔다.
-- **민감정보**: `phone_number`·`visa_type`·(auth)`email`은 응답·로그 마스킹. 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
+- **이메일 두 종류**: 소셜 제공자 이메일은 **auth `social_accounts.email`** 소관이고, `users.email`은 **온보딩 중 사용자가 입력·인증한 연락 이메일**이다(둘은 별개, 같을 수도 다를 수도 있음). 이메일 *인증 흔적*은 Redis(§4-1 A-2)에만 단명 보관하고 users엔 확정 이메일만 영속한다.
+- **닉네임**: 시스템이 `형용사 + 사물`로 무작위 배정하며 `UNIQUE`로 중복을 막는다(충돌 시 재시도). 사용자 입력·수정 대상이 아니다.
+- **상태 흐름·컬럼 채움 시점**: `status`는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`. **동의 컬럼**(`terms_of_service_agreed`·`privacy_policy_agreed`·`marketing_agreed`·`agreed_at`·`terms_version`)은 **약관 동의 단계**(`PENDING`→`TERMS_AGREED`)에 채워지고, **프로필 컬럼**(이름·`nickname`·성별·생년월일·`country`·`occupation`·`email`·`visa_type`)은 **온보딩 단계**(`TERMS_AGREED`→`ACTIVE`)에 채워진다(enum 값 정본은 [domain-model](../architecture/domain-model.md)).
+- **교차 모듈 no-FK**: auth(소셜연동·refresh·이메일인증)와 `userId` 값만 공유.
+- **소프트삭제 대신 상태**: 탈퇴=`status=WITHDRAWN`+`withdrawn_at` 기록, PII 즉시 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md))(+토큰 일괄 무효화). 탈퇴 시 `nickname`도 익명화(NULL)해 유니크 슬롯을 회수한다. WITHDRAWN/없음 조회는 `USER_NOT_FOUND`(404).
+- **PII 컬럼은 NULL 허용**(`first_name`·`last_name`·`nickname`·`gender`·`birth_date`·`country`·`occupation`·`email`·`visa_type`): 회원은 온보딩 *전*(`PENDING`)에 프로필 없이 생성되고, 탈퇴 시 즉시 **익명화(NULL)**되기 때문이다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)). "온보딩 완료(`ACTIVE`) 시 채워져야 한다"는 **상태 불변식**(앱·서버 검증)이지 컬럼 NOT NULL 제약이 아니다.
+- **민감정보**: `email`·`visa_type`은 로그·타 사용자 노출 시 마스킹(본인 `GET /users/me`는 평문). 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
+- **마이그레이션 후속**: 이 스키마(닉네임·국적·직업·이메일 추가, 전화번호 컬럼 제거)는 baseline([V1](../../src/main/resources/db/migration/V1__baseline_users_social_accounts.sql)) 이후 변경이므로 **전진 마이그레이션(V2 등)** 으로 반영해야 한다([migration-policy](./migration-policy.md), 확인 필요).
+
+#### 국가 참조 — `countries`
+
+국적은 **국가 코드(ISO 3166-1 alpha-2)** 로 식별하고, 표시명·국기는 이 reference 테이블에서 확보한다. 클라이언트는 온보딩 시 **국가(코드)만 전송**하고 국기는 서버가 여기서 채운다(수집). 시드/마이그레이션으로 적재.
+
+`countries`
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `code` | CHAR(2) | PK · ISO 3166-1 alpha-2(예: `VN`) |
+| `name` | VARCHAR(64) | NOT NULL · 표시명(다국어 단일 vs `name_en`·`name_ko`는 확인 필요) |
+| `flag` | VARCHAR(512) | NOT NULL · 국기 이미지 URL(flagcdn.com SVG, 코드 소문자 기반 · 예 `https://flagcdn.com/vn.svg`) |
+
+**인덱스**: PK `code`.
+
+- **국기 확보**: `users.country`(코드)로 `countries`를 조회해 `name`·`flag`를 얻는다(API 응답의 `countryName`·`countryFlag`). `flag`는 **국기 이미지 URL**(flagcdn.com SVG, 코드 소문자 기반 — 예 `VN`→`https://flagcdn.com/vn.svg`)이며, 표기 일관성·교체 용이를 위해 이 테이블을 단일 출처로 둔다.
+- **검증**: 온보딩/수정의 `country`는 `countries.code`에 존재해야 함(없으면 `400 INVALID_INPUT`). `users.country`→`countries.code`는 같은 모듈이라 FK 가능(값 참조도 허용).
+- **reference 데이터**: ISO 3166-1 기준 시드, 운영 중 갱신 가능. 전화 국가코드(dial code)는 전화번호 제거로 불필요.
+
+#### 닉네임 풀 — `nickname_adjectives`·`nickname_nouns`
+
+닉네임은 **형용사(앞 단어) + 사물(뒤 단어)** 조합이라 두 단어 풀을 reference 테이블로 둔다(시드/마이그레이션으로 적재, 운영 중 가변). 조합·유니크 검증 로직은 `user` 도메인 서비스 `NicknameGenerator`가 담당(domain-model `user`).
+
+`nickname_adjectives` (형용사 풀)
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `id` | BIGINT | PK, AUTO_INCREMENT |
+| `word` | VARCHAR(50) | NOT NULL · **UNIQUE** · 형용사(앞 단어) |
+| `active` | BOOLEAN | NOT NULL DEFAULT TRUE · 비활성 단어는 선택 풀에서 제외 |
+
+`nickname_nouns` (사물 풀)
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `id` | BIGINT | PK, AUTO_INCREMENT |
+| `word` | VARCHAR(50) | NOT NULL · **UNIQUE** · 사물(뒤 단어) |
+| `active` | BOOLEAN | NOT NULL DEFAULT TRUE · 비활성 단어는 선택 풀에서 제외 |
+
+**인덱스**: 각 PK `id` / UNIQUE `word`(중복 단어 방지).
+
+- **생성·유니크 로직**: `NicknameGenerator`가 두 풀의 `active=TRUE`에서 무작위로 각 1개를 뽑아 `형용사 + 사물`로 조합 → `users.nickname` 유니크를 검사해 **충돌 시 재조합 재시도**(상한 N회 — 확인 필요), 상한 초과 시 **fallback**(예: 숫자 접미사)으로 종료를 보장한다. 동시 생성 경합은 `users.nickname` UNIQUE 제약이 최종 차단하고(위반 시 재조합), 그래서 닉네임은 `INSERT`/`UPDATE` 시점에 확정된다.
+- **무작위 선택**: 풀 규모가 작아 앱에서 풀 로드 후 선택 또는 `ORDER BY RAND() LIMIT 1` 모두 허용(전략·캐싱은 확인 필요).
+- **reference 데이터**: 단어 목록은 시드/마이그레이션으로 적재하고 운영 중 추가·비활성(`active`) 가능. 단어·로케일(언어)·조합 포맷(연결/구분자)은 시드 시 확정([§6](#6-결정-필요-open-questions)).
+- **교차 모듈 no-FK**: `user` 모듈 내부 reference 테이블이라 타 모듈 FK 없음.
 
 ### 4-3. `listing`
 
@@ -405,7 +471,11 @@
 3. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
 4. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
 5. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.
-6. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
+6. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`nickname`·`email`·`country`·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
+7. **이메일 인증 정책**: 인증번호 길이·만료(TTL)·검증 시도 상한·재발송 레이트리밋, 메일 발송 인프라(SES/SMTP 등) 미확정(§4-1 A-2).
+8. **직업(`Occupation`) 분류값**: 요구사항 정의서 드롭다운 항목 잘림 → 현재 임시값(`STUDENT`/`EMPLOYEE`/`SELF_EMPLOYED`/`JOB_SEEKER`/`ETC`), 실제 선택지 확정 필요.
+9. **닉네임 풀**: `nickname_adjectives`·`nickname_nouns` 단어 시딩·로케일(언어)·조합 포맷(연결/구분자), 재조합 재시도 상한·fallback 규칙, 무작위 선택 전략(앱 로드 vs `RAND()`) 미확정.
+10. **국가(`countries`)**: 표시명 다국어(단일 vs `name_en`/`name_ko`), 시드 출처(ISO 3166-1·전체 국가 확장), `users.country`→`countries.code` FK 적용 여부. (`flag`는 국기 이미지 URL(flagcdn.com SVG)로 확정 — 외부 CDN 의존, 자체 호스팅 전환은 후속 검토.)
 
 > refresh 토큰 저장(Redis)·회전·재사용 탐지·TTL(=만료)은 [ADR-0006](../adr/0006-refresh-token-store-redis.md)으로 **확정**돼 결정 필요 항목이 아니다(§4-1 참조).
 
