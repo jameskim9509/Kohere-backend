@@ -5,16 +5,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.kohere.auth.application.dto.EmailVerificationCodeResponse;
+import com.kohere.auth.application.dto.EmailVerifyResponse;
 import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
+import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.domain.EmailNotVerifiedException;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
+import com.kohere.auth.domain.OnboardingAlreadyCompletedException;
 import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.RefreshToken;
 import com.kohere.auth.domain.RefreshTokenHasher;
@@ -22,12 +28,16 @@ import com.kohere.auth.domain.RefreshTokenRepository;
 import com.kohere.auth.domain.RequiredAgreementMissingException;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
+import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
+import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
+import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.OnboardingProfile;
+import com.kohere.user.api.TermsAgreementView;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserAccountView;
 import com.kohere.user.api.UserProfileView;
@@ -41,8 +51,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link AuthService} 단위 테스트(Mockito) — 소셜 로그인 분기(신규/ACTIVE/PENDING), 온보딩(약관 검증), 재발급(항상 회전·재사용
- * 탐지), 로그아웃 멱등. 도메인 포트·user 공개 API를 모킹한다.
+ * {@link AuthService} 단위 테스트(Mockito) — 소셜 로그인 분기(신규/ACTIVE/미완료·status), 약관 동의(필수 검증), 이메일 인증 위임,
+ * 온보딩(이메일 검증 선행), 재발급(항상 회전·재사용 탐지), 로그아웃 멱등. 도메인 포트·user 공개 API·이메일 인증 서비스를 모킹한다.
  */
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -53,6 +63,7 @@ class AuthServiceTest {
   @Mock private RefreshTokenHasher refreshTokenHasher;
   @Mock private JwtTokenService jwtTokenService;
   @Mock private UserAccountService userAccountService;
+  @Mock private EmailVerificationService emailVerificationService;
 
   private AuthService authService;
 
@@ -69,6 +80,7 @@ class AuthServiceTest {
             refreshTokenHasher,
             jwtTokenService,
             userAccountService,
+            emailVerificationService,
             authProperties);
   }
 
@@ -86,6 +98,7 @@ class AuthServiceTest {
         authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
 
     assertThat(response.onboardingRequired()).isTrue();
+    assertThat(response.status()).isEqualTo("PENDING");
     assertThat(response.accessToken()).isEqualTo("onboarding-token");
     assertThat(response.refreshToken()).isNull();
     assertThat(response.expiresIn()).isEqualTo(1800L);
@@ -108,6 +121,7 @@ class AuthServiceTest {
         authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
 
     assertThat(response.onboardingRequired()).isFalse();
+    assertThat(response.status()).isEqualTo("ACTIVE");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
     assertThat(response.expiresIn()).isEqualTo(3600L);
@@ -116,12 +130,12 @@ class AuthServiceTest {
   }
 
   @Test
-  void socialLogin_existingPendingUser_reissuesOnboardingTokenWithoutNewRow() {
+  void socialLogin_existingTermsAgreedUser_reissuesOnboardingTokenWithStatus() {
     when(oidcTokenVerifier.verify(Provider.GOOGLE, "idtok"))
         .thenReturn(new OidcUser(Provider.GOOGLE, "sub-1", "a@example.com"));
     when(socialAccountRepository.findByProviderAndProviderUserId(Provider.GOOGLE, "sub-1"))
         .thenReturn(Optional.of(socialAccount(30L)));
-    when(userAccountService.getAccount(30L)).thenReturn(new UserAccountView(30L, "PENDING"));
+    when(userAccountService.getAccount(30L)).thenReturn(new UserAccountView(30L, "TERMS_AGREED"));
     when(jwtTokenService.issueOnboardingToken(30L)).thenReturn("onboarding-token");
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
@@ -129,9 +143,70 @@ class AuthServiceTest {
         authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
 
     assertThat(response.onboardingRequired()).isTrue();
+    assertThat(response.status()).isEqualTo("TERMS_AGREED");
     assertThat(response.refreshToken()).isNull();
     verify(userAccountService, never()).createPendingUser();
     verify(socialAccountRepository, never()).save(any());
+  }
+
+  @Test
+  void agreeToTerms_recordsConsentAndReturnsTermsAgreed() {
+    Instant agreedAt = Instant.parse("2026-06-17T00:00:00Z");
+    when(userAccountService.agreeToTerms(40L, false))
+        .thenReturn(new TermsAgreementView("TERMS_AGREED", true, true, false, agreedAt));
+
+    TermsResponse response = authService.agreeToTerms(40L, new TermsRequest(true, true, false));
+
+    assertThat(response.status()).isEqualTo("TERMS_AGREED");
+    assertThat(response.termsOfServiceAgreed()).isTrue();
+    assertThat(response.agreedAt()).isEqualTo(agreedAt);
+    verify(userAccountService).agreeToTerms(40L, false);
+  }
+
+  @Test
+  void agreeToTerms_missingRequiredAgreement_throwsAndDoesNotPersist() {
+    assertThatThrownBy(() -> authService.agreeToTerms(40L, new TermsRequest(false, true, false)))
+        .isInstanceOf(RequiredAgreementMissingException.class);
+
+    verify(userAccountService, never())
+        .agreeToTerms(anyLong(), org.mockito.ArgumentMatchers.anyBoolean());
+  }
+
+  @Test
+  void sendEmailVerificationCode_delegatesAndMasksEmail() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    when(emailVerificationService.sendCode(40L, "minh@example.com")).thenReturn(300L);
+
+    EmailVerificationCodeResponse response =
+        authService.sendEmailVerificationCode(
+            40L, new EmailVerificationCodeRequest("minh@example.com"));
+
+    assertThat(response.expiresIn()).isEqualTo(300L);
+    assertThat(response.email()).isEqualTo("mi***@example.com");
+    verify(emailVerificationService).sendCode(40L, "minh@example.com");
+  }
+
+  @Test
+  void sendEmailVerificationCode_activeUser_throwsAlreadyCompletedAndDoesNotSend() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "ACTIVE"));
+
+    assertThatThrownBy(
+            () ->
+                authService.sendEmailVerificationCode(
+                    40L, new EmailVerificationCodeRequest("minh@example.com")))
+        .isInstanceOf(OnboardingAlreadyCompletedException.class);
+
+    verify(emailVerificationService, never()).sendCode(anyLong(), any());
+  }
+
+  @Test
+  void verifyEmail_delegatesAndReturnsVerified() {
+    EmailVerifyResponse response =
+        authService.verifyEmail(40L, new EmailVerifyRequest("minh@example.com", "482915"));
+
+    assertThat(response.verified()).isTrue();
+    assertThat(response.email()).isEqualTo("mi***@example.com");
+    verify(emailVerificationService).verify(40L, "minh@example.com", "482915");
   }
 
   @Test
@@ -142,23 +217,30 @@ class AuthServiceTest {
     when(userAccountService.completeOnboarding(eq(40L), any(OnboardingProfile.class)))
         .thenReturn(profileView(40L));
 
-    OnboardingResponse response = authService.onboarding(40L, onboardingRequest(true, true));
+    OnboardingResponse response = authService.onboarding(40L, onboardingRequest());
 
     assertThat(response.user()).isNotNull();
     assertThat(response.user().id()).isEqualTo(40L);
     assertThat(response.user().status()).isEqualTo("ACTIVE");
+    assertThat(response.user().nickname()).isEqualTo("BraveOtter");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
+    verify(emailVerificationService).assertVerified(40L, "gil@example.com");
     verify(userAccountService).completeOnboarding(eq(40L), any(OnboardingProfile.class));
     verify(refreshTokenRepository).save(any(RefreshToken.class));
   }
 
   @Test
-  void onboarding_missingRequiredAgreement_throwsAndDoesNotComplete() {
-    assertThatThrownBy(() -> authService.onboarding(40L, onboardingRequest(false, true)))
-        .isInstanceOf(RequiredAgreementMissingException.class);
+  void onboarding_emailNotVerified_throwsAndDoesNotComplete() {
+    doThrow(new EmailNotVerifiedException())
+        .when(emailVerificationService)
+        .assertVerified(40L, "gil@example.com");
+
+    assertThatThrownBy(() -> authService.onboarding(40L, onboardingRequest()))
+        .isInstanceOf(EmailNotVerifiedException.class);
 
     verify(userAccountService, never()).completeOnboarding(anyLong(), any());
+    verify(refreshTokenRepository, never()).save(any());
   }
 
   @Test
@@ -188,7 +270,6 @@ class AuthServiceTest {
     assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
-    // 회전(ROTATED)된 토큰 재제출 = 재사용 탐지 → 사용자 전 세션 일괄 무효화
     verify(refreshTokenRepository).revokeAllByUserId(60L);
   }
 
@@ -202,7 +283,6 @@ class AuthServiceTest {
     assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
-    // 이미 무효화(REVOKED: 로그아웃·탈퇴)된 토큰 재제출은 해당 요청만 거부 — 다른 세션은 보존(일괄 무효화 안 함)
     verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
   }
 
@@ -265,27 +345,29 @@ class AuthServiceTest {
         id,
         "Gil",
         "Hong",
+        "BraveOtter",
         "MALE",
         LocalDate.of(1990, 1, 1),
-        "+82",
-        "1012345678",
+        "KR",
+        "South Korea",
+        "https://flagcdn.com/kr.svg",
+        "STUDENT",
+        "gil@example.com",
         "VISA_WORK",
         "ACTIVE",
         false,
         Instant.now());
   }
 
-  private static OnboardingRequest onboardingRequest(boolean terms, boolean privacy) {
+  private static OnboardingRequest onboardingRequest() {
     return new OnboardingRequest(
         "Gil",
         "Hong",
         "MALE",
         LocalDate.of(1990, 1, 1),
-        "+82",
-        "1012345678",
-        "VISA_WORK",
-        terms,
-        privacy,
-        false);
+        "KR",
+        "STUDENT",
+        "gil@example.com",
+        "VISA_WORK");
   }
 }

@@ -171,3 +171,57 @@ CI([.github/workflows/ci.yml](.github/workflows/ci.yml))는 두 가지를 검사
 - **build** — `./gradlew spotlessCheck build` (포맷 검사 → 컴파일 → 테스트 → 모듈 경계 검증)
 
 로컬에서는 커밋 전에 `./gradlew spotlessApply`로 포맷을 정렬하고 `./gradlew build`로 검증합니다 (JDK 21 필요).
+
+---
+
+## 로컬 실행 · 테스트
+
+로컬은 `docker-compose`로 인프라(MySQL·MongoDB·Redis·MailHog)를 띄우고, 앱은 `bootRun`으로 실행합니다. 배포 아키텍처는 [system-overview](docs/architecture/system-overview.md)를 참고하세요. (예시는 bash 기준 — PowerShell은 `./gradlew`를 `.\gradlew`로)
+
+**사전 준비**: JDK 21, Docker Desktop
+
+### 1. 인프라 기동
+
+```bash
+docker compose up -d mysql mongo redis mailhog
+```
+
+- **MailHog** = 온보딩 이메일 인증용 가짜 SMTP. 받은 메일은 <http://localhost:8025> 에서 확인합니다.
+- 마이그레이션 충돌 시(이미 적용된 `V*`를 수정한 경우) `docker compose down -v`로 볼륨을 초기화한 뒤 다시 띄웁니다.
+
+### 2. 앱 실행
+
+```bash
+./gradlew bootRun
+```
+
+- 프로파일 기본값은 `local`, 기동 시 Flyway가 스키마를 적용합니다.
+- 헬스 체크: `GET http://localhost:8080/actuator/health` → `{"status":"UP"}` (앱+인프라 정상)
+
+### 3. API 문서 (Swagger UI · REST Docs)
+
+`bootRun`에서 보려면 생성물을 한 번 모읍니다(테스트 실행 → OpenAPI/HTML 생성):
+
+```bash
+./gradlew prepareDevStatic
+```
+
+- Swagger UI: <http://localhost:8080/swagger-ui/index.html>
+- REST Docs: <http://localhost:8080/docs/index.html>
+
+> 배포 이미지(`bootJar`)에는 자동 포함됩니다. `clean` 후에는 `prepareDevStatic`를 다시 실행하세요.
+
+### 4. 인증·온보딩 수동 테스트 (`.http`)
+
+[http/auth-onboarding.http](http/auth-onboarding.http)를 VS Code **REST Client** 확장으로 엽니다.
+
+1. `@idToken`에 Google `id_token`을 넣습니다 — [OAuth Playground](https://developers.google.com/oauthplayground)에서 scope `openid email profile`로 Authorize → **Step 2 "Exchange authorization code for tokens"** 응답의 `id_token`(`eyJ...`)을 복사합니다. (Step 1의 인가 코드 `4/0...`가 **아닙니다**.)
+   - 로컬은 `GOOGLE_CLIENT_ID` 미설정이라 audience 검증을 건너뛰므로, 유효한 Google 서명 토큰이면 통과합니다.
+2. 위에서부터 순서대로 호출 → 3번(인증번호 발송) 후 <http://localhost:8025> 에서 코드를 확인해 `@code`에 입력 → 끝까지 진행합니다.
+
+### 5. 빌드·테스트
+
+```bash
+./gradlew spotlessApply   # 포맷 정렬(커밋 전 필수)
+./gradlew build           # 컴파일 + 테스트 + 모듈 경계 검증
+```

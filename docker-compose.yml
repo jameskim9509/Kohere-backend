@@ -1,12 +1,13 @@
-# Kohere 로컬 개발 스택 (M0-C) — app + MySQL + MongoDB + Redis 일괄 기동
+# Kohere 로컬 개발 스택 (M0-C) — app + MySQL + MongoDB + Redis + MailHog 일괄 기동
 #
 #   전체 기동:   docker compose up --build
-#   인프라만:    docker compose up -d mysql mongo redis   # 앱은 ./gradlew bootRun 으로 따로 실행
+#   인프라만:    docker compose up -d mysql mongo redis mailhog   # 앱은 ./gradlew bootRun 으로 따로 실행
 #   종료:        docker compose down            # 데이터 보존
 #                docker compose down -v          # 볼륨(데이터)까지 삭제
 #
 # 영속 배치(ADR-0005): MySQL=auth·user / MongoDB=listing·diagnosis / Redis=refresh 토큰(ADR-0006).
-# 컨테이너는 서비스명(mysql·mongo·redis)으로 서로를 찾는다. 기본 자격증명은 .env 로 덮어쓸 수 있다.
+# MailHog는 온보딩 이메일 인증용 로컬 SMTP(가짜 메일서버) — 받은 메일은 http://localhost:8025 웹 UI에서 확인한다.
+# 컨테이너는 서비스명(mysql·mongo·redis·mailhog)으로 서로를 찾는다. 기본 자격증명은 .env 로 덮어쓸 수 있다.
 name: kohere
 
 services:
@@ -59,6 +60,15 @@ services:
       timeout: 5s
       retries: 10
 
+  # 온보딩 이메일 인증용 가짜 SMTP. 실제로 메일을 보내지 않고 1025(SMTP)로 받아 8025(웹 UI)에 보여준다.
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: kohere-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP (앱이 메일을 발송하는 포트)
+      - "8025:8025" # 웹 UI — 받은 인증 메일 확인: http://localhost:8025
+
   # 앱 이미지는 Dockerfile 로 빌드(로컬·클라우드 공통 동일 이미지).
   # 아래 SPRING_* 값은 M0-A·M0-B 에서 영속 의존성이 추가되면 그대로 사용된다(현재 골격에서는 무시됨).
   app:
@@ -74,6 +84,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     environment:
       SPRING_PROFILES_ACTIVE: local
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-kohere}?serverTimezone=UTC
@@ -82,6 +94,8 @@ services:
       SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/kohere
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_MAIL_HOST: mailhog
+      SPRING_MAIL_PORT: "1025"
     ports:
       - "8080:8080"
 

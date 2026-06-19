@@ -1,4 +1,8 @@
-# User Stories & Acceptance Criteria
+    
+
+    
+
+    # User Stories & Acceptance Criteria
 
 > Kohere 핵심 기능(7종)의 **백엔드 유저 스토리**와 인수 조건(AC, Given/When/Then)이다.
 > 작성 형식: [user-story-template](user-story-template.md). 각 기능의 API는 [api 스펙](../api/specs/)으로 연결된다.
@@ -20,7 +24,7 @@
 
 > 관련 API 스펙: [01-auth-onboarding](../api/specs/01-auth-onboarding.md)
 
-외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 필수 온보딩 정보(이름·성별·생년월일·연락처·비자정보)와 약관 동의를 마친 뒤에야 보호 API를 사용할 수 있게 한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
+외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 온보딩(이메일 인증 포함)** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다. 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
 
 > 관련 NFR: [non-functional-requirements](non-functional-requirements.md) — 4. 보안(토큰/민감정보 보호), 1. 성능(소셜 검증 응답시간), 5. 관측성(인증 실패 로깅·마스킹). 구체 목표값은 NFR 문서 확정 전이라 (확인 필요).
 
@@ -30,7 +34,7 @@
 
 **As a** 외국인 사용자
 **I want** 앱에서 받은 Apple/Google `idToken`을 서버에 넘겨 검증받고 서버 자체 JWT(access+refresh)를 발급받기를
-**So that** 별도 비밀번호 없이 안전하게 로그인하고, 기존 회원이면 바로 서비스를, 신규면 온보딩 화면으로 이동할 수 있다.
+**So that** 별도 비밀번호 없이 안전하게 로그인하고, 기존 회원이면 바로 서비스를, 신규면 약관 동의 화면으로 이동할 수 있다.
 
 - 우선순위: **High**
 - 관련 NFR: 보안(소셜 토큰 서명·aud·iss·exp 검증, refresh 토큰 서버 보관/해시), 성능(provider 검증 외부호출 타임아웃·관측성)
@@ -40,23 +44,23 @@
 - **정상 — 기존 회원 로그인**
   Given 해당 provider 계정으로 가입·온보딩을 완료한 `ACTIVE` 회원이 존재하고
   When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
-  Then `200 OK` + 공통 래퍼 `data`에 `accessToken`/`refreshToken`/`onboardingRequired=false`/`tokenType="Bearer"`/`expiresIn`이 내려오고, refresh 토큰은 서버에 해시 저장되어 재발급에 사용된다.
-
-- **정상 — 신규 회원 온보딩 유도**
+  Then `200 OK` + 공통 래퍼 `data`에 `accessToken`/`refreshToken`/`onboardingRequired=false`/`status="ACTIVE"`/`tokenType="Bearer"`/`expiresIn`이 내려오고, refresh 토큰은 서버에 해시 저장되어 재발급에 사용된다. 앱은 홈으로 이동한다.
+- **정상 — 신규 회원 약관 동의 유도**
   Given 해당 provider 계정으로 가입한 회원이 없고
   When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
-  Then `200 OK` + `data.onboardingRequired=true`로 응답하고, 서버는 provider/providerUserId/email만 보유한 **온보딩 미완료(PENDING)** 사용자 레코드를 생성한다. 이때 발급되는 access 토큰은 온보딩 API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). (확인 필요: 온보딩 전용 임시 토큰 만료시간)
-
+  Then `200 OK` + `data.onboardingRequired=true`·`data.status="PENDING"`으로 응답하고, 서버는 provider/providerUserId/email만 보유한 **온보딩 미완료(PENDING)** 사용자 레코드를 생성한다. 이때 발급되는 access 토큰은 온보딩 흐름(약관 동의·이메일 인증·온보딩) API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). 앱은 `status`로 분기해 다음으로 **약관 동의 화면**(US-1-7)으로 이동한다. (확인 필요: 온보딩 전용 임시 토큰 만료시간)
+- **정상 — 가입 미완료 회원 재로그인(재개 지점 분기)**
+  Given 소셜 로그인은 했으나 가입을 끝내지 못한 회원이 다시 로그인하고(신규 행은 만들지 않음)
+  When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
+  Then `200 OK` + `data.onboardingRequired=true`(refresh `null`)로 응답하되 **`data.status`로 재개 지점을 분기**한다 — **약관 미동의면 `status="PENDING"` → 약관 동의 화면(US-1-7)**, 약관까지 동의했으나 온보딩 미완료면 `status="TERMS_AGREED"` → 온보딩 화면(US-1-2). (온보딩 토큰으로는 `GET /users/me`가 `403`이라 상태를 따로 조회할 수 없으므로 이 응답의 `status`로 판단한다)
 - **입력 검증 실패**
   Given `provider`가 누락(null)이거나 `idToken`이 빈 문자열이면
   When `POST /api/v1/auth/social-login`을 호출하면
   Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다. (`provider`가 `APPLE`/`GOOGLE` 외 enum 문자열이면 역직렬화 단계에서 거부되어 `400` + `error.code=MALFORMED_REQUEST`로 처리한다 — 둘 다 별도 도메인 코드가 아닌 표준 입력 오류)
-
 - **인증·권한 — 소셜 검증 실패**
   Given `idToken`의 서명이 위조되었거나 `aud`/`iss`가 우리 앱과 불일치하거나 `exp`가 지났으면
   When `POST /api/v1/auth/social-login`을 호출하면
   Then `401` + `error.code=AUTH_INVALID_SOCIAL_TOKEN`을 반환하고, 토큰 원문은 로그에 남기지 않는다(마스킹).
-
 - **인증·권한 — provider 연동 실패도 검증 실패로 처리**
   Given Apple/Google 공개키(JWKS) 조회 또는 검증 요청이 타임아웃/네트워크 오류로 실패하면
   When `POST /api/v1/auth/social-login`을 호출하면
@@ -64,37 +68,38 @@
 
 ---
 
-### US-1-2 — 필수 온보딩 정보·약관 동의 제출하기
+### US-1-2 — 필수 온보딩 정보 제출하기
 
-**As a** 소셜 로그인은 마쳤으나 온보딩 미완료(PENDING) 사용자
-**I want** 이름·성·성별·생년월일·국가번호·전화번호·비자정보와 약관 동의를 한 번에 제출하기를
+**As a** 약관 동의를 마친(TERMS_AGREED) 사용자
+**I want** 이름·성·성별·생년월일·국적·직업·이메일·비자정보를 한 번에 제출하기를(이메일은 사전 인증, 닉네임은 서버 자동 배정)
 **So that** 회원 가입을 완료하고 정식 access/refresh 토큰으로 보호 기능을 이용할 수 있다.
 
 - 우선순위: **High**
-- 관련 NFR: 보안(비자정보·전화번호 등 민감정보 저장·로그 마스킹), 보안(필수 약관 동의 시점·버전 기록)
+- 관련 NFR: 보안(비자정보·이메일 등 민감정보 저장·로그 마스킹), 보안(이메일 소유 인증)
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)와 이메일 인증(US-1-6)이 완료되어야 한다.
 
 **AC (Given / When / Then)**
 
 - **정상 — 온보딩 완료**
-  Given 온보딩 미완료(PENDING) 사용자의 유효한 토큰을 보유하고
-  When 모든 필수 필드와 `termsOfServiceAgreed=true`·`privacyPolicyAgreed=true`(+선택 `marketingAgreed`)를 담아 `POST /api/v1/auth/onboarding`을 호출하면
-  Then `200 OK` + `data`에 완성된 프로필과 정식 `accessToken`/`refreshToken`을 내려주고, 사용자 상태를 `ACTIVE`로 전이한다. (상태 전이 액션이므로 신규 리소스 생성이 아닌 `200`을 쓴다)
-
+  Given 약관 동의를 마친(`TERMS_AGREED`) 사용자의 유효한 온보딩 토큰을 보유하고 제출 `email`이 사전 인증(US-1-6)되어 있으며
+  When 모든 필수 필드(`firstName`·`lastName`·`gender`·`birthDate`·`country`·`occupation`·`email`·`visaType`)를 담아 `POST /api/v1/auth/onboarding`을 호출하면(약관 필드는 담지 않음 — 이미 US-1-7에서 동의·기록)
+  Then `200 OK` + `data`에 완성된 프로필(서버가 자동 배정한 `nickname` 포함)과 정식 `accessToken`/`refreshToken`을 내려주고, 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이한다. (상태 전이 액션이므로 신규 리소스 생성이 아닌 `200`을 쓴다. `nickname`은 서버가 형용사 풀·사물 풀에서 골라 `형용사 + 사물`로 조합하고 전역 유니크 충돌 시 재조합해 배정하며 요청 본문에 담지 않는다)
 - **입력 검증 실패**
-  Given `firstName`/`lastName`이 비었거나, `gender`가 `MALE`/`FEMALE` 외 값이거나, `birthDate`가 `YYYY-MM-DD` 형식 위반/미래 날짜이거나, `visaType`이 정의된 enum(`VISA_STUDENT`·`VISA_WORK`·`VISA_RESIDENCE`·`VISA_WORKING_HOLIDAY`·`VISA_TOURISM`·`VISA_ETC`) 외 값이거나, `phoneNumber`/`countryCode` 형식이 어긋나면
+  Given `firstName`/`lastName`/`country`가 비었거나(`country`가 `countries`에 없는 ISO 코드이거나), `gender`가 `MALE`/`FEMALE` 외 값이거나, `occupation`이 정의된 enum(`STUDENT`·`EMPLOYEE`·`SELF_EMPLOYED`·`JOB_SEEKER`·`ETC` — 임시) 외 값이거나, `birthDate`가 `YYYY-MM-DD` 형식 위반/미래 날짜이거나, `visaType`이 정의된 enum(`VISA_STUDENT`·`VISA_WORK`·`VISA_RESIDENCE`·`VISA_WORKING_HOLIDAY`·`VISA_TOURISM`·`VISA_ETC`) 외 값이거나, `email` 형식이 어긋나면
   When `POST /api/v1/auth/onboarding`을 호출하면
   Then `400` + `error.code=INVALID_INPUT` + `errors[]`로 위반 필드를 반환한다.
-
-- **비즈니스 규칙 — 필수 동의 누락**
-  Given 필수 약관(`termsOfServiceAgreed` 또는 `privacyPolicyAgreed`) 중 하나라도 `false`이면
+- **비즈니스 규칙 — 이메일 미인증**
+  Given 제출 `email`이 인증번호로 검증(US-1-6)되지 않았거나 검증한 이메일과 다르면
   When `POST /api/v1/auth/onboarding`을 호출하면
-  Then `422` + `error.code=AUTH_REQUIRED_AGREEMENT_MISSING`을 반환하고 상태를 전이하지 않는다(형식은 맞으나 비즈니스 규칙 위반 → 422).
-
+  Then `422` + `error.code=AUTH_EMAIL_NOT_VERIFIED`를 반환하고 상태를 전이하지 않는다.
+- **비즈니스 규칙 — 약관 미동의 상태**
+  Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
+  When `POST /api/v1/auth/onboarding`을 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 상태를 전이하지 않는다(약관 동의 US-1-7 선행 필요).
 - **인증·권한 — 잘못된/누락 토큰**
   Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
   When `POST /api/v1/auth/onboarding`을 호출하면
   Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
-
 - **경계·동시성 — 중복 온보딩**
   Given 이미 온보딩을 완료(`ACTIVE`)한 사용자이거나, 동일 사용자가 온보딩 요청을 동시에 두 번 보내면
   When `POST /api/v1/auth/onboarding`을 호출하면
@@ -117,17 +122,14 @@
   Given 서버에 저장된 유효한(미만료·미무효화) refresh 토큰을 보유하고
   When `POST /api/v1/auth/reissue`에 `refreshToken`을 담아 호출하면
   Then `200 OK` + 새 `accessToken`(및 회전 정책 시 새 `refreshToken`)을 반환하고, 기존 refresh 토큰은 회전 시 무효화한다. (확인 필요: refresh 회전 적용 여부)
-
 - **입력 검증 실패**
   Given 본문에 `refreshToken`이 없거나 빈 문자열이면
   When `POST /api/v1/auth/reissue`를 호출하면
   Then `400` + `error.code=INVALID_INPUT`을 반환한다.
-
 - **인증·권한 — 만료/위조/무효화된 refresh**
   Given refresh 토큰이 만료·위조되었거나 로그아웃/탈퇴로 이미 무효화되었으면
   When `POST /api/v1/auth/reissue`를 호출하면
   Then `401` + `error.code=AUTH_INVALID_REFRESH_TOKEN`을 반환하고 새 토큰을 발급하지 않는다.
-
 - **경계·동시성 — refresh 재사용 탐지**
   Given 회전으로 이미 한 번 사용·폐기된 refresh 토큰을 다시 제출하면
   When `POST /api/v1/auth/reissue`를 호출하면
@@ -150,22 +152,18 @@
   Given 유효한 access 토큰과 refresh 토큰을 보유한 사용자가
   When `POST /api/v1/auth/logout`에 `refreshToken`을 담아 호출하면
   Then `204 No Content`를 반환하고 해당 refresh 토큰을 서버에서 무효화한다(이후 reissue 불가).
-
 - **정상 — 회원 탈퇴**
   Given 인증된 사용자(`ACTIVE` 또는 `PENDING`)가
   When `DELETE /api/v1/users/me`를 호출하면
   Then `204 No Content`를 반환하고 사용자 상태를 `WITHDRAWN`으로 전이하며 모든 refresh 토큰을 무효화한다(개인정보 파기/익명화는 정책 — 확인 필요).
-
 - **입력 검증 실패**
   Given 로그아웃 요청에 `refreshToken`이 누락되면
   When `POST /api/v1/auth/logout`을 호출하면
   Then `400` + `error.code=INVALID_INPUT`을 반환한다.
-
 - **인증·권한**
   Given access 토큰이 없거나 만료/위조되었으면
   When `POST /api/v1/auth/logout` 또는 `DELETE /api/v1/users/me`를 호출하면
   Then `401` + `error.code=UNAUTHENTICATED`(만료는 `TOKEN_EXPIRED`)을 반환한다.
-
 - **경계·동시성 — 이미 탈퇴/이미 무효화**
   Given 이미 `WITHDRAWN`된 사용자이거나, 동일 refresh 토큰으로 로그아웃을 두 번 호출하면
   When 동작을 재호출하면
@@ -177,7 +175,7 @@
 
 **As a** 온보딩을 완료한 사용자
 **I want** 내 프로필을 조회하고 일부 필드를 수정하기를
-**So that** 비자정보 변경·연락처 갱신 등 내 정보를 최신 상태로 유지할 수 있다.
+**So that** 비자정보·국적·직업 갱신 등 내 정보를 최신 상태로 유지할 수 있다.
 
 - 우선순위: **Mid**
 - 관련 NFR: 보안(본인 리소스만 접근), 보안(민감정보 응답 마스킹 정책 — 확인 필요)
@@ -187,27 +185,101 @@
 - **정상 — 조회**
   Given 유효한 access 토큰을 보유한 `ACTIVE` 사용자가
   When `GET /api/v1/users/me`를 호출하면
-  Then `200 OK` + `data`에 본인 프로필(이름·성별·생년월일·연락처·`visaType`·약관 동의 상태)을 반환한다.
-
+  Then `200 OK` + `data`에 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드)+서버 resolve `countryName`·`countryFlag`·`occupation`·`email`·`visaType`·약관 동의 상태)을 반환한다.
 - **정상 — 부분 수정**
   Given 유효한 access 토큰을 보유하고
-  When `PATCH /api/v1/users/me`에 변경할 필드(예: `phoneNumber`, `visaType`, `marketingAgreed`)만 담아 호출하면
-  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움).
-
+  When `PATCH /api/v1/users/me`에 변경할 필드(예: `country`, `occupation`, `visaType`, `marketingAgreed`)만 담아 호출하면
+  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `nickname`은 시스템 배정값이라 수정 대상이 아니며, `email` 변경은 재인증이 필요해 이 엔드포인트로는 처리하지 않는다(확인 필요).
 - **입력 검증 실패**
-  Given 수정 본문의 `gender`/`visaType`이 정의된 enum 외 값이거나 `birthDate`가 형식/범위 위반이거나 `phoneNumber` 형식이 어긋나면
+  Given 수정 본문의 `gender`/`visaType`/`occupation`이 정의된 enum 외 값이거나 `birthDate`가 형식/범위 위반이거나 `country`가 빈값이면
   When `PATCH /api/v1/users/me`를 호출하면
   Then `400` + `error.code=INVALID_INPUT` + `errors[]`를 반환한다.
-
 - **인증·권한 — 온보딩 미완료 접근**
-  Given 온보딩 미완료(PENDING) 토큰으로 보호 프로필 API에 접근하면
+  Given 온보딩 미완료(PENDING·TERMS_AGREED) 토큰으로 보호 프로필 API에 접근하면
   When `GET /api/v1/users/me` 또는 `PATCH /api/v1/users/me`를 호출하면
   Then `403` + `error.code=AUTH_ONBOARDING_REQUIRED`를 반환한다(인증은 됐으나 온보딩 미완료로 접근 불가).
-
 - **경계 — 탈퇴/부재 사용자**
   Given 토큰은 유효하나 해당 사용자가 `WITHDRAWN`이거나 삭제되어 없으면
   When `GET /api/v1/users/me`를 호출하면
   Then `404` + `error.code=USER_NOT_FOUND`를 반환한다.
+
+---
+
+### US-1-6 — 온보딩 중 이메일 인증하기
+
+**As a** 소셜 로그인은 마쳤으나 온보딩 미완료(PENDING·TERMS_AGREED) 사용자
+**I want** 온보딩에서 입력한 이메일로 인증번호를 받아 확인하기를
+**So that** 본인 소유 이메일임을 증명하고(US-1-2 온보딩 제출의 선행 조건) 가입을 완료할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(이메일 소유 인증·인증번호 해시 보관·재발송/시도 레이트리밋), 보안(이메일·인증번호 로그 마스킹)
+- 백엔드 관점: `auth`가 인증번호를 생성해 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SES/SMTP — 확인 필요)로 **동기 발송**하고, **발송에 성공한 뒤에만** 인증번호를 **해시로 보관**(Redis, TTL 자동 소멸)한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답한다. 검증 성공 시 해당 사용자의 이메일을 `VERIFIED`로 마킹하고, 온보딩 제출(US-1-2)에서 제출 `email`과 대조한다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 인증번호 발송**
+  Given 온보딩 토큰(PENDING·TERMS_AGREED)을 보유한 사용자가 이메일을 입력하고
+  When `POST /api/v1/auth/email/verification-code`에 `{ email }`을 담아 호출하면
+  Then `200 OK` + `data.expiresIn`(만료 초)을 반환하고 해당 이메일로 인증번호를 발송한다. 메일 발송에 성공한 뒤에만 인증번호 챌린지를 저장하며(인증번호 원문은 저장·로그하지 않고 해시로만 보관), `email`은 마스킹해 반환한다.
+- **장애 — 메일 발송 실패**
+  Given 메일 provider 장애·타임아웃 등으로 인증번호 발송이 실패하면
+  When `POST /api/v1/auth/email/verification-code`를 호출하면
+  Then `502` + `error.code=UPSTREAM_ERROR`를 반환하고, 인증번호 챌린지를 저장하지 않아 클라이언트가 재시도하도록 유도한다(동기 발송 정책).
+- **정상 — 인증번호 확인**
+  Given 발송된 인증번호가 유효(미만료·시도 미초과)하고
+  When `POST /api/v1/auth/email/verify`에 `{ email, code }`를 담아 호출하면
+  Then `200 OK` + `data.verified=true`를 반환하고 해당 이메일을 `VERIFIED`로 마킹해 온보딩 제출에 사용할 수 있게 한다.
+- **입력 검증 실패**
+  Given `email`이 누락·형식 위반이거나 확인 요청에 `code`가 빈 문자열이면
+  When 이메일 인증 API를 호출하면
+  Then `400` + `error.code=INVALID_INPUT`을 반환한다.
+- **비즈니스 규칙 — 인증번호 불일치/만료**
+  Given 잘못된 인증번호이거나 만료(미발송 포함)된 인증번호로
+  When `POST /api/v1/auth/email/verify`를 호출하면
+  Then `422` + `error.code=AUTH_EMAIL_VERIFICATION_FAILED`를 반환하고 이메일을 검증 완료로 표시하지 않는다.
+- **경계·동시성 — 재발송/시도 레이트리밋**
+  Given 짧은 시간에 인증번호 재발송을 반복하거나 검증 시도 상한을 초과하면
+  When 이메일 인증 API를 호출하면
+  Then `429` + `error.code=TOO_MANY_REQUESTS`를 반환한다(확인 필요: 재발송 간격·시도 상한 임계값).
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When 이메일 인증 API를 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
+
+---
+
+### US-1-7 — 약관 동의 화면에서 약관 동의하기
+
+**As a** 소셜 로그인은 마쳤으나 약관 미동의(PENDING) 사용자
+**I want** 약관 동의 화면에서 이용약관·개인정보처리방침(+선택 마케팅)에 동의하기를
+**So that** 가입 흐름의 첫 단계를 마쳐 `TERMS_AGREED`가 되고, 이어서 온보딩(US-1-2)을 진행할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(필수 약관 동의 시점·버전 기록), 보안(약관 버전 변경 시 재동의 정책 — 확인 필요)
+- 백엔드 관점: `auth`가 `user`의 약관 동의 공개명령으로 `consent`(동의 3종 + `agreedAt` + `termsVersion`)를 기록하고 상태를 `PENDING` → `TERMS_AGREED`로 전이한다. `termsVersion`은 클라이언트가 보내지 않고 서버가 설정값(`app.terms.version`)을 기록한다([ADR-0012](../adr/0012-terms-version-management.md)). 토큰은 갱신하지 않는다(상태만 전이).
+
+**AC (Given / When / Then)**
+
+- **정상 — 약관 동의 완료**
+  Given 소셜 로그인을 마친 `PENDING` 사용자의 유효한 온보딩 토큰을 보유하고
+  When `termsOfServiceAgreed=true`·`privacyPolicyAgreed=true`(+선택 `marketingAgreed`)를 담아 `POST /api/v1/auth/terms`를 호출하면
+  Then `200 OK` + `data`에 `status="TERMS_AGREED"`·동의 내용·`agreedAt`을 반환하고, 사용자 상태를 `PENDING` → `TERMS_AGREED`로 전이하며 `termsVersion`을 서버가 기록한다.
+- **비즈니스 규칙 — 필수 동의 누락**
+  Given 필수 약관(`termsOfServiceAgreed` 또는 `privacyPolicyAgreed`) 중 하나라도 `false`이면
+  When `POST /api/v1/auth/terms`를 호출하면
+  Then `422` + `error.code=AUTH_REQUIRED_AGREEMENT_MISSING`을 반환하고 상태를 전이하지 않는다(형식은 맞으나 비즈니스 규칙 위반 → 422).
+- **입력 검증 실패**
+  Given 필수 동의 boolean(`termsOfServiceAgreed`/`privacyPolicyAgreed`)이 누락(null)이면
+  When `POST /api/v1/auth/terms`를 호출하면
+  Then `400` + `error.code=INVALID_INPUT`을 반환한다.
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When `POST /api/v1/auth/terms`를 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
+- **경계·동시성 — 중복 호출/이미 온보딩 완료**
+  Given 이미 `TERMS_AGREED`인 사용자가 (네트워크 재시도 등으로) 다시 호출하거나, 이미 온보딩을 완료(`ACTIVE`)한 사용자가
+  When `POST /api/v1/auth/terms`를 호출하면
+  Then `TERMS_AGREED` 중복 호출은 상태·동의를 바꾸지 않고 멱등하게 `200 OK`(현재 동의 상태)를 반환하고(의도적 재동의 아님 — 마케팅 동의 변경은 `PATCH /users/me`로 처리), 이미 `ACTIVE`이면 `409` + `error.code=AUTH_ONBOARDING_ALREADY_COMPLETED`를 반환한다.
 
 ## 2. 맞춤 진단 & 매물 추천
 
@@ -234,31 +306,32 @@
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 제출
+
   - **Given** 로그인한 사용자가 유효한 access token을 보유하고, `region=SEOUL`, `purposes=[STUDY]`, `conditions=[FEMALE_ONLY,PRIVATE_BATH]`(3개 이하), `monthlyBudgetMax=600000`, `arcStatus=ARC_ISSUED`인 본문을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `201 Created`와 함께 `data.diagnosisId`·`data.status=COMPLETED`·`data.submittedAt`(UTC ISO-8601)을 반환하고, `Location: /api/v1/diagnoses/{diagnosisId}` 헤더를 포함한다
-
 - 시나리오: 입력 검증 실패 — 조건 4개 이상 / 필수값 누락
+
   - **Given** `conditions`에 4개 값을 담거나 `region`을 누락한 본문을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환하고, `error.errors[]`에 위반 필드(`conditions`/`region`)와 사유를 담는다 (개수 초과는 `conditions` reason으로 "최대 3개까지 선택할 수 있습니다.")
-
 - 시나리오: 입력 검증 실패 — 정의되지 않은 enum 값
+
   - **Given** `region=JEJU`처럼 허용 목록(`SEOUL`/`BUSAN`/`GYEONGGI`)에 없는 값 또는 `conditions`에 미정의 코드를 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환한다 (허용되지 않은 enum 값을 무시하지 않고 명시적으로 거부 — api-design-guide §5)
-
 - 시나리오: 본문 파싱 불가 — 타입 불일치
+
   - **Given** `monthlyBudgetMax`에 문자열을 넣는 등 JSON 파싱·타입 변환이 불가능한 본문을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=MALFORMED_REQUEST`를 반환한다(검증 이전 단계의 파싱 실패)
-
 - 시나리오: 인증 실패
+
   - **Given** `Authorization` 헤더가 없거나 만료된 token을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** 토큰 부재/위조는 `401`+`error.code=UNAUTHENTICATED`, 만료는 `401`+`error.code=TOKEN_EXPIRED`(재발급 유도)를 반환한다
-
 - 시나리오: 경계 — 예산 0 / 음수
+
   - **Given** `monthlyBudgetMax=0`(허용) 또는 `monthlyBudgetMax=-1`(불허)을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** 0은 `201 Created`로 정상 저장, 음수는 `400`+`error.code=INVALID_INPUT`(`errors[]`의 `monthlyBudgetMax` reason "0 이상이어야 합니다.")을 반환한다
@@ -276,26 +349,27 @@
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 조회 (결과 있음)
+
   - **Given** 본인이 소유한 `diagnosisId`가 있고 서울 기준 매칭 매물이 존재한다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations?page=0&size=20&sort=recommended,desc`를 호출한다
   - **Then** `200 OK`와 함께 `data.content[]`(매물 요약), `data.markers[]`(lat/lng), `data.page`(오프셋 메타), `data.suggestions=null`을 반환한다
-
 - 시나리오: 경계 — 0건 (부산/경기 또는 좁은 조건)
+
   - **Given** `region=BUSAN`처럼 MVP 데이터가 없거나 조건이 너무 좁아 매칭이 0건이다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `200 OK`(에러 아님)와 함께 `data.content=[]`, `data.markers=[]`, `data.suggestions`(완화 가능한 조건/예산/키워드 제안 목록)을 반환한다
-
 - 시나리오: 인가 실패 — 타인의 진단 결과 접근
+
   - **Given** 다른 사용자가 소유한 `diagnosisId`로 요청한다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `403 Forbidden`과 `error.code=FORBIDDEN`을 반환한다(소유권 위반으로 차단)
-
 - 시나리오: 리소스 없음 — 존재하지 않는 진단
+
   - **Given** 어떤 사용자에게도 존재하지 않는 `diagnosisId`로 요청한다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `404 Not Found`와 `error.code=DIAGNOSIS_NOT_FOUND`를 반환한다
-
 - 시나리오: 입력 검증 실패 — 페이지 파라미터 범위 초과
+
   - **Given** `size=500`(최대 100 초과) 또는 정의되지 않은 `sort` 키를 보낸다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환한다(허용되지 않은 `sort` 키를 무시하지 않고 거부 — api-design-guide §5)
@@ -313,31 +387,32 @@
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 — 이력 목록 조회
+
   - **Given** 본인이 과거 진단 3건을 제출했다
   - **When** `GET /api/v1/diagnoses?page=0&size=20&sort=submittedAt,desc`를 호출한다
   - **Then** `200 OK`와 `data.content[]`(각 `diagnosisId`·`region`·`submittedAt`·`status`), `data.page` 메타를 최신순으로 반환한다
-
 - 시나리오: 경계 — 진단 이력 없음 (최초 사용자)
+
   - **Given** 한 번도 진단하지 않은 사용자다
   - **When** `GET /api/v1/diagnoses/latest`를 호출한다
   - **Then** `200 OK`와 `data.completed=false`를 반환해 홈이 "진단 시작" 문구로 분기하게 한다 (404 아님). 이 경우 진단 요약 필드는 응답에 포함되지 않는다
-
 - 시나리오: 정상 — 최근 진단 단건 상세 다시 보기
+
   - **Given** 본인이 소유한 최근 진단 `diagnosisId`가 있다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
   - **Then** `200 OK`와 진단 입력 전체(`region`/`purposes`/`conditions`/`monthlyBudgetMax`/`arcStatus`/`submittedAt`)를 반환한다
-
 - 시나리오: 인증 실패
+
   - **Given** 토큰 없이 요청한다
   - **When** `GET /api/v1/diagnoses`를 호출한다
   - **Then** `401`과 `error.code=UNAUTHENTICATED`를 반환한다
-
 - 시나리오: 인가 실패 — 타인 진단 단건 조회
+
   - **Given** 다른 사용자의 `diagnosisId`로 요청한다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
   - **Then** `403`과 `error.code=FORBIDDEN`을 반환한다
-
 - 시나리오: 리소스 없음 — 존재하지 않는 진단 단건 조회
+
   - **Given** 어떤 사용자에게도 존재하지 않는 `diagnosisId`로 요청한다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
   - **Then** `404`와 `error.code=DIAGNOSIS_NOT_FOUND`를 반환한다
@@ -355,26 +430,27 @@
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 — 재진단으로 새 레코드 생성
+
   - **Given** 본인이 이미 완료한 진단 1건이 있다
   - **When** 변경된 조건으로 `POST /api/v1/diagnoses`를 다시 호출한다
   - **Then** `201 Created`로 **새** `diagnosisId`가 발급되고 기존 진단은 그대로 이력에 남는다(덮어쓰지 않음)
-
 - 시나리오: 입력 검증 실패 — 재진단 본문도 동일 규칙 적용
+
   - **Given** 재진단 본문에서 `purposes=[]`(빈 배열)로 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `400`과 `error.code=INVALID_INPUT`(`errors[]`의 `purposes` reason "최소 1개 이상 선택해야 합니다.")을 반환한다
-
 - 시나리오: 동시성/멱등 — 같은 Idempotency-Key 동시 2회 제출 (멱등성 키 정책 도입 시)
+
   - **Given** 동일한 `Idempotency-Key` 헤더와 동일 본문으로 2건의 요청이 거의 동시에 도착한다
   - **When** `POST /api/v1/diagnoses`가 병렬 처리된다
   - **Then** 진단 레코드는 **1건만** 생성되고, 두 응답 모두 동일 `diagnosisId`를 반환한다 (멱등성 키 미지원 시: 본 시나리오 보류 — 확인 필요)
-
 - 시나리오: 충돌 — 동일 키 + 다른 본문 (멱등성 키 정책 도입 시)
+
   - **Given** 같은 `Idempotency-Key`로 본문 내용을 바꿔 다시 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `409 Conflict`와 `error.code=DIAGNOSIS_IDEMPOTENCY_CONFLICT`를 반환한다 (멱등성 키 정책 확정 시 적용 — 확인 필요)
-
 - 시나리오: 인증 실패
+
   - **Given** 만료된 token으로 재진단을 시도한다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `401`과 `error.code=TOKEN_EXPIRED`를 반환한다
@@ -400,22 +476,18 @@
   Given 활성 매물이 N건 존재하고
   When 비로그인 사용자가 `GET /api/v1/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_AVAILABLE&sort=PRICE_ASC&page=0&size=20`을 호출하면
   Then `200 OK`로 공통 래퍼의 `data.content[]`에 가격 오름차순으로 매물 요약이 담기고 `data.page`에 `number/size/totalElements/totalPages/hasNext`가 포함된다
-
 - 시나리오: 입력 검증 실패(필터 값 오류)
   Given 클라이언트가
   When `minBudget=700000&maxBudget=300000`(최소>최대) 또는 정의되지 않은 `conditions=UNKNOWN_TAG`, `sort=CHEAPEST`처럼 허용되지 않은 enum/범위를 보내면
   Then 서버는 무시하지 않고 `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하며 `error.errors[]`에 위반 필드(`field`/`reason`)를 담는다
-
 - 시나리오: 거리순 정렬에 기준 좌표 누락
   Given 사용자가
   When `sort=DISTANCE`를 지정했으나 `centerLat`/`centerLng`를 함께 보내지 않으면
   Then `400 Bad Request`, `error.code=LISTING_INVALID_SORT_PARAM`을 반환한다
-
 - 시나리오: 경계(페이지 범위 초과·빈 결과)
   Given 필터 결과가 0건이거나 마지막 페이지를 넘는 `page`가 요청되면
   When 목록을 호출하면
   Then `200 OK`로 `data.content`는 빈 배열, `data.page.hasNext=false`를 반환한다(에러 아님)
-
 - 시나리오: 인증 선택(비로그인 vs 로그인 맞춤 필드)
   Given 동일 매물에 대해
   When 비로그인 사용자가 호출하면 각 항목 `favorited=false`로, 로그인 사용자가 호출하면 본인의 찜 여부가 `favorited`에 반영되어 반환된다
@@ -436,17 +508,14 @@
   Given 지도 영역이 유효 좌표로 주어지고
   When `GET /api/v1/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05&zoom=13&cluster=true`를 호출하면
   Then `200 OK`로 `data.clusters[]`(각 항목 `lat/lng/count` 및 `count==1`일 때 `listingId`)를 반환한다
-
 - 시나리오: 입력 검증 실패(좌표 불완전/모순/모드 혼용)
   Given 클라이언트가
   When bbox 4좌표 중 일부만 보내거나 `swLat > neLat`처럼 모순된 좌표, 또는 bbox와 반경(`centerLat/centerLng/radius`)을 동시에 보내면
   Then `400 Bad Request`, `error.code=LISTING_INVALID_BBOX`를 반환한다
-
 - 시나리오: 인증 선택(비로그인 허용)
   Given 토큰 없는 사용자가
   When 지도 검색을 호출하면
   Then `200 OK`로 정상 조회된다(클러스터 응답에는 사용자 맞춤 필드 `favorited`가 포함되지 않으며, 비클러스터 항목의 `favorited`는 `false`로 처리)
-
 - 시나리오: 경계(과도한 영역/반경)
   Given 한 번에 너무 넓은 bbox 또는 과대 `radius`가 주어지면
   When 검색을 호출하면
@@ -467,17 +536,14 @@
   Given "연세대학교"가 POI 사전에 존재하고
   When `GET /api/v1/listings/search?keyword=연세대학교&page=0&size=20`을 호출하면
   Then `200 OK`로 매칭된 위치 정보(`data.matchedPlace`)와 주변 매물 목록(`data.content[]`, 오프셋 페이지)을 반환한다
-
 - 시나리오: 입력 검증 실패(빈/과도 키워드)
   Given 클라이언트가
   When `keyword`를 누락하거나 공백만, 또는 허용 길이(1~50자)를 벗어나게 보내면
   Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다
-
 - 시나리오: 매칭 없음(경계)
   Given POI 사전에 없는 키워드가 주어지면
   When 검색을 호출하면
   Then `200 OK`로 `data.matchedPlace=null`이며 `data.content`는 빈 배열을 반환한다(404 아님)
-
 - 시나리오: 인증 선택
   Given 비로그인 사용자가
   When 키워드 검색을 호출하면
@@ -498,17 +564,14 @@
   Given 인증된 사용자가 존재하는 매물을 조회하면
   When `GET /api/v1/listings/{listingId}` (Authorization 포함)
   Then `200 OK`로 상세(사진 `imageUrls[]`, `type`, `monthlyRent`, `deposit`, `contractTermOptions[]`, `location`, `conditions[]`, `landlord`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다
-
 - 시나리오: 리소스 없음
   Given 존재하지 않거나 비공개/삭제된 매물 ID로
   When 상세를 조회하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
-
 - 시나리오: 인증 선택(비로그인 상세)
   Given 토큰 없는 사용자가
   When 상세를 조회하면
   Then `200 OK`로 상세를 반환하되 `favorited=false`이며 최근 본 매물에는 기록되지 않는다
-
 - 시나리오: 경계(최근 본 매물 5개 초과·동일 매물 재조회)
   Given 사용자가 이미 5개의 최근 본 매물을 가졌거나 같은 매물을 다시 보면
   When 상세를 조회하면
@@ -529,27 +592,22 @@
   Given 인증된 사용자가 찜하지 않은 매물에 대해
   When `POST /api/v1/listings/{listingId}/favorite`를 호출하면
   Then `201 Created`로 `data={ "favorited": true, "favoriteCount": <증가값> }`를 반환한다
-
 - 시나리오: 정상 찜 해제
   Given 인증된 사용자가 이미 찜한 매물에 대해
   When `DELETE /api/v1/listings/{listingId}/favorite`를 호출하면
   Then `200 OK`로 `data={ "favorited": false, "favoriteCount": <감소값> }`를 반환한다
-
 - 시나리오: 인증 실패
   Given 토큰이 없거나 만료된 사용자가
   When 찜 등록/해제 또는 찜 목록을 호출하면
   Then `401 Unauthorized`, `error.code=UNAUTHENTICATED`(또는 만료 시 `TOKEN_EXPIRED`)를 반환한다
-
 - 시나리오: 리소스 없음
   Given 존재하지 않거나 비공개/삭제된 매물 ID로
   When 찜 등록을 호출하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
-
 - 시나리오: 경계·동시성(중복 찜·동시 요청 멱등)
   Given 사용자가 이미 찜한 매물에 대해
   When 같은 등록 요청이 (네트워크 재시도 등으로) 반복/동시에 들어오면
   Then 유니크 제약으로 중복 행이 생기지 않고, 추가 생성이 없으므로 `200 OK`로 현재 상태 `{ "favorited": true, "favoriteCount": <실제값> }`를 멱등하게 반환한다(별도 `LISTING_ALREADY_FAVORITED` 에러로 보지 않음). 마찬가지로 찜하지 않은 매물 해제는 멱등하게 `200 OK`, `{ "favorited": false, "favoriteCount": <실제값> }`를 반환한다
-
 - 시나리오: 정상 찜 목록 조회
   Given 인증된 사용자가 찜한 매물이 있고
   When `GET /api/v1/users/me/favorites?page=0&size=20`을 호출하면
@@ -691,6 +749,7 @@
 자유게시판(FREE)·동네생활(NEIGHBORHOOD) 게시판에서 외국인 사용자가 텍스트 게시글을 작성/조회하고, 좋아요·댓글·공유로 상호작용하며, 동네생활 게시글의 작성자와 1:1 채팅을 시작하는 기능이다. 게시글은 텍스트(제목+본문)만 다루며 사진·동영상은 범위 외다. 채팅 메시지 송수신 자체는 04(채팅) 스펙을 `NEIGHBOR` 카테고리로 재사용한다.
 
 공통 전제(모든 스토리에 적용):
+
 - 모든 응답은 공통 래퍼 `{ success, data, error }`를 따른다. 에러는 [error-response-guide](../api/error-response-guide.md)가 정본이다.
 - 인증은 `Authorization: Bearer <accessToken>`(서버 자체 JWT). 토큰 만료 시 `401 TOKEN_EXPIRED`, 미인증 시 `401 UNAUTHENTICATED`.
 - 차단/탈퇴 사용자 처리: 탈퇴 사용자의 게시글·댓글은 본문을 유지하되 작성자 표기를 익명 처리(닉네임 `(탈퇴한 사용자)`, 국적 `null`)한다. 차단 관계인 상대가 작성한 게시글·댓글은 목록·상세에서 제외한다. (차단 모델 상세는 report/신고 모듈에 의존 — 해당 모듈 확정 필요)
@@ -708,21 +767,22 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 정상 작성
+
   - Given 인증된 사용자가 `boardType=FREE`, 유효한 `title`·`content`로 요청하고
   - When `POST /api/v1/community/posts`를 호출하면
   - Then `201 Created`, `data`에 생성된 `postId`·`boardType`·`createdAt`이 반환되고 `Location: /api/v1/community/posts/{postId}` 헤더가 포함되며, 해당 글은 작성자의 내 게시글 목록에 즉시 포함된다.
-
 - 시나리오: 입력 검증 실패
+
   - Given 인증된 사용자가 `title`을 공백으로 보내거나(또는 `content`가 길이 한도 초과, `boardType`이 enum에 없는 값)
   - When `POST /api/v1/community/posts`를 호출하면
   - Then `400`, `error.code = INVALID_INPUT`, `errors[]`에 위반 필드(`title`/`content`/`boardType`)와 사유가 포함된다.
-
 - 시나리오: 인증·권한 (남의 글 수정/삭제)
+
   - Given 사용자 A가 작성한 게시글을 사용자 B(인증됨)가
   - When `PATCH /api/v1/community/posts/{postId}` 또는 `DELETE /api/v1/community/posts/{postId}`로 변경하려 하면
   - Then `403`, `error.code = FORBIDDEN`이 반환되고 게시글은 변경되지 않는다. (미인증이면 `401 UNAUTHENTICATED`)
-
 - 시나리오: 경계·동시성 (이미 삭제된 글 / 동시 삭제)
+
   - Given 작성자가 이미 삭제한(소프트 삭제) 게시글에 대해
   - When 같은 작성자가 다시 `DELETE /api/v1/community/posts/{postId}`를 호출하거나, 존재하지 않는 `postId`로 `PATCH`를 호출하면
   - Then 존재하지 않거나 이미 삭제된 글은 `404`, `error.code = POST_NOT_FOUND`로 응답한다(권한 검증보다 대상 부재를 우선 판정해 소유권 노출을 피한다). 동시 삭제 시에도 좋아요/댓글 수 집계가 음수가 되지 않는다.
@@ -739,21 +799,22 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 정상 목록 조회
+
   - Given 게시글이 존재하는 상태에서
   - When `GET /api/v1/community/posts?boardType=FREE&sort=createdAt,desc&page=0&size=20`을 호출하면
   - Then `200`, `data`는 오프셋 페이지 객체(`content[]` + `page`)이고, 각 항목에 `postId`·`title`·`authorNickname`·`authorNationality`·`createdAt`·`likeCount`·`commentCount`가 포함된다. 인기순은 `sort=likeCount,desc`로 요청하며 좋아요수 기준(동점 시 `createdAt,desc`)으로 정렬된다.
-
 - 시나리오: 입력 검증 실패 (잘못된 정렬/페이지)
+
   - Given 사용자가 허용되지 않은 정렬 키(`sort=unknown,desc`) 또는 `size=500`(최대 100 초과), `page=-1` 등 허용되지 않은 파라미터를 보내면
   - When `GET /api/v1/community/posts`를 호출하면
   - Then `400`, `error.code = INVALID_INPUT`으로 응답한다(정의되지 않은 필터·정렬 값은 무시하지 않는다).
-
 - 시나리오: 인증·권한 (내 게시글)
+
   - Given 미인증 사용자가
   - When `GET /api/v1/community/posts/me`(내 게시글)를 호출하면
   - Then `401`, `error.code = UNAUTHENTICATED`로 응답한다. 인증된 사용자가 호출하면 `200`으로 본인 작성 글만 반환한다.
-
 - 시나리오: 경계 (검색 결과 0건 / 없는 상세)
+
   - Given 일치하는 게시글이 없는 키워드로 검색하거나, 존재하지 않는 `postId`로 상세를 조회하면
   - When `GET /api/v1/community/posts?keyword=...` 또는 `GET /api/v1/community/posts/{postId}`를 호출하면
   - Then 검색은 `200` + 빈 `content[]`(`totalElements=0`)로, 없는 상세는 `404` + `error.code = POST_NOT_FOUND`로 응답한다. 해시태그 검색(`hashtag=...`)은 `#` 없이 태그명만 받아 해당 태그가 달린 글을 반환한다.
@@ -770,21 +831,22 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 정상 좋아요 토글
+
   - Given 인증된 사용자가 좋아요하지 않은 게시글에 대해
   - When `POST /api/v1/community/posts/{postId}/like`를 호출하면
   - Then `200`, `data = { "liked": true, "likeCount": <증가된 값> }`로 현재 상태를 반환한다. 다시 호출하면 `{ "liked": false, ... }`로 토글된다.
-
 - 시나리오: 입력 검증 / 대상 없음
+
   - Given 존재하지 않는 `postId`로
   - When `POST /api/v1/community/posts/{postId}/like` 또는 `POST .../share`를 호출하면
   - Then `404`, `error.code = POST_NOT_FOUND`로 응답한다.
-
 - 시나리오: 인증·권한
+
   - Given 미인증 사용자가
   - When `POST /api/v1/community/posts/{postId}/like` 또는 `POST .../share`를 호출하면
   - Then `401`, `error.code = UNAUTHENTICATED`로 응답한다(좋아요·공유 모두 인증 필수 — 사용자 단위 멱등·레이트리밋을 보장하기 위함).
-
 - 시나리오: 경계·동시성 (중복 좋아요 / 동시 토글)
+
   - Given 같은 사용자가 좋아요를 짧은 간격으로 두 번 연속 요청하거나, 여러 요청이 동시에 토글하면
   - When `POST /api/v1/community/posts/{postId}/like`가 동시에 처리되어도
   - Then 사용자당 좋아요는 최대 1로 유지되고(유니크 제약), `likeCount`는 실제 좋아요한 사용자 수와 일치하며 음수가 되지 않는다. 공유 카운트(`POST .../share`)는 비멱등으로 호출마다 1 증가하되, 사용자 단위 레이트리밋 초과 시 `429 TOO_MANY_REQUESTS`로 응답한다.
@@ -801,21 +863,22 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 정상 댓글 작성
+
   - Given 인증된 사용자가 유효한 `content`로
   - When `POST /api/v1/community/posts/{postId}/comments`를 호출하면
   - Then `201 Created`, `data`에 `commentId`·`content`·`authorNickname`·`createdAt`이 반환되고 `Location: /api/v1/community/posts/{postId}/comments/{commentId}` 헤더가 포함되며 게시글의 `commentCount`가 1 증가한다.
-
 - 시나리오: 입력 검증 실패
+
   - Given `content`가 공백이거나 길이 한도를 초과하면
   - When `POST /api/v1/community/posts/{postId}/comments`를 호출하면
   - Then `400`, `error.code = INVALID_INPUT`, `errors[]`에 `content` 사유가 포함된다.
-
 - 시나리오: 인증·권한 (남의 댓글 삭제)
+
   - Given 사용자 A의 댓글을 사용자 B가
   - When `DELETE /api/v1/community/posts/{postId}/comments/{commentId}`로 삭제하려 하면
   - Then `403`, `error.code = FORBIDDEN`으로 응답하고 댓글은 유지된다. (미인증이면 `401 UNAUTHENTICATED`)
-
 - 시나리오: 경계 (없는 게시글/댓글, 동시 삭제)
+
   - Given 존재하지 않거나 삭제된 게시글/댓글에 대해
   - When 댓글을 작성·삭제하면
   - Then 게시글 부재는 `404 POST_NOT_FOUND`, 댓글 부재는 `404 COMMENT_NOT_FOUND`로 응답한다. 동시 삭제 시에도 `commentCount`가 음수가 되지 않는다.
@@ -832,21 +895,22 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 정상 채팅 시작
+
   - Given 인증된 사용자 A가 사용자 B의 동네생활 게시글에서
   - When `POST /api/v1/community/posts/{postId}/chat`을 호출하면
   - Then `201 Created`, `data`에 `NEIGHBOR` 카테고리 채팅방 식별자(`chatRoomId`, 04 스펙 재사용)가 반환되고 `Location: /api/v1/chat-rooms/{chatRoomId}` 헤더가 포함되어 메시지 송수신이 가능해진다.
-
 - 시나리오: 입력 검증 / 대상 없음
+
   - Given 존재하지 않는 `postId` 또는 탈퇴한 작성자의 게시글에 대해
   - When `POST /api/v1/community/posts/{postId}/chat`을 호출하면
   - Then 게시글 부재는 `404 POST_NOT_FOUND`로, 작성자가 탈퇴해 채팅 불가 상태이면 `422 POST_CHAT_AUTHOR_UNAVAILABLE`로 응답한다.
-
 - 시나리오: 인증·권한 (본인에게 채팅 시작 불가)
+
   - Given 인증된 사용자가 자신이 작성한 게시글에서
   - When `POST /api/v1/community/posts/{postId}/chat`을 호출하면
   - Then `422`, `error.code = POST_CHAT_SELF_NOT_ALLOWED`로 응답하고 방이 생성되지 않는다. 미인증이면 `401 UNAUTHENTICATED`.
-
 - 시나리오: 경계·동시성 (중복 방 / 차단 관계)
+
   - Given A가 B와 이미 동네친구 채팅방이 있거나 짧은 간격으로 두 번 시작 요청하면
   - When `POST /api/v1/community/posts/{postId}/chat`이 다시 호출되어도
   - Then 새 방을 만들지 않고 기존 `chatRoomId`를 `200 OK`로 반환한다(멱등). A가 B를 차단했거나 B가 A를 차단한 관계면 `403 POST_CHAT_BLOCKED`로 거부한다(차단 모델은 report 모듈에 의존 — 확정 필요).
@@ -871,21 +935,22 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 오늘의 퀴즈 정상 조회 (미제출)
+
   - Given 인증된 사용자가 오늘 퀴즈를 아직 제출하지 않았고, 오늘 날짜(서버 기준 UTC date)에 해당하는 퀴즈가 1개 존재한다
   - When `GET /api/v1/quizzes/today`를 호출한다
   - Then `200 OK` 와 함께 `quizId`, `question`, `choices`(`key` A~D + `text`, 4개), `quizDate`, `submitted=false`를 받고, 응답에 `correctChoice`/`explanation`은 포함되지 않는다
-
 - 시나리오: 오늘의 퀴즈 조회 (이미 제출함)
+
   - Given 인증된 사용자가 오늘 퀴즈를 이미 제출했다
   - When `GET /api/v1/quizzes/today`를 호출한다
   - Then `200 OK` 와 함께 `submitted=true` 및 직전 제출 결과(`result.selectedChoice`, `result.correct`, `result.correctChoice`, `result.explanation`, `result.earnedPoint`, `result.submittedAt`)를 받는다 (제출을 마친 사용자에게만 정답·해설 공개)
-
 - 시나리오: 인증 누락
+
   - Given Authorization 헤더가 없거나 토큰이 위조/만료되었다
   - When `GET /api/v1/quizzes/today`를 호출한다
   - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
-
 - 시나리오: 경계 — 오늘 등록된 퀴즈가 없음
+
   - Given 인증은 정상이나 오늘 날짜에 매칭되는 퀴즈가 콘텐츠 풀에 없다
   - When `GET /api/v1/quizzes/today`를 호출한다
   - Then `404 Not Found` 와 `error.code=QUIZ_NOT_FOUND`를 받는다
@@ -902,41 +967,42 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 정상 제출 — 정답
+
   - Given 인증된 사용자가 오늘 퀴즈를 아직 제출하지 않았고, 선택한 보기가 정답이다
   - When `POST /api/v1/quizzes/{quizId}/submission`에 `{ "selectedChoice": "B" }`를 보낸다
   - Then `201 Created` 와 함께 `correct=true`, `correctChoice`, `explanation`, `earnedPoint=10`, `totalPoint`(적립 후 합계)를 받고, `Location` 헤더에 생성된 제출 리소스 URI가 포함되며, 서버에 `QUIZ_CORRECT` 사유의 포인트 적립 로그 1건과 제출 기록 1건이 생성된다
-
 - 시나리오: 정상 제출 — 오답
+
   - Given 인증된 사용자가 오늘 퀴즈를 아직 제출하지 않았고, 선택한 보기가 오답이다
   - When `POST /api/v1/quizzes/{quizId}/submission`에 `{ "selectedChoice": "A" }`를 보낸다
   - Then `201 Created` 와 함께 `correct=false`, `correctChoice`, `explanation`, `earnedPoint=0`을 받고, 제출 기록만 생성되며 포인트 적립 로그는 생성되지 않는다
-
 - 시나리오: 입력 검증 실패 — 허용되지 않은 보기 값
+
   - Given 인증된 사용자가 `selectedChoice`에 `E`(또는 빈 값/누락)를 보낸다
   - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
   - Then `400 Bad Request` 와 `error.code=INVALID_INPUT`, `errors[]`에 `selectedChoice` 필드 사유를 받는다
-
 - 시나리오: 입력 검증 실패 — JSON 파싱 불가
+
   - Given 인증된 사용자가 본문을 깨진 JSON으로 보낸다
   - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
   - Then `400 Bad Request` 와 `error.code=MALFORMED_REQUEST`를 받는다
-
 - 시나리오: 인증·권한 — 인증 누락
+
   - Given Authorization 헤더가 없거나 토큰이 만료/위조되었다
   - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
   - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
-
 - 시나리오: 경계·동시성 — 하루 1회 초과 / 중복 제출
+
   - Given 인증된 사용자가 오늘 퀴즈를 이미 제출했거나, 동일 요청이 거의 동시에 2건 도착한다
   - When `POST /api/v1/quizzes/{quizId}/submission`를 다시(또는 동시에) 호출한다
   - Then `409 Conflict` 와 `error.code=QUIZ_ALREADY_SUBMITTED`를 받고(유니크 제약 `(userId, quizDate)`로 두 번째 쓰기는 거부), 포인트는 단 1회만 적립된다
-
 - 시나리오: 경계 — 존재하지 않는 퀴즈 제출
+
   - Given 경로의 `{quizId}`가 존재하지 않는다
   - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
   - Then `404 Not Found` 와 `error.code=QUIZ_NOT_FOUND`를 받는다
-
 - 시나리오: 경계 — 오늘 것이 아닌 퀴즈 제출
+
   - Given 경로의 `{quizId}`는 존재하나 오늘의 퀴즈가 아니다(과거/미래 분)
   - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
   - Then `422 Unprocessable Entity` 와 `error.code=QUIZ_NOT_TODAY`를 받는다
@@ -953,21 +1019,22 @@
 **AC (Given/When/Then)**
 
 - 시나리오: 정상 — 합계 조회
+
   - Given 인증된 사용자가 누적 적립 로그를 가진다
   - When `GET /api/v1/points/summary`를 호출한다
   - Then `200 OK` 와 `totalPoint`(KRW 금액이 아닌 포인트 정수)를 받는다
-
 - 시나리오: 정상 — 적립 내역 오프셋 페이지 조회
+
   - Given 인증된 사용자가 다수의 적립 로그를 가진다
   - When `GET /api/v1/points/histories?page=0&size=20&sort=createdAt,desc`를 호출한다
   - Then `200 OK` 와 `content[]`(각 `historyId`, `amount`, `reason`, `createdAt`) + `page`(`number`/`size`/`totalElements`/`totalPages`/`hasNext`)를 받는다
-
 - 시나리오: 입력 검증 실패 — 잘못된 페이지 파라미터
+
   - Given `size`에 음수/0 또는 최대(100) 초과 값을 보낸다
   - When `GET /api/v1/points/histories?size=0` (또는 `size=500`)를 호출한다
   - Then `400 Bad Request` 와 `error.code=INVALID_INPUT`을 받는다
-
 - 시나리오: 인증·권한 — 인증 누락
+
   - Given Authorization 헤더가 없거나 토큰이 만료/위조되었다
   - When `GET /api/v1/points/summary` 또는 `GET /api/v1/points/histories`를 호출한다
   - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받고, 어떤 경우에도 타인의 내역은 반환되지 않는다(내역은 인증 주체로만 필터링)
@@ -979,6 +1046,7 @@
 외국인 사용자가 커뮤니티 게시글(POST)·댓글(COMMENT)·채팅 메시지(MESSAGE)에서 마주치는 스팸·욕설·성적 콘텐츠·외부 연락 유도·허위 정보 등을 신고로 접수·저장하는 기능. MVP 범위는 **신고 접수/저장**과 **신고 사유 메타 조회**까지이며, 운영자의 검토·제재 흐름(상태 전이, 조치)은 (확인 필요) 상태로 본 섹션에서 설계하지 않는다. 모든 응답은 공통 래퍼 `{ success, data, error }`를 따르고, 에러는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다.
 
 신고 데이터 모델(백엔드 관점):
+
 - `reporterId`(신고자, JWT subject), `targetType`(`POST`/`COMMENT`/`MESSAGE`), `targetId`(Long), `reason`(enum), `detail`(선택, 자유 텍스트), `status`(접수 시 `RECEIVED` 고정 — 후속 운영 흐름은 (확인 필요)), `createdAt`(UTC).
 - 고유성 제약: `(reporterId, targetType, targetId)` 유니크 — 동일 사용자가 동일 대상을 중복 신고하지 못한다.
 - 권한 모델: 게시글·댓글은 로그인 사용자라면 신고할 수 있으나, **채팅 메시지(`MESSAGE`)는 해당 채팅방 참여자만 신고**할 수 있다(타인 대화 열람 방지, [04-booking-inquiry-chat](../api/specs/04-booking-inquiry-chat.md)의 `403 FORBIDDEN` 규약과 일치). 본인이 작성한 콘텐츠 신고(자기 신고) 차단 여부는 (확인 필요).

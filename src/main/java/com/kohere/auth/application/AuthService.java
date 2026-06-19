@@ -1,11 +1,15 @@
 package com.kohere.auth.application;
 
+import com.kohere.auth.application.dto.EmailVerificationCodeResponse;
+import com.kohere.auth.application.dto.EmailVerifyResponse;
 import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
+import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
+import com.kohere.auth.domain.OnboardingAlreadyCompletedException;
 import com.kohere.auth.domain.RefreshToken;
 import com.kohere.auth.domain.RefreshTokenHasher;
 import com.kohere.auth.domain.RefreshTokenRepository;
@@ -13,12 +17,16 @@ import com.kohere.auth.domain.RefreshTokenStatus;
 import com.kohere.auth.domain.RequiredAgreementMissingException;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
+import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
+import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
+import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.OnboardingProfile;
+import com.kohere.user.api.TermsAgreementView;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserProfileView;
 import java.security.SecureRandom;
@@ -30,10 +38,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 인증·온보딩 유스케이스 조율(ADR-0003/0006/0010/0011). 소셜 OIDC 검증·서버 JWT 발급·refresh 회전/재사용 탐지/무효화를 담당하고, 회원
- * 생성·상태 전이는 user 공개 API({@link UserAccountService})와 협력한다(user 내부 타입 비참조).
+ * 인증·온보딩 유스케이스 조율(ADR-0003/0006/0010/0011). 소셜 OIDC 검증·서버 JWT 발급·refresh 회전/재사용 탐지/무효화를 담당하고, 약관
+ * 동의·회원 생성·상태 전이는 user 공개 API({@link UserAccountService})와 협력한다(user 내부 타입 비참조). 이메일 인증은 {@link
+ * EmailVerificationService}에 위임한다.
  *
- * <p>도메인 포트(검증·저장소·해시)와 common JWT 서비스만 의존한다(application→domain, 의존성 역전).
+ * <p>상태 흐름: 소셜 로그인(PENDING) → 약관 동의(TERMS_AGREED) → 이메일 인증 → 온보딩(ACTIVE). 응답의 {@code status}로
+ * 클라이언트가 재개 지점을 분기한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,6 +51,7 @@ public class AuthService {
 
   private static final String TOKEN_TYPE = "Bearer";
   private static final String STATUS_ACTIVE = "ACTIVE";
+  private static final String STATUS_PENDING = "PENDING";
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final OidcTokenVerifier oidcTokenVerifier;
@@ -49,9 +60,13 @@ public class AuthService {
   private final RefreshTokenHasher refreshTokenHasher;
   private final JwtTokenService jwtTokenService;
   private final UserAccountService userAccountService;
+  private final EmailVerificationService emailVerificationService;
   private final AuthProperties authProperties;
 
-  /** 소셜 로그인. idToken 검증 후 (기존 ACTIVE)→정식 토큰 / (기존 PENDING·신규)→온보딩 임시 토큰. */
+  /**
+   * 소셜 로그인. idToken 검증 후 (기존 ACTIVE)→정식 토큰 / (기존 PENDING·TERMS_AGREED·신규)→온보딩 임시 토큰. 응답 {@code
+   * status}로 클라이언트가 재개 지점을 분기한다.
+   */
   @Transactional
   public SocialLoginResponse socialLogin(SocialLoginRequest request) {
     OidcUser oidcUser = oidcTokenVerifier.verify(request.provider(), request.idToken());
@@ -61,17 +76,19 @@ public class AuthService {
 
     if (existing.isPresent()) {
       long userId = existing.get().getUserId();
-      if (STATUS_ACTIVE.equals(userAccountService.getAccount(userId).status())) {
+      String status = userAccountService.getAccount(userId).status();
+      if (STATUS_ACTIVE.equals(status)) {
         TokenResponse tokens = issueFullTokens(userId);
         return new SocialLoginResponse(
             false,
+            STATUS_ACTIVE,
             tokens.tokenType(),
             tokens.accessToken(),
             tokens.refreshToken(),
             tokens.expiresIn());
       }
-      // 기존 PENDING(온보딩 중단) 재로그인 → 온보딩 임시 토큰 재발급(신규 행 미생성)
-      return onboardingResponse(userId);
+      // 기존 미완료(PENDING·TERMS_AGREED) 재로그인 → 온보딩 임시 토큰 재발급(신규 행 미생성)
+      return onboardingResponse(userId, status);
     }
 
     // 신규: user PENDING 회원 생성 + social_accounts 매핑 생성
@@ -84,16 +101,54 @@ public class AuthService {
             .userId(userId)
             .linkedAt(Instant.now())
             .build());
-    return onboardingResponse(userId);
+    return onboardingResponse(userId, STATUS_PENDING);
   }
 
-  /** 온보딩 완료. 필수 약관 검증(422) 후 user에 ACTIVE 전이를 위임하고 정식 토큰을 발급한다. */
+  /** 약관 동의(PENDING→TERMS_AGREED). 필수 약관 미동의는 422. 토큰은 갱신하지 않는다(상태만 전이). */
   @Transactional
-  public OnboardingResponse onboarding(long userId, OnboardingRequest request) {
+  public TermsResponse agreeToTerms(long userId, TermsRequest request) {
     if (!Boolean.TRUE.equals(request.termsOfServiceAgreed())
         || !Boolean.TRUE.equals(request.privacyPolicyAgreed())) {
       throw new RequiredAgreementMissingException();
     }
+    TermsAgreementView view =
+        userAccountService.agreeToTerms(userId, Boolean.TRUE.equals(request.marketingAgreed()));
+    return new TermsResponse(
+        view.status(),
+        view.termsOfServiceAgreed(),
+        view.privacyPolicyAgreed(),
+        view.marketingAgreed(),
+        view.agreedAt());
+  }
+
+  /**
+   * 온보딩 중 이메일 인증번호 발송. 이메일 인증은 온보딩 단계 전용이므로 이미 완료(ACTIVE)된 사용자의 요청은 409로 거절한다(spec §3). 동기 발송 성공
+   * 시에만 챌린지를 저장한다(발송 실패 502).
+   */
+  @Transactional(readOnly = true)
+  public EmailVerificationCodeResponse sendEmailVerificationCode(
+      long userId, EmailVerificationCodeRequest request) {
+    if (STATUS_ACTIVE.equals(userAccountService.getAccount(userId).status())) {
+      throw new OnboardingAlreadyCompletedException();
+    }
+    long expiresIn = emailVerificationService.sendCode(userId, request.email());
+    return new EmailVerificationCodeResponse(maskEmail(request.email()), expiresIn);
+  }
+
+  /** 이메일 인증번호 확인. 성공 시 이메일을 검증 완료로 마킹한다. */
+  @Transactional(readOnly = true)
+  public EmailVerifyResponse verifyEmail(long userId, EmailVerifyRequest request) {
+    emailVerificationService.verify(userId, request.email(), request.code());
+    return new EmailVerifyResponse(maskEmail(request.email()), true);
+  }
+
+  /**
+   * 온보딩 완료. 제출 email의 인증 완료를 선행 확인(미검증·불일치 422)한 뒤 user에 TERMS_AGREED→ACTIVE 전이를 위임하고 정식 토큰을 발급한다.
+   * 약관 미동의(PENDING)면 user가 422(AUTH_TERMS_AGREEMENT_REQUIRED)로 거절한다.
+   */
+  @Transactional
+  public OnboardingResponse onboarding(long userId, OnboardingRequest request) {
+    emailVerificationService.assertVerified(userId, request.email());
     UserProfileView user =
         userAccountService.completeOnboarding(
             userId,
@@ -102,10 +157,10 @@ public class AuthService {
                 request.lastName(),
                 request.gender(),
                 request.birthDate(),
-                request.countryCode(),
-                request.phoneNumber(),
-                request.visaType(),
-                Boolean.TRUE.equals(request.marketingAgreed())));
+                request.country(),
+                request.occupation(),
+                request.email(),
+                request.visaType()));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
@@ -145,9 +200,10 @@ public class AuthService {
         .ifPresent(token -> refreshTokenRepository.save(token.revoke()));
   }
 
-  private SocialLoginResponse onboardingResponse(long userId) {
+  private SocialLoginResponse onboardingResponse(long userId, String status) {
     return new SocialLoginResponse(
         true,
+        status,
         TOKEN_TYPE,
         jwtTokenService.issueOnboardingToken(userId),
         null,
@@ -172,5 +228,20 @@ public class AuthService {
     byte[] bytes = new byte[32];
     SECURE_RANDOM.nextBytes(bytes);
     return "rt_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+  }
+
+  /** 응답·로그용 이메일 마스킹(예: {@code minh@example.com} → {@code mi***@example.com}). */
+  private static String maskEmail(String email) {
+    if (email == null) {
+      return null;
+    }
+    int at = email.indexOf('@');
+    if (at <= 0) {
+      return "***";
+    }
+    String local = email.substring(0, at);
+    String domain = email.substring(at);
+    String visible = local.length() <= 2 ? local.substring(0, 1) : local.substring(0, 2);
+    return visible + "***" + domain;
   }
 }

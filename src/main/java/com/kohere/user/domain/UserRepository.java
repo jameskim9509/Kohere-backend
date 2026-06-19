@@ -10,6 +10,9 @@ public interface UserRepository {
 
   Optional<User> findById(Long id);
 
+  /** 닉네임 전역 유니크 충돌 검사용(NicknameGenerator). */
+  boolean existsByNickname(String nickname);
+
   /** 신규 저장·변경 저장(upsert). 신규는 식별자가 채워진 인스턴스를 반환한다. */
   User save(User user);
 }

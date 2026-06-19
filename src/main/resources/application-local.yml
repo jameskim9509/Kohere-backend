@@ -11,6 +11,18 @@ spring:
     redis:
       host: localhost
       port: 6379
+  # 온보딩 이메일 인증 SMTP. 로컬은 MailHog 등(localhost:1025) 기본 — 미가용 시 발송이 502로 실패한다(설계상 정상).
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:false}
 
 app:
   jwt:
@@ -18,6 +30,7 @@ app:
     secret: ${JWT_SECRET:local-dev-only-hs256-secret-please-override-32bytes-min!!}
   auth:
     refresh-pepper: ${REFRESH_PEPPER:local-dev-refresh-pepper} # SHA-256(token+pepper) (ADR-0006)
+    email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 인증번호 해시 pepper
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID:}

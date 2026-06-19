@@ -1,0 +1,129 @@
+# Kohere — auth-onboarding 로컬 수동 테스트 (소셜로그인 → 약관 → 이메일 인증 → 온보딩 → 프로필 → 재발급 → 로그아웃 → 탈퇴)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis mailhog
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
+#      └ 로컬은 GOOGLE_CLIENT_ID 미설정이라 audience 검증을 건너뛴다 → 유효한 Google 서명 idToken 이면 통과.
+#   4) 각 요청 위의 "Send Request" 를 위에서부터 순서대로 클릭한다.
+#      토큰은 이름붙은 응답({{socialLogin.response...}})으로 다음 요청에 자동 전달된다.
+#
+# 참고:
+#   - IntelliJ HTTP Client 를 쓴다면 변수 참조 문법이 달라 그대로는 동작하지 않는다(REST Client 전용).
+#   - 응답 봉투는 { success, data, error } 라서 토큰 경로는 response.body.$.data.* 다.
+
+@baseUrl = http://localhost:8080
+@idToken = eyJhbGciOiJSUzI1NiIsImtpZCI6IjMwMzViYjg2ZDk5ZjIyZTYxMzQ2N2E2NjgwODI1ZWViMGQ4MTM5YTIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhenAiOiI0MDc0MDg3MTgxOTIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJhdWQiOiI0MDc0MDg3MTgxOTIuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJzdWIiOiIxMTU4NjkyNDczNDgyMDYxNTEzNDMiLCJlbWFpbCI6IndsdG5zMTI4MkBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiYXRfaGFzaCI6IjZobWN5SWoza19wTW12UGR0b1ZBeHciLCJuYW1lIjoi6rmA7KeA7IicIiwicGljdHVyZSI6Imh0dHBzOi8vbGgzLmdvb2dsZXVzZXJjb250ZW50LmNvbS9hL0FDZzhvY0lWRXVCMEpQU2g1cmpOYlhnZlBDS1hUVzAxbVVma0tpR1YwdXlnOTZBcDRFSE1SMW5qPXM5Ni1jIiwiZ2l2ZW5fbmFtZSI6IuyngOyInCIsImZhbWlseV9uYW1lIjoi6rmAIiwiaWF0IjoxNzgxODg3NTIwLCJleHAiOjE3ODE4OTExMjB9.w_1AikRtx9V1efw1LnPOgMU_iDGx-Sh-AH0ccvBXqVVyR2ZhRS0xcwAuNpt7ucIMdDPXGJO6XgT7Ti07ow5y0cPttioN5l3q-xlTOt_qNianF5XkfCVtikj0ma0S_8aIvTEbFuIuWVyuMsyBjU8kRZcSSWe8n09ACdtMF3y9HnraLWS-X49ePagLNzHciNb6hRoaQVsI4fZiXEss-78IKVXslcehFz46kE2P5Jm4o2OWSmG7ld8uFWsQFlATuTjv6rLpK_H8k6q__PXamXICJrK6xb9z4e5dsVPuuavyuXJf1VHg8Li1Q1utP0Whk0DuPBX975QcQkwrjFHJE99lww
+@email = tester@example.com
+
+### 0. 헬스 체크 (인증 불필요)
+#    200 {"status":"UP"} → 앱 + 인프라(MySQL·Redis·Mongo) 모두 정상.
+#    503 {"status":"DOWN"} → 앱은 떴지만 의존성 하나가 DOWN (docker compose 로 인프라를 먼저 띄웠는지 확인).
+GET {{baseUrl}}/actuator/health
+
+### 1. 소셜 로그인 (공개 엔드포인트)
+#    신규/미완료 회원: onboardingRequired=true, status=PENDING, refreshToken=null, accessToken=온보딩 임시 토큰
+#    기존 ACTIVE 회원: onboardingRequired=false, status=ACTIVE, 정식 access/refresh 발급 → 2~5단계 건너뛰고 6단계로
+# @name socialLogin
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "{{idToken}}"
+}
+
+### 2. 약관 동의 (온보딩 임시 토큰 필요) — 필수 약관 false 면 422
+POST {{baseUrl}}/api/v1/auth/terms
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### 3. 이메일 인증번호 발송 — 발송 후 http://localhost:8025 (MailHog)에서 6자리 코드를 확인해 아래 @code 에 입력
+POST {{baseUrl}}/api/v1/auth/email/verification-code
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+### --- MailHog(http://localhost:8025)에서 받은 인증번호로 교체 ---
+@code = 697622
+
+### 4. 이메일 인증번호 확인 — 코드 불일치/만료 시 실패
+POST {{baseUrl}}/api/v1/auth/email/verify
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "code": "{{code}}"
+}
+
+### 5. 온보딩 제출 — 성공 시 user 프로필 + 정식 access/refresh 발급
+#    enum 유효값: gender=MALE|FEMALE / occupation=STUDENT|EMPLOYEE|SELF_EMPLOYED|JOB_SEEKER|ETC
+#                 visaType=VISA_STUDENT|VISA_WORK|VISA_RESIDENCE|VISA_WORKING_HOLIDAY|VISA_TOURISM|VISA_ETC
+#    country=ISO 3166-1 alpha-2 (시드: KR,CN,VN,US,UZ,TH,PH,NP,MN,JP,ID,KH,RU,IN,MM) / email=4단계서 인증한 값
+# @name onboarding
+POST {{baseUrl}}/api/v1/auth/onboarding
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "firstName": "Minji",
+  "lastName": "Kim",
+  "gender": "FEMALE",
+  "birthDate": "1995-03-21",
+  "country": "VN",
+  "occupation": "STUDENT",
+  "email": "{{email}}",
+  "visaType": "VISA_STUDENT"
+}
+
+### 6. 내 프로필 조회 (정식 access 토큰 필요)
+#    기존 ACTIVE 회원이라 1단계서 바로 정식 토큰을 받았다면 아래를 {{socialLogin...}} 으로 바꿔 쓰면 된다.
+GET {{baseUrl}}/api/v1/users/me
+# Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+
+### 7. 내 프로필 부분 수정 — 보낸 필드만 변경(email·nickname 은 이 경로로 변경 불가)
+PATCH {{baseUrl}}/api/v1/users/me
+# Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "country": "JP",
+  "occupation": "EMPLOYEE",
+  "visaType": "VISA_WORK"
+}
+
+### 8. 토큰 재발급 (공개 엔드포인트, 본문 refresh 토큰)
+#    재발급은 refresh 토큰을 회전(rotation)시킨다 → 직전 refresh 토큰은 이후 무효. 로그아웃엔 9단계의 새 토큰을 쓴다.
+# @name reissue
+POST {{baseUrl}}/api/v1/auth/reissue
+Content-Type: application/json
+
+{
+  "refreshToken": "{{socialLogin.response.body.$.data.refreshToken}}"
+}
+
+### 9. 로그아웃 (8단계에서 회전된 최신 refresh 토큰을 무효화)
+POST {{baseUrl}}/api/v1/auth/logout
+Content-Type: application/json
+Authorization: Bearer {{reissue.response.body.$.data.accessToken}}
+
+{
+  "refreshToken": "{{reissue.response.body.$.data.refreshToken}}"
+}
+
+### 10. 회원 탈퇴 (정식 access 토큰 필요) — 204 No Content
+#    주의: 계정이 삭제된다. 다시 테스트하려면 1단계부터(같은 Google 계정이면 신규 PENDING 으로 재생성) 반복.
+DELETE {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}

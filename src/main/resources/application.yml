@@ -28,7 +28,15 @@ app:
   auth:
     refresh-ttl-seconds: 1209600 # refresh 14일 (ADR-0011)
   terms:
-    version: v1.0 # 약관 버전 정본 — 온보딩 완료 시 서버가 기록 (ADR-0012)
+    version: v1.0 # 약관 버전 정본 — 약관 동의 시 서버가 기록 (ADR-0012)
+  email:
+    # 온보딩 이메일 인증 정책값(비밀 아님). 모두 잠정값 — 운영 확정 필요(문서 §6).
+    code-length: 6 # 인증번호 자릿수
+    code-ttl-seconds: 300 # 인증번호 만료(5분)
+    verified-ttl-seconds: 1800 # 검증 완료 마커 보존(30분, 온보딩 토큰 만료 정도)
+    max-attempts: 5 # 검증 시도 상한(초과 시 429)
+    resend-interval-seconds: 60 # 재발송 최소 간격(미달 시 429)
+    from: ${MAIL_FROM:noreply@kohere.app} # 발신 이메일 주소
   oidc:
     # 소셜 OIDC 검증(JWKS). audience(우리 client ID)는 환경 의존값이라 프로파일별로 주입.
     google:

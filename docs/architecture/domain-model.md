@@ -21,8 +21,8 @@
 
 | 모듈 | 애그리거트 루트 | 핵심 값 객체(VO) | MVP |
 | --- | --- | --- | --- |
-| [`auth`](#1-auth--인증온보딩) | `SocialAccount`, `RefreshToken` | `SocialIdentity`, `TokenHash` | ✅ |
-| [`user`](#2-user--회원-프로필계정-lifecycle) | `User` | `FullName`, `PhoneContact`, `Consent` | ✅ |
+| [`auth`](#1-auth--인증온보딩) | `SocialAccount`, `RefreshToken`, `EmailVerification` | `SocialIdentity`, `TokenHash` | ✅ |
+| [`user`](#2-user--회원-프로필계정-lifecycle) | `User` | `FullName`, `Consent` | ✅ |
 | [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `Location`, `Landlord`, `MatchedPlace` | ✅ |
 | [`diagnosis`](#4-diagnosis--5단계-맞춤-진단) | `Diagnosis` | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
 | [`booking`](#5-booking--매물-신청예약) | `Booking` | `GreetingMessage` | ✅ |
@@ -39,7 +39,7 @@
 
 > [API 스펙](../api/specs/01-auth-onboarding.md)(`/api/v1/auth`) · [시퀀스](sequence-diagrams/01-auth-onboarding/README.md) · `allowedDependencies = {common}`
 
-소셜 로그인(Apple/Google) 자격을 회원 식별자로 매핑하고, 서버 자체 세션 토큰(불투명 refresh)의 발급·회전·재사용 탐지·무효화를 책임지는 인증 경계다. 회원 프로필·상태(`PENDING`/`ACTIVE`/`WITHDRAWN`)는 `user` 모듈 소관이므로 여기선 회원 식별자(`userId`)로만 참조한다.
+소셜 로그인(Apple/Google) 자격을 회원 식별자로 매핑하고, 서버 자체 세션 토큰(불투명 refresh)의 발급·회전·재사용 탐지·무효화와 **온보딩 중 이메일 인증(인증번호 발송·검증)** 을 책임지는 인증 경계다. 회원 프로필·상태(`PENDING`/`ACTIVE`/`WITHDRAWN`)는 `user` 모듈 소관이므로 여기선 회원 식별자(`userId`)로만 참조한다.
 
 **`SocialAccount`** — 소셜 제공자 자격을 한 명의 회원에 묶는 자격 매핑 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(provider, providerUserId)`.
 
@@ -71,10 +71,29 @@
 
 **불변식:** `status=ACTIVE`이고 `expiresAt > now`인 토큰만 유효 — 그 외(만료·위조(해시 매칭 없음)·무효화)는 거부(`401 AUTH_INVALID_REFRESH_TOKEN`); 재발급은 **회전** — 제출된 유효 토큰을 `ROTATED`로 전이해 무효화하고 같은 세션 계보로 새 `ACTIVE` 발급; **재사용 탐지** — 이미 `ROTATED`/`REVOKED`인 토큰 재제출은 탈취 정황으로 보고 해당 `userId`의 모든 refresh 토큰을 일괄 무효화 후 거부(`401`); 로그아웃은 제출 토큰을 `REVOKED`로 전이하며 이미 무효화돼도 멱등 성공(`204`); 회원 탈퇴(`WITHDRAWN` 전이) 시 해당 `userId`의 모든 refresh 토큰 일괄 무효화; 신규 회원의 소셜 로그인 단계(온보딩 미완료)에서는 refresh 미발급(온보딩 완료/기존 회원 로그인 시에만 발급); 원문 토큰은 보관·로그하지 않음(해시만).
 
+**`EmailVerification`** — 온보딩 중 사용자가 입력한 이메일의 소유를 인증번호로 확인하는 단명(ephemeral) 인증 시도 애그리거트 루트. 비즈니스 키 `userId`(온보딩 중인 PENDING 회원 단위로 1건). 영속 무관이나 단명 상태라 Redis로 물리화한다([database-design](../database/database-design.md) §4-1).
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `userId` | 식별자 | 인증 대상(온보딩 중) 회원 → `User` 식별자 참조(시도 단위) |
+| `email` | String | 인증 대상 이메일(사용자가 온보딩에서 입력) — 민감정보 |
+| `codeHash` | String | 발송한 인증번호의 단방향 해시(원문 미보관) |
+| `status` | enum `EmailVerificationStatus` | 인증 시도 상태 |
+| `attempts` | int | 검증 실패 누적 횟수(상한 초과 시 거부) |
+| `expiresAt` | Instant | 인증번호 만료 시각(UTC) |
+| `issuedAt` | Instant | 인증번호 발송 시각(UTC) |
+
+**불변식:** 발송은 온보딩 토큰(`PENDING`/`TERMS_AGREED` 모두 `onboardingCompleted=false`)을 가진 본인에 한함 — 사용자당 활성 시도 1건(재발송은 기존 시도 대체); 인증 챌린지는 **메일 발송이 성공한 뒤에만 확정**하고(동기 발송), provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 거부(재시도 유도); 검증 시 챌린지가 없으면(미발송·만료·이미 검증으로 키 부재) 올릴 `attempts` 레코드가 없어 즉시 `422 AUTH_EMAIL_VERIFICATION_FAILED`(재요청 유도); 챌린지가 있고 `attempts`가 상한 미만일 때 입력 인증번호 해시가 `codeHash`와 일치하면 `VERIFIED`로 전이하고, 불일치면 `attempts`를 올려 상한 초과 시 `429 TOO_MANY_REQUESTS`·아니면 `422 AUTH_EMAIL_VERIFICATION_FAILED`(과도 재발송도 `429`); 온보딩 완료(`POST /auth/onboarding`)는 제출 `email`이 `VERIFIED`된 이메일과 일치해야 진행(미인증·불일치 `422 AUTH_EMAIL_NOT_VERIFIED`); 인증번호 원문은 보관·로그하지 않음(해시만), `email`은 응답·로그 마스킹; 만료/완료 시도는 TTL로 자동 소멸. (확인 필요: 인증번호 길이·만료 시간·검증 시도 상한·재발송 레이트리밋)
+
 **값 객체(VO):**
 
-- `SocialIdentity` — `provider`(enum `Provider`) + `providerUserId`(String). 소셜 자격의 자연키를 한 단위로 표현(동일 값이면 같은 자격).
-- `TokenHash` — 불투명 refresh 토큰 원문의 단방향 해시. 동치성은 해시 값으로 판정하며 원문은 재구성 불가.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `SocialIdentity` | `provider` | enum `Provider` | 소셜 로그인 제공자. `(provider, providerUserId)`가 소셜 자격의 자연키 — 동일 값이면 같은 자격 |
+| | `providerUserId` | String | 제공자가 발급한 사용자 고유 식별자 |
+| `TokenHash` | `value` | String | 불투명 refresh 토큰 원문의 단방향 해시. 동치성은 해시 값으로 판정하며 원문 재구성 불가 |
 
 **상태(enum):**
 
@@ -85,8 +104,10 @@
 | `RefreshTokenStatus` | `ACTIVE` | 발급 후 유효(재발급에 사용 가능) |
 | | `ROTATED` | 회전으로 새 세대에 자리를 넘겨 무효화됨(재제출 시 재사용 탐지 대상) |
 | | `REVOKED` | 로그아웃·탈퇴·재사용 탐지로 강제 무효화됨 |
+| `EmailVerificationStatus` | `PENDING` | 인증번호 발송 후 미검증(만료 전·시도 가능) |
+| | `VERIFIED` | 인증번호 일치로 이메일 소유 확인 완료(온보딩 제출에 사용 가능) |
 
-**협력 / 이벤트:** 회원 프로필·상태는 `user`가 소유하고 `auth`는 `userId`로만 참조한다(ADR-0002). 신규 분기의 `PENDING` 회원 생성, 온보딩 시 `ACTIVE` 전이, 탈퇴 시 `WITHDRAWN` 전이는 `user`의 공개 명령/쿼리로 협력하고 결과 식별자를 `SocialAccount.userId`로 보유한다. 온보딩 입력의 `gender`·`visaType`는 `user` 소유 enum이라 타입을 공유하지 않고 원시 값으로 전달한다. `user`의 탈퇴 이벤트(`UserWithdrawnEvent`)를 구독해 해당 `userId`의 refresh 토큰을 일괄 무효화한다.
+**협력 / 이벤트:** 회원 프로필·상태는 `user`가 소유하고 `auth`는 `userId`로만 참조한다(ADR-0002). 신규 분기의 `PENDING` 회원 생성, 약관 동의 시 `TERMS_AGREED` 전이, 온보딩 시 `ACTIVE` 전이, 탈퇴 시 `WITHDRAWN` 전이는 `user`의 공개 명령/쿼리로 협력하고 결과 식별자를 `SocialAccount.userId`로 보유한다. 온보딩 입력의 `gender`·`visaType`·`occupation`은 `user` 소유 enum이라 타입을 공유하지 않고 원시 값으로 전달한다. 온보딩 완료 명령 전에 `auth`가 `EmailVerification`의 `VERIFIED` 여부를 확인해 미인증 이메일을 거른다(인증 상태는 `auth` 소유, 확정된 `email` 값은 `user`가 보유). 인증번호 메일 발송은 아웃바운드 포트 `VerificationEmailSender`(application)로 추상화하고 인프라 어댑터(SES/SMTP — 확인 필요)가 구현한다 — **동기 발송**이라 발송 성공 시에만 챌린지를 확정하고, 발송 실패(provider 장애·타임아웃)는 `502 UPSTREAM_ERROR`로 응답한다(메일 템플릿·다국어는 확인 필요). `user`의 탈퇴 이벤트(`UserWithdrawnEvent`)를 구독해 해당 `userId`의 refresh 토큰을 일괄 무효화한다.
 
 ---
 
@@ -94,9 +115,9 @@
 
 > [API 스펙](../api/specs/01-auth-onboarding.md)(`/api/v1/users/me`) · [시퀀스](sequence-diagrams/01-auth-onboarding/README.md) · `allowedDependencies = {common}`
 
-회원 프로필과 계정 생애주기(가입·온보딩·수정·탈퇴)를 소유한다. 사용자는 소셜 검증만 끝난 `PENDING`에서 온보딩 완료로 `ACTIVE`, 탈퇴로 `WITHDRAWN`이 되는 단방향 상태 모델을 가진다.
+회원 프로필과 계정 생애주기(가입·약관 동의·온보딩·수정·탈퇴)를 소유한다. 사용자는 소셜 검증만 끝난 `PENDING` → 약관 동의 완료 `TERMS_AGREED` → 온보딩 완료 `ACTIVE` → 탈퇴 `WITHDRAWN`의 단방향 상태 모델을 가진다(약관 동의와 온보딩은 분리된 단계로 각각 상태를 전이한다).
 
-**`User`** — 회원의 프로필·동의·계정 생애주기를 일관성 경계로 묶는 애그리거트 루트. 식별자 `id`(소셜 자격→회원 매핑·세션 토큰은 `auth` 소관). [값 객체: `FullName`, `PhoneContact`, `Consent`]
+**`User`** — 회원의 프로필·동의·계정 생애주기를 일관성 경계로 묶는 애그리거트 루트. 식별자 `id`(소셜 자격→회원 매핑·세션 토큰·이메일 인증은 `auth` 소관). [값 객체: `FullName`, `Consent`]
 
 **속성:**
 
@@ -104,33 +125,52 @@
 | --- | --- | --- |
 | `id` | 식별자 | 애그리거트 식별자(타 모듈은 이 값으로만 회원 참조) |
 | `name` | VO `FullName` | 이름(`firstName`)·성(`lastName`). 온보딩 시 확정 |
+| `nickname` | String | 시스템이 배정하는 표시용 닉네임(`형용사 + 사물`). 전역 유니크, 사용자 입력 아님 — 온보딩 완료 시 자동 배정. 메인 화면 비노출(프로필·`더보기 탭`에서 확인) |
 | `gender` | enum `Gender` | 성별. 온보딩 필수 |
 | `birthDate` | LocalDate | 생년월일(과거 날짜만). 온보딩 필수 |
-| `phone` | VO `PhoneContact` | 국가번호·전화번호 — 민감정보 |
+| `country` | String | 국적(ISO 3166-1 alpha-2 코드, 예 `VN`). 온보딩 필수 — 클라이언트는 국가만 전송, 표시명·국기(이미지 URL)는 `countries` 참조로 확보 |
+| `occupation` | enum `Occupation` | 직업 유형. 온보딩 필수 |
+| `email` | String | 인증 완료된 연락 이메일(온보딩 중 인증번호로 검증) — 민감정보. 소셜 제공자 이메일(`auth.SocialAccount.email`)과 별개 |
 | `visaType` | enum `VisaType` | 비자 유형 — 민감정보. 온보딩 필수 |
 | `status` | enum `UserStatus` | 계정 상태(생성 시 `PENDING`) |
-| `consent` | VO `Consent` | 이용약관·개인정보처리방침·마케팅 동의 3종(동의 여부·시각·약관 버전) |
+| `consent` | VO `Consent` | 이용약관·개인정보처리방침·마케팅 동의 3종(동의 여부·시각·약관 버전). **약관 동의 단계**(`PENDING`→`TERMS_AGREED`)에서 확정 |
 | `createdAt` | Instant | 생성 시각(UTC) |
 | `updatedAt` | Instant | 최종 수정 시각(UTC) |
 | `withdrawnAt` | Instant(UTC), nullable | 탈퇴 시각(탈퇴 시 기록) |
 
-**불변식:** 상태 전이는 `PENDING → ACTIVE → WITHDRAWN`만 허용(역전이·건너뛰기 금지); 온보딩 제출은 `PENDING`에서만 가능하며 성공 시 `ACTIVE`로 전이하면서 `name`·`gender`·`birthDate`·`phone`·`visaType`·`consent`를 한 번에 확정(이미 `ACTIVE` 재요청은 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`); 온보딩 완료에는 이용약관·개인정보처리방침 동의가 모두 필요(미동의 `422 AUTH_REQUIRED_AGREEMENT_MISSING`), 마케팅 동의는 선택(기본 미동의); 필수 약관 동의는 프로필 수정으로 철회 불가(탈퇴 경로로만); 프로필 부분 수정은 `ACTIVE`에서만, 전송 필드만 변경(미전송 ≠ 비움), `birthDate`는 과거만; 탈퇴는 `PENDING`/`ACTIVE`에서 `WITHDRAWN`으로(이미 `WITHDRAWN` 재요청 `409 USER_ALREADY_WITHDRAWN`); `WITHDRAWN`·부재 사용자 조회·수정은 `404 USER_NOT_FOUND`; 모든 변경은 `updatedAt`을 갱신; 탈퇴(`WITHDRAWN`) 시 `withdrawnAt`을 기록하고 식별 PII(이름·전화·비자·생년월일)를 즉시 익명화한다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)); `phoneNumber`·`visaType`은 민감정보로 외부 노출 시 마스킹.
+**불변식:** 상태 전이는 `PENDING → TERMS_AGREED → ACTIVE → WITHDRAWN`만 허용(역전이·건너뛰기 금지); **약관 동의** 상태 전이는 `PENDING`에서만 일어나며(→`TERMS_AGREED`) 이때 `consent`(이용약관·개인정보처리방침·마케팅 동의 + `agreedAt` + `termsVersion`)를 확정 — 이용약관·개인정보처리방침 동의가 모두 필요(미동의 `422 AUTH_REQUIRED_AGREEMENT_MISSING`)하고 마케팅 동의는 선택(기본 미동의); 이미 `TERMS_AGREED`면 약관 재호출은 상태·동의를 바꾸지 않는 멱등 성공(`200`, 의도적 재동의 아님 — 마케팅 동의 변경은 프로필 수정으로), 이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`; **온보딩 제출**은 `TERMS_AGREED`에서만 가능하며(약관 미동의 `PENDING` 상태에서 시도하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`) 성공 시 `ACTIVE`로 전이하면서 `name`·`gender`·`birthDate`·`country`·`occupation`·`email`·`visaType`를 한 번에 확정하고 `nickname`을 자동 배정(이미 `ACTIVE` 재요청은 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`); 온보딩 완료에는 제출 `email`이 `auth`에서 인증 완료(`VERIFIED`)된 이메일과 일치해야 함(미인증·불일치 `422 AUTH_EMAIL_NOT_VERIFIED`); `nickname`은 `NicknameGenerator`(도메인 서비스)가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 무작위 배정하되 전역 유니크가 보장될 때까지 재조합 재시도(상한 초과 시 fallback; 사용자 입력·수정 대상 아님); 필수 약관 동의는 프로필 수정으로 철회 불가(탈퇴 경로로만); 프로필 부분 수정은 `ACTIVE`에서만, 전송 필드만 변경(미전송 ≠ 비움), `birthDate`는 과거만(수정 대상은 `email`·`nickname` 제외 — [API 스펙](../api/specs/01-auth-onboarding.md) §9); 탈퇴는 `PENDING`/`TERMS_AGREED`/`ACTIVE`에서 `WITHDRAWN`으로(이미 `WITHDRAWN` 재요청 `409 USER_ALREADY_WITHDRAWN`); `WITHDRAWN`·부재 사용자 조회·수정은 `404 USER_NOT_FOUND`; 모든 변경은 `updatedAt`을 갱신; 탈퇴(`WITHDRAWN`) 시 `withdrawnAt`을 기록하고 식별 PII(이름·생년월일·국적·직업·이메일·비자·닉네임)를 즉시 익명화한다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)); `email`·`visaType`은 민감정보로 로그·타 사용자 노출 시 마스킹(본인 `GET /users/me`는 평문 노출).
 
 **값 객체(VO):**
 
-- `FullName` — `firstName`(String)·`lastName`(String). 둘 다 빈 문자열 불가.
-- `PhoneContact` — `countryCode`(String, 예 `+84`)·`phoneNumber`(String, 국가번호 제외 숫자). 둘 다 빈 문자열 불가. 민감정보.
-- `Consent` — `termsOfServiceAgreed`·`privacyPolicyAgreed`·`marketingAgreed`(boolean)·`agreedAt`(Instant)·`termsVersion`(String, 서버 설정값을 온보딩 완료 시 서버가 기록 — [ADR-0012](../adr/0012-terms-version-management.md)). 동의 3종과 동의 시점·약관 버전을 기록.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `FullName` | `firstName` | String | 이름. 빈 문자열 불가 |
+| | `lastName` | String | 성. 빈 문자열 불가 |
+| `Consent` | `termsOfServiceAgreed` | boolean | 이용약관 동의 |
+| | `privacyPolicyAgreed` | boolean | 개인정보처리방침 동의 |
+| | `marketingAgreed` | boolean | 마케팅 수신 동의(선택, 기본 `false`) |
+| | `agreedAt` | Instant | 동의 시각(UTC) |
+| | `termsVersion` | String | 동의한 약관 버전 — **약관 동의 단계**에서 서버가 기록([ADR-0012](../adr/0012-terms-version-management.md)). 세분화된 마케팅 동의 항목 추가는 고도화(확인 필요) |
+
+**닉네임 생성(도메인 서비스):** `NicknameGenerator`가 **형용사 풀·사물 풀**(reference 데이터, 각각 단어 목록)의 **active 단어**에서 무작위로 각 1개를 골라(비활성 단어 제외) `형용사 + 사물`(앞=형용사, 뒤=사물)로 조합한다. 조합값은 `nickname` 전역 유니크를 만족해야 하며, 충돌 시 재조합으로 재시도하고(재시도 상한 도달 시 fallback — 예: 숫자 접미사) 동시 생성 경합은 유니크 제약으로 최종 차단한다. 온보딩 완료 시점에 `user`가 호출한다. 두 풀은 운영 중 가변인 reference 데이터로 물리 테이블·시딩·무작위 선택 전략은 [database-design](../database/database-design.md) §4-2.
+
+**국가 참조:** `country`는 ISO 국가 코드만 보유하고(애그리거트가 직접 품는 VO가 아님), 표시명·국기는 `CountryRepository`(도메인 포트, 구현은 infrastructure)로 `countries`(code→표시명→국기) reference 데이터를 조회해 `Country`(`code`·`name`·`flag`=국기 이미지 URL) 참조 값으로 resolve한다 — 클라이언트는 국가(코드)만 전송하고 국기는 서버가 `countries`에서 채운다(국가+국기 수집). 온보딩/수정 입력은 `CountryRepository.existsByCode`로 코드 유효성을 검증한다. `Country`는 응답 조립용 reference 값(닉네임 풀과 같은 부류)이라 애그리거트/구성 VO 카탈로그에는 오르지 않는다. 물리 테이블은 [database-design](../database/database-design.md) §4-2.
 
 **상태(enum):**
 
 | enum | 값 | 의미 |
 | --- | --- | --- |
-| `UserStatus` | `PENDING` | 소셜 검증만 완료, 온보딩 미완료 |
+| `UserStatus` | `PENDING` | 소셜 검증만 완료, 약관 미동의·온보딩 미완료 |
+| | `TERMS_AGREED` | 약관 동의 완료, 온보딩 정보 미입력 |
 | | `ACTIVE` | 온보딩 완료, 정상 이용 |
 | | `WITHDRAWN` | 탈퇴 |
 | `Gender` | `MALE` | 남성 |
 | | `FEMALE` | 여성 |
+| `Occupation` (임시) | `STUDENT` | 학생 |
+| | `EMPLOYEE` | 직장인 |
+| | `SELF_EMPLOYED` | 자영업 |
+| | `JOB_SEEKER` | 구직 중 |
+| | `ETC` | 기타 |
 | `VisaType` | `VISA_STUDENT` | 유학·연수 |
 | | `VISA_WORK` | 취업 |
 | | `VISA_RESIDENCE` | 거주·가족동반 |
@@ -138,7 +178,9 @@
 | | `VISA_TOURISM` | 관광 |
 | | `VISA_ETC` | 기타 |
 
-**협력 / 이벤트:** 모든 타 모듈은 사용자를 `User` 식별자(`id`)로만 참조한다(엔티티 비공유). 소셜 자격→회원 매핑은 `auth`의 `SocialAccount`가 소유하며, `user`는 **회원 생성(`PENDING`)·온보딩 완료(`ACTIVE` 전이)·탈퇴(`WITHDRAWN` 전이)** 를 공개 명령으로, 프로필을 공개 쿼리로 제공한다(`auth`가 소셜 로그인 분기에서 호출). 탈퇴 시 도메인 이벤트(예: `UserWithdrawnEvent`)를 발행해 `auth`가 refresh 토큰을 일괄 무효화하게 한다(ADR-0002). 닉네임·국적 등 표시정보가 필요한 타 모듈(예: `community`)에는 식별자 기반 공개 쿼리를 제공한다.
+> `Occupation` 값은 요구사항 정의서의 직업 드롭다운 항목이 미확정(잘림)이라 **임시 분류값**이다 — 실제 선택지 확정 시 갱신한다(확인 필요). `country`는 ISO 국가 코드를 보유하고, 표시명·국기(이미지 URL)는 `countries` reference로 확보한다(국가+국기 수집 — 클라이언트는 국가만 전송).
+
+**협력 / 이벤트:** 모든 타 모듈은 사용자를 `User` 식별자(`id`)로만 참조한다(엔티티 비공유). 소셜 자격→회원 매핑·이메일 인증은 `auth`가 소유하며, `user`는 **회원 생성(`PENDING`)·약관 동의(`TERMS_AGREED` 전이)·온보딩 완료(`ACTIVE` 전이)·탈퇴(`WITHDRAWN` 전이)** 를 공개 명령으로, 프로필을 공개 쿼리로 제공한다(`auth`가 소셜 로그인 분기·약관 동의·온보딩 완료에서 호출). 온보딩 완료 명령은 사용자가 `TERMS_AGREED`이고 이메일이 `auth`에서 `VERIFIED`된 뒤에만 수행된다. 탈퇴 시 도메인 이벤트(예: `UserWithdrawnEvent`)를 발행해 `auth`가 refresh 토큰을 일괄 무효화하게 한다(ADR-0002). 닉네임·국적 등 표시정보가 필요한 타 모듈(예: `community`)에는 식별자 기반 공개 쿼리를 제공한다(탈퇴 회원은 닉네임 `(탈퇴한 사용자)`·국적 비움으로 마스킹).
 
 ---
 
@@ -201,9 +243,19 @@
 
 **값 객체(VO):**
 
-- `Location` — `lat`(double, 위도)·`lng`(double, 경도)·`address`(String)·`addressDetail`(String). WGS84 좌표와 표기 주소를 묶은 불변 값.
-- `Landlord` — `landlordId`(→ `User` 식별자 참조)·`name`(String, 표시명)·`contactChannel`(enum `ContactChannel`, 항상 `CHAT`). 직접 연락처 미보유, 채팅 채널만 노출.
-- `MatchedPlace` — `type`(enum `MatchedPlaceType`)·`name`(String)·`lat`·`lng`(double). 키워드 검색에서 입력어가 매칭된 POI(학교·지역·역) 위치를 표현하는 조회 결과 값(매칭 없으면 부재).
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `Location` | `lat` | double | 위도(WGS84) |
+| | `lng` | double | 경도(WGS84) |
+| | `address` | String | 주소 |
+| | `addressDetail` | String | 상세주소(WGS84 좌표와 표기 주소를 묶은 불변 값) |
+| `Landlord` | `landlordId` | 식별자 | → `User` 식별자 참조 |
+| | `name` | String | 임대인 표시명 |
+| | `contactChannel` | enum `ContactChannel` | 항상 `CHAT`(직접 연락처 미보유, 채팅 채널만 노출) |
+| `MatchedPlace` | `type` | enum `MatchedPlaceType` | 매칭된 POI 유형(학교·지역·역). 키워드 검색 입력어가 매칭된 위치를 표현하는 조회 결과 값(매칭 없으면 부재) |
+| | `name` | String | POI 이름 |
+| | `lat` | double | 위도 |
+| | `lng` | double | 경도 |
 
 **상태(enum):**
 
@@ -260,9 +312,18 @@
 
 **값 객체(VO):**
 
-- `DiagnosisCriteria` — `region`(enum `Region`)·`purposes`(`Set<Purpose>`)·`conditions`(`Set<DiagnosisCondition>`)·`monthlyBudgetMax`(int, KRW)·`arcStatus`(enum `ArcStatus`). 생성 검증: `region` 필수 1택; `purposes` 최소 1개·중복 제거; `conditions` 0~3개·중복 제거; `monthlyBudgetMax` 0 이상; `arcStatus` 필수 1택. 위반은 `400 INVALID_INPUT`(필드별 사유).
-- `RecommendationSuggestions` — `reason`(enum `NoMatchReason`)·`message`(String, 다국어 fallback)·`actions`(`List<SuggestionAction>`). 추천 매칭 0건일 때의 조건/예산/지역 완화 제안(1건 이상이면 비어 있음).
-- `SuggestionAction` — `type`(enum `SuggestionActionType`)·`detail`(String). 결과를 늘리기 위한 단일 조정 제안.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `DiagnosisCriteria` | `region` | enum `Region` | 지역. 필수 1택 |
+| | `purposes` | `Set<Purpose>` | 입국 목적. 최소 1개·중복 제거 |
+| | `conditions` | `Set<DiagnosisCondition>` | 주거 조건. 0~3개·중복 제거 |
+| | `monthlyBudgetMax` | int(KRW) | 월 예산 상한. 0 이상 |
+| | `arcStatus` | enum `ArcStatus` | ARC 발급 여부. 필수 1택(위반은 `400 INVALID_INPUT`, 필드별 사유) |
+| `RecommendationSuggestions` | `reason` | enum `NoMatchReason` | 매칭 0건 사유 |
+| | `message` | String | 안내 메시지(다국어 fallback) |
+| | `actions` | `List<SuggestionAction>` | 완화 제안 목록(1건 이상이면 비어 있음) |
+| `SuggestionAction` | `type` | enum `SuggestionActionType` | 조정 유형 |
+| | `detail` | String | 결과를 늘리기 위한 단일 조정 제안 |
 
 > 진단 결과 화면은 `Diagnosis.criteria`를 입력으로 `listing`의 공개 추천 쿼리를 호출해 매물 요약·좌표를 조립한다. 매물은 본 모듈 애그리거트가 아니므로 식별자(`listingId`)로만 참조하며, 추천 결과는 진단에 종속된 읽기 결과로 영속하지 않는다.
 
@@ -325,7 +386,9 @@
 
 **값 객체(VO):**
 
-- `GreetingMessage` — `text`(공백 제외 1~500자). 신청과 함께 보내는 첫 인사. 미제공 시 부재, 길이 초과는 `400 INVALID_INPUT`. 존재할 때만 채팅 첫 텍스트 메시지로 전달.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `GreetingMessage` | `text` | String | 공백 제외 1~500자. 신청과 함께 보내는 첫 인사 — 미제공 시 부재, 길이 초과는 `400 INVALID_INPUT`, 존재할 때만 채팅 첫 텍스트 메시지로 전달 |
 
 **상태(enum):**
 
@@ -403,9 +466,21 @@
 
 **값 객체(VO):**
 
-- `BookingCard` — `moveInDate`(LocalDate)·`contractPeriod`·`monthlyRent`(int, KRW)·`listingTitle`·`bookingId`(→ `Booking` 식별자 참조). 예약 생성 시점 정보를 굳혀 상단 고정하는 불변 카드.
-- `ListingCard` — `listingId`(→ `Listing` 식별자 참조)·`title`·`monthlyRent`(int, KRW)·`thumbnailUrl`. 문의 시점 매물 정보를 굳혀 고정하는 불변 카드.
-- `ListingSnapshot` — `listingId`(→ `Listing` 식별자 참조)·`title`·`thumbnailUrl`·`monthlyRent`(int, KRW). 채팅방 목록을 매물 조회 없이 표시하는 비정규화 뷰.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `BookingCard` | `moveInDate` | LocalDate | 입주 희망일 |
+| | `contractPeriod` | enum `ContractPeriod` | 계약 기간 |
+| | `monthlyRent` | int(KRW) | 월세 |
+| | `listingTitle` | String | 매물 제목 |
+| | `bookingId` | 식별자 | → `Booking` 식별자 참조(예약 생성 시점 정보를 굳혀 상단 고정하는 불변 카드) |
+| `ListingCard` | `listingId` | 식별자 | → `Listing` 식별자 참조 |
+| | `title` | String | 매물 제목 |
+| | `monthlyRent` | int(KRW) | 월세 |
+| | `thumbnailUrl` | String | 썸네일 URL(문의 시점 매물 정보를 굳혀 고정하는 불변 카드) |
+| `ListingSnapshot` | `listingId` | 식별자 | → `Listing` 식별자 참조 |
+| | `title` | String | 매물 제목 |
+| | `thumbnailUrl` | String | 썸네일 URL |
+| | `monthlyRent` | int(KRW) | 월세(채팅방 목록을 매물 조회 없이 표시하는 비정규화 뷰) |
 
 **상태(enum):**
 
@@ -490,7 +565,9 @@
 
 **값 객체(VO):**
 
-- `Hashtag` — `name`(String). `#` 없이 정규화된 태그명. 동일 게시글 내 중복 불가, 게시글당 최대 10개.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `Hashtag` | `name` | String | `#` 없이 정규화된 태그명. 동일 게시글 내 중복 불가, 게시글당 최대 10개 |
 
 **상태(enum):**
 
@@ -557,7 +634,10 @@
 
 **값 객체(VO):**
 
-- `QuizChoice` — `key`(enum `ChoiceKey`)·`text`(String). 4지선다 보기 한 개. 동일 `Quiz` 내 `key` 유일, `text` 비어 있지 않음.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `QuizChoice` | `key` | enum `ChoiceKey` | 4지선다 보기 키(A~D). 동일 `Quiz` 내 유일 |
+| | `text` | String | 보기 텍스트(비어 있지 않음) |
 
 **상태(enum):**
 
@@ -597,8 +677,11 @@
 
 **값 객체(VO):**
 
-- `ReportTarget` — `targetType`(enum `ReportTargetType`)·`targetId`(→ 대상 콘텐츠 식별자 참조). 대상의 유형과 다형 식별자를 묶는다. `targetId`는 `POST`/`COMMENT`면 `community`, `MESSAGE`면 `chat`의 콘텐츠를 가리키며, 동일 `targetId`라도 `targetType`이 다르면 다른 대상.
-- `ReportDetail` — `text`(String). 신고에 덧붙이는 선택적 자유 텍스트(비어 있을 수 있음, 최대 길이 초과 불가). `reason=ETC`일 때 입력 권장.
+| 이름 | 속성 | 타입 | 설명 |
+| --- | --- | --- | --- |
+| `ReportTarget` | `targetType` | enum `ReportTargetType` | 신고 대상 유형 |
+| | `targetId` | 식별자 | → 대상 콘텐츠 식별자 참조. `POST`/`COMMENT`면 `community`, `MESSAGE`면 `chat`. 동일 `targetId`라도 `targetType`이 다르면 다른 대상 |
+| `ReportDetail` | `text` | String | 신고에 덧붙이는 선택적 자유 텍스트(비어 있을 수 있음, 최대 길이 초과 불가). `reason=ETC`일 때 입력 권장 |
 
 **상태(enum):**
 

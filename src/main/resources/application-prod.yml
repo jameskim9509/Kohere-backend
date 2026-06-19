@@ -10,12 +10,24 @@ spring:
     redis:
       host: ${SPRING_DATA_REDIS_HOST}
       port: ${SPRING_DATA_REDIS_PORT:6379}
+  mail:
+    host: ${SPRING_MAIL_HOST} # 폴백 없음 — 미설정 시 기동 실패
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 app:
   jwt:
     secret: ${JWT_SECRET} # 폴백 없음 — 미설정 시 기동 실패 (ADR-0011 D5)
   auth:
     refresh-pepper: ${REFRESH_PEPPER} # 폴백 없음 (ADR-0006)
+    email-pepper: ${EMAIL_PEPPER} # 폴백 없음 — 인증번호 해시 pepper
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID}
