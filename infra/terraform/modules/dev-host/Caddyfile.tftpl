@@ -1,0 +1,5 @@
+# dev Caddy 설정 (Terraform 렌더 → /opt/kohere/Caddyfile). 자동 HTTPS(Let's Encrypt), app:8080 프록시.
+# caddy_site: 도메인 있으면 그 도메인(HTTPS), 없으면 :80(HTTP 폴백). ADR-0022.
+${caddy_site} {
+  reverse_proxy app:8080
+}

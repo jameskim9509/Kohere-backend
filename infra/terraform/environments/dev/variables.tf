@@ -1,0 +1,201 @@
+variable "project" {
+  description = "프로젝트명(이름 접두사·태그)"
+  type        = string
+  default     = "kohere"
+}
+
+variable "environment" {
+  description = "환경명(이름 접두사·태그)"
+  type        = string
+  default     = "dev"
+}
+
+variable "aws_region" {
+  description = "AWS 리전"
+  type        = string
+  default     = "ap-northeast-2"
+}
+
+variable "app_image" {
+  description = "ECR 앱 이미지 URI(:tag 포함). 예: <account>.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"
+  type        = string
+}
+
+variable "instance_type" {
+  description = "dev 호스트 EC2 타입(x86 — ECR 이미지 amd64)"
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "data_volume_size" {
+  description = "데이터 EBS GB(mysql/mongo 영속, Redis 인메모리)"
+  type        = number
+  default     = 20
+}
+
+variable "ingress_cidrs" {
+  description = "80/443 인바운드 허용 CIDR(dev 편의상 개방 가능)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "db_name" {
+  description = "MySQL·Mongo 논리 DB 이름"
+  type        = string
+  default     = "kohere"
+}
+
+# ----- DB 자격증명(SSM SecureString) + 외부 접속 (dev 한정) -----
+variable "mysql_username" {
+  description = "MySQL 앱 사용자명(앱이 이 계정으로 접속)"
+  type        = string
+  default     = "kohere"
+}
+
+variable "mysql_password" {
+  description = "MySQL 앱 사용자(kohere) 비밀번호. 외부 노출 시 강한 값 권장"
+  type        = string
+  default     = "kohere"
+  sensitive   = true
+}
+
+variable "mysql_root_password" {
+  description = "MySQL root 비밀번호(외부 관리도구용)"
+  type        = string
+  default     = "kohere"
+  sensitive   = true
+}
+
+variable "mongo_username" {
+  description = "MongoDB root 사용자명(인증 활성화)"
+  type        = string
+  default     = "kohere"
+}
+
+variable "mongo_password" {
+  description = "MongoDB root 비밀번호. URL-safe 값 권장(접속 URI에 포함)"
+  type        = string
+  default     = "kohere"
+  sensitive   = true
+}
+
+variable "db_ingress_cidrs" {
+  description = "DB 포트(3306·27017) 외부 접속 허용 CIDR. 빈 목록=미개방. 전체 개방(0.0.0.0/0·::/0) 금지(검증) — 본인 IP/32"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !contains(var.db_ingress_cidrs, "0.0.0.0/0") && !contains(var.db_ingress_cidrs, "::/0")
+    error_message = "db_ingress_cidrs 에 전체 개방(0.0.0.0/0·::/0)은 금지한다. 본인 IP/32 등으로 제한하라."
+  }
+}
+
+# ----- 노출 / HTTPS -----
+variable "domain_name" {
+  description = "dev 도메인(예: dev.kohere.app). 제공 시 Route53 A 레코드 + Let's Encrypt HTTPS"
+  type        = string
+  default     = ""
+}
+
+variable "route53_zone_id" {
+  description = "Route53 호스팅 영역 ID"
+  type        = string
+  default     = ""
+}
+
+variable "le_email" {
+  description = "Let's Encrypt 등록 이메일(acme-companion)"
+  type        = string
+  default     = ""
+}
+
+# ----- 시크릿 (SSM Parameter Store SecureString — SM 미사용) -----
+variable "google_client_id" {
+  description = "Google OIDC audience"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_client_id" {
+  description = "Apple OIDC audience"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "smtp_host" {
+  description = "실 SMTP 호스트(dev — MailHog 없음)"
+  type        = string
+  default     = ""
+}
+
+variable "smtp_port" {
+  description = "SMTP 포트"
+  type        = number
+  default     = 587
+}
+
+variable "smtp_username" {
+  description = "SMTP 사용자명"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "smtp_password" {
+  description = "SMTP 비밀번호"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "mail_from" {
+  description = "발신 이메일 주소"
+  type        = string
+  default     = "noreply@kohere.app"
+}
+
+# ----- 알람 / 이미지 -----
+variable "alarm_email" {
+  description = "CloudWatch 알람 SNS 이메일 구독(빈 값이면 미구독)"
+  type        = string
+  default     = ""
+}
+
+variable "images_bucket_name" {
+  description = "매물 이미지 S3 버킷 이름(빈 값이면 자동 생성)"
+  type        = string
+  default     = ""
+}
+
+# ----- CI/CD (GitHub Actions OIDC 배포 역할) -----
+variable "github_org" {
+  description = "배포 워크플로 GitHub 조직/사용자"
+  type        = string
+  default     = "swyp-app-5th-team1"
+}
+
+variable "github_repo" {
+  description = "배포 워크플로 GitHub 리포지토리"
+  type        = string
+  default     = "Kohere-backend"
+}
+
+variable "github_deploy_branch" {
+  description = "배포를 허용할 브랜치"
+  type        = string
+  default     = "main"
+}
+
+variable "create_github_oidc_provider" {
+  description = "GitHub OIDC provider 생성 여부(계정에 이미 있으면 false — prod와 충돌 회피)"
+  type        = bool
+  default     = true
+}
+
+variable "ecr_repository" {
+  description = "푸시 대상 ECR 리포지토리 이름(prod와 공유)"
+  type        = string
+  default     = "kohere-backend"
+}

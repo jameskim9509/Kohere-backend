@@ -1,0 +1,69 @@
+#!/bin/bash
+# dev DB 자격증명 reconcile — 데이터(EBS) 보존하며 username·password를 .env 값으로 회전한다(ADR-0025).
+# 컨테이너 init env(MYSQL_*/MONGO_INITDB_*)는 최초 init에만 적용되므로, 살아있는 DB에 ALTER/updateUser를 실행한다.
+# 직전 적용값은 마커(/data/.db-state-*, EBS·600)에 저장 — 그 옛 자격증명으로 인증해 새 값으로 회전한다.
+# 최초(마커 없음)엔 desired=actual(init값) 가정 → no-op + 마커 시드. 부팅(시드)·배포(회전)에서 호출.
+# Terraform 변수 없음(전부 .env·마커에서 읽음) — 이 스크립트는 templatefile이 그대로 통과시킨다.
+# 주의: 비번은 셸/URI-safe(따옴표·@·$ 등 회피) 권장 — SQL/JS 리터럴로 삽입된다.
+set -uo pipefail
+DATA=/data
+ENV=/opt/kohere/.env
+val() { grep -E "^$1=" "$ENV" | head -1 | cut -d= -f2-; }
+mark() { grep -E "^$1=" "$2" 2>/dev/null | head -1 | cut -d= -f2-; }
+
+DB_NAME=$(val DB_NAME)
+
+# ---------- MySQL (root로 인증 → 앱 계정 + root 회전) ----------
+M_USER=$(val MYSQL_USER)
+M_PW=$(val MYSQL_PASSWORD)
+M_ROOT=$(val MYSQL_ROOT_PASSWORD)
+MS=$DATA/.db-state-mysql
+OLD_M_USER=$(mark MYSQL_USER "$MS"); [ -z "$OLD_M_USER" ] && OLD_M_USER=$M_USER
+OLD_M_ROOT=$(mark MYSQL_ROOT_PASSWORD "$MS"); [ -z "$OLD_M_ROOT" ] && OLD_M_ROOT=$M_ROOT
+
+for i in $(seq 1 40); do
+  docker exec kohere-mysql mysql -uroot -p"$OLD_M_ROOT" -e "SELECT 1" >/dev/null 2>&1 && break
+  sleep 3
+done
+
+if docker exec -i kohere-mysql mysql -uroot -p"$OLD_M_ROOT" 2>/dev/null <<SQL
+CREATE USER IF NOT EXISTS '$M_USER'@'%' IDENTIFIED BY '$M_PW';
+ALTER USER '$M_USER'@'%' IDENTIFIED BY '$M_PW';
+GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$M_USER'@'%';
+ALTER USER IF EXISTS 'root'@'%' IDENTIFIED BY '$M_ROOT';
+ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '$M_ROOT';
+FLUSH PRIVILEGES;
+SQL
+then
+  if [ "$OLD_M_USER" != "$M_USER" ]; then
+    docker exec -i kohere-mysql mysql -uroot -p"$M_ROOT" -e "DROP USER IF EXISTS '$OLD_M_USER'@'%'; FLUSH PRIVILEGES;" || true
+  fi
+  printf 'MYSQL_USER=%s\nMYSQL_ROOT_PASSWORD=%s\n' "$M_USER" "$M_ROOT" > "$MS"; chmod 600 "$MS"
+  echo "reconcile: mysql ok ($M_USER)"
+else
+  echo "reconcile: mysql FAILED — 옛 root 비번 불일치 가능(마커/데이터 확인)"
+fi
+
+# ---------- Mongo (앱=root 계정. 옛 비번으로 인증 → 회전) ----------
+G_USER=$(val MONGO_USERNAME)
+G_PW=$(val MONGO_PASSWORD)
+GS=$DATA/.db-state-mongo
+OLD_G_USER=$(mark MONGO_USERNAME "$GS"); [ -z "$OLD_G_USER" ] && OLD_G_USER=$G_USER
+OLD_G_PW=$(mark MONGO_PASSWORD "$GS"); [ -z "$OLD_G_PW" ] && OLD_G_PW=$G_PW
+
+for i in $(seq 1 40); do
+  docker exec kohere-mongo mongosh --quiet -u "$OLD_G_USER" -p "$OLD_G_PW" --authenticationDatabase admin --eval 'db.runCommand({ping:1})' >/dev/null 2>&1 && break
+  sleep 3
+done
+
+if docker exec kohere-mongo mongosh --quiet -u "$OLD_G_USER" -p "$OLD_G_PW" --authenticationDatabase admin admin --eval "
+  const nu='$G_USER', np='$G_PW', ou='$OLD_G_USER';
+  if (db.getUser(nu)) { db.updateUser(nu, {pwd: np}); }
+  else { db.createUser({user: nu, pwd: np, roles: [{role:'root', db:'admin'}]}); }
+  if (ou !== nu && db.getUser(ou)) { db.dropUser(ou); }
+"; then
+  printf 'MONGO_USERNAME=%s\nMONGO_PASSWORD=%s\n' "$G_USER" "$G_PW" > "$GS"; chmod 600 "$GS"
+  echo "reconcile: mongo ok ($G_USER)"
+else
+  echo "reconcile: mongo FAILED — 옛 비번 불일치 가능(마커/데이터 확인)"
+fi

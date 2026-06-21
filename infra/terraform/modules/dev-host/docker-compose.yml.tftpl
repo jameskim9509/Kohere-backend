@@ -1,0 +1,71 @@
+# dev EC2에서 돌아가는 docker-compose (Terraform이 렌더해 user_data로 /opt/kohere/docker-compose.yml 에 기록).
+# 로컬 docker-compose.yml과 달리: app=ECR 이미지, MailHog 없음(실 SMTP), Caddy(HTTPS), Redis는 인메모리(EBS 미사용).
+# 시크릿은 /opt/kohere/.env(SSM Parameter Store에서 부팅 시 주입)에서 읽는다.
+name: kohere-dev
+services:
+  caddy:
+    image: caddy:2
+    container_name: kohere-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/kohere/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+  mysql:
+    image: mysql:8.0
+    container_name: kohere-mysql
+    restart: unless-stopped
+    # 비번은 .env(SSM→refresh-env) 값으로 compose가 인터폴레이션($${...}). 최초 init 시드, 이후 변경은 reconcile-db.sh가 적용(ADR-0025).
+    environment:
+      MYSQL_ROOT_PASSWORD: $${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${db_name}
+      MYSQL_USER: ${mysql_username}
+      MYSQL_PASSWORD: $${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306" # 외부 접속(SG db_ingress_cidrs로 제한)
+    volumes:
+      - /data/mysql:/var/lib/mysql
+  mongo:
+    image: mongo:7
+    container_name: kohere-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${mongo_username}
+      MONGO_INITDB_ROOT_PASSWORD: $${MONGO_PASSWORD}
+    ports:
+      - "27017:27017" # 외부 접속(SG db_ingress_cidrs로 제한)
+    volumes:
+      - /data/mongo:/data/db
+  redis:
+    image: redis:7
+    container_name: kohere-redis
+    restart: unless-stopped
+  app:
+    image: ${app_image}
+    container_name: kohere-app
+    restart: unless-stopped
+    env_file:
+      - /opt/kohere/.env
+    depends_on:
+      - mysql
+      - mongo
+      - redis
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${db_name}?serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: ${mysql_username}
+      SPRING_DATASOURCE_PASSWORD: $${MYSQL_PASSWORD}
+      SPRING_DATA_MONGODB_URI: mongodb://${mongo_username}:$${MONGO_PASSWORD}@mongo:27017/${db_name}?authSource=admin
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_MAIL_HOST: ${smtp_host}
+      SPRING_MAIL_PORT: "${smtp_port}"
+      MAIL_FROM: ${mail_from}
+      APP_IMAGES_BUCKET: ${images_bucket}
+      APP_IMAGES_CDN_DOMAIN: ${images_cdn_domain}
+volumes:
+  caddy_data:
+  caddy_config:

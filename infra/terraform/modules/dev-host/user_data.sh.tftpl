@@ -1,0 +1,64 @@
+#!/bin/bash
+# dev 호스트 부트스트랩 — docker + EBS 마운트 + 시크릿(.env) + compose 기동.
+# docker-compose.yml·Caddyfile은 Terraform이 별도 템플릿(docker-compose.yml.tftpl·Caddyfile.tftpl)으로
+#   렌더해 compose_yml·caddyfile 변수로 주입한다. 데이터(mysql/mongo)는 EBS, Redis는 인메모리(EBS 미사용).
+set -euo pipefail
+exec > >(tee /var/log/devhost-init.log) 2>&1
+
+# 1) docker + compose v2 플러그인 (x86_64 — ECR 앱 이미지가 amd64)
+dnf install -y docker
+systemctl enable --now docker
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# 2) 데이터 EBS 멱등 마운트 (attach 지연 대비 대기). Redis는 인메모리라 EBS 디렉터리 없음.
+ROOT_DISK=$(findmnt -no SOURCE / | sed 's/p\?[0-9]*$//')
+DATA_DEV=""
+for i in $(seq 1 30); do
+  DATA_DEV=$(lsblk -dpno NAME,TYPE | awk '$2=="disk"{print $1}' | grep -v "$ROOT_DISK" | head -1)
+  [ -n "$DATA_DEV" ] && break
+  sleep 5
+done
+blkid "$DATA_DEV" >/dev/null 2>&1 || mkfs.xfs "$DATA_DEV"
+mkdir -p /data
+UUID=$(blkid -s UUID -o value "$DATA_DEV")
+grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /data xfs defaults,nofail 0 2" >>/etc/fstab
+mountpoint -q /data || mount /data
+mkdir -p /data/mysql /data/mongo
+
+# 3) ECR 로그인 + 재로그인 스크립트(CI 배포 시 SSM이 호출 — ECR 토큰 만료 대비)
+mkdir -p /opt/kohere
+cat >/opt/kohere/ecr-login.sh <<'SH'
+aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${account_id}.dkr.ecr.${aws_region}.amazonaws.com
+SH
+chmod +x /opt/kohere/ecr-login.sh
+bash /opt/kohere/ecr-login.sh
+
+# 4) 시크릿 → .env (SSM Parameter Store SecureString, 인스턴스 프로파일. SM 미사용)
+#    refresh-env.sh로 분리 — 배포(deploy.yml) 때도 재호출해 Parameter Store 최신값을 .env로 다시 받는다.
+mkdir -p /opt/kohere
+cat >/opt/kohere/refresh-env.sh <<'REFRESH'
+${refresh_env}
+REFRESH
+chmod +x /opt/kohere/refresh-env.sh
+bash /opt/kohere/refresh-env.sh
+
+# 5) Caddyfile · docker-compose.yml + reconcile-db.sh (Terraform이 렌더한 결과 주입)
+cat >/opt/kohere/Caddyfile <<'CADDY'
+${caddyfile}
+CADDY
+cat >/opt/kohere/docker-compose.yml <<'COMPOSE'
+${compose_yml}
+COMPOSE
+cat >/opt/kohere/reconcile-db.sh <<'RECONCILE'
+${reconcile_db}
+RECONCILE
+chmod +x /opt/kohere/reconcile-db.sh
+
+# 6) 기동 + DB 자격증명 reconcile(최초엔 마커 시드=no-op, 데이터 보존 회전 — ADR-0025)
+cd /opt/kohere
+docker compose pull
+docker compose up -d
+bash /opt/kohere/reconcile-db.sh || true

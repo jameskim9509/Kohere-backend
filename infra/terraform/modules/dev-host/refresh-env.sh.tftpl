@@ -1,0 +1,22 @@
+#!/bin/bash
+# SSM Parameter Store SecureString → /opt/kohere/.env. (설계: ADR-0024)
+# 부팅(user_data)·배포(deploy.yml) 양쪽에서 호출 — 호출 시점의 Parameter Store 최신값을 .env로 다시 받는다.
+# 주의: .env 갱신만으로는 실행 중 컨테이너에 반영되지 않는다. 적용엔 app 컨테이너 recreate가 필요(deploy가 --force-recreate).
+set -euo pipefail
+get() { aws ssm get-parameter --region ${aws_region} --name "$1" --with-decryption --query Parameter.Value --output text; }
+umask 077
+cat >/opt/kohere/.env <<EOF
+JWT_SECRET=$(get "${ssm_prefix}/JWT_SECRET")
+REFRESH_PEPPER=$(get "${ssm_prefix}/REFRESH_PEPPER")
+EMAIL_PEPPER=$(get "${ssm_prefix}/EMAIL_PEPPER")
+GOOGLE_CLIENT_ID=$(get "${ssm_prefix}/GOOGLE_CLIENT_ID")
+APPLE_CLIENT_ID=$(get "${ssm_prefix}/APPLE_CLIENT_ID")
+SPRING_MAIL_USERNAME=$(get "${ssm_prefix}/SMTP_USERNAME")
+SPRING_MAIL_PASSWORD=$(get "${ssm_prefix}/SMTP_PASSWORD")
+MYSQL_PASSWORD=$(get "${ssm_prefix}/MYSQL_PASSWORD")
+MYSQL_ROOT_PASSWORD=$(get "${ssm_prefix}/MYSQL_ROOT_PASSWORD")
+MONGO_PASSWORD=$(get "${ssm_prefix}/MONGO_PASSWORD")
+MYSQL_USER=${mysql_username}
+MONGO_USERNAME=${mongo_username}
+DB_NAME=${db_name}
+EOF
