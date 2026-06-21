@@ -1,11 +1,10 @@
-# Terraform 원격 상태 백엔드 부트스트랩 — S3(state) + DynamoDB(lock).
-# environments/prod 보다 먼저 1회 apply 한다. (최초엔 로컬 state → 이후 backend.tf로 S3 이전: migrate-state.)
+# Terraform 원격 상태 백엔드 부트스트랩 — S3(state). 잠금은 S3 native lockfile(use_lockfile, TF 1.10+) → DynamoDB 불요.
+# environments/{prod,dev} 보다 먼저 1회 apply 한다. (최초엔 로컬 state → 이후 backend.tf로 S3 이전: migrate-state.)
 
 data "aws_caller_identity" "current" {}
 
 locals {
-  bucket     = var.state_bucket_name != "" ? var.state_bucket_name : "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}"
-  lock_table = "${var.project}-tflock"
+  bucket = var.state_bucket_name != "" ? var.state_bucket_name : "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "aws_s3_bucket" "state" {
@@ -64,15 +63,5 @@ resource "aws_s3_bucket_policy" "state" {
   policy = data.aws_iam_policy_document.state_tls.json
 }
 
-resource "aws_dynamodb_table" "lock" {
-  name         = local.lock_table
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  tags = { Name = local.lock_table }
-}
+# 상태 잠금은 S3 native lockfile(backend "s3" 의 use_lockfile=true)로 처리한다 — 별도 DynamoDB 테이블이 필요 없다.
+# S3가 조건부 쓰기(If-None-Match)로 <key>.tflock 객체를 만들어 동시 실행을 직렬화한다.
