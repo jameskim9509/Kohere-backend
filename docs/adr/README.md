@@ -42,6 +42,8 @@
 | [0016](./0016-downgrade-to-spring-boot-3.md) | Spring Boot를 4.1에서 3.5로 다운그레이드한다(생태계·도구 호환성) | Accepted | 2026-06-17 |
 | [0017](./0017-openapi-swagger-ui-from-restdocs.md) | 테스트 기반 OpenAPI(restdocs-api-spec)로 Swagger UI를 서빙한다(ADR-0007 확장) | Accepted | 2026-06-17 |
 | [0018](./0018-documentdb-for-mongodb-on-aws.md) | MongoDB 호환 저장소는 Amazon DocumentDB로 운영한다(Atlas 대비, ADR-0005 후속) | Accepted | 2026-06-21 |
+| [0019](./0019-infrastructure-as-code-terraform.md) | AWS 인프라를 Terraform(IaC)으로 관리한다 | Accepted | 2026-06-21 |
+| [0020](./0020-terraform-remote-state-s3-dynamodb.md) | Terraform 원격 상태는 S3 + DynamoDB 잠금으로 둔다(ADR-0019 세부) | Accepted | 2026-06-21 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

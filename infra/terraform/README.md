@@ -22,6 +22,8 @@
 | 컴퓨트 | ECS Fargate + ALB | access 무상태 → 타깃 추적 오토스케일링(CPU) |
 | 상태 | S3 + DynamoDB 잠금 | `bootstrap/` 에서 1회 생성 |
 
+> 결정 근거·대안은 ADR 참조: [ADR-0018](../../docs/adr/0018-documentdb-for-mongodb-on-aws.md)(DocumentDB) · [ADR-0019](../../docs/adr/0019-infrastructure-as-code-terraform.md)(Terraform IaC) · [ADR-0020](../../docs/adr/0020-terraform-remote-state-s3-dynamodb.md)(원격 상태 S3+DynamoDB).
+
 ## 디렉터리
 
 ```
