@@ -1,0 +1,257 @@
+# Kohere 백엔드 — prod 환경 통합 배선.
+# system-overview §1-3-2(AWS 배포 토폴로지)에 따른 구성:
+#   ALB(HTTPS) → ECS Fargate → RDS(MySQL)·DocumentDB·ElastiCache(Redis), 이미지=S3+CloudFront, 시크릿=Secrets Manager.
+
+locals {
+  name_prefix = "${var.project}-${var.environment}"
+
+  common_tags = {
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
+
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+# ===== 네트워크 =====
+module "network" {
+  source = "../../modules/network"
+
+  name_prefix                = local.name_prefix
+  tags                       = local.common_tags
+  vpc_cidr                   = var.vpc_cidr
+  az_count                   = var.az_count
+  single_nat_gateway         = var.single_nat_gateway
+  enable_interface_endpoints = var.enable_interface_endpoints
+  app_port                   = var.app_port
+}
+
+# ===== 보안 그룹 =====
+module "security" {
+  source = "../../modules/security"
+
+  name_prefix       = local.name_prefix
+  tags              = local.common_tags
+  vpc_id            = module.network.vpc_id
+  vpc_cidr          = module.network.vpc_cidr
+  app_port          = var.app_port
+  alb_ingress_cidrs = var.alb_ingress_cidrs
+}
+
+# ===== ECR =====
+module "ecr" {
+  source = "../../modules/ecr"
+
+  name_prefix           = local.name_prefix
+  tags                  = local.common_tags
+  repo_name             = var.ecr_repo_name
+  image_retention_count = var.ecr_image_retention_count
+}
+
+# ===== ACM (도메인 제공 시에만) =====
+module "acm" {
+  source = "../../modules/acm"
+  count  = (var.domain_name != "" && var.route53_zone_id != "") ? 1 : 0
+
+  name_prefix     = local.name_prefix
+  tags            = local.common_tags
+  domain_name     = var.domain_name
+  route53_zone_id = var.route53_zone_id
+}
+
+# ===== RDS (MySQL) =====
+module "rds" {
+  source = "../../modules/rds"
+
+  name_prefix             = local.name_prefix
+  tags                    = local.common_tags
+  subnet_ids              = module.network.data_subnet_ids
+  security_group_ids      = [module.security.rds_sg_id]
+  engine_version          = var.rds_engine_version
+  instance_class          = var.rds_instance_class
+  allocated_storage       = var.rds_allocated_storage
+  max_allocated_storage   = var.rds_max_allocated_storage
+  multi_az                = var.rds_multi_az
+  backup_retention_period = var.rds_backup_retention
+  deletion_protection     = var.rds_deletion_protection
+  db_name                 = var.db_name
+  username                = var.db_username
+}
+
+# ===== DocumentDB =====
+module "documentdb" {
+  source = "../../modules/documentdb"
+
+  name_prefix         = local.name_prefix
+  tags                = local.common_tags
+  subnet_ids          = module.network.data_subnet_ids
+  security_group_ids  = [module.security.docdb_sg_id]
+  engine_version      = var.docdb_engine_version
+  instance_class      = var.docdb_instance_class
+  instance_count      = var.docdb_instance_count
+  backup_retention    = var.docdb_backup_retention
+  deletion_protection = var.docdb_deletion_protection
+  username            = var.docdb_username
+  database_name       = var.db_name
+  tls                 = var.docdb_tls
+}
+
+# ===== ElastiCache (Redis) =====
+module "elasticache" {
+  source = "../../modules/elasticache"
+
+  name_prefix        = local.name_prefix
+  tags               = local.common_tags
+  subnet_ids         = module.network.data_subnet_ids
+  security_group_ids = [module.security.redis_sg_id]
+  node_type          = var.redis_node_type
+  engine_version     = var.redis_engine_version
+  replicas           = var.redis_replicas
+  multi_az           = var.redis_multi_az
+  transit_encryption = var.redis_transit_encryption
+  maxmemory_policy   = var.redis_maxmemory_policy
+}
+
+# ===== 앱 시크릿 =====
+module "secrets" {
+  source = "../../modules/secrets"
+
+  name_prefix      = local.name_prefix
+  tags             = local.common_tags
+  google_client_id = var.google_client_id
+  apple_client_id  = var.apple_client_id
+  smtp_username    = var.smtp_username
+  smtp_password    = var.smtp_password
+}
+
+# ===== IAM (ECS 역할 + GitHub OIDC) =====
+module "iam" {
+  source = "../../modules/iam"
+
+  name_prefix                 = local.name_prefix
+  tags                        = local.common_tags
+  secret_arns                 = [module.secrets.app_secret_arn, module.rds.secret_arn, module.documentdb.secret_arn]
+  ecr_repository_arn          = module.ecr.repository_arn
+  github_org                  = var.github_org
+  github_repo                 = var.github_repo
+  github_deploy_branch        = var.github_deploy_branch
+  region                      = var.aws_region
+  account_id                  = data.aws_caller_identity.current.account_id
+  create_github_oidc_provider = var.create_github_oidc_provider
+}
+
+# ===== ALB =====
+module "alb" {
+  source = "../../modules/alb"
+
+  name_prefix        = local.name_prefix
+  tags               = local.common_tags
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  security_group_ids = [module.security.alb_sg_id]
+  app_port           = var.app_port
+  health_check_path  = var.health_check_path
+  certificate_arn    = length(module.acm) > 0 ? module.acm[0].certificate_arn : ""
+}
+
+# ===== ECS 컨테이너 환경/시크릿 매핑 (application-prod.yml 계약) =====
+locals {
+  container_image = "${module.ecr.repository_url}:${var.app_image_tag}"
+
+  container_environment = [
+    { name = "SPRING_PROFILES_ACTIVE", value = "prod" },
+    { name = "SPRING_DATASOURCE_URL", value = "jdbc:mysql://${module.rds.address}:${module.rds.port}/${module.rds.db_name}?serverTimezone=UTC" },
+    { name = "SPRING_DATASOURCE_USERNAME", value = module.rds.username },
+    { name = "SPRING_DATA_REDIS_HOST", value = module.elasticache.primary_endpoint },
+    { name = "SPRING_DATA_REDIS_PORT", value = tostring(module.elasticache.port) },
+    { name = "SPRING_MAIL_HOST", value = var.smtp_host },
+    { name = "SPRING_MAIL_PORT", value = tostring(var.smtp_port) },
+    { name = "MAIL_FROM", value = var.mail_from },
+  ]
+
+  # valueFrom = "<secret ARN>:<JSON 키>::"  (Secrets Manager JSON 키 참조 문법)
+  container_secrets = [
+    { name = "SPRING_DATASOURCE_PASSWORD", valueFrom = "${module.rds.secret_arn}:password::" },
+    { name = "SPRING_DATA_MONGODB_URI", valueFrom = "${module.documentdb.secret_arn}:uri::" },
+    { name = "JWT_SECRET", valueFrom = "${module.secrets.app_secret_arn}:JWT_SECRET::" },
+    { name = "REFRESH_PEPPER", valueFrom = "${module.secrets.app_secret_arn}:REFRESH_PEPPER::" },
+    { name = "EMAIL_PEPPER", valueFrom = "${module.secrets.app_secret_arn}:EMAIL_PEPPER::" },
+    { name = "GOOGLE_CLIENT_ID", valueFrom = "${module.secrets.app_secret_arn}:GOOGLE_CLIENT_ID::" },
+    { name = "APPLE_CLIENT_ID", valueFrom = "${module.secrets.app_secret_arn}:APPLE_CLIENT_ID::" },
+    { name = "SPRING_MAIL_USERNAME", valueFrom = "${module.secrets.app_secret_arn}:SPRING_MAIL_USERNAME::" },
+    { name = "SPRING_MAIL_PASSWORD", valueFrom = "${module.secrets.app_secret_arn}:SPRING_MAIL_PASSWORD::" },
+  ]
+}
+
+# ===== ECS Fargate =====
+module "ecs" {
+  source = "../../modules/ecs"
+
+  name_prefix             = local.name_prefix
+  tags                    = local.common_tags
+  aws_region              = var.aws_region
+  app_subnet_ids          = module.network.app_subnet_ids
+  security_group_ids      = [module.security.app_sg_id]
+  target_group_arn        = module.alb.target_group_arn
+  container_image         = local.container_image
+  container_port          = var.app_port
+  task_cpu                = var.task_cpu
+  task_memory             = var.task_memory
+  desired_count           = var.desired_count
+  autoscaling_min         = var.autoscaling_min
+  autoscaling_max         = var.autoscaling_max
+  cpu_target              = var.cpu_target
+  task_execution_role_arn = module.iam.task_execution_role_arn
+  task_role_arn           = module.iam.task_role_arn
+  container_environment   = local.container_environment
+  container_secrets       = local.container_secrets
+  log_retention_days      = var.log_retention_days
+  health_check_path       = var.health_check_path
+
+  # 리스너가 생성된 뒤 서비스가 타깃 그룹에 등록되도록.
+  depends_on = [module.alb]
+}
+
+# ===== S3 + CloudFront (매물 이미지) =====
+module "s3_cloudfront" {
+  source = "../../modules/s3-cloudfront"
+
+  name_prefix = local.name_prefix
+  tags        = local.common_tags
+  bucket_name = var.images_bucket_name
+  account_id  = data.aws_caller_identity.current.account_id
+  price_class = var.cloudfront_price_class
+}
+
+# ===== 모니터링 =====
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  name_prefix                = local.name_prefix
+  tags                       = local.common_tags
+  alarm_email                = var.alarm_email
+  alb_arn_suffix             = module.alb.alb_arn_suffix
+  target_group_arn_suffix    = module.alb.target_group_arn_suffix
+  ecs_cluster_name           = module.ecs.cluster_name
+  ecs_service_name           = module.ecs.service_name
+  rds_instance_id            = module.rds.instance_id
+  docdb_cluster_id           = module.documentdb.cluster_id
+  redis_replication_group_id = module.elasticache.replication_group_id
+}
+
+# ===== Route53 alias (도메인 제공 시에만) =====
+resource "aws_route53_record" "alb_alias" {
+  count = (var.domain_name != "" && var.route53_zone_id != "") ? 1 : 0
+
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
+    evaluate_target_health = true
+  }
+}

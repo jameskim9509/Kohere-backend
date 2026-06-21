@@ -1,0 +1,73 @@
+# M7 배포 — main push 시 이미지 빌드 → ECR push → ECS Fargate 롤링 배포.
+# OIDC로 AWS 자격증명을 단기 발급(저장 키 없음). Terraform(module.iam)이 만든 배포 역할 ARN을
+# 리포지토리 Variables 의 AWS_DEPLOY_ROLE_ARN 에 설정하기 전까지는 동작하지 않는다(가드).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 기본값은 Terraform 기본 변수(project=kohere, environment=prod)에서 파생된 이름과 일치한다.
+# 다른 값을 쓰면 리포지토리 Variables 로 덮어쓴다.
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'kohere-backend' }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'kohere-prod-cluster' }}
+  ECS_SERVICE: ${{ vars.ECS_SERVICE || 'kohere-prod-service' }}
+  ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY || 'kohere-prod' }}
+  CONTAINER_NAME: ${{ vars.CONTAINER_NAME || 'kohere-prod-app' }}
+
+jobs:
+  deploy:
+    # AWS_DEPLOY_ROLE_ARN 이 설정된 경우에만 실행.
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:${GITHUB_SHA::12}"
+          docker build -t "$IMAGE" -t "$REGISTRY/$ECR_REPOSITORY:latest" .
+          docker push "$IMAGE"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$ECS_TASK_FAMILY" \
+            --query taskDefinition > task-def.json
+
+      - name: Render new image into task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build.outputs.image }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
