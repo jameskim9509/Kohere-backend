@@ -17,7 +17,7 @@ data "aws_region" "current" {}
 
 # ===== 네트워크 =====
 module "network" {
-  source = "../../modules/network"
+  source = "../../modules/prod/network"
 
   name_prefix                = local.name_prefix
   tags                       = local.common_tags
@@ -30,7 +30,7 @@ module "network" {
 
 # ===== 보안 그룹 =====
 module "security" {
-  source = "../../modules/security"
+  source = "../../modules/prod/security"
 
   name_prefix       = local.name_prefix
   tags              = local.common_tags
@@ -42,7 +42,7 @@ module "security" {
 
 # ===== ECR =====
 module "ecr" {
-  source = "../../modules/ecr"
+  source = "../../modules/prod/ecr"
 
   name_prefix           = local.name_prefix
   tags                  = local.common_tags
@@ -52,7 +52,7 @@ module "ecr" {
 
 # ===== ACM (도메인 제공 시에만) =====
 module "acm" {
-  source = "../../modules/acm"
+  source = "../../modules/prod/acm"
   count  = (var.domain_name != "" && var.route53_zone_id != "") ? 1 : 0
 
   name_prefix     = local.name_prefix
@@ -63,7 +63,7 @@ module "acm" {
 
 # ===== RDS (MySQL) =====
 module "rds" {
-  source = "../../modules/rds"
+  source = "../../modules/prod/rds"
 
   name_prefix             = local.name_prefix
   tags                    = local.common_tags
@@ -82,7 +82,7 @@ module "rds" {
 
 # ===== DocumentDB =====
 module "documentdb" {
-  source = "../../modules/documentdb"
+  source = "../../modules/prod/documentdb"
 
   name_prefix         = local.name_prefix
   tags                = local.common_tags
@@ -100,7 +100,7 @@ module "documentdb" {
 
 # ===== ElastiCache (Redis) =====
 module "elasticache" {
-  source = "../../modules/elasticache"
+  source = "../../modules/prod/elasticache"
 
   name_prefix        = local.name_prefix
   tags               = local.common_tags
@@ -116,7 +116,7 @@ module "elasticache" {
 
 # ===== 앱 시크릿 =====
 module "secrets" {
-  source = "../../modules/secrets"
+  source = "../../modules/prod/secrets"
 
   name_prefix      = local.name_prefix
   tags             = local.common_tags
@@ -128,7 +128,7 @@ module "secrets" {
 
 # ===== IAM (ECS 역할 + GitHub OIDC) =====
 module "iam" {
-  source = "../../modules/iam"
+  source = "../../modules/prod/iam"
 
   name_prefix                 = local.name_prefix
   tags                        = local.common_tags
@@ -145,7 +145,7 @@ module "iam" {
 
 # ===== ALB =====
 module "alb" {
-  source = "../../modules/alb"
+  source = "../../modules/prod/alb"
 
   name_prefix        = local.name_prefix
   tags               = local.common_tags
@@ -191,7 +191,7 @@ locals {
 
 # ===== ECS Fargate =====
 module "ecs" {
-  source = "../../modules/ecs"
+  source = "../../modules/prod/ecs"
 
   name_prefix             = local.name_prefix
   tags                    = local.common_tags
@@ -220,7 +220,7 @@ module "ecs" {
 
 # ===== S3 + CloudFront (매물 이미지) =====
 module "s3_cloudfront" {
-  source = "../../modules/s3-cloudfront"
+  source = "../../modules/shared/s3-cloudfront"
 
   name_prefix = local.name_prefix
   tags        = local.common_tags
@@ -231,7 +231,7 @@ module "s3_cloudfront" {
 
 # ===== 모니터링 =====
 module "monitoring" {
-  source = "../../modules/monitoring"
+  source = "../../modules/prod/monitoring"
 
   name_prefix                = local.name_prefix
   tags                       = local.common_tags

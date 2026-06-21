@@ -1,13 +1,13 @@
 # Kohere 인프라 (Terraform · AWS)
 
-[system-overview §1-3-2 클라우드 배포 아키텍처](../../docs/architecture/system-overview.md#1-3-2-클라우드-배포-아키텍처-m7-이전배포-aws)를 Terraform으로 구현한 것이다. 리전은 **ap-northeast-2(서울)**, 환경은 **prod 단일**.
+[system-overview §1-3-2 클라우드 배포 아키텍처](../../docs/architecture/system-overview.md#1-3-2-클라우드-배포-아키텍처-m7-이전배포-aws)를 Terraform으로 구현한 것이다. 리전은 **ap-northeast-2(서울)**, 환경은 **prod(매니지드)·dev(저비용 단일 EC2)**.
 
 ```
 모바일 앱 ──HTTPS──▶ ALB ──▶ ECS Fargate(Spring Boot · :8080)
                                   │  ├─ JDBC ───▶ RDS for MySQL 8.0    (auth·user)
                                   │  ├─ mongodb ▶ DocumentDB           (listing·diagnosis)
                                   │  └─ redis ──▶ ElastiCache(Redis)   (refresh 토큰)
-                                  └─ 시크릿 ────▶ Secrets Manager
+                                  └─ 시크릿 ────▶ SSM Parameter Store
 앱 이미지: GitHub Actions ──OIDC──▶ ECR ──▶ Fargate
 매물 이미지: S3 ──OAC──▶ CloudFront (클라이언트 직접 로드)
 ```
@@ -17,33 +17,38 @@
 | 항목 | 선택 | 비고 |
 | --- | --- | --- |
 | MongoDB | **Amazon DocumentDB** | AWS 네이티브(단일 provider, VPC 내). `SPRING_DATA_MONGODB_URI`는 Mongo 드라이버 배선(추후)에 대비해 미리 주입 |
-| 환경 | **prod 단일** | 재사용 모듈 + `environments/prod`. dev/stage는 동일 모듈 복제로 추가 가능 |
-| 도메인·TLS | **옵셔널 변수** | `domain_name`+`route53_zone_id` 제공 시 ACM(DNS 검증)·HTTPS·Route53 alias 생성, 아니면 ALB는 HTTP(80)만 |
-| 컴퓨트 | ECS Fargate + ALB | access 무상태 → 타깃 추적 오토스케일링(CPU) |
-| 상태 | S3 + DynamoDB 잠금 | `bootstrap/` 에서 1회 생성 |
+| 환경 | **prod(매니지드) · dev(저비용)** | prod=이 매니지드 토폴로지, dev=단일 EC2 docker-compose([ADR-0021](../../docs/adr/0021-cost-optimization-profile.md)). `environments/{prod,dev}` 로 분리 |
+| 도메인·TLS | **옵셔널 변수** | (prod) `domain_name`+`route53_zone_id` 제공 시 ACM·HTTPS·Route53 alias, 아니면 ALB는 HTTP(80)만. (dev) 제공 시 Route53 A 레코드(EIP) |
+| 컴퓨트 | (prod) ECS Fargate + ALB / (dev) EC2 1대 compose | prod: access 무상태 → CPU 오토스케일링. dev: ALB 없이 EIP 직접 노출 |
+| 상태 | S3 + native lockfile(DynamoDB 불요) | `bootstrap/` 에서 1회 생성. prod·dev는 `key`로 분리 |
 
-> 결정 근거·대안은 ADR 참조: [ADR-0018](../../docs/adr/0018-documentdb-for-mongodb-on-aws.md)(DocumentDB) · [ADR-0019](../../docs/adr/0019-infrastructure-as-code-terraform.md)(Terraform IaC) · [ADR-0020](../../docs/adr/0020-terraform-remote-state-s3-dynamodb.md)(원격 상태 S3+DynamoDB).
+> 결정 근거·대안은 ADR 참조: [ADR-0018](../../docs/adr/0018-documentdb-for-mongodb-on-aws.md)(DocumentDB) · [ADR-0019](../../docs/adr/0019-infrastructure-as-code-terraform.md)(Terraform IaC) · [ADR-0020](../../docs/adr/0020-terraform-remote-state-s3-dynamodb.md)(원격 상태 S3+lockfile) · [ADR-0021](../../docs/adr/0021-cost-optimization-profile.md)(dev 저비용 단일 EC2).
 
 ## 디렉터리
 
 ```
 infra/terraform/
-├── bootstrap/                 # 원격 상태 백엔드(S3+DynamoDB). 최초 1회.
-├── modules/                   # 재사용 모듈
-│   ├── network/               # VPC, 3-tier 서브넷, NAT, VPC 엔드포인트
-│   ├── security/              # 보안 그룹(alb·app·rds·docdb·redis)
-│   ├── ecr/                   # 앱 이미지 레지스트리
-│   ├── acm/                   # ALB용 TLS 인증서(옵셔널)
-│   ├── secrets/               # 앱 시크릿(JWT·pepper·OIDC·SMTP)
-│   ├── iam/                   # ECS 역할 + GitHub OIDC 배포 역할
-│   ├── rds/                   # RDS for MySQL 8.0
-│   ├── documentdb/            # Amazon DocumentDB
-│   ├── elasticache/           # ElastiCache Redis(복제 그룹)
-│   ├── alb/                   # Application Load Balancer
-│   ├── ecs/                   # Fargate 클러스터·태스크·서비스·오토스케일링
-│   ├── s3-cloudfront/         # 매물 이미지(S3 + CloudFront OAC)
-│   └── monitoring/            # SNS + CloudWatch 알람
-└── environments/prod/         # 모듈 배선(루트)
+├── bootstrap/                 # 원격 상태 백엔드(S3, native lockfile). 최초 1회.
+├── modules/                   # 환경별 재사용 모듈
+│   ├── prod/                  # prod 매니지드 스택 모듈
+│   │   ├── network/           # VPC, 3-tier 서브넷, NAT, VPC 엔드포인트
+│   │   ├── security/          # 보안 그룹(alb·app·rds·docdb·redis)
+│   │   ├── ecr/               # 앱 이미지 레지스트리
+│   │   ├── acm/               # ALB용 TLS 인증서(옵셔널)
+│   │   ├── secrets/           # 앱 시크릿(JWT·pepper·OIDC·SMTP) — SSM Parameter Store
+│   │   ├── iam/               # ECS 역할 + GitHub OIDC 배포 역할
+│   │   ├── rds/               # RDS for MySQL 8.0
+│   │   ├── documentdb/        # Amazon DocumentDB
+│   │   ├── elasticache/       # ElastiCache Redis(복제 그룹)
+│   │   ├── alb/               # Application Load Balancer
+│   │   ├── ecs/               # Fargate 클러스터·태스크·서비스·오토스케일링
+│   │   └── monitoring/        # SNS + CloudWatch 알람
+│   ├── dev/
+│   │   └── dev-host/          # EC2 1대 docker-compose — Caddy(HTTPS)+app+mysql+mongo+redis, SSM PS 시크릿·DB reconcile (ADR-0021~0025)
+│   └── shared/
+│       └── s3-cloudfront/     # 매물 이미지(S3 + CloudFront OAC) — prod·dev 공용
+├── environments/prod/         # prod 매니지드 배선(루트)
+└── environments/dev/          # dev 저비용 단일 EC2 배선(루트)
 ```
 
 ## 사전 준비
@@ -57,7 +62,7 @@ infra/terraform/
 # 0) 원격 상태 백엔드 생성(최초 1회)
 cd infra/terraform/bootstrap
 terraform init && terraform apply
-#   → 출력된 state_bucket_name / lock_table_name 을 environments/prod/backend.tf 에 채운다.
+#   → 출력된 state_bucket_name 을 environments/{prod,dev}/backend.tf 의 bucket 에 채운다(잠금은 use_lockfile).
 
 # 1) prod 인프라
 cd ../environments/prod
@@ -79,7 +84,7 @@ terraform apply
 
 ## 운영 전 반드시 채울 값 (앱 fail-fast)
 
-`application-prod.yml` 은 누락 시 기동 실패한다. 다음 시크릿을 `terraform.tfvars` 로 주입하거나, apply 후 `app_secret_arn` 시크릿을 콘솔에서 직접 편집한다:
+`application-prod.yml` 은 누락 시 기동 실패한다. 다음 시크릿을 `terraform.tfvars` 로 주입하거나, apply 후 SSM Parameter Store(`/kohere-prod/*` SecureString)에서 직접 편집한다:
 
 - `google_client_id`, `apple_client_id` — OIDC audience
 - `smtp_host`/`smtp_port`/`smtp_username`/`smtp_password` — 운영 SMTP(예: Amazon SES SMTP)

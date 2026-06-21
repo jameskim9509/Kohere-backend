@@ -18,7 +18,7 @@ data "aws_caller_identity" "current" {}
 
 # ===== 매물 이미지 (S3 + CloudFront) — prod와 동일 모듈 =====
 module "s3_cloudfront" {
-  source = "../../modules/s3-cloudfront"
+  source = "../../modules/shared/s3-cloudfront"
 
   name_prefix = local.name_prefix
   tags        = local.common_tags
@@ -28,7 +28,7 @@ module "s3_cloudfront" {
 
 # ===== dev 호스트 (EC2 1대 docker-compose) =====
 module "dev_host" {
-  source = "../../modules/dev-host"
+  source = "../../modules/dev/dev-host"
 
   name_prefix      = local.name_prefix
   tags             = local.common_tags
