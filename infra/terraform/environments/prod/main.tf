@@ -132,7 +132,7 @@ module "iam" {
 
   name_prefix                 = local.name_prefix
   tags                        = local.common_tags
-  secret_arns                 = [module.secrets.app_secret_arn, module.rds.secret_arn, module.documentdb.secret_arn]
+  secret_arns                 = concat(values(module.secrets.param_arns), [module.rds.password_param_arn, module.documentdb.uri_param_arn])
   ecr_repository_arn          = module.ecr.repository_arn
   github_org                  = var.github_org
   github_repo                 = var.github_repo
@@ -140,6 +140,7 @@ module "iam" {
   region                      = var.aws_region
   account_id                  = data.aws_caller_identity.current.account_id
   create_github_oidc_provider = var.create_github_oidc_provider
+  images_bucket_arn           = module.s3_cloudfront.bucket_arn
 }
 
 # ===== ALB =====
@@ -169,19 +170,22 @@ locals {
     { name = "SPRING_MAIL_HOST", value = var.smtp_host },
     { name = "SPRING_MAIL_PORT", value = tostring(var.smtp_port) },
     { name = "MAIL_FROM", value = var.mail_from },
+    # 매물 이미지: 앱이 S3에 업로드하고 CloudFront URL을 클라이언트에 반환(앱은 서빙 경로 아님).
+    { name = "APP_IMAGES_BUCKET", value = module.s3_cloudfront.bucket_name },
+    { name = "APP_IMAGES_CDN_DOMAIN", value = module.s3_cloudfront.cloudfront_domain_name },
   ]
 
-  # valueFrom = "<secret ARN>:<JSON 키>::"  (Secrets Manager JSON 키 참조 문법)
+  # valueFrom = SSM 파라미터 ARN (Parameter Store SecureString — ADR-0023). 값 전체가 곧 시크릿.
   container_secrets = [
-    { name = "SPRING_DATASOURCE_PASSWORD", valueFrom = "${module.rds.secret_arn}:password::" },
-    { name = "SPRING_DATA_MONGODB_URI", valueFrom = "${module.documentdb.secret_arn}:uri::" },
-    { name = "JWT_SECRET", valueFrom = "${module.secrets.app_secret_arn}:JWT_SECRET::" },
-    { name = "REFRESH_PEPPER", valueFrom = "${module.secrets.app_secret_arn}:REFRESH_PEPPER::" },
-    { name = "EMAIL_PEPPER", valueFrom = "${module.secrets.app_secret_arn}:EMAIL_PEPPER::" },
-    { name = "GOOGLE_CLIENT_ID", valueFrom = "${module.secrets.app_secret_arn}:GOOGLE_CLIENT_ID::" },
-    { name = "APPLE_CLIENT_ID", valueFrom = "${module.secrets.app_secret_arn}:APPLE_CLIENT_ID::" },
-    { name = "SPRING_MAIL_USERNAME", valueFrom = "${module.secrets.app_secret_arn}:SPRING_MAIL_USERNAME::" },
-    { name = "SPRING_MAIL_PASSWORD", valueFrom = "${module.secrets.app_secret_arn}:SPRING_MAIL_PASSWORD::" },
+    { name = "SPRING_DATASOURCE_PASSWORD", valueFrom = module.rds.password_param_arn },
+    { name = "SPRING_DATA_MONGODB_URI", valueFrom = module.documentdb.uri_param_arn },
+    { name = "JWT_SECRET", valueFrom = module.secrets.param_arns["JWT_SECRET"] },
+    { name = "REFRESH_PEPPER", valueFrom = module.secrets.param_arns["REFRESH_PEPPER"] },
+    { name = "EMAIL_PEPPER", valueFrom = module.secrets.param_arns["EMAIL_PEPPER"] },
+    { name = "GOOGLE_CLIENT_ID", valueFrom = module.secrets.param_arns["GOOGLE_CLIENT_ID"] },
+    { name = "APPLE_CLIENT_ID", valueFrom = module.secrets.param_arns["APPLE_CLIENT_ID"] },
+    { name = "SPRING_MAIL_USERNAME", valueFrom = module.secrets.param_arns["SPRING_MAIL_USERNAME"] },
+    { name = "SPRING_MAIL_PASSWORD", valueFrom = module.secrets.param_arns["SPRING_MAIL_PASSWORD"] },
   ]
 }
 

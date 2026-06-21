@@ -53,9 +53,9 @@ output "github_actions_role_arn" {
   value       = module.iam.github_actions_role_arn
 }
 
-output "app_secret_arn" {
-  description = "앱 시크릿 ARN(외부 발급 값 GOOGLE/APPLE/SMTP 를 채울 대상)"
-  value       = module.secrets.app_secret_arn
+output "app_secret_params_prefix" {
+  description = "앱 시크릿 SSM Parameter Store 접두사(GOOGLE/APPLE/SMTP 등 외부 발급값을 채울 대상)"
+  value       = module.secrets.param_prefix
 }
 
 output "nat_public_ips" {

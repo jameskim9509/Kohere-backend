@@ -27,20 +27,22 @@ resource "aws_iam_role_policy_attachment" "task_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# SSM Parameter Store SecureString 읽기 + aws/ssm 키 복호화(Secrets Manager 미사용, ADR-0023).
+data "aws_kms_alias" "ssm" {
+  name = "alias/aws/ssm"
+}
+
 data "aws_iam_policy_document" "task_execution_secrets" {
   statement {
-    sid       = "ReadSecrets"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = var.secret_arns
+    sid       = "ReadParams"
+    actions   = ["ssm:GetParameters"]
+    resources = var.secret_arns # SSM 파라미터 ARN 목록(앱·rds·docdb)
   }
 
-  dynamic "statement" {
-    for_each = length(var.kms_key_arns) > 0 ? [1] : []
-    content {
-      sid       = "DecryptSecrets"
-      actions   = ["kms:Decrypt"]
-      resources = var.kms_key_arns
-    }
+  statement {
+    sid       = "DecryptParams"
+    actions   = ["kms:Decrypt"]
+    resources = [data.aws_kms_alias.ssm.target_key_arn]
   }
 }
 
@@ -50,7 +52,7 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
   policy = data.aws_iam_policy_document.task_execution_secrets.json
 }
 
-# ===== ECS 태스크 역할 (앱 런타임) — 앱은 AWS API를 직접 호출하지 않음. ECS Exec(디버깅)만 허용 =====
+# ===== ECS 태스크 역할 (앱 런타임) — ECS Exec(디버깅) + 매물 이미지 S3 업로드 =====
 resource "aws_iam_role" "task" {
   name               = "${var.name_prefix}-ecs-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
@@ -67,6 +69,16 @@ data "aws_iam_policy_document" "task_exec_command" {
       "ssmmessages:OpenDataChannel",
     ]
     resources = ["*"]
+  }
+
+  # 매물 이미지 버킷 읽기/쓰기(앱이 태스크 역할로 업로드) — images_bucket_arn 제공 시에만.
+  dynamic "statement" {
+    for_each = var.images_bucket_arn != "" ? [1] : []
+    content {
+      sid       = "ImagesBucketRW"
+      actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:ListBucket"]
+      resources = [var.images_bucket_arn, "${var.images_bucket_arn}/*"]
+    }
   }
 }
 
@@ -179,6 +191,16 @@ data "aws_iam_policy_document" "github_deploy" {
       variable = "iam:PassedToService"
       values   = ["ecs-tasks.amazonaws.com"]
     }
+  }
+
+  # dev 배포 — SSM run-command로 dev EC2에서 docker compose pull·up (ECS 없는 dev용). prod·dev 공용 배포 역할.
+  statement {
+    sid     = "SsmDevDeploy"
+    actions = ["ssm:SendCommand"]
+    resources = [
+      "arn:aws:ssm:${var.region}:${var.account_id}:document/AWS-RunShellScript",
+      "arn:aws:ec2:${var.region}:${var.account_id}:instance/*",
+    ]
   }
 }
 

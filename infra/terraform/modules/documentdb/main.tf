@@ -75,22 +75,10 @@ locals {
   )
 }
 
-resource "aws_secretsmanager_secret" "docdb" {
-  name                    = "${var.name_prefix}/docdb"
-  description             = "DocumentDB 접속 자격증명·연결 URI"
-  recovery_window_in_days = var.recovery_window_days
-  tags                    = merge(var.tags, { Name = "${var.name_prefix}-docdb-secret" })
-}
-
-resource "aws_secretsmanager_secret_version" "docdb" {
-  secret_id = aws_secretsmanager_secret.docdb.id
-
-  secret_string = jsonencode({
-    username = var.username
-    password = random_password.master.result
-    host     = aws_docdb_cluster.this.endpoint
-    port     = var.port
-    database = var.database_name
-    uri      = local.docdb_uri
-  })
+# 연결 URI(비번 임베드)를 SSM SecureString 파라미터로 보관(SM 미사용·무료, ADR-0023).
+resource "aws_ssm_parameter" "uri" {
+  name  = "/${var.name_prefix}/SPRING_DATA_MONGODB_URI"
+  type  = "SecureString"
+  value = local.docdb_uri
+  tags  = merge(var.tags, { Name = "${var.name_prefix}-docdb-uri" })
 }

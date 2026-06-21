@@ -1,5 +1,5 @@
 # RDS for MySQL 8.0 — auth·user 트랜잭션 저장소(ADR-0005). 프라이빗 데이터 서브넷, 비공개.
-# 시간대 UTC 강제(app도 UTC). 비밀번호는 생성 후 Secrets Manager에 보관.
+# 시간대 UTC 강제(app도 UTC). 비밀번호는 생성 후 SSM Parameter Store SecureString에 보관.
 
 resource "random_password" "master" {
   length  = 24
@@ -84,21 +84,11 @@ resource "aws_db_instance" "this" {
   tags = merge(var.tags, { Name = "${var.name_prefix}-mysql" })
 }
 
-resource "aws_secretsmanager_secret" "rds" {
-  name                    = "${var.name_prefix}/rds"
-  description             = "RDS MySQL 접속 자격증명"
-  recovery_window_in_days = var.recovery_window_days
-  tags                    = merge(var.tags, { Name = "${var.name_prefix}-rds-secret" })
-}
-
-resource "aws_secretsmanager_secret_version" "rds" {
-  secret_id = aws_secretsmanager_secret.rds.id
-
-  secret_string = jsonencode({
-    username = var.username
-    password = random_password.master.result
-    host     = aws_db_instance.this.address
-    port     = var.port
-    dbname   = var.db_name
-  })
+# 마스터 비밀번호를 SSM SecureString 파라미터로 보관(SM 미사용·무료, ADR-0023).
+# host/port/db_name은 모듈 출력(비밀 아님)으로 container_environment에 들어가므로 비번만 파라미터로 둔다.
+resource "aws_ssm_parameter" "password" {
+  name  = "/${var.name_prefix}/SPRING_DATASOURCE_PASSWORD"
+  type  = "SecureString"
+  value = random_password.master.result
+  tags  = merge(var.tags, { Name = "${var.name_prefix}-rds-password" })
 }

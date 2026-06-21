@@ -18,9 +18,9 @@ output "username" {
   value       = var.username
 }
 
-output "secret_arn" {
-  description = "DocumentDB 시크릿 ARN (키: username/password/host/port/database/uri)"
-  value       = aws_secretsmanager_secret.docdb.arn
+output "uri_param_arn" {
+  description = "DocumentDB 연결 URI SSM 파라미터 ARN (ECS valueFrom·IAM용)"
+  value       = aws_ssm_parameter.uri.arn
 }
 
 output "cluster_id" {

@@ -110,6 +110,12 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "enable_container_insights" {
+  description = "Container Insights 활성화(기본 true, 현행 보존). 비용 절감 시 false"
+  type        = bool
+  default     = true
+}
+
 variable "health_check_path" {
   description = "헬스 체크 경로(참고용)"
   type        = string

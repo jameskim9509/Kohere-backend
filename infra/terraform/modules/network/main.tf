@@ -10,7 +10,7 @@ data "aws_availability_zones" "available" {
 locals {
   azs                = slice(data.aws_availability_zones.available.names, 0, var.az_count)
   nat_count          = var.single_nat_gateway ? 1 : var.az_count
-  interface_services = ["ecr.api", "ecr.dkr", "secretsmanager", "logs", "ssm"]
+  interface_services = ["ecr.api", "ecr.dkr", "ssm", "logs"] # SSM Parameter Store 사용(Secrets Manager 미사용, ADR-0023)
 }
 
 resource "aws_vpc" "this" {

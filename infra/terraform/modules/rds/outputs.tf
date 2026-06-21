@@ -18,9 +18,9 @@ output "username" {
   value       = var.username
 }
 
-output "secret_arn" {
-  description = "RDS 자격증명 시크릿 ARN (키: username/password/host/port/dbname)"
-  value       = aws_secretsmanager_secret.rds.arn
+output "password_param_arn" {
+  description = "RDS 마스터 비밀번호 SSM 파라미터 ARN (ECS valueFrom·IAM용)"
+  value       = aws_ssm_parameter.password.arn
 }
 
 output "instance_id" {
