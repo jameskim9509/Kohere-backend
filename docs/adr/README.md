@@ -43,7 +43,12 @@
 | [0017](./0017-openapi-swagger-ui-from-restdocs.md) | 테스트 기반 OpenAPI(restdocs-api-spec)로 Swagger UI를 서빙한다(ADR-0007 확장) | Accepted | 2026-06-17 |
 | [0018](./0018-documentdb-for-mongodb-on-aws.md) | MongoDB 호환 저장소는 Amazon DocumentDB로 운영한다(Atlas 대비, ADR-0005 후속) | Accepted | 2026-06-21 |
 | [0019](./0019-infrastructure-as-code-terraform.md) | AWS 인프라를 Terraform(IaC)으로 관리한다 | Accepted | 2026-06-21 |
-| [0020](./0020-terraform-remote-state-s3-dynamodb.md) | Terraform 원격 상태는 S3 + DynamoDB 잠금으로 둔다(ADR-0019 세부) | Accepted | 2026-06-21 |
+| [0020](./0020-terraform-remote-state-s3-dynamodb.md) | Terraform 원격 상태는 S3 + native lockfile로 둔다(DynamoDB 불요, ADR-0019 세부) | Accepted | 2026-06-21 |
+| [0021](./0021-cost-optimization-profile.md) | dev 환경은 단일 EC2(docker-compose) 비용 최소화 구성으로 둔다(매니지드는 과투자) | Accepted | 2026-06-21 |
+| [0022](./0022-dev-https-caddy.md) | dev HTTPS 종단은 Caddy로 한다(nginx+certbot 대비 갱신 자동화) | Accepted | 2026-06-21 |
+| [0023](./0023-secrets-in-ssm-parameter-store.md) | 시크릿은 SSM Parameter Store SecureString에 둔다(Secrets Manager 미사용) | Accepted | 2026-06-21 |
+| [0024](./0024-secret-change-propagation.md) | 변경된 시크릿은 배포(CI/CD)에서 재조회·재생성으로 반영한다(prod·dev 대칭, ADR-0023 후속) | Accepted | 2026-06-22 |
+| [0025](./0025-dev-db-credential-reconcile.md) | dev 자가호스팅 DB 자격증명은 데이터 보존하며 reconcile로 회전한다(마커 기반, ADR-0021 후속) | Accepted | 2026-06-22 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
