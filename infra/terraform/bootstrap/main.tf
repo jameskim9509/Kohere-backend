@@ -1,5 +1,5 @@
 # Terraform 원격 상태 백엔드 부트스트랩 — S3(state) + DynamoDB(lock).
-# environments/prod 보다 먼저 1회 apply 한다. (이 구성 자체는 로컬 state 사용.)
+# environments/prod 보다 먼저 1회 apply 한다. (최초엔 로컬 state → 이후 backend.tf로 S3 이전: migrate-state.)
 
 data "aws_caller_identity" "current" {}
 

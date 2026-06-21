@@ -8,7 +8,7 @@ terraform {
   }
 }
 
-# bootstrap는 원격 백엔드를 만드는 단계라 로컬 state를 쓴다(여기에는 backend 블록을 두지 않는다).
+# bootstrap는 원격 백엔드(S3)를 만드는 단계 → 최초 apply는 로컬 state. 이후 backend.tf로 자기 state를 S3로 이전한다.
 provider "aws" {
   region = var.aws_region
 

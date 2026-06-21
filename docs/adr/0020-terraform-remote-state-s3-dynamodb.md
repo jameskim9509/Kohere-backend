@@ -27,7 +27,7 @@ Accepted
 
 - **S3(상태 저장)**: 버전 관리 + 서버 측 암호화(AES256) + 퍼블릭 액세스 전면 차단 + **TLS 강제**(`aws:SecureTransport=false` 거부). `key = prod/terraform.tfstate`로 환경별 분리.
 - **DynamoDB(잠금)**: 해시키 `LockID`, `PAY_PER_REQUEST`. `plan`/`apply` 시 잠금 항목 1개를 잡고 끝나면 해제 → **동시 실행을 직렬화**(두 번째 실행은 lock 획득 실패로 차단). 평소엔 비어 있어 비용 사실상 0.
-- **부트스트랩**: 백엔드(S3·DynamoDB)를 만드는 `bootstrap` 구성은 **로컬 state**로 1회 `apply`하고, 출력값을 `environments/prod/backend.tf`에 채운 뒤 `terraform init -reconfigure`로 연결한다(닭-달걀 해소). 자세한 절차는 [bootstrap README](../../infra/terraform/bootstrap/README.md).
+- **부트스트랩**: 백엔드(S3·DynamoDB)를 만드는 `bootstrap` 구성은 버킷이 아직 없으므로 **최초 1회만 로컬 state**로 `apply`한다(닭-달걀 해소). 이후 **자기 state도 같은 버킷으로 이전**한다 — `backend "s3"`(`key = bootstrap/terraform.tfstate`)를 켜고 `terraform init -migrate-state` 실행 → bootstrap state가 한 사람 머신에 고립되지 않고 S3에서 공유·버전관리된다. 그다음 출력값을 `environments/prod/backend.tf`(`key = prod/terraform.tfstate`)에 채워 `init -reconfigure`로 연결한다. 자세한 절차는 [bootstrap README](../../infra/terraform/bootstrap/README.md).
 
 ## Alternatives
 
@@ -46,7 +46,7 @@ Accepted
   - 전부 **AWS 네이티브**라 [ADR-0018](./0018-documentdb-for-mongodb-on-aws.md)/[ADR-0019](./0019-infrastructure-as-code-terraform.md) 기조와 일치.
   - 비용 사실상 0(DynamoDB 온디맨드, `LockID` 1항목 + S3 소량).
 - **부정/트레이드오프**
-  - **부트스트랩 1회 수동 단계**가 필요(백엔드를 만드는 구성 자체는 로컬 state).
+  - **부트스트랩 1회 수동 단계**가 필요(백엔드를 만드는 구성은 최초 1회만 로컬 state → 이후 `init -migrate-state`로 같은 버킷의 `bootstrap/` key로 이전).
   - 상태에 시크릿이 포함될 수 있음 → S3 암호화·퍼블릭 차단·TLS·IAM 접근통제로 보호.
   - 잠금용 **DynamoDB 테이블 1개**가 추가된다(앱 DB 아님, Terraform 실행 시점에만 접근).
 - **후속 작업**
