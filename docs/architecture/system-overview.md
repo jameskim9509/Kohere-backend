@@ -41,7 +41,7 @@ flowchart LR
       ALB["ALB (HTTPS 종단)"]
       SRV["Kohere 백엔드<br/>Spring Boot · Modulith"]
       MYSQL[("MySQL 8 · RDS<br/>auth · user")]
-      MONGO[("MongoDB · Atlas/DocumentDB<br/>listing(+찜·최근본) · diagnosis")]
+      MONGO[("MongoDB · Amazon DocumentDB<br/>listing(+찜·최근본) · diagnosis")]
       REDIS[("Redis · ElastiCache<br/>refresh token")]
       SECRET["Secrets Manager /<br/>Parameter Store"]
     end
@@ -113,7 +113,7 @@ flowchart TB
 | 앱 실행      | `./gradlew bootRun`(단일 JVM)                                       | ECS/Fargate + ALB(HTTPS)                                |
 | 패키징       | `Dockerfile` + CI `docker build`(이미지 빌드 검증, 러닝 인프라 0) | 동일 이미지 ECR push 후 배포                            |
 | MySQL        | `mysql:8` 컨테이너                                                  | RDS for MySQL 8.0 (auth·user)                          |
-| MongoDB      | `mongo` 컨테이너 + `2dsphere`                                     | Atlas 또는 DocumentDB (listing[+찜·최근본]·diagnosis) |
+| MongoDB      | `mongo` 컨테이너 + `2dsphere`                                     | Amazon DocumentDB (listing[+찜·최근본]·diagnosis) |
 | Redis        | `redis` 컨테이너                                                    | ElastiCache (refresh 토큰 TTL)                          |
 | 매물 사진    | 백엔드 미보관(URL만 저장)                                             | S3 + CloudFront(클라이언트 직접 로드)                   |
 | 시크릿·설정 | `application-local.yml` / 환경변수                                  | Secrets Manager / SSM                                   |
@@ -144,7 +144,7 @@ flowchart TB
     APP -. "idToken 서명·iss·aud·exp 검증" .-> EXT
 ```
 
-> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·Atlas·ElastiCache·S3·Secrets Manager)로 교체된다. Google OIDC/JWKS는 로컬·클라우드 공통으로 외부 실호출이다. 매물 사진은 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
+> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google OIDC/JWKS는 로컬·클라우드 공통으로 외부 실호출이다. 매물 사진은 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
 
 #### 1-3-2. 클라우드 배포 아키텍처 (M7 이전·배포, AWS)
 
@@ -155,13 +155,15 @@ flowchart TB
 | 패키징    | Docker 이미지(Java 21 런타임) | 로컬과 동일 이미지를 ECR push                                                                                                |
 | 실행      | ECS/Fargate + ALB(HTTPS)      | 단일 서비스. access 무상태라 수평 확장 여지([ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md))                              |
 | MySQL     | RDS for MySQL 8.0             | auth·user                                                                                                                   |
-| MongoDB   | Atlas 또는 DocumentDB         | listing(+찜·최근본)·diagnosis,`2dsphere` 인덱스                                                                          |
+| MongoDB   | Amazon DocumentDB             | listing(+찜·최근본)·diagnosis,`2dsphere` 인덱스                                                                          |
 | Redis     | ElastiCache                   | refresh 토큰(TTL).**AOF·복제 권장**(§3-7)                                                                            |
 | 매물 사진 | S3 + CloudFront               | 클라이언트가 직접 로드, 백엔드는 URL만 저장                                                                                  |
 | 시크릿    | Secrets Manager / SSM         | DB·JWT 서명키·소셜 provider 시크릿                                                                                         |
 | CI/CD     | GitHub Actions                | 현재 `spotlessCheck build`. W1(M0-C, 공동): CI `docker build` 이미지 검증(클라우드 미배포). M7: ECR push·Fargate deploy |
 
 > **booking·chat 저장소는 추후 결정**(추후 ADR) — 위 표/토폴로지에는 강제 반영하지 않는다.
+>
+> **MongoDB 백엔드 = Amazon DocumentDB 확정**(Atlas 대안 폐기). AWS 네이티브라 단일 provider·VPC 내부에서 운영하며, 위 토폴로지는 [`infra/terraform`](../../infra/terraform/README.md)로 IaC 구현돼 있다(ECS Fargate·RDS·DocumentDB·ElastiCache·S3+CloudFront·Secrets Manager·ECR·GitHub Actions OIDC). 단, listing 지도검색의 **지오공간 쿼리(`2dsphere`·`$geoNear`/`$geoWithin`)** 가 DocumentDB에서 요구대로 동작하는지 검증해야 하며, 호환성 갭이 확인되면 Atlas로 전환한다. (Mongo 드라이버 배선 시 앱 이미지에 DocumentDB CA 번들 포함 — `infra/terraform/README.md` 참고.)
 
 AWS 배포 토폴로지 — GitHub Actions가 빌드한 **동일 이미지**가 ECR→Fargate로 올라가고, 로컬 컨테이너(§1-3-1)가 매니지드 서비스로 교체된다:
 
@@ -181,7 +183,7 @@ flowchart TB
         RDS[("RDS for MySQL 8.0<br/>auth · user")]
         ELASTI[("ElastiCache (Redis)<br/>refresh 토큰(TTL)<br/>AOF · 복제 권장")]
       end
-      MONGO[("Atlas 또는 DocumentDB<br/>+ 2dsphere<br/>listing(+찜·최근본) · diagnosis")]
+      MONGO[("Amazon DocumentDB<br/>+ 2dsphere<br/>listing(+찜·최근본) · diagnosis")]
       S3["S3 + CloudFront<br/>매물 사진"]
       SECRET["Secrets Manager / SSM<br/>DB · JWT 서명키 · provider 시크릿"]
     end
@@ -195,13 +197,13 @@ flowchart TB
     ALB --> FARGATE
     SECRET -. "DB 접속·시크릿 주입" .-> FARGATE
     FARGATE -- "JDBC (RDS 엔드포인트)" --> RDS
-    FARGATE -- "mongodb (Atlas/DocumentDB)" --> MONGO
+    FARGATE -- "mongodb (DocumentDB)" --> MONGO
     FARGATE -- "redis (ElastiCache 엔드포인트)" --> ELASTI
     APP -. "이미지 로드(URL)" .-> S3
     FARGATE -. "idToken 서명·iss·aud·exp 검증" .-> EXT
 ```
 
-> 동일 app 이미지를 GitHub Actions가 ECR에 push하고 M7에 Fargate로 deploy한다 — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·Atlas/DocumentDB·ElastiCache·S3·Secrets Manager)로 교체되고, VPC가 app·RDS·ElastiCache를 감싼다. Google OIDC/JWKS는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
+> 동일 app 이미지를 GitHub Actions가 ECR에 push하고 M7에 Fargate로 deploy한다 — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체되고, VPC가 app·RDS·ElastiCache를 감싼다. Google OIDC/JWKS는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
 
 ## 2. 주요 컴포넌트 표
 
