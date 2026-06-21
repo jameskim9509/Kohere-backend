@@ -85,7 +85,7 @@ data "aws_iam_policy_document" "github_deploy" {
     actions = ["ssm:SendCommand"]
     resources = [
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/AWS-RunShellScript",
-      "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${module.dev_host.instance_id}",
+      "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${module.host.instance_id}",
     ]
   }
 }

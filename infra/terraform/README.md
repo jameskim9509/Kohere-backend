@@ -43,8 +43,15 @@ infra/terraform/
 │   │   ├── alb/               # Application Load Balancer
 │   │   ├── ecs/               # Fargate 클러스터·태스크·서비스·오토스케일링
 │   │   └── monitoring/        # SNS + CloudWatch 알람
-│   ├── dev/
-│   │   └── dev-host/          # EC2 1대 docker-compose — Caddy(HTTPS)+app+mysql+mongo+redis, SSM PS 시크릿·DB reconcile (ADR-0021~0025)
+│   ├── dev/                   # dev 저비용 단일 EC2 — 서비스별 모듈(ADR-0021~0025)
+│   │   ├── network/           # 미니 VPC·IGW·public subnet
+│   │   ├── security/          # SG(80/443 + 옵션 DB 포트)
+│   │   ├── iam/               # 인스턴스 프로파일(SSM·ECR·파라미터·S3 이미지)
+│   │   ├── secrets/           # SSM Parameter Store SecureString(앱·DB 시크릿)
+│   │   ├── storage/           # 데이터 EBS(mysql/mongo 영속)
+│   │   ├── host/              # EC2+EIP+EBS attach, user_data(compose·Caddyfile·refresh-env·reconcile-db)
+│   │   ├── dns/               # Route53 A 레코드(EIP)
+│   │   └── monitoring/        # CloudWatch 알람 + SNS
 │   └── shared/
 │       └── s3-cloudfront/     # 매물 이미지(S3 + CloudFront OAC) — prod·dev 공용
 ├── environments/prod/         # prod 매니지드 배선(루트)

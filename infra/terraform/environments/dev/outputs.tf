@@ -1,16 +1,16 @@
 output "app_url" {
   description = "앱 접속 URL(도메인 제공 시 HTTPS)"
-  value       = module.dev_host.app_url
+  value       = module.host.app_url
 }
 
 output "public_ip" {
   description = "dev 호스트 EIP(Route53 A 레코드 대상)"
-  value       = module.dev_host.public_ip
+  value       = module.host.public_ip
 }
 
 output "instance_id" {
   description = "dev 호스트 EC2 인스턴스 ID(SSM 접속용)"
-  value       = module.dev_host.instance_id
+  value       = module.host.instance_id
 }
 
 output "images_bucket" {
