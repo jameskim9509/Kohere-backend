@@ -5,7 +5,7 @@
 | 번호 | ADR-0005 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-06-15 |
-| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [project-brief §7](../project/project-brief.md), [database-design](../database/database-design.md), [listings spec](../api/specs/03-listings-favorites.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md), [ADR-0006](./0006-refresh-token-store-redis.md) |
+| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [project-brief §7](../project/project-brief.md), [database-design](../database/database-design.md), [listings spec](../api/specs/03-listings-favorites.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0018](./0018-documentdb-for-mongodb-on-aws.md) |
 
 ## Status
 
@@ -37,6 +37,8 @@ Accepted
 | **MySQL** (Spring Data JPA) | `auth`, `user`, `community` | `RefreshToken`, `User`, `Post`/`Comment`/`PostLike` | 계정·토큰 트랜잭션 / 유니크 제약(`PostLike`)·다엔티티 카운트 정합 |
 
 > **보완([ADR-0006](./0006-refresh-token-store-redis.md), 2026-06-15):** `RefreshToken`의 **저장은 Redis**로 옮긴다(불투명 토큰의 회전·TTL 적합성, [ADR-0003](./0003-jwt-auth-after-oauth-login.md)의 "refresh 저장소" 후속이 닫힘). `auth`의 계정·소셜 연동은 MySQL 유지 — 즉 `auth`는 **MySQL(계정) + Redis(refresh)** 혼합이다.
+>
+> **제공자 확정([ADR-0018](./0018-documentdb-for-mongodb-on-aws.md), 2026-06-21):** MongoDB 호환 저장소(`listing`·`diagnosis`)의 클라우드 매니지드 제공자를 **Amazon DocumentDB**로 확정한다(Atlas 대비, AWS 네이티브 일관성). 지오공간(`2dsphere`·`$geoNear`/`$geoWithin`) 호환성 검증은 [ADR-0018](./0018-documentdb-for-mongodb-on-aws.md) Validation 참조.
 
 세부 정책:
 

@@ -41,6 +41,7 @@
 | [0015](./0015-sensitive-column-encryption.md) | 민감정보 컬럼 암호화는 MVP에서 도입하지 않고 마스킹·저장소 암호화로 갈음한다 | Accepted | 2026-06-17 |
 | [0016](./0016-downgrade-to-spring-boot-3.md) | Spring Boot를 4.1에서 3.5로 다운그레이드한다(생태계·도구 호환성) | Accepted | 2026-06-17 |
 | [0017](./0017-openapi-swagger-ui-from-restdocs.md) | 테스트 기반 OpenAPI(restdocs-api-spec)로 Swagger UI를 서빙한다(ADR-0007 확장) | Accepted | 2026-06-17 |
+| [0018](./0018-documentdb-for-mongodb-on-aws.md) | MongoDB 호환 저장소는 Amazon DocumentDB로 운영한다(Atlas 대비, ADR-0005 후속) | Accepted | 2026-06-21 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
