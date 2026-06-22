@@ -41,12 +41,6 @@ variable "volume_id" {
 }
 
 # ----- 인스턴스 -----
-variable "ami_id" {
-  description = "AMI 고정 오버라이드(선택). 기본(빈 값)은 SSM에서 최신 AL2023 x86_64를 자동 조회 — 권장"
-  type        = string
-  default     = ""
-}
-
 variable "instance_type" {
   description = "EC2 인스턴스 타입. x86 — ECR 앱 이미지가 amd64"
   type        = string

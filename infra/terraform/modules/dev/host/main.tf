@@ -1,13 +1,12 @@
 # dev 호스트 — EC2 1대 + EIP + 데이터 EBS attach. user_data가 docker·compose·시크릿(.env)·스크립트를 부트스트랩.
-# AMI는 ami_id 미지정 시 최신 AL2023 x86_64(SSM). Caddy 자동 HTTPS(도메인 필수, :80 폴백 없음). (ADR-0021/0022)
+# AMI는 SSM에서 최신 AL2023 x86_64를 항상 조회(외부 입력 없음). Caddy 자동 HTTPS(도메인 필수, :80 폴백 없음). (ADR-0021/0022)
 # 시크릿(secrets 모듈)·SG·인스턴스 프로파일·EBS 볼륨은 환경 루트에서 주입. SSH 미개방(SSM 전용).
 data "aws_ssm_parameter" "al2023_x86" {
-  count = var.ami_id == "" ? 1 : 0
-  name  = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
 locals {
-  ami_id     = var.ami_id != "" ? var.ami_id : data.aws_ssm_parameter.al2023_x86[0].value
+  ami_id     = data.aws_ssm_parameter.al2023_x86.value
   ssm_prefix = "/${var.name_prefix}"
   # Caddy 사이트 주소 — 도메인으로 자동 HTTPS(도메인 필수).
   caddy_site = var.domain_name
