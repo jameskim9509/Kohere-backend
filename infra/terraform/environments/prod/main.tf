@@ -50,14 +50,27 @@ module "ecr" {
   image_retention_count = var.ecr_image_retention_count
 }
 
-# ===== ACM (도메인 제공 시에만) =====
+# ===== ACM — ALB HTTPS 종단(리전, 도메인 제공 시에만) =====
 module "acm" {
-  source = "../../modules/prod/acm"
+  source = "../../modules/shared/acm"
   count  = (var.domain_name != "" && var.route53_zone_id != "") ? 1 : 0
 
   name_prefix     = local.name_prefix
   tags            = local.common_tags
   domain_name     = var.domain_name
+  route53_zone_id = var.route53_zone_id
+}
+
+# ===== ACM — CloudFront용(us-east-1 필수, CDN 커스텀 도메인 제공 시에만) =====
+module "cdn_acm" {
+  source = "../../modules/shared/acm"
+  count  = (var.cdn_domain_name != "" && var.route53_zone_id != "") ? 1 : 0
+
+  providers = { aws = aws.us_east_1 }
+
+  name_prefix     = "${local.name_prefix}-cdn"
+  tags            = local.common_tags
+  domain_name     = var.cdn_domain_name
   route53_zone_id = var.route53_zone_id
 }
 
@@ -170,9 +183,10 @@ locals {
     { name = "SPRING_MAIL_HOST", value = var.smtp_host },
     { name = "SPRING_MAIL_PORT", value = tostring(var.smtp_port) },
     { name = "MAIL_FROM", value = var.mail_from },
-    # 매물 이미지: 앱이 S3에 업로드하고 CloudFront URL을 클라이언트에 반환(앱은 서빙 경로 아님).
+    # 매물 이미지: 앱이 S3에 업로드하고 CDN URL을 클라이언트에 반환(앱은 서빙 경로 아님).
+    # CDN_DOMAIN은 커스텀 별칭(cdn_domain_name) 지정 시 그 도메인, 아니면 *.cloudfront.net.
     { name = "APP_IMAGES_BUCKET", value = module.s3_cloudfront.bucket_name },
-    { name = "APP_IMAGES_CDN_DOMAIN", value = module.s3_cloudfront.cloudfront_domain_name },
+    { name = "APP_IMAGES_CDN_DOMAIN", value = module.s3_cloudfront.cdn_domain },
   ]
 
   # valueFrom = SSM 파라미터 ARN (Parameter Store SecureString — ADR-0023). 값 전체가 곧 시크릿.
@@ -227,6 +241,12 @@ module "s3_cloudfront" {
   bucket_name = var.images_bucket_name
   account_id  = data.aws_caller_identity.current.account_id
   price_class = var.cloudfront_price_class
+
+  # 커스텀 도메인(별칭 + us-east-1 ACM) — cdn_acm(=cdn_domain_name+route53_zone_id)이 있을 때만 별칭을 붙인다.
+  # 별칭과 인증서 게이트를 동일 조건으로 묶어 "별칭만 있고 인증서 없는" 무효 조합을 원천 차단. 비우면 *.cloudfront.net.
+  domain_aliases      = length(module.cdn_acm) > 0 ? [var.cdn_domain_name] : []
+  acm_certificate_arn = length(module.cdn_acm) > 0 ? module.cdn_acm[0].certificate_arn : ""
+  route53_zone_id     = var.route53_zone_id
 }
 
 # ===== 모니터링 =====

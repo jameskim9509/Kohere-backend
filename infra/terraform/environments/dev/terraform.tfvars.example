@@ -13,6 +13,9 @@ app_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:de
 # route53_zone_id 를 함께 채우면 A 레코드(domain → EIP)도 생성된다. 비우면 EIP로 HTTP 접속.
 domain_name = "dev.example.com"
 # route53_zone_id = "Z0123456789ABCDEFGHIJ"
+# 매물 이미지 CDN 커스텀 도메인(옵셔널). route53_zone_id 와 함께 채워야 적용된다
+# (us-east-1 ACM + CloudFront 별칭 자동 생성). 비우면 *.cloudfront.net 사용.
+# cdn_domain_name = "cdn.dev.kohere.app"
 
 # ----- 시크릿 (SSM Parameter Store SecureString 으로 저장됨 — SM 미사용·무료) -----
 # JWT_SECRET·REFRESH_PEPPER·EMAIL_PEPPER 는 Terraform이 자동 생성한다. 아래만 채운다:

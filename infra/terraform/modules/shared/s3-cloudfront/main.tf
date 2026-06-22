@@ -1,5 +1,6 @@
 # 매물 이미지 호스팅 — 비공개 S3 + CloudFront(OAC). 클라이언트가 CloudFront에서 직접 로드.
-# 앱은 URL만 저장하며 이 버킷을 읽거나 쓰지 않는다(여기서 앱 IAM 권한을 부여하지 않음).
+# 서빙 경로에 앱은 없다(읽기는 CloudFront 직결, 앱은 URL만 저장). 이 모듈은 버킷·CDN·읽기 정책만
+# 정의하며, 앱의 업로드(PutObject) 권한은 iam 모듈이 태스크 역할에 부여한다(images_bucket_arn 연결 시).
 
 locals {
   bucket = var.bucket_name != "" ? var.bucket_name : "${var.name_prefix}-listing-images-${var.account_id}"
@@ -58,6 +59,7 @@ resource "aws_cloudfront_distribution" "images" {
   comment         = "${var.name_prefix} listing images"
   price_class     = var.price_class
   is_ipv6_enabled = true
+  aliases         = var.domain_aliases
 
   origin {
     domain_name              = aws_s3_bucket.images.bucket_regional_domain_name
@@ -80,11 +82,52 @@ resource "aws_cloudfront_distribution" "images" {
     }
   }
 
+  # 별칭(커스텀 도메인)이 있으면 us-east-1 ACM 인증서로 TLS 종단, 없으면 *.cloudfront.net 기본 인증서.
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = var.acm_certificate_arn == ""
+    acm_certificate_arn            = var.acm_certificate_arn != "" ? var.acm_certificate_arn : null
+    ssl_support_method             = var.acm_certificate_arn != "" ? "sni-only" : null
+    minimum_protocol_version       = var.acm_certificate_arn != "" ? "TLSv1.2_2021" : null
+  }
+
+  # 별칭이 있으면 반드시 ACM 인증서(us-east-1)가 있어야 한다(CloudFront 불변식) — plan 단계에서 조기 실패시킨다.
+  lifecycle {
+    precondition {
+      condition     = length(var.domain_aliases) == 0 || var.acm_certificate_arn != ""
+      error_message = "domain_aliases 사용 시 acm_certificate_arn(us-east-1 ACM)이 필수다. 환경 레이어는 cdn_domain_name과 route53_zone_id를 함께 설정하거나, 인증서 ARN을 직접 주입하라."
+    }
   }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-images-cdn" })
+}
+
+# 별칭 도메인 → CloudFront alias 레코드(A/AAAA). route53_zone_id 제공 시에만 생성(없으면 DNS 외부 관리).
+resource "aws_route53_record" "alias_a" {
+  for_each = var.route53_zone_id != "" ? toset(var.domain_aliases) : toset([])
+
+  zone_id = var.route53_zone_id
+  name    = each.value
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.images.domain_name
+    zone_id                = aws_cloudfront_distribution.images.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "alias_aaaa" {
+  for_each = var.route53_zone_id != "" ? toset(var.domain_aliases) : toset([])
+
+  zone_id = var.route53_zone_id
+  name    = each.value
+  type    = "AAAA"
+
+  alias {
+    name                   = aws_cloudfront_distribution.images.domain_name
+    zone_id                = aws_cloudfront_distribution.images.hosted_zone_id
+    evaluate_target_health = false
+  }
 }
 
 # CloudFront(OAC) → S3 GetObject 만 허용.

@@ -103,6 +103,17 @@ variable "route53_zone_id" {
   default     = ""
 }
 
+variable "cdn_domain_name" {
+  description = "매물 이미지 CDN 커스텀 도메인(예: cdn.dev.kohere.app). route53_zone_id와 함께 제공 시 us-east-1 ACM + CloudFront 별칭 생성. 비우면 *.cloudfront.net 사용"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.cdn_domain_name == "" || var.route53_zone_id != ""
+    error_message = "cdn_domain_name 사용 시 route53_zone_id가 필요하다(us-east-1 ACM 검증 + CloudFront 별칭 레코드를 자동 생성)."
+  }
+}
+
 variable "le_email" {
   description = "Let's Encrypt 등록 이메일(acme-companion)"
   type        = string

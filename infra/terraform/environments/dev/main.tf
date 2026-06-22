@@ -17,6 +17,19 @@ locals {
 
 data "aws_caller_identity" "current" {}
 
+# ===== ACM — CloudFront용(us-east-1 필수, CDN 커스텀 도메인 제공 시에만) =====
+module "cdn_acm" {
+  source = "../../modules/shared/acm"
+  count  = (var.cdn_domain_name != "" && var.route53_zone_id != "") ? 1 : 0
+
+  providers = { aws = aws.us_east_1 }
+
+  name_prefix     = "${local.name_prefix}-cdn"
+  tags            = local.common_tags
+  domain_name     = var.cdn_domain_name
+  route53_zone_id = var.route53_zone_id
+}
+
 # ===== 매물 이미지 (S3 + CloudFront) — prod·dev 공용 =====
 module "s3_cloudfront" {
   source = "../../modules/shared/s3-cloudfront"
@@ -25,6 +38,12 @@ module "s3_cloudfront" {
   tags        = local.common_tags
   account_id  = data.aws_caller_identity.current.account_id
   bucket_name = var.images_bucket_name
+
+  # 커스텀 도메인(별칭 + us-east-1 ACM) — cdn_acm(=cdn_domain_name+route53_zone_id)이 있을 때만 별칭을 붙인다.
+  # 별칭과 인증서 게이트를 동일 조건으로 묶어 "별칭만 있고 인증서 없는" 무효 조합을 원천 차단. 비우면 *.cloudfront.net.
+  domain_aliases      = length(module.cdn_acm) > 0 ? [var.cdn_domain_name] : []
+  acm_certificate_arn = length(module.cdn_acm) > 0 ? module.cdn_acm[0].certificate_arn : ""
+  route53_zone_id     = var.route53_zone_id
 }
 
 # ===== 네트워크 (미니 VPC·IGW·public subnet) =====
@@ -104,7 +123,7 @@ module "host" {
   mysql_username        = var.mysql_username
   mongo_username        = var.mongo_username
   images_bucket         = module.s3_cloudfront.bucket_name
-  images_cdn_domain     = module.s3_cloudfront.cloudfront_domain_name
+  images_cdn_domain     = module.s3_cloudfront.cdn_domain
 
   # 시크릿 파라미터가 먼저 존재해야 부팅 시 refresh-env가 .env로 주입할 수 있다.
   depends_on = [module.secrets]

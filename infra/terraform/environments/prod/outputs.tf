@@ -39,8 +39,13 @@ output "redis_primary_endpoint" {
 }
 
 output "cloudfront_domain_name" {
-  description = "매물 이미지 CloudFront 도메인"
+  description = "매물 이미지 CloudFront 기본 도메인(*.cloudfront.net)"
   value       = module.s3_cloudfront.cloudfront_domain_name
+}
+
+output "images_cdn_domain" {
+  description = "이미지 서빙 도메인(커스텀 별칭 우선, 없으면 CloudFront 기본)"
+  value       = module.s3_cloudfront.cdn_domain
 }
 
 output "images_bucket_name" {

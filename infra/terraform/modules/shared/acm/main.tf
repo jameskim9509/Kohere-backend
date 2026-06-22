@@ -1,4 +1,5 @@
-# ALB HTTPS 종단용 ACM 인증서(DNS 검증). 도메인이 제공된 경우에만 root에서 인스턴스화된다.
+# ACM 인증서(DNS 검증) — 도메인이 제공된 경우에만 root에서 인스턴스화된다.
+# 리전 ALB(HTTPS 종단)와 CloudFront(us-east-1 필수) 양쪽에서 재사용 — provider 주입으로 리전 결정.
 
 resource "aws_acm_certificate" "this" {
   domain_name               = var.domain_name

@@ -9,8 +9,13 @@ output "bucket_arn" {
 }
 
 output "cloudfront_domain_name" {
-  description = "CloudFront 배포 도메인(이미지 URL 베이스)"
+  description = "CloudFront 배포 기본 도메인(*.cloudfront.net)"
   value       = aws_cloudfront_distribution.images.domain_name
+}
+
+output "cdn_domain" {
+  description = "이미지 서빙에 쓸 도메인 — 커스텀 별칭 지정 시 첫 별칭, 없으면 CloudFront 기본 도메인"
+  value       = length(var.domain_aliases) > 0 ? var.domain_aliases[0] : aws_cloudfront_distribution.images.domain_name
 }
 
 output "distribution_id" {

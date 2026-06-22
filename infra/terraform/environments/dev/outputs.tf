@@ -19,8 +19,8 @@ output "images_bucket" {
 }
 
 output "images_cdn_domain" {
-  description = "매물 이미지 CloudFront 도메인"
-  value       = module.s3_cloudfront.cloudfront_domain_name
+  description = "이미지 서빙 도메인(커스텀 별칭 우선, 없으면 CloudFront 기본)"
+  value       = module.s3_cloudfront.cdn_domain
 }
 
 output "github_deploy_role_arn" {
