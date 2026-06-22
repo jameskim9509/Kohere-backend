@@ -7,6 +7,9 @@ CLAUDE.local.md
 .env.*
 !.env.example
 secrets/
+# 예외: terraform secrets 모듈(modules/<env>/secrets)은 실 시크릿이 아니라 .tf 코드 → 추적한다.
+!infra/terraform/modules/**/secrets/
+!infra/terraform/modules/**/secrets/**
 credentials/
 *.pem
 *.key
@@ -15,6 +18,7 @@ credentials/
 
 # Build outputs
 build/
+bin/
 dist/
 out/
 target/
@@ -40,3 +44,22 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# .terraform.lock.hcl 은 커밋한다(공급자 버전 고정).
+
+# Lambda 빌드 산출물(archive_file 생성 zip)
+infra/terraform/modules/**/lambda/*.zip

@@ -41,6 +41,16 @@
 | [0015](./0015-sensitive-column-encryption.md) | 민감정보 컬럼 암호화는 MVP에서 도입하지 않고 마스킹·저장소 암호화로 갈음한다 | Accepted | 2026-06-17 |
 | [0016](./0016-downgrade-to-spring-boot-3.md) | Spring Boot를 4.1에서 3.5로 다운그레이드한다(생태계·도구 호환성) | Accepted | 2026-06-17 |
 | [0017](./0017-openapi-swagger-ui-from-restdocs.md) | 테스트 기반 OpenAPI(restdocs-api-spec)로 Swagger UI를 서빙한다(ADR-0007 확장) | Accepted | 2026-06-17 |
+| [0018](./0018-documentdb-for-mongodb-on-aws.md) | MongoDB 호환 저장소는 Amazon DocumentDB로 운영한다(Atlas 대비, ADR-0005 후속) | Accepted | 2026-06-21 |
+| [0019](./0019-infrastructure-as-code-terraform.md) | AWS 인프라를 Terraform(IaC)으로 관리한다 | Accepted | 2026-06-21 |
+| [0020](./0020-terraform-remote-state-s3-dynamodb.md) | Terraform 원격 상태는 S3 + native lockfile로 둔다(DynamoDB 불요, ADR-0019 세부) | Accepted | 2026-06-21 |
+| [0021](./0021-cost-optimization-profile.md) | dev 환경은 단일 EC2(docker-compose) 비용 최소화 구성으로 둔다(매니지드는 과투자) | Accepted | 2026-06-21 |
+| [0022](./0022-dev-https-caddy.md) | dev HTTPS 종단은 Caddy로 한다(nginx+certbot 대비 갱신 자동화) | Accepted | 2026-06-21 |
+| [0023](./0023-secrets-in-ssm-parameter-store.md) | 시크릿은 SSM Parameter Store SecureString에 둔다(Secrets Manager 미사용) | Accepted | 2026-06-21 |
+| [0024](./0024-secret-change-propagation.md) | 변경된 시크릿은 배포(CI/CD)에서 재조회·재생성으로 반영한다(prod·dev 대칭, ADR-0023 후속) | Accepted | 2026-06-22 |
+| [0025](./0025-dev-db-credential-reconcile.md) | dev 자가호스팅 DB 자격증명은 데이터 보존하며 reconcile로 회전한다(마커 기반, ADR-0021 후속) | Accepted | 2026-06-22 |
+| [0026](./0026-dev-host-memory-budget.md) | dev 단일 호스트(t3.small·2GB) 메모리 예산을 스왑 + 엔진 캡으로 맞춘다(ADR-0021 후속) | Accepted | 2026-06-22 |
+| [0027](./0027-dev-discord-alerting.md) | dev 알람 통보는 Discord 웹훅으로 한다(SNS→Lambda 포워더, ADR-0021 후속) | Accepted | 2026-06-22 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

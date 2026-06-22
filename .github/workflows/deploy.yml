@@ -1,0 +1,89 @@
+# dev 배포 — release 브랜치 push(머지) 시 jar 빌드(테스트 포함→OpenAPI 스펙) → 이미지 → ECR push(:dev) → dev EC2에 SSM run-command로 refresh .env + compose pull/recreate.
+# dev는 ECS가 아니라 EC2 1대 docker-compose(ADR-0021). 시크릿 반영(refresh-env + recreate) 설계는 ADR-0024.
+# prod(ECS) 배포는 운영 시점에 별도 도입 예정 — prod는 태스크 롤(force-new-deployment)이 시크릿 반영 경로(ADR-0024).
+# OIDC로 AWS 자격증명을 단기 발급(저장 키 없음). module.iam이 만든 배포 역할 ARN을 리포지토리 Variables
+#   AWS_DEPLOY_ROLE_ARN 에 설정해야 한다 — 미설정이면 첫 스텝에서 에러로 실패한다(조용한 skip 아님). 역할에 ssm:SendCommand 포함.
+name: Deploy (dev)
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+env:
+  # 기본값(fallback) 없음 — 리포 Variables 에 직접 설정한다(미설정 시 첫 스텝에서 에러로 실패).
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  IMAGE_TAG: ${{ vars.DEV_IMAGE_TAG }} # dev EC2 compose가 참조하는 이동 태그
+  DEV_HOST_NAME: ${{ vars.DEV_HOST_NAME }} # 대상 EC2 Name 태그
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC
+      contents: read
+    steps:
+      - name: Verify required repo variables
+        # 리포 Variables 는 기본값(fallback)이 없다 — 하나라도 비어 있으면 조용히 진행하지 않고 에러로 실패.
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          DEV_IMAGE_TAG: ${{ vars.DEV_IMAGE_TAG }}
+          DEV_HOST_NAME: ${{ vars.DEV_HOST_NAME }}
+        run: |
+          missing=()
+          for v in AWS_DEPLOY_ROLE_ARN AWS_REGION ECR_REPOSITORY DEV_IMAGE_TAG DEV_HOST_NAME; do
+            if [ -z "${!v}" ]; then missing+=("$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::필수 리포 Variables 미설정: ${missing[*]}. Settings > Secrets and variables > Actions > Variables 에 설정하라."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build bootJar (테스트가 REST Docs 스니펫→OpenAPI 스펙 생성 — 이미지에 채워 넣는다)
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean bootJar
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image (dev tag)
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Deploy to dev EC2 (SSM run-command — refresh .env + compose pull/recreate)
+        # refresh-env.sh로 Parameter Store 최신값을 .env에 받고 → reconcile-db.sh로 live DB 자격증명을
+        #   .env 값으로 회전(데이터 보존, ADR-0025) → --force-recreate로 app을 새로 만들어 .env(env_file)를 다시 읽게 한다.
+        #   env_file은 컨테이너 생성 시점에만 읽히므로 recreate가 필수. app만 recreate — mysql/mongo/redis는 유지.
+        #   recreate 직후 docker image prune -f 로 직전 :dev 이미지(dangling)를 정리해 20GB root 디스크가 차지 않게 한다.
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Name,Values=$DEV_HOST_NAME" \
+            --comment "dev deploy: ECR re-login + refresh .env + compose pull/recreate app" \
+            --parameters 'commands=["bash /opt/kohere/ecr-login.sh","bash /opt/kohere/refresh-env.sh","bash /opt/kohere/reconcile-db.sh","cd /opt/kohere","docker compose pull app","docker compose up -d --force-recreate app","docker image prune -f"]' \
+            --query "Command.CommandId" --output text)
+          echo "dev 배포 SSM CommandId: $CMD_ID (대상 tag:Name=$DEV_HOST_NAME). 상태는 SSM 콘솔/run-command 에서 확인."

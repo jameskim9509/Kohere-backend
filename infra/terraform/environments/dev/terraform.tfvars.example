@@ -1,0 +1,56 @@
+# environments/dev 변수 예시. 복사해서 terraform.tfvars 로 만들고 값을 채운다.
+#   cp terraform.tfvars.example terraform.tfvars
+# *.tfvars 는 .gitignore 로 커밋에서 제외된다.
+
+aws_region = "ap-northeast-2"
+
+# ----- 앱 이미지 (필수) -----
+# CI가 ECR에 push한 dev 태그 이미지.
+app_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"
+
+# ----- 도메인 / HTTPS (필수 — Caddy 자동 인증서 + CDN 강제) -----
+# 셋 다 필수. domain_name → Caddy 자동 HTTPS(ADR-0022) + Route53 A(EIP), cdn_domain_name → CloudFront 별칭(us-east-1 ACM).
+domain_name     = "dev.kohere.app"
+route53_zone_id = "Z0123456789ABCDEFGHIJ"
+cdn_domain_name = "cdn.dev.kohere.app"
+
+# ----- S3 이미지 버킷 (필수 — S3는 전역 유일) -----
+images_bucket_name = "kohere-dev-listing-images"
+
+# ----- 시크릿 (SSM Parameter Store SecureString 으로 저장됨 — SM 미사용·무료) -----
+# JWT_SECRET·REFRESH_PEPPER·EMAIL_PEPPER 는 Terraform이 자동 생성한다. 아래만 채운다:
+google_client_id = ""  # sensitive
+apple_client_id  = ""  # sensitive
+# 실 SMTP (dev는 MailHog 없음 — 예: Amazon SES SMTP)
+smtp_host     = "email-smtp.ap-northeast-2.amazonaws.com"
+smtp_port     = 587
+smtp_username = ""  # sensitive
+smtp_password = ""  # sensitive
+mail_from     = "noreply@kohere.app"
+
+# ----- DB 자격증명 (SSM SecureString) + 외부 접속 (dev 한정) -----
+# 비우면 기본 "kohere". 외부 노출(db_ingress_cidrs) 시 반드시 강한 값으로 바꾼다.
+# 변경 반영: 최초 init 후의 username·비번 변경은 배포 시 reconcile-db.sh가 live DB에 회전 적용한다(데이터 보존, ADR-0025).
+# mysql_username      = "kohere"
+# mysql_password      = ""  # sensitive — 앱 사용자 비번
+# mysql_root_password = ""  # sensitive — root(외부 관리도구용)
+# mongo_username      = "kohere"
+# mongo_password      = ""  # sensitive — URL-safe 권장(URI 포함)
+# DB 포트 외부 개방 CIDR. 빈 목록=미개방(앱 내부 접속만). 본인 IP/32 로 제한 권장:
+# db_ingress_cidrs = ["203.0.113.7/32"]
+
+# ----- 알람 / 규모 (옵셔널) -----
+# discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda)
+# instance_type    = "t3.small"         # x86 (ECR 이미지 amd64) · 2vCPU/2GB
+# data_volume_size = 20
+# ingress_cidrs    = ["0.0.0.0/0"]      # dev 편의상 개방. 사무실 IP 등으로 제한 권장
+
+# ----- 시크릿 변경 반영 -----
+# 위 값을 바꿔 apply 하면 SSM 파라미터가 갱신된다. 실행 중 앱 반영은 "배포"가 담당(prod ECS와 동일 모델) —
+# 코드 변경 없이 시크릿만 바꿨다면 배포 워크플로를 돌려 반영한다: gh workflow run deploy.yml (ADR-0024).
+
+# ----- CI/CD (GitHub Actions OIDC 배포 역할) -----
+github_org           = "swyp-app-5th-team1"
+github_repo          = "Kohere-backend"
+github_deploy_branch = "release"
+# apply 후 `terraform output github_deploy_role_arn` 값을 리포 Variables 의 AWS_DEPLOY_ROLE_ARN 에 설정.

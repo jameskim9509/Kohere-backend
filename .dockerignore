@@ -8,3 +8,6 @@ build
 *.iml
 docs
 *.md
+
+# CI(deploy.yml)가 테스트 포함 빌드한 실행 jar만은 컨텍스트에 포함시킨다 — Dockerfile이 COPY(스펙 채움).
+!build/libs/*.jar

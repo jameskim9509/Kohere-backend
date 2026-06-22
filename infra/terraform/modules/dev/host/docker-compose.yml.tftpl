@@ -1,0 +1,78 @@
+# dev EC2에서 돌아가는 docker-compose (Terraform이 렌더해 user_data로 /opt/kohere/docker-compose.yml 에 기록).
+# 로컬 docker-compose.yml과 달리: app=ECR 이미지, MailHog 없음(실 SMTP), Caddy(HTTPS), Redis는 인메모리(EBS 미사용).
+# 시크릿은 /opt/kohere/.env(SSM Parameter Store에서 부팅 시 주입)에서 읽는다.
+# 메모리: t3.small(2GB) 기준 엔진 캡(mongo WiredTiger 0.25GB · mysql buffer pool 128M+perf_schema off · app JVM Xmx512m) + 호스트 스왑 2GB로 OOM 완충(ADR-0026).
+name: kohere-dev
+services:
+  caddy:
+    image: caddy:2
+    container_name: kohere-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/kohere/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+  mysql:
+    image: mysql:8.0
+    container_name: kohere-mysql
+    restart: unless-stopped
+    # t3.small(2GB) 메모리 캡 — innodb 버퍼풀 명시 + performance_schema OFF로 baseline RSS↓(ADR-0026).
+    command: ["--innodb-buffer-pool-size=128M", "--performance-schema=OFF"]
+    # 비번은 .env(SSM→refresh-env) 값으로 compose가 인터폴레이션($${...}). 최초 init 시드, 이후 변경은 reconcile-db.sh가 적용(ADR-0025).
+    environment:
+      MYSQL_ROOT_PASSWORD: $${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${db_name}
+      MYSQL_USER: ${mysql_username}
+      MYSQL_PASSWORD: $${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306" # 외부 접속(SG db_ingress_cidrs로 제한)
+    volumes:
+      - /data/mysql:/var/lib/mysql
+  mongo:
+    image: mongo:7
+    container_name: kohere-mongo
+    restart: unless-stopped
+    # t3.small(2GB) 메모리 캡 — WiredTiger 캐시 0.25GB(기본 50%×(RAM-1GB)≈512MB의 절반, ADR-0026). 엔트리포인트가 --auth 유지.
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${mongo_username}
+      MONGO_INITDB_ROOT_PASSWORD: $${MONGO_PASSWORD}
+    ports:
+      - "27017:27017" # 외부 접속(SG db_ingress_cidrs로 제한)
+    volumes:
+      - /data/mongo:/data/db
+  redis:
+    image: redis:7
+    container_name: kohere-redis
+    restart: unless-stopped
+  app:
+    image: ${app_image}
+    container_name: kohere-app
+    restart: unless-stopped
+    env_file:
+      - /opt/kohere/.env
+    depends_on:
+      - mysql
+      - mongo
+      - redis
+    environment:
+      # t3.small(2GB) JVM 힙 캡 — 컨테이너 mem_limit 미설정이라 호스트 2GB 기준 자동산정 대신 명시(ADR-0026).
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=160m"
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${db_name}?serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: ${mysql_username}
+      SPRING_DATASOURCE_PASSWORD: $${MYSQL_PASSWORD}
+      SPRING_DATA_MONGODB_URI: mongodb://${mongo_username}:$${MONGO_PASSWORD}@mongo:27017/${db_name}?authSource=admin
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_MAIL_HOST: ${smtp_host}
+      SPRING_MAIL_PORT: "${smtp_port}"
+      MAIL_FROM: ${mail_from}
+      APP_IMAGES_BUCKET: ${images_bucket}
+      APP_IMAGES_CDN_DOMAIN: ${images_cdn_domain}
+volumes:
+  caddy_data:
+  caddy_config:

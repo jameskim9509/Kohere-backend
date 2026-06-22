@@ -1,0 +1,45 @@
+variable "name_prefix" {
+  description = "리소스 이름 접두사"
+  type        = string
+}
+
+variable "tags" {
+  description = "공통 태그"
+  type        = map(string)
+  default     = {}
+}
+
+# 외부에서 받아야 하는 값(생성 불가) — 비워두면 빈 문자열로 저장되고, 운영 전 콘솔/tfvars로 채워야 한다.
+variable "google_client_id" {
+  description = "Google OIDC audience(우리 client ID)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_client_id" {
+  description = "Apple OIDC audience(우리 client ID)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "smtp_username" {
+  description = "운영 SMTP 사용자명(SES 등)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "smtp_password" {
+  description = "운영 SMTP 비밀번호"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "recovery_window_days" {
+  description = "Secrets Manager 삭제 복구 대기일"
+  type        = number
+  default     = 7
+}

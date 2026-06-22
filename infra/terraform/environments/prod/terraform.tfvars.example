@@ -1,0 +1,40 @@
+# environments/prod 변수 예시. 복사해서 terraform.tfvars 로 만들고 값을 채운다.
+#   cp terraform.tfvars.example terraform.tfvars
+# terraform.tfvars 와 *.auto.tfvars 는 .gitignore 로 커밋에서 제외된다(시크릿 포함 가능).
+
+aws_region = "ap-northeast-2"
+
+# ----- 도메인 / TLS (필수 — HTTPS·커스텀 도메인 강제) -----
+# 셋 다 필수. ACM 인증서(DNS 검증) + ALB HTTPS(80→443) + Route53 alias + CloudFront 별칭(us-east-1 ACM)을 만든다.
+domain_name     = "api.kohere.app"
+route53_zone_id = "Z0123456789ABCDEFGHIJ"
+cdn_domain_name = "cdn.kohere.app"
+
+# ----- S3 이미지 버킷 (필수 — S3는 전역 유일) -----
+images_bucket_name = "kohere-prod-listing-images"
+
+# ----- CI/CD (GitHub Actions OIDC) -----
+github_org           = "swyp-app-5th-team1"
+github_repo          = "Kohere-backend"
+github_deploy_branch = "main"
+
+# ----- 외부 발급 시크릿/설정 (운영 전 반드시 채울 것 — 앱이 fail-fast) -----
+# OIDC audience (우리 앱의 client ID)
+google_client_id = ""  # sensitive
+apple_client_id  = ""  # sensitive (MVP는 Google 우선, Apple은 여유 시)
+
+# 운영 SMTP (예: Amazon SES SMTP 자격증명). MVP 온보딩 이메일 인증에 필요.
+smtp_host     = "email-smtp.ap-northeast-2.amazonaws.com"
+smtp_port     = 587
+smtp_username = ""  # sensitive
+smtp_password = ""  # sensitive
+mail_from     = "noreply@kohere.app"
+
+# ----- 알람 -----
+# alarm_email = "ops@kohere.app"
+
+# ----- 규모 조정(선택) -----
+# rds_multi_az   = true
+# redis_replicas = 2
+# desired_count  = 2
+# autoscaling_max = 6

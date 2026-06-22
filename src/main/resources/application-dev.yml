@@ -1,0 +1,39 @@
+# dev 프로파일(SPRING_PROFILES_ACTIVE=dev) — dev 단일 EC2 docker-compose에서 활성(ADR-0021).
+# 환경 의존값은 compose env + /opt/kohere/.env(SSM Parameter Store→refresh-env, ADR-0023)로 주입한다.
+# 시크릿(JWT_SECRET·REFRESH_PEPPER·EMAIL_PEPPER)은 Terraform 자동생성이라 항상 존재 → prod처럼 폴백 없이 fail-fast.
+# OIDC audience·SMTP는 dev에서 미설정일 수 있어(tfvars 옵션) 빈 폴백을 둬 미구성 상태에서도 기동되게 한다.
+# 스키마는 Flyway가 적용하고 Hibernate는 validate만 한다(ADR-0008).
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI}
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+  mail:
+    host: ${SPRING_MAIL_HOST:} # dev는 SMTP 미설정 허용 — 빈 값이면 이메일 인증 플로우 미동작(설계상 정상)
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:true}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET} # 폴백 없음 — Terraform 자동생성, 미설정 시 기동 실패(ADR-0011 D5)
+  auth:
+    refresh-pepper: ${REFRESH_PEPPER} # 폴백 없음 (ADR-0006)
+    email-pepper: ${EMAIL_PEPPER} # 폴백 없음 — 인증번호 해시 pepper
+  oidc:
+    google:
+      audience: ${GOOGLE_CLIENT_ID:} # dev 옵션 — 미설정 시 Google 로그인만 미동작
+    apple:
+      audience: ${APPLE_CLIENT_ID:} # dev 옵션 — 미설정 시 Apple 로그인만 미동작
