@@ -7,6 +7,9 @@ CLAUDE.local.md
 .env.*
 !.env.example
 secrets/
+# 예외: terraform secrets 모듈(modules/<env>/secrets)은 실 시크릿이 아니라 .tf 코드 → 추적한다.
+!infra/terraform/modules/**/secrets/
+!infra/terraform/modules/**/secrets/**
 credentials/
 *.pem
 *.key
