@@ -115,7 +115,7 @@ flowchart TB
 | MySQL        | `mysql:8` 컨테이너                                                  | RDS for MySQL 8.0 (auth·user)                          |
 | MongoDB      | `mongo` 컨테이너 + `2dsphere`                                     | Amazon DocumentDB (listing[+찜·최근본]·diagnosis) |
 | Redis        | `redis` 컨테이너                                                    | ElastiCache (refresh 토큰 TTL)                          |
-| 매물 사진    | 백엔드 미보관(URL만 저장)                                             | S3 + CloudFront(클라이언트 직접 로드)                   |
+| 매물 사진    | 백엔드 미보관(URL만 저장)                                             | S3 + CloudFront(Route53 별칭→클라이언트 로드)           |
 | 시크릿·설정 | `application-local.yml` / 환경변수                                  | SSM Parameter Store(SecureString)                      |
 
 > **booking·chat 저장소는 추후 결정**(추후 ADR) — 위 매핑에는 강제 반영하지 않는다.
@@ -159,7 +159,7 @@ flowchart TB
 | MySQL       | RDS for MySQL 8.0                       | auth·user                                                                                                                   |
 | MongoDB     | Amazon DocumentDB                       | listing(+찜·최근본)·diagnosis, `2dsphere` 인덱스                                                                         |
 | Redis       | ElastiCache                             | refresh 토큰(TTL). **AOF·복제 권장**(§3-7)                                                                           |
-| 매물 사진   | S3 + CloudFront                         | 백엔드는 S3 업로드 + URL 응답, **클라이언트가 CloudFront에서 직접 로드**                                                       |
+| 매물 사진   | S3 + CloudFront (+ Route53 별칭)         | 백엔드는 S3 업로드 + URL 응답. **클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드**(커스텀 도메인 미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM |
 | 시크릿      | **SSM Parameter Store**(SecureString)   | DB·JWT·provider 시크릿. 태스크 시작 시 주입, **변경 반영은 배포(태스크 롤)**([ADR-0024](../adr/0024-secret-change-propagation.md)). **Secrets Manager 미사용**([ADR-0023](../adr/0023-secrets-in-ssm-parameter-store.md)) |
 | 모니터링    | CloudWatch 알람 + SNS                   | ALB·ECS·RDS·DocDB·Redis 지표 → 이메일 통보                                                                                 |
 | CI/CD       | GitHub Actions (OIDC)                   | build·ECR push·ECS deploy([ADR-0019](../adr/0019-infrastructure-as-code-terraform.md))                                       |
@@ -181,8 +181,8 @@ flowchart TB
     end
 
     subgraph AWS["AWS — prod (운영 시 배포 예정)"]
-      R53["Route53<br/>api.kohere.app"]
-      CF["CloudFront<br/>이미지 서빙(클라이언트 직접)"]
+      R53["Route53<br/>api.kohere.app · cdn.kohere.app(이미지)"]
+      CF["CloudFront<br/>이미지 서빙(별칭 cdn.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
       CW["CloudWatch 알람<br/>→ SNS(이메일)"]
@@ -217,7 +217,8 @@ flowchart TB
     FARGATE -- "redis :6379" --> ELASTI
     FARGATE -. "이미지 업로드(S3 PutObject)" .-> S3IMG
     CF -. "오리진" .-> S3IMG
-    APP -. "이미지 GET(URL)" .-> CF
+    APP -. "이미지 GET(cdn.kohere.app)" .-> R53
+    R53 -. "alias → CloudFront" .-> CF
     FARGATE -. "idToken 검증" .-> EXT
     CW -. "지표 감시" .-> FARGATE
 ```
@@ -237,7 +238,7 @@ flowchart TB
 | DB | 자가호스팅 `mysql:8.0`·`mongo:7`·`redis:7`(같은 EC2) | local과 동일 엔진. 매니지드(RDS/DocDB/ElastiCache) 대체 |
 | 메일 | 실 SMTP(예: Amazon SES) | **MailHog는 로컬 compose 전용이라 dev엔 없음** |
 | 시크릿 | **SSM Parameter Store SecureString**(무료) | Secrets Manager 미사용. 부팅·배포 시 `refresh-env.sh`로 SSM→`.env` 재조회 후 app recreate(JWT/pepper 자동 생성). **변경 반영은 배포**([ADR-0024](../adr/0024-secret-change-propagation.md)) |
-| 이미지 | **S3 + CloudFront**(prod 동일 모듈) | 앱은 S3 업로드 + URL 응답, **클라이언트가 CloudFront에서 직접 GET** |
+| 이미지 | **S3 + CloudFront**(+ Route53 별칭, prod 동일 모듈) | 앱은 S3 업로드 + URL 응답. **클라이언트는 `cdn.dev.kohere.app`(Route53 alias→CloudFront)에서 GET**(미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM |
 | 노출 | EIP → Route53 A 레코드(`dev.kohere.app`) | SG 80/443만. 관리자 접속은 SSM 전용(SSH 미개방) |
 | 데이터 | 전용 암호화 EBS(`/data`) bind-mount | 인스턴스 교체에도 보존 |
 | 모니터링 | CloudWatch StatusCheckFailed·CPU 알람 + SNS | 단일 박스 다운 통보 |
@@ -254,9 +255,9 @@ flowchart TB
     end
 
     subgraph AWS["AWS — dev (전용 VPC 10.1.0.0/16)"]
-      R53["Route53<br/>dev.kohere.app → EIP"]
+      R53["Route53<br/>dev.kohere.app → EIP<br/>cdn.dev.kohere.app → CloudFront"]
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
-      CF["CloudFront<br/>이미지 서빙(클라이언트 직접)"]
+      CF["CloudFront<br/>이미지 서빙(별칭 cdn.dev.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
       CW["CloudWatch 알람<br/>→ SNS(이메일)"]
       IGW["Internet Gateway"]
@@ -286,7 +287,8 @@ flowchart TB
     MONGO --- EBS
     APP -. "이미지 업로드(S3 PutObject)" .-> S3IMG
     CF -. "오리진" .-> S3IMG
-    DEV -. "이미지 GET(URL)" .-> CF
+    DEV -. "이미지 GET(cdn.dev.kohere.app)" .-> R53
+    R53 -. "alias → CloudFront" .-> CF
     APP -. "시크릿(.env, 부팅·배포 refresh)" .-> SSM
     APP -. "idToken 검증 · 메일(SES)" .-> EXT
 ```
@@ -357,7 +359,7 @@ flowchart TB
 | ---------------------------- | ----------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                           | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `RecommendationCriteria` 공개 쿼리                      |
 | 임대인 연락                  | **F-03 신청하기 → 인앱 채팅방 기록**(booking→chat, `BookingCreatedEvent`) | 도입   | 실시간 WebSocket·푸시는 추후. booking·chat 저장소 추후 결정                                                                   |
-| 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                       | 도입   | 매물 사진 호스팅 — 클라이언트가 CloudFront에서 직접 로드, 백엔드는 URL만 저장(S3 읽기·쓰기 없음). 사용자 업로드 흐름은 MVP 밖 |
+| 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                       | 도입   | 매물 사진 호스팅 — 클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖 |
 | 푸시 알림(FCM/APNs)          | —                                                                                  | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                       |
 | 채팅 실시간(WebSocket/STOMP) | —                                                                                  | 추후   | F-03은 REST 채팅 기록만. 실시간 전송은 추후                                                                                     |
 

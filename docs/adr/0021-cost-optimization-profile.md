@@ -31,7 +31,7 @@ Accepted
 - **이미지**: **app은 ECR**(CI가 push한 prod와 동일 빌드)에서 pull, `mysql:8.0`·`mongo:7`·`redis:7`은 Docker Hub. **MailHog는 로컬 compose 전용이라 dev에는 없다** — dev는 실 SMTP(예: Amazon SES)를 쓴다.
 - **HTTPS(443)**: **Caddy** 컨테이너가 80/443을 받아 **Let's Encrypt 인증서를 자동 발급·갱신**하고 app(내부 8080)으로 프록시한다([ADR-0022](./0022-dev-https-caddy.md)). 도메인 제공 시 HTTPS(443), 없으면 `:80`(HTTP) 폴백. (prod의 ALB 443 종단을 dev에선 Caddy가 대신 — 갱신·reload를 자체 처리해 호스트 docker 명령 불필요.)
 - **시크릿**: **SSM Parameter Store SecureString**(무료·**Secrets Manager 미사용**, [ADR-0023](./0023-secrets-in-ssm-parameter-store.md)). `JWT_SECRET`·`REFRESH_PEPPER`·`EMAIL_PEPPER`는 Terraform이 자동 생성, `GOOGLE_CLIENT_ID`·SMTP 자격증명 등은 변수로 받아 파라미터로 저장. EC2가 부팅 시 인스턴스 프로파일로 `GetParameter`(+`kms:Decrypt`)하여 `/opt/kohere/.env`(0600)에 주입 — compose만 읽고 `docker inspect`/명령행 미노출.
-- **매물 이미지**: prod과 **동일한 S3 + CloudFront 모듈**을 dev에도 둔다. **앱(백엔드)은 S3에 업로드만** 하고(인스턴스 역할) 응답에 **CloudFront URL**을 담는다 → **클라이언트가 그 URL로 CloudFront에서 직접** 이미지를 받는다(앱은 이미지 서빙 경로에 없음).
+- **매물 이미지**: prod과 **동일한 S3 + CloudFront 모듈**을 dev에도 둔다. **앱(백엔드)은 S3에 업로드만** 하고(인스턴스 역할) 응답에 **CDN URL**을 담는다 → **클라이언트가 그 URL로 CloudFront에서 직접** 이미지를 받는다(앱은 이미지 서빙 경로에 없음). 커스텀 도메인(`cdn.dev.kohere.app`) 지정 시 **Route53 alias→CloudFront**로 받고(인증서는 us-east-1 ACM·무료, Route53 레코드 무시 가능), 미지정 시 `*.cloudfront.net` 직접 — **비용 영향 없음**.
 - **데이터 영속**: 전용 **암호화 EBS**(gp3, `prevent_destroy`)를 `/data`에 마운트하고 **mysql/mongo** 데이터를 bind-mount한다(인스턴스 교체에도 보존). **Redis는 인메모리 — EBS 미사용**(재시작 시 캐시·refresh 토큰 소실, dev 수용).
 - **노출/통제**: **EIP** + (도메인 제공 시) **Route53 A 레코드**. 보안그룹은 **80/443만** 인바운드, **SSH 미개방**(관리자 접속 **SSM Session Manager** 전용), **IMDSv2 강제**, EBS 암호화. IAM 인스턴스 프로파일은 SSM + ECR read + 지정 파라미터·이미지 버킷만(최소권한).
 - **모니터링**: EC2 `StatusCheckFailed`·`CPUUtilization` **CloudWatch 알람** + SNS(옵션 이메일) — 단일 박스 다운 통보.
@@ -44,9 +44,9 @@ flowchart TB
     EXT["Google OIDC / JWKS · SES SMTP<br/>(AWS 밖)"]
 
     subgraph AWS["AWS · ap-northeast-2 (dev 전용 VPC 10.1.0.0/16)"]
-      R53["Route53<br/>dev.kohere.app → EIP"]
+      R53["Route53<br/>dev.kohere.app → EIP<br/>cdn.dev.kohere.app → CloudFront"]
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
-      CF["CloudFront<br/>이미지 서빙(클라이언트 직접)"]
+      CF["CloudFront<br/>이미지 서빙(별칭 cdn.dev.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
       CW["CloudWatch 알람<br/>→ SNS(이메일)"]
       IGW["Internet Gateway"]
@@ -73,7 +73,8 @@ flowchart TB
     MONGO --- EBS
     APP -. "이미지 업로드(S3 PutObject)" .-> S3IMG
     CF -. "오리진" .-> S3IMG
-    DEV -. "이미지 GET(URL)" .-> CF
+    DEV -. "이미지 GET(cdn.dev.kohere.app)" .-> R53
+    R53 -. "alias → CloudFront" .-> CF
     APP -. "시크릿(.env, 부팅 시)" .-> SSM
     APP -. "idToken 검증 · 메일(SES)" .-> EXT
 ```
