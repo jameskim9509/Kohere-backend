@@ -304,11 +304,11 @@ apply가 만든 배포 역할 ARN을 GitHub 리포지토리 **Variables**(Secret
 
 | 변수 | 값(예시) | 비고 |
 | --- | --- | --- |
-| `AWS_DEPLOY_ROLE_ARN` | `terraform output github_deploy_role_arn` 값 | **필수**. 비면 deploy job 자체가 skip된다 |
-| `AWS_REGION` | `ap-northeast-2` | 기본 fallback 있음 |
-| `ECR_REPOSITORY` | `kohere-backend` | 기본 fallback 있음. `ecr_repository` 와 일치해야 함 |
-| `DEV_IMAGE_TAG` | `dev` | 기본 fallback 있음. compose가 보는 이동 태그 |
-| `DEV_HOST_NAME` | `kohere-dev-host` | 기본 fallback 있음. SSM 대상 EC2 Name 태그 |
+| `AWS_DEPLOY_ROLE_ARN` | `terraform output github_deploy_role_arn` 값 | **필수**. 비면 deploy job이 첫 스텝에서 에러로 실패한다 |
+| `AWS_REGION` | `ap-northeast-2` | **필수**(기본값 없음) |
+| `ECR_REPOSITORY` | `kohere-backend` | **필수**. `ecr_repository` 와 일치해야 함 |
+| `DEV_IMAGE_TAG` | `dev` | **필수**. compose가 보는 이동 태그 |
+| `DEV_HOST_NAME` | `kohere-dev-host` | **필수**. SSM 대상 EC2 Name 태그 |
 
 ```bash
 gh variable set AWS_DEPLOY_ROLE_ARN --body "<role-arn>" --repo swyp-app-5th-team1/Kohere-backend
@@ -369,7 +369,7 @@ cd /opt/kohere && sudo docker compose ps
 | --- | --- |
 | user_data 실패 / app 미기동 | `aws ssm start-session` 으로 접속 → `sudo cat /var/log/devhost-init.log` 확인 → `cd /opt/kohere && sudo docker compose ps`. 이미지 부재면 6단계, 시크릿이면 `sudo cat /opt/kohere/.env`(주의) 확인 후 재배포 |
 | `terraform apply` 가 ACM 검증에서 멈춤/타임아웃 | `route53_zone_id` 호스팅 영역의 NS 위임 미완료. 도메인 등록·NS 위임을 끝낸 뒤 재시도(2.5 참고) |
-| `release` 브랜치 머지했는데 배포가 안 됨 | `AWS_DEPLOY_ROLE_ARN` Variable이 비면 deploy job이 skip된다(성공처럼 보임). Variables 탭에 설정됐는지 확인 |
+| `release` 브랜치 머지했는데 배포가 안 됨 | `AWS_DEPLOY_ROLE_ARN` Variable이 비면 deploy 런이 첫 스텝(`Verify required repo variable`)에서 **에러로 실패**한다(`::error::` 메시지). Variables 탭에 설정 |
 | `cicd.tf` OIDC provider lookup 실패 | bootstrap이 OIDC provider를 아직 안 만들었다. **1단계 bootstrap을 먼저 apply** 하면 생성된다(provider는 bootstrap 단일 소유) |
 | 디스크에 dangling 이미지 누적 | 배포는 `:dev` 이동 태그를 덮어써 옛 이미지가 dangling된다. 배포 워크플로가 `docker image prune -f` 로 정리하지만, 수동 정리는 SSM 세션에서 `sudo docker image prune -f` |
 | DB에 외부 도구로 접속이 안 됨 | 기본은 미개방이다. `db_ingress_cidrs = ["<내 IP>/32"]` 추가 후 apply. 전체 개방(`0.0.0.0/0`)은 피한다 |
