@@ -1,0 +1,17 @@
+# bootstrap 변수 예시. 복사해서 terraform.tfvars 로 만들고 값을 채운다.
+#   cp terraform.tfvars.example terraform.tfvars
+# *.tfvars 는 .gitignore 로 커밋에서 제외된다(*.tfvars.example 만 추적).
+#
+# 비워두면 terraform apply 가 state_bucket_name 을 대화형 프롬프트로 물어본다 —
+# 1회성 부트스트랩이라 프롬프트로도 충분하다. 비대화형으로 돌리려면 이 파일을 채운다.
+
+# ----- 원격 상태 S3 버킷 (필수 — default 없음, S3는 전역 유일) -----
+# 자동생성 불가. 전역 유일한 이름을 직접 지정한다. 예: kohere-tfstate-<account_id>
+state_bucket_name = "kohere-tfstate-123456789012"
+
+# ----- 아래는 default 가 있어 생략 가능(바꿀 때만 주석 해제) -----
+# project     = "kohere"
+# environment = "shared"   # bootstrap 리소스는 prod·dev 공용 → 환경값 아님(태그 라벨)
+# aws_region  = "ap-northeast-2"
+# ecr_repository            = "kohere-backend"   # dev·prod 공유 앱 이미지 리포명
+# ecr_image_retention_count = 20                 # ECR 보관 최신 이미지 수

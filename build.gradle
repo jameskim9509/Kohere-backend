@@ -116,7 +116,7 @@ tasks.named('asciidoctor') {
 
 // REST Docs 테스트로 캡처한 자원 → OpenAPI3 yaml(Swagger UI가 읽음, ADR-0016)
 openapi3 {
-  setServer('http://localhost:8080')
+  setServer('/') // 상대경로 — Swagger를 서빙한 origin(local·dev·prod)을 자동으로 가리킨다(배포 도메인 대응)
   title = 'Kohere API — 인증·온보딩'
   description = 'REST Docs 테스트로 생성된 OpenAPI 3 명세'
   version = project.version.toString()

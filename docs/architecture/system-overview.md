@@ -41,9 +41,9 @@ flowchart LR
       ALB["ALB (HTTPS 종단)"]
       SRV["Kohere 백엔드<br/>Spring Boot · Modulith"]
       MYSQL[("MySQL 8 · RDS<br/>auth · user")]
-      MONGO[("MongoDB · Atlas/DocumentDB<br/>listing(+찜·최근본) · diagnosis")]
+      MONGO[("MongoDB · Amazon DocumentDB<br/>listing(+찜·최근본) · diagnosis")]
       REDIS[("Redis · ElastiCache<br/>refresh token")]
-      SECRET["Secrets Manager /<br/>Parameter Store"]
+      SECRET["SSM Parameter Store<br/>(SecureString)"]
     end
 
     APP -- "REST /api/v1" --> ALB
@@ -113,10 +113,10 @@ flowchart TB
 | 앱 실행      | `./gradlew bootRun`(단일 JVM)                                       | ECS/Fargate + ALB(HTTPS)                                |
 | 패키징       | `Dockerfile` + CI `docker build`(이미지 빌드 검증, 러닝 인프라 0) | 동일 이미지 ECR push 후 배포                            |
 | MySQL        | `mysql:8` 컨테이너                                                  | RDS for MySQL 8.0 (auth·user)                          |
-| MongoDB      | `mongo` 컨테이너 + `2dsphere`                                     | Atlas 또는 DocumentDB (listing[+찜·최근본]·diagnosis) |
+| MongoDB      | `mongo` 컨테이너 + `2dsphere`                                     | Amazon DocumentDB (listing[+찜·최근본]·diagnosis) |
 | Redis        | `redis` 컨테이너                                                    | ElastiCache (refresh 토큰 TTL)                          |
-| 매물 사진    | 백엔드 미보관(URL만 저장)                                             | S3 + CloudFront(클라이언트 직접 로드)                   |
-| 시크릿·설정 | `application-local.yml` / 환경변수                                  | Secrets Manager / SSM                                   |
+| 매물 사진    | 백엔드 미보관(URL만 저장)                                             | S3 + CloudFront(Route53 별칭→클라이언트 로드)           |
+| 시크릿·설정 | `application-local.yml` / 환경변수                                  | SSM Parameter Store(SecureString)                      |
 
 > **booking·chat 저장소는 추후 결정**(추후 ADR) — 위 매핑에는 강제 반영하지 않는다.
 
@@ -144,64 +144,156 @@ flowchart TB
     APP -. "idToken 서명·iss·aud·exp 검증" .-> EXT
 ```
 
-> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·Atlas·ElastiCache·S3·Secrets Manager)로 교체된다. Google OIDC/JWKS는 로컬·클라우드 공통으로 외부 실호출이다. 매물 사진은 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
+> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google OIDC/JWKS는 로컬·클라우드 공통으로 외부 실호출이다. 매물 사진은 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
 
-#### 1-3-2. 클라우드 배포 아키텍처 (M7 이전·배포, AWS)
+#### 1-3-2. prod 클라우드 배포 아키텍처 (운영 시 배포 예정, AWS)
 
-**M7(7/8–7/10)에 프로비저닝·첫 배포**하며 M0–M4 동안에는 미가동이다(동일 이미지를 ECR에 push 후 배포). 각 매니지드 서비스의 책임은 아래와 같다.
+**prod은 실제 운영 시점에 배포 예정**이며 현재는 미배포(IaC만 준비). **M7(7/8–7/10) 첫 클라우드 배포는 dev**(§1-3-3)이고, prod은 로컬과 동일 이미지를 ECR에 push해 배포한다. 각 매니지드 서비스의 책임은 아래와 같다.
 
-| 요소      | 구성                          | 비고                                                                                                                         |
-| --------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 패키징    | Docker 이미지(Java 21 런타임) | 로컬과 동일 이미지를 ECR push                                                                                                |
-| 실행      | ECS/Fargate + ALB(HTTPS)      | 단일 서비스. access 무상태라 수평 확장 여지([ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md))                              |
-| MySQL     | RDS for MySQL 8.0             | auth·user                                                                                                                   |
-| MongoDB   | Atlas 또는 DocumentDB         | listing(+찜·최근본)·diagnosis,`2dsphere` 인덱스                                                                          |
-| Redis     | ElastiCache                   | refresh 토큰(TTL).**AOF·복제 권장**(§3-7)                                                                            |
-| 매물 사진 | S3 + CloudFront               | 클라이언트가 직접 로드, 백엔드는 URL만 저장                                                                                  |
-| 시크릿    | Secrets Manager / SSM         | DB·JWT 서명키·소셜 provider 시크릿                                                                                         |
-| CI/CD     | GitHub Actions                | 현재 `spotlessCheck build`. W1(M0-C, 공동): CI `docker build` 이미지 검증(클라우드 미배포). M7: ECR push·Fargate deploy |
+| 요소        | 구성                                    | 비고                                                                                                                         |
+| ----------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 패키징      | Docker 이미지(Java 21 런타임)           | 로컬과 동일 이미지를 ECR push                                                                                                |
+| 도메인·노출 | Route53 → ALB(HTTPS)                    | `api.kohere.app`, ACM 인증서로 443 종단                                                                                      |
+| 실행        | ECS/Fargate                             | private-app 서브넷. access 무상태라 수평 확장 여지([ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md))                       |
+| 네트워크    | 3-tier 서브넷 + NAT                     | public(ALB·NAT) / private-app(ECS) / private-data(DB)                                                                        |
+| MySQL       | RDS for MySQL 8.0                       | auth·user                                                                                                                   |
+| MongoDB     | Amazon DocumentDB                       | listing(+찜·최근본)·diagnosis, `2dsphere` 인덱스                                                                         |
+| Redis       | ElastiCache                             | refresh 토큰(TTL). **AOF·복제 권장**(§3-7)                                                                           |
+| 매물 사진   | S3 + CloudFront (+ Route53 별칭)         | 백엔드는 S3 업로드 + URL 응답. **클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드**(커스텀 도메인 미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM |
+| 시크릿      | **SSM Parameter Store**(SecureString)   | DB·JWT·provider 시크릿. 태스크 시작 시 주입, **변경 반영은 배포(태스크 롤)**([ADR-0024](../adr/0024-secret-change-propagation.md)). **Secrets Manager 미사용**([ADR-0023](../adr/0023-secrets-in-ssm-parameter-store.md)) |
+| 모니터링    | CloudWatch 알람 + SNS                   | ALB·ECS·RDS·DocDB·Redis 지표 → 이메일 통보                                                                                 |
+| CI/CD       | GitHub Actions (OIDC)                   | build·ECR push·ECS deploy([ADR-0019](../adr/0019-infrastructure-as-code-terraform.md))                                       |
 
 > **booking·chat 저장소는 추후 결정**(추후 ADR) — 위 표/토폴로지에는 강제 반영하지 않는다.
+>
+> **MongoDB 백엔드 = Amazon DocumentDB 확정**([ADR-0018](../adr/0018-documentdb-for-mongodb-on-aws.md), Atlas 대비). AWS 네이티브라 단일 provider·VPC 내부에서 운영하며, 위 토폴로지는 [`infra/terraform`](../../infra/terraform/README.md)로 IaC 구현돼 있다(ECS Fargate·RDS·DocumentDB·ElastiCache·S3+CloudFront·SSM Parameter Store·ECR·GitHub Actions OIDC). IaC 도구·구조·원격 상태 결정은 [ADR-0019](../adr/0019-infrastructure-as-code-terraform.md)·[ADR-0020](../adr/0020-terraform-remote-state-s3-dynamodb.md). 단, listing 지도검색의 **지오공간 쿼리(`2dsphere`·`$geoNear`/`$geoWithin`)** 가 DocumentDB에서 요구대로 동작하는지 검증해야 하며, 호환성 갭이 확인되면 Atlas로 전환한다. (Mongo 드라이버 배선 시 앱 이미지에 DocumentDB CA 번들 포함 — `infra/terraform/README.md` 참고.)
 
 AWS 배포 토폴로지 — GitHub Actions가 빌드한 **동일 이미지**가 ECR→Fargate로 올라가고, 로컬 컨테이너(§1-3-1)가 매니지드 서비스로 교체된다:
 
 ```mermaid
 flowchart TB
     APP["모바일 앱<br/>(iOS / Android · 클라이언트)"]
-
-    subgraph CICD["GitHub Actions · ECR (CI/CD · 레지스트리)"]
-      GHA["GitHub Actions<br/>spotlessCheck build · docker build<br/>(W1: 이미지 검증 / M7: push·deploy)"]
-      ECR["ECR<br/>app 이미지(Java 21)<br/>= 로컬과 동일 이미지"]
-    end
-
-    subgraph AWS["AWS — M7 배포"]
-      subgraph VPC["VPC"]
-        ALB["ALB<br/>(HTTPS 종단)"]
-        FARGATE["ECS / Fargate<br/>Kohere 백엔드 · Spring Boot · Java 21<br/>(access 무상태 → 수평 확장 여지)"]
-        RDS[("RDS for MySQL 8.0<br/>auth · user")]
-        ELASTI[("ElastiCache (Redis)<br/>refresh 토큰(TTL)<br/>AOF · 복제 권장")]
-      end
-      MONGO[("Atlas 또는 DocumentDB<br/>+ 2dsphere<br/>listing(+찜·최근본) · diagnosis")]
-      S3["S3 + CloudFront<br/>매물 사진"]
-      SECRET["Secrets Manager / SSM<br/>DB · JWT 서명키 · provider 시크릿"]
-    end
-
     EXT["Google OIDC / JWKS<br/>(로그인 검증 · AWS 밖)"]
 
-    GHA -- "이미지 push" --> ECR
-    ECR -. "M7: Fargate deploy<br/>(동일 이미지 promote)" .-> FARGATE
+    subgraph CICD["GitHub Actions · ECR (CI/CD)"]
+      GHA["GitHub Actions (OIDC)<br/>build · ECR push · ECS deploy"]
+      ECR["ECR<br/>app 이미지(Java 21)"]
+    end
 
-    APP -- "REST /api/v1<br/>HTTPS" --> ALB
+    subgraph AWS["AWS — prod (운영 시 배포 예정)"]
+      R53["Route53<br/>api.kohere.app · cdn.kohere.app(이미지)"]
+      CF["CloudFront<br/>이미지 서빙(별칭 cdn.kohere.app)"]
+      S3IMG[("S3<br/>이미지 원본")]
+      SSM["SSM Parameter Store<br/>SecureString 시크릿"]
+      CW["CloudWatch 알람<br/>→ SNS(이메일)"]
+      IGW["Internet Gateway"]
+      subgraph VPC["VPC 10.0.0.0/16 (3-tier)"]
+        subgraph PUB["public subnet ×2AZ"]
+          ALB["ALB (HTTPS 종단)"]
+          NAT["NAT Gateway<br/>(+ EIP)"]
+        end
+        subgraph APPNET["private-app subnet ×2AZ"]
+          FARGATE["ECS / Fargate<br/>Kohere 백엔드 · Spring Boot"]
+        end
+        subgraph DATANET["private-data subnet ×2AZ"]
+          RDS[("RDS MySQL 8.0<br/>auth·user")]
+          MONGO[("DocumentDB +2dsphere<br/>listing·diagnosis")]
+          ELASTI[("ElastiCache Redis<br/>refresh 토큰")]
+        end
+      end
+    end
+
+    GHA -- "이미지 push" --> ECR
+    ECR -. "deploy(promote)" .-> FARGATE
+    APP -- "REST /api/v1 HTTPS" --> R53
+    R53 --> IGW
+    IGW --> ALB
     ALB --> FARGATE
-    SECRET -. "DB 접속·시크릿 주입" .-> FARGATE
-    FARGATE -- "JDBC (RDS 엔드포인트)" --> RDS
-    FARGATE -- "mongodb (Atlas/DocumentDB)" --> MONGO
-    FARGATE -- "redis (ElastiCache 엔드포인트)" --> ELASTI
-    APP -. "이미지 로드(URL)" .-> S3
-    FARGATE -. "idToken 서명·iss·aud·exp 검증" .-> EXT
+    FARGATE -- "outbound(ECR·OIDC·SMTP)" --> NAT
+    NAT -- "egress" --> IGW
+    SSM -. "시크릿 주입(태스크 시작 시·task exec role)" .-> FARGATE
+    FARGATE -- "JDBC :3306" --> RDS
+    FARGATE -- "mongodb :27017" --> MONGO
+    FARGATE -- "redis :6379" --> ELASTI
+    FARGATE -. "이미지 업로드(S3 PutObject)" .-> S3IMG
+    CF -. "오리진" .-> S3IMG
+    APP -. "이미지 GET(cdn.kohere.app)" .-> R53
+    R53 -. "alias → CloudFront" .-> CF
+    FARGATE -. "idToken 검증" .-> EXT
+    CW -. "지표 감시" .-> FARGATE
 ```
 
-> 동일 app 이미지를 GitHub Actions가 ECR에 push하고 M7에 Fargate로 deploy한다 — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·Atlas/DocumentDB·ElastiCache·S3·Secrets Manager)로 교체되고, VPC가 app·RDS·ElastiCache를 감싼다. Google OIDC/JWKS는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
+> 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google OIDC/JWKS는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
+
+#### 1-3-3. dev 배포 아키텍처 (비용 최소화 — 단일 EC2 compose)
+
+> **dev는 위 매니지드 토폴로지(§1-3-2)를 쓰지 않는다.** prod 매니지드 스택(ALB·ECS·RDS·DocumentDB·ElastiCache·NAT ~$370/mo)은 dev엔 **과투자**라, **단일 EC2**에 컨테이너로 올린 dev 전용 구성을 쓴다([ADR-0021](../adr/0021-cost-optimization-profile.md)). prod(매니지드) ↔ dev(단일 EC2)는 Terraform `environments/{prod,dev}` 루트로 분리하며, **앱 이미지·DB 엔진은 동일**(`mysql:8.0`·`mongo:7`·`redis:7`)하다.
+>
+> **M7(7/8–7/10) 첫 클라우드 배포는 dev**다(prod은 운영 시점에 배포 예정, §1-3-2). 배포는 GitHub Actions가 이미지를 ECR(`:dev`)에 push한 뒤 **SSM run-command로 dev EC2에서 `refresh-env.sh`(SSM→`.env` 재조회) → `docker compose pull` → `up --force-recreate app`** 하는 방식이다(ECS 없음). **시크릿 변경 반영도 이 배포 경로**이며, 코드 변경 없이 시크릿만 바꿨다면 배포 워크플로를 수동 트리거한다([ADR-0024](../adr/0024-secret-change-propagation.md)).
+
+| 요소 | dev 구성 | 비고 |
+| --- | --- | --- |
+| 컴퓨트 | EC2 `t3.small` 1대(2vCPU/2GB, x86), `docker compose` 컨테이너들 | ALB·ECS 없음 |
+| HTTPS | **Caddy**(자동 인증서·Let's Encrypt) | 80/443 종단 → app(내부 8080) 프록시. 갱신·reload 자체 처리([ADR-0022](../adr/0022-dev-https-caddy.md)) |
+| DB | 자가호스팅 `mysql:8.0`·`mongo:7`·`redis:7`(같은 EC2) | local과 동일 엔진. 매니지드(RDS/DocDB/ElastiCache) 대체 |
+| 메일 | 실 SMTP(예: Amazon SES) | **MailHog는 로컬 compose 전용이라 dev엔 없음** |
+| 시크릿 | **SSM Parameter Store SecureString**(무료) | Secrets Manager 미사용. 부팅·배포 시 `refresh-env.sh`로 SSM→`.env` 재조회 후 app recreate(JWT/pepper 자동 생성). **변경 반영은 배포**([ADR-0024](../adr/0024-secret-change-propagation.md)) |
+| 이미지 | **S3 + CloudFront**(+ Route53 별칭, prod 동일 모듈) | 앱은 S3 업로드 + URL 응답. **클라이언트는 `cdn.dev.kohere.app`(Route53 alias→CloudFront)에서 GET**(미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM |
+| 노출 | EIP → Route53 A 레코드(`dev.kohere.app`) | SG 80/443만. 관리자 접속은 SSM 전용(SSH 미개방) |
+| 데이터 | 전용 암호화 EBS(`/data`) bind-mount | 인스턴스 교체에도 보존 |
+| 모니터링 | CloudWatch StatusCheckFailed·CPU 알람 + SNS | 단일 박스 다운 통보 |
+| 비용 | EC2 ~$30/mo + EBS ~$2/mo + S3/CF(CF 무료티어) ≈ **~$32/mo+** | 매니지드 복제 대비 큰 절감 |
+
+```mermaid
+flowchart TB
+    DEV["개발자 / 테스터"]
+    EXT["Google OIDC / JWKS · SES SMTP<br/>(AWS 밖)"]
+
+    subgraph CICD["GitHub Actions · ECR (CI/CD)"]
+      GHA["GitHub Actions (OIDC)<br/>build · ECR push · SSM deploy"]
+      ECR["ECR<br/>app 이미지(dev 태그)"]
+    end
+
+    subgraph AWS["AWS — dev (전용 VPC 10.1.0.0/16)"]
+      R53["Route53<br/>dev.kohere.app → EIP<br/>cdn.dev.kohere.app → CloudFront"]
+      SSM["SSM Parameter Store<br/>SecureString 시크릿"]
+      CF["CloudFront<br/>이미지 서빙(별칭 cdn.dev.kohere.app)"]
+      S3IMG[("S3<br/>이미지 원본")]
+      CW["CloudWatch 알람<br/>→ SNS(이메일)"]
+      IGW["Internet Gateway"]
+      subgraph EC2["EC2 t3.small · EIP (public subnet)"]
+        CADDY["Caddy<br/>80/443 · 자동 HTTPS"]
+        APP["app (ECR 이미지)"]
+        MYSQL["mysql:8.0"]
+        MONGO["mongo:7"]
+        REDIS["redis:7"]
+      end
+      EBS[("암호화 EBS<br/>/data: mysql · mongo")]
+    end
+
+    GHA -- "이미지 push" --> ECR
+    GHA -. "SSM run-command<br/>refresh-env + recreate app" .-> EC2
+    ECR -. "app pull" .-> APP
+    CW -. "지표 감시" .-> EC2
+    DEV -- "HTTPS 443" --> R53
+    R53 --> IGW
+    IGW -- "공인 IP(EIP)" --> CADDY
+    EC2 -- "egress(ECR·ACME·SES)" --> IGW
+    CADDY -- "내부 :8080" --> APP
+    APP --> MYSQL
+    APP --> MONGO
+    APP --> REDIS
+    MYSQL --- EBS
+    MONGO --- EBS
+    APP -. "이미지 업로드(S3 PutObject)" .-> S3IMG
+    CF -. "오리진" .-> S3IMG
+    DEV -. "이미지 GET(cdn.dev.kohere.app)" .-> R53
+    R53 -. "alias → CloudFront" .-> CF
+    APP -. "시크릿(.env, 부팅·배포 refresh)" .-> SSM
+    APP -. "idToken 검증 · 메일(SES)" .-> EXT
+```
+
+> dev는 클라우드 EC2 한 대에 각 서비스를 **컨테이너 박스**로 올린 구성이라 로컬↔dev 엔진이 일치한다(`SPRING_PROFILES_ACTIVE=dev`). MailHog는 로컬 전용이라 dev는 실 SMTP를 쓰고, HTTPS는 Caddy([ADR-0022](../adr/0022-dev-https-caddy.md))가, 시크릿은 SSM Parameter Store SecureString(무료·SM 미사용, [ADR-0023](../adr/0023-secrets-in-ssm-parameter-store.md))이 담당하며, **변경 반영은 배포(`refresh-env` + app recreate)** 경로로 한다([ADR-0024](../adr/0024-secret-change-propagation.md)). 단일 호스트 SPOF·인터넷 노출은 SG(80/443)·SSM 전용·IMDSv2·EBS 암호화로 통제하며 dev 단계에서 수용한다. 상태(state)는 prod·dev 공통 S3 + native lockfile([ADR-0020](../adr/0020-terraform-remote-state-s3-dynamodb.md)), `key`로 분리한다.
 
 ## 2. 주요 컴포넌트 표
 
@@ -257,7 +349,7 @@ flowchart TB
 | 보안 프레임워크 | **Spring Security** + 커스텀 `JwtAuthenticationFilter`                          | 도입   | M0-A 산출물. [ADR-0010](../adr/0010-jwt-authentication-filter.md) 확정(ADR-0003 후속)                                    |
 | 소셜 OIDC 검증  | provider별 Nimbus `JwtDecoder`(JWKS 캐시), **MVP는 Google 우선**(Apple 여유 시) | 도입   | Boot 4 스타터명 `spring-boot-starter-security-oauth2-*`               |
 | 서버 JWT 서명   | jjwt(`io.jsonwebtoken`), **HS256**(대칭, HMAC-SHA256)           | 도입   | **[ADR-0009](../adr/0009-jwt-signing-algorithm-hs256.md)** 확정. MSA 분해·외부 검증자 도입 시 RS256/ES256+JWKS 전환(트리거)   |
-| 시크릿/키 관리  | env vars + AWS Secrets Manager/SSM                                                      | 도입   | 길이·주입 [ADR-0011](../adr/0011-token-lifetime-and-secret-policy.md) 확정(≥256bit env 주입), 무중단 회전 절차 운영 후속 |
+| 시크릿/키 관리  | env vars + SSM Parameter Store(SecureString)                                                      | 도입   | 길이·주입 [ADR-0011](../adr/0011-token-lifetime-and-secret-policy.md) 확정(≥256bit env 주입), 무중단 회전 절차 운영 후속 |
 | 레이트리밋      | **Bucket4j(인메모리)**                                                            | 도입   | auth·share 등 429 + Retry-After. 다중 인스턴스 시 Redis 백엔드 → 추후 |
 | HTTP 헤더·CORS | Spring Security 헤더 + 명시적 CORS origin                                               | 도입   | HSTS·nosniff·X-Frame-Options                                          |
 
@@ -267,7 +359,7 @@ flowchart TB
 | ---------------------------- | ----------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                           | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `RecommendationCriteria` 공개 쿼리                      |
 | 임대인 연락                  | **F-03 신청하기 → 인앱 채팅방 기록**(booking→chat, `BookingCreatedEvent`) | 도입   | 실시간 WebSocket·푸시는 추후. booking·chat 저장소 추후 결정                                                                   |
-| 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                       | 도입   | 매물 사진 호스팅 — 클라이언트가 CloudFront에서 직접 로드, 백엔드는 URL만 저장(S3 읽기·쓰기 없음). 사용자 업로드 흐름은 MVP 밖 |
+| 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                       | 도입   | 매물 사진 호스팅 — 클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖 |
 | 푸시 알림(FCM/APNs)          | —                                                                                  | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                       |
 | 채팅 실시간(WebSocket/STOMP) | —                                                                                  | 추후   | F-03은 REST 채팅 기록만. 실시간 전송은 추후                                                                                     |
 

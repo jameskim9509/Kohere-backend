@@ -1,7 +1,7 @@
 # Kohere 로컬 개발 스택 (M0-C) — app + MySQL + MongoDB + Redis + MailHog 일괄 기동
 #
-#   전체 기동:   docker compose up --build
-#   인프라만:    docker compose up -d mysql mongo redis mailhog   # 앱은 ./gradlew bootRun 으로 따로 실행
+#   전체 기동:   ./gradlew bootJar && docker compose up --build   # 앱 이미지는 미리 빌드한 jar를 COPY
+#   인프라만:    docker compose up -d mysql mongo redis mailhog   # 앱은 ./gradlew bootRun 으로 따로 실행(권장)
 #   종료:        docker compose down            # 데이터 보존
 #                docker compose down -v          # 볼륨(데이터)까지 삭제
 #
@@ -69,8 +69,9 @@ services:
       - "1025:1025" # SMTP (앱이 메일을 발송하는 포트)
       - "8025:8025" # 웹 UI — 받은 인증 메일 확인: http://localhost:8025
 
-  # 앱 이미지는 Dockerfile 로 빌드(로컬·클라우드 공통 동일 이미지).
-  # 아래 SPRING_* 값은 M0-A·M0-B 에서 영속 의존성이 추가되면 그대로 사용된다(현재 골격에서는 무시됨).
+  # 앱 이미지(Dockerfile)는 미리 빌드된 jar(build/libs/*.jar)를 COPY하는 런타임 이미지 — `--build` 전에 ./gradlew bootJar 필요.
+  #   (OpenAPI 스펙이 테스트 스니펫 산출이라 이미지 빌드 안에서 못 만든다. 평소 로컬 개발은 ./gradlew bootRun 권장.)
+  # 아래 SPRING_* 값은 영속 의존성이 추가되면 그대로 사용된다.
   app:
     build:
       context: .
