@@ -12,10 +12,12 @@
 
 [backend.tf](backend.tf) 의 `backend "s3"` 블록은 주석 처리된 상태여야 한다(초기값).
 
+`state_bucket_name` 만 default 가 없는 필수 변수다(나머지는 default 보유). 비우면 아래 `apply` 가 대화형으로 물어보고, 비대화형으로 돌리려면 [terraform.tfvars.example](terraform.tfvars.example) 을 복사해 채운다.
+
 ```bash
 cd infra/terraform/bootstrap
 terraform init
-terraform apply
+terraform apply   # state_bucket_name 미지정 시 프롬프트로 입력 (예: kohere-tfstate-<account_id>)
 ```
 
 ## 2) bootstrap state를 S3로 이전 (migrate-state)

@@ -5,9 +5,9 @@ variable "project" {
 }
 
 variable "environment" {
-  description = "환경명"
+  description = "Environment 태그 값 — bootstrap 리소스(상태 버킷·OIDC)는 prod·dev 공용이라 'shared'"
   type        = string
-  default     = "prod"
+  default     = "shared"
 }
 
 variable "aws_region" {
