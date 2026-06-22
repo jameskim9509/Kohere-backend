@@ -42,7 +42,7 @@ variable "volume_id" {
 
 # ----- 인스턴스 -----
 variable "ami_id" {
-  description = "빈 값이면 SSM으로 최신 AL2023 x86_64 조회"
+  description = "AMI 고정 오버라이드(선택). 기본(빈 값)은 SSM에서 최신 AL2023 x86_64를 자동 조회 — 권장"
   type        = string
   default     = ""
 }
