@@ -8,14 +8,11 @@ aws_region = "ap-northeast-2"
 # CI가 ECR에 push한 dev 태그 이미지.
 app_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"
 
-# ----- 도메인 / HTTPS (Caddy 자동 인증서) -----
-# 일단 example 도메인. 실제 도메인으로 교체하면 Caddy가 Let's Encrypt 인증서를 자동 발급·갱신한다(ADR-0022).
-# route53_zone_id 를 함께 채우면 A 레코드(domain → EIP)도 생성된다. 비우면 EIP로 HTTP 접속.
-domain_name = "dev.example.com"
-# route53_zone_id = "Z0123456789ABCDEFGHIJ"
-# 매물 이미지 CDN 커스텀 도메인(옵셔널). route53_zone_id 와 함께 채워야 적용된다
-# (us-east-1 ACM + CloudFront 별칭 자동 생성). 비우면 *.cloudfront.net 사용.
-# cdn_domain_name = "cdn.dev.kohere.app"
+# ----- 도메인 / HTTPS (필수 — Caddy 자동 인증서 + CDN 강제) -----
+# 셋 다 필수. domain_name → Caddy 자동 HTTPS(ADR-0022) + Route53 A(EIP), cdn_domain_name → CloudFront 별칭(us-east-1 ACM).
+domain_name     = "dev.kohere.app"
+route53_zone_id = "Z0123456789ABCDEFGHIJ"
+cdn_domain_name = "cdn.dev.kohere.app"
 
 # ----- 시크릿 (SSM Parameter Store SecureString 으로 저장됨 — SM 미사용·무료) -----
 # JWT_SECRET·REFRESH_PEPPER·EMAIL_PEPPER 는 Terraform이 자동 생성한다. 아래만 채운다:
@@ -36,7 +33,7 @@ mail_from     = "noreply@kohere.app"
 # mysql_root_password = ""  # sensitive — root(외부 관리도구용)
 # mongo_username      = "kohere"
 # mongo_password      = ""  # sensitive — URL-safe 권장(URI 포함)
-# DB 포트 외부 개방 CIDR. 빈 목록=미개방(앱 내부 접속만). 0.0.0.0/0·::/0 은 validation 으로 거부됨 — 본인 IP/32 로:
+# DB 포트 외부 개방 CIDR. 빈 목록=미개방(앱 내부 접속만). 본인 IP/32 로 제한 권장:
 # db_ingress_cidrs = ["203.0.113.7/32"]
 
 # ----- 알람 / 규모 (옵셔널) -----

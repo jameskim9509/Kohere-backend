@@ -1,6 +1,6 @@
 # Kohere dev 환경 — EC2 1대에 dev 전용 docker-compose(Caddy · app+mysql+mongo+redis).
 # ALB·ECS·RDS·DocumentDB·ElastiCache·NAT 없음 — 매니지드는 dev엔 과투자라 비용 최소화([ADR-0021]).
-#   접속: EIP → Route53 A 레코드 + Caddy/Let's Encrypt HTTPS(도메인 제공 시).
+#   접속: EIP → Route53 A 레코드 + Caddy/Let's Encrypt HTTPS(도메인 필수).
 #   데이터: 전용 암호화 EBS. 시크릿: SSM Parameter Store SecureString(무료·SM 미사용).
 #   앱 이미지: ECR(=prod와 동일). 매물 이미지: S3 + CloudFront(shared 모듈).
 # prod처럼 서비스별 dev 모듈(network·security·iam·secrets·storage·host·dns·monitoring)로 조립한다.
@@ -17,10 +17,9 @@ locals {
 
 data "aws_caller_identity" "current" {}
 
-# ===== ACM — CloudFront용(us-east-1 필수, CDN 커스텀 도메인 제공 시에만) =====
+# ===== ACM — CloudFront용(us-east-1 필수) =====
 module "cdn_acm" {
   source = "../../modules/shared/acm"
-  count  = (var.cdn_domain_name != "" && var.route53_zone_id != "") ? 1 : 0
 
   providers = { aws = aws.us_east_1 }
 
@@ -39,10 +38,9 @@ module "s3_cloudfront" {
   account_id  = data.aws_caller_identity.current.account_id
   bucket_name = var.images_bucket_name
 
-  # 커스텀 도메인(별칭 + us-east-1 ACM) — cdn_acm(=cdn_domain_name+route53_zone_id)이 있을 때만 별칭을 붙인다.
-  # 별칭과 인증서 게이트를 동일 조건으로 묶어 "별칭만 있고 인증서 없는" 무효 조합을 원천 차단. 비우면 *.cloudfront.net.
-  domain_aliases      = length(module.cdn_acm) > 0 ? [var.cdn_domain_name] : []
-  acm_certificate_arn = length(module.cdn_acm) > 0 ? module.cdn_acm[0].certificate_arn : ""
+  # 커스텀 도메인(별칭 + us-east-1 ACM) — 필수. HTTPS·커스텀 도메인 강제.
+  domain_aliases      = [var.cdn_domain_name]
+  acm_certificate_arn = module.cdn_acm.certificate_arn
   route53_zone_id     = var.route53_zone_id
 }
 
@@ -129,7 +127,7 @@ module "host" {
   depends_on = [module.secrets]
 }
 
-# ===== Route53 A 레코드 (도메인 제공 시) → EIP =====
+# ===== Route53 A 레코드(도메인 필수) → EIP =====
 module "dns" {
   source = "../../modules/dev/dns"
 

@@ -82,28 +82,19 @@ resource "aws_cloudfront_distribution" "images" {
     }
   }
 
-  # 별칭(커스텀 도메인)이 있으면 us-east-1 ACM 인증서로 TLS 종단, 없으면 *.cloudfront.net 기본 인증서.
+  # 커스텀 도메인 별칭을 us-east-1 ACM 인증서로 TLS 종단(HTTPS·커스텀 도메인 강제 — 인증서 필수).
   viewer_certificate {
-    cloudfront_default_certificate = var.acm_certificate_arn == ""
-    acm_certificate_arn            = var.acm_certificate_arn != "" ? var.acm_certificate_arn : null
-    ssl_support_method             = var.acm_certificate_arn != "" ? "sni-only" : null
-    minimum_protocol_version       = var.acm_certificate_arn != "" ? "TLSv1.2_2021" : null
-  }
-
-  # 별칭이 있으면 반드시 ACM 인증서(us-east-1)가 있어야 한다(CloudFront 불변식) — plan 단계에서 조기 실패시킨다.
-  lifecycle {
-    precondition {
-      condition     = length(var.domain_aliases) == 0 || var.acm_certificate_arn != ""
-      error_message = "domain_aliases 사용 시 acm_certificate_arn(us-east-1 ACM)이 필수다. 환경 레이어는 cdn_domain_name과 route53_zone_id를 함께 설정하거나, 인증서 ARN을 직접 주입하라."
-    }
+    acm_certificate_arn      = var.acm_certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-images-cdn" })
 }
 
-# 별칭 도메인 → CloudFront alias 레코드(A/AAAA). route53_zone_id 제공 시에만 생성(없으면 DNS 외부 관리).
+# 별칭 도메인 → CloudFront alias 레코드(A/AAAA). 별칭마다 생성(도메인·zone 필수).
 resource "aws_route53_record" "alias_a" {
-  for_each = var.route53_zone_id != "" ? toset(var.domain_aliases) : toset([])
+  for_each = toset(var.domain_aliases)
 
   zone_id = var.route53_zone_id
   name    = each.value
@@ -117,7 +108,7 @@ resource "aws_route53_record" "alias_a" {
 }
 
 resource "aws_route53_record" "alias_aaaa" {
-  for_each = var.route53_zone_id != "" ? toset(var.domain_aliases) : toset([])
+  for_each = toset(var.domain_aliases)
 
   zone_id = var.route53_zone_id
   name    = each.value

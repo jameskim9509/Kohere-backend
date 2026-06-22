@@ -4,8 +4,8 @@ output "alb_dns_name" {
 }
 
 output "app_url" {
-  description = "앱 진입 URL"
-  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${module.alb.dns_name}"
+  description = "앱 진입 URL(HTTPS — 도메인 필수)"
+  value       = "https://${var.domain_name}"
 }
 
 output "ecr_repository_url" {
@@ -44,7 +44,7 @@ output "cloudfront_domain_name" {
 }
 
 output "images_cdn_domain" {
-  description = "이미지 서빙 도메인(커스텀 별칭 우선, 없으면 CloudFront 기본)"
+  description = "이미지 서빙 도메인(커스텀 별칭 — 강제)"
   value       = module.s3_cloudfront.cdn_domain
 }
 

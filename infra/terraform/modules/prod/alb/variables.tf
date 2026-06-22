@@ -37,9 +37,8 @@ variable "health_check_path" {
 }
 
 variable "certificate_arn" {
-  description = "HTTPS 리스너용 ACM 인증서 ARN(빈 값이면 HTTP만 노출)"
+  description = "HTTPS 리스너용 ACM 인증서 ARN — 필수(HTTPS 강제)"
   type        = string
-  default     = ""
 }
 
 variable "idle_timeout" {

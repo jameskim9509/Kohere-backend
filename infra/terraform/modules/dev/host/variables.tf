@@ -66,9 +66,8 @@ variable "db_name" {
 }
 
 variable "domain_name" {
-  description = "dev 도메인. 제공 시 Caddy 자동 HTTPS, 없으면 :80(HTTP)"
+  description = "dev 도메인(Caddy 자동 HTTPS) — 필수"
   type        = string
-  default     = ""
 }
 
 variable "smtp_host" {

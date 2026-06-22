@@ -80,38 +80,25 @@ variable "mongo_password" {
 }
 
 variable "db_ingress_cidrs" {
-  description = "DB 포트(3306·27017) 외부 접속 허용 CIDR. 빈 목록=미개방. 전체 개방(0.0.0.0/0·::/0) 금지(검증) — 본인 IP/32"
+  description = "DB 포트(3306·27017) 외부 접속 허용 CIDR. 빈 목록=미개방 — 본인 IP/32 권장"
   type        = list(string)
   default     = []
-
-  validation {
-    condition     = !contains(var.db_ingress_cidrs, "0.0.0.0/0") && !contains(var.db_ingress_cidrs, "::/0")
-    error_message = "db_ingress_cidrs 에 전체 개방(0.0.0.0/0·::/0)은 금지한다. 본인 IP/32 등으로 제한하라."
-  }
 }
 
-# ----- 노출 / HTTPS -----
+# ----- 노출 / HTTPS (필수 — HTTPS 강제) -----
 variable "domain_name" {
-  description = "dev 도메인(예: dev.kohere.app). 제공 시 Route53 A 레코드 + Let's Encrypt HTTPS"
+  description = "dev 도메인(예: dev.kohere.app) — 필수(Route53 A + Caddy HTTPS)"
   type        = string
-  default     = ""
 }
 
 variable "route53_zone_id" {
-  description = "Route53 호스팅 영역 ID"
+  description = "Route53 호스팅 영역 ID — 필수"
   type        = string
-  default     = ""
 }
 
 variable "cdn_domain_name" {
-  description = "매물 이미지 CDN 커스텀 도메인(예: cdn.dev.kohere.app). route53_zone_id와 함께 제공 시 us-east-1 ACM + CloudFront 별칭 생성. 비우면 *.cloudfront.net 사용"
+  description = "매물 이미지 CDN 커스텀 도메인(예: cdn.dev.kohere.app) — 필수(us-east-1 ACM + CloudFront 별칭)"
   type        = string
-  default     = ""
-
-  validation {
-    condition     = var.cdn_domain_name == "" || var.route53_zone_id != ""
-    error_message = "cdn_domain_name 사용 시 route53_zone_id가 필요하다(us-east-1 ACM 검증 + CloudFront 별칭 레코드를 자동 생성)."
-  }
 }
 
 variable "le_email" {

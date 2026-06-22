@@ -257,17 +257,15 @@ variable "redis_maxmemory_policy" {
   default     = "volatile-ttl"
 }
 
-# ===== 도메인 / TLS (옵셔널) =====
+# ===== 도메인 / TLS (필수 — HTTPS 강제) =====
 variable "domain_name" {
-  description = "API 도메인(예: api.kohere.app). 비우면 ALB는 HTTP만 노출"
+  description = "API 도메인(예: api.kohere.app) — 필수(ALB HTTPS)"
   type        = string
-  default     = ""
 }
 
 variable "route53_zone_id" {
-  description = "Route53 호스팅 영역 ID(domain_name과 함께 제공 시 ACM·alias 생성)"
+  description = "Route53 호스팅 영역 ID — 필수(ACM 검증·alias)"
   type        = string
-  default     = ""
 }
 
 # ===== CI/CD (GitHub Actions OIDC) =====
@@ -309,14 +307,8 @@ variable "cloudfront_price_class" {
 }
 
 variable "cdn_domain_name" {
-  description = "매물 이미지 CDN 커스텀 도메인(예: cdn.kohere.app). route53_zone_id와 함께 제공 시 us-east-1 ACM + CloudFront 별칭 생성. 비우면 *.cloudfront.net 사용"
+  description = "매물 이미지 CDN 커스텀 도메인(예: cdn.kohere.app) — 필수(us-east-1 ACM + CloudFront 별칭)"
   type        = string
-  default     = ""
-
-  validation {
-    condition     = var.cdn_domain_name == "" || var.route53_zone_id != ""
-    error_message = "cdn_domain_name 사용 시 route53_zone_id가 필요하다(us-east-1 ACM 검증 + CloudFront 별칭 레코드를 자동 생성)."
-  }
 }
 
 # ===== 모니터링 =====

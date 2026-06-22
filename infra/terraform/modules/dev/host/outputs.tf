@@ -9,6 +9,6 @@ output "public_ip" {
 }
 
 output "app_url" {
-  description = "앱 접속 URL(도메인 제공 시 HTTPS, 아니면 EIP HTTP)"
-  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_eip.host.public_ip}"
+  description = "앱 접속 URL(HTTPS — 도메인 필수)"
+  value       = "https://${var.domain_name}"
 }

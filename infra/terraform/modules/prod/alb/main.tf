@@ -1,9 +1,4 @@
-# 인터넷 페이싱 ALB(HTTPS 종단). 인증서가 있으면 80→443 리다이렉트 + 443 forward,
-# 없으면 80에서 바로 forward(도메인 미정 단계에서도 apply 가능).
-
-locals {
-  https_enabled = var.certificate_arn != ""
-}
+# 인터넷 페이싱 ALB(HTTPS 종단) — 80→443 리다이렉트 + 443 forward. HTTPS 강제(ACM 인증서 필수).
 
 resource "aws_lb" "this" {
   name               = "${var.name_prefix}-alb"
@@ -42,9 +37,8 @@ resource "aws_lb_target_group" "this" {
   tags = merge(var.tags, { Name = "${var.name_prefix}-tg" })
 }
 
-# 인증서 있음: 80 → 443 리다이렉트
+# 80 → 443 리다이렉트
 resource "aws_lb_listener" "http_redirect" {
-  count             = local.https_enabled ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
@@ -59,22 +53,8 @@ resource "aws_lb_listener" "http_redirect" {
   }
 }
 
-# 인증서 없음: 80에서 바로 forward
-resource "aws_lb_listener" "http_forward" {
-  count             = local.https_enabled ? 0 : 1
-  load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.this.arn
-  }
-}
-
-# HTTPS 리스너(인증서 있을 때만)
+# HTTPS 리스너(443)
 resource "aws_lb_listener" "https" {
-  count             = local.https_enabled ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"

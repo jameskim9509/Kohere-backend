@@ -4,14 +4,11 @@
 
 aws_region = "ap-northeast-2"
 
-# ----- 도메인 / TLS (옵셔널) -----
-# 둘 다 채우면 ACM 인증서(DNS 검증) + ALB HTTPS + Route53 alias 가 생성된다.
-# 비워두면 ALB 는 HTTP(80) 만 노출한다(도메인 확정 전에도 apply 가능).
-# domain_name     = "api.kohere.app"
-# route53_zone_id = "Z0123456789ABCDEFGHIJ"
-# 매물 이미지 CDN 커스텀 도메인(옵셔널). route53_zone_id 와 함께 채워야 적용된다
-# (us-east-1 ACM + CloudFront 별칭 자동 생성). 비우면 *.cloudfront.net 사용.
-# cdn_domain_name = "cdn.kohere.app"
+# ----- 도메인 / TLS (필수 — HTTPS·커스텀 도메인 강제) -----
+# 셋 다 필수. ACM 인증서(DNS 검증) + ALB HTTPS(80→443) + Route53 alias + CloudFront 별칭(us-east-1 ACM)을 만든다.
+domain_name     = "api.kohere.app"
+route53_zone_id = "Z0123456789ABCDEFGHIJ"
+cdn_domain_name = "cdn.kohere.app"
 
 # ----- CI/CD (GitHub Actions OIDC) -----
 github_org           = "swyp-app-5th-team1"

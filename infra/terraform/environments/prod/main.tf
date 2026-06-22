@@ -50,10 +50,9 @@ module "ecr" {
   image_retention_count = var.ecr_image_retention_count
 }
 
-# ===== ACM — ALB HTTPS 종단(리전, 도메인 제공 시에만) =====
+# ===== ACM — ALB HTTPS 종단(리전) =====
 module "acm" {
   source = "../../modules/shared/acm"
-  count  = (var.domain_name != "" && var.route53_zone_id != "") ? 1 : 0
 
   name_prefix     = local.name_prefix
   tags            = local.common_tags
@@ -61,10 +60,9 @@ module "acm" {
   route53_zone_id = var.route53_zone_id
 }
 
-# ===== ACM — CloudFront용(us-east-1 필수, CDN 커스텀 도메인 제공 시에만) =====
+# ===== ACM — CloudFront용(us-east-1 필수) =====
 module "cdn_acm" {
   source = "../../modules/shared/acm"
-  count  = (var.cdn_domain_name != "" && var.route53_zone_id != "") ? 1 : 0
 
   providers = { aws = aws.us_east_1 }
 
@@ -167,7 +165,7 @@ module "alb" {
   security_group_ids = [module.security.alb_sg_id]
   app_port           = var.app_port
   health_check_path  = var.health_check_path
-  certificate_arn    = length(module.acm) > 0 ? module.acm[0].certificate_arn : ""
+  certificate_arn    = module.acm.certificate_arn
 }
 
 # ===== ECS 컨테이너 환경/시크릿 매핑 (application-prod.yml 계약) =====
@@ -184,7 +182,7 @@ locals {
     { name = "SPRING_MAIL_PORT", value = tostring(var.smtp_port) },
     { name = "MAIL_FROM", value = var.mail_from },
     # 매물 이미지: 앱이 S3에 업로드하고 CDN URL을 클라이언트에 반환(앱은 서빙 경로 아님).
-    # CDN_DOMAIN은 커스텀 별칭(cdn_domain_name) 지정 시 그 도메인, 아니면 *.cloudfront.net.
+    # APP_IMAGES_CDN_DOMAIN은 커스텀 별칭(cdn_domain_name)으로 고정 — 필수·강제(폴백 없음).
     { name = "APP_IMAGES_BUCKET", value = module.s3_cloudfront.bucket_name },
     { name = "APP_IMAGES_CDN_DOMAIN", value = module.s3_cloudfront.cdn_domain },
   ]
@@ -242,10 +240,9 @@ module "s3_cloudfront" {
   account_id  = data.aws_caller_identity.current.account_id
   price_class = var.cloudfront_price_class
 
-  # 커스텀 도메인(별칭 + us-east-1 ACM) — cdn_acm(=cdn_domain_name+route53_zone_id)이 있을 때만 별칭을 붙인다.
-  # 별칭과 인증서 게이트를 동일 조건으로 묶어 "별칭만 있고 인증서 없는" 무효 조합을 원천 차단. 비우면 *.cloudfront.net.
-  domain_aliases      = length(module.cdn_acm) > 0 ? [var.cdn_domain_name] : []
-  acm_certificate_arn = length(module.cdn_acm) > 0 ? module.cdn_acm[0].certificate_arn : ""
+  # 커스텀 도메인(별칭 + us-east-1 ACM) — 필수. HTTPS·커스텀 도메인 강제.
+  domain_aliases      = [var.cdn_domain_name]
+  acm_certificate_arn = module.cdn_acm.certificate_arn
   route53_zone_id     = var.route53_zone_id
 }
 
@@ -265,10 +262,8 @@ module "monitoring" {
   redis_replication_group_id = module.elasticache.replication_group_id
 }
 
-# ===== Route53 alias (도메인 제공 시에만) =====
+# ===== Route53 alias (api 도메인 → ALB) =====
 resource "aws_route53_record" "alb_alias" {
-  count = (var.domain_name != "" && var.route53_zone_id != "") ? 1 : 0
-
   zone_id = var.route53_zone_id
   name    = var.domain_name
   type    = "A"

@@ -1,5 +1,5 @@
 output "app_url" {
-  description = "앱 접속 URL(도메인 제공 시 HTTPS)"
+  description = "앱 접속 URL(HTTPS — 도메인 필수)"
   value       = module.host.app_url
 }
 
@@ -19,7 +19,7 @@ output "images_bucket" {
 }
 
 output "images_cdn_domain" {
-  description = "이미지 서빙 도메인(커스텀 별칭 우선, 없으면 CloudFront 기본)"
+  description = "이미지 서빙 도메인(커스텀 별칭 — 강제)"
   value       = module.s3_cloudfront.cdn_domain
 }
 

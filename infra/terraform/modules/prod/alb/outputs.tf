@@ -27,8 +27,3 @@ output "target_group_arn_suffix" {
   description = "타깃 그룹 ARN suffix(CloudWatch 차원 TargetGroup)"
   value       = aws_lb_target_group.this.arn_suffix
 }
-
-output "https_enabled" {
-  description = "HTTPS 리스너 활성화 여부"
-  value       = local.https_enabled
-}
