@@ -62,3 +62,27 @@ cd /opt/kohere
 docker compose pull
 docker compose up -d
 bash /opt/kohere/reconcile-db.sh || true
+docker image prune -f # 직전 :dev 이미지(dangling) 즉시 정리 — root 볼륨 보호
+
+# 7) 디스크 보호 타이머 — :dev 이동 태그라 배포마다 이전 이미지가 dangling으로 쌓여 20GB root가 찰 수 있다.
+#    배포(deploy.yml)는 recreate 직후 즉시 prune하고, 여기선 안전망으로 미사용 리소스를 매일(7일 이전) 정리한다.
+#    빌드는 GitHub Actions에서만 하므로 호스트엔 빌드 캐시가 없다(이미지 누적이 유일한 증가원).
+cat >/etc/systemd/system/docker-prune.service <<'UNIT'
+[Unit]
+Description=Prune unused docker images/containers (dev disk guard)
+Requires=docker.service
+After=docker.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker system prune -af --filter until=168h
+UNIT
+cat >/etc/systemd/system/docker-prune.timer <<'UNIT'
+[Unit]
+Description=Daily docker prune (dev disk guard)
+[Timer]
+OnCalendar=daily
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl enable --now docker-prune.timer

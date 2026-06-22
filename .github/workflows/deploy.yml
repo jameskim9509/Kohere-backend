@@ -49,11 +49,12 @@ jobs:
         # refresh-env.sh로 Parameter Store 최신값을 .env에 받고 → reconcile-db.sh로 live DB 자격증명을
         #   .env 값으로 회전(데이터 보존, ADR-0025) → --force-recreate로 app을 새로 만들어 .env(env_file)를 다시 읽게 한다.
         #   env_file은 컨테이너 생성 시점에만 읽히므로 recreate가 필수. app만 recreate — mysql/mongo/redis는 유지.
+        #   recreate 직후 docker image prune -f 로 직전 :dev 이미지(dangling)를 정리해 20GB root 디스크가 차지 않게 한다.
         run: |
           CMD_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Name,Values=$DEV_HOST_NAME" \
             --comment "dev deploy: ECR re-login + refresh .env + compose pull/recreate app" \
-            --parameters 'commands=["bash /opt/kohere/ecr-login.sh","bash /opt/kohere/refresh-env.sh","bash /opt/kohere/reconcile-db.sh","cd /opt/kohere","docker compose pull app","docker compose up -d --force-recreate app"]' \
+            --parameters 'commands=["bash /opt/kohere/ecr-login.sh","bash /opt/kohere/refresh-env.sh","bash /opt/kohere/reconcile-db.sh","cd /opt/kohere","docker compose pull app","docker compose up -d --force-recreate app","docker image prune -f"]' \
             --query "Command.CommandId" --output text)
           echo "dev 배포 SSM CommandId: $CMD_ID (대상 tag:Name=$DEV_HOST_NAME). 상태는 SSM 콘솔/run-command 에서 확인."
