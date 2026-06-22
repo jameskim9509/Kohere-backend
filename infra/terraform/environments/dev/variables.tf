@@ -185,12 +185,6 @@ variable "github_deploy_branch" {
   default     = "main"
 }
 
-variable "create_github_oidc_provider" {
-  description = "GitHub OIDC provider 생성 여부(계정에 이미 있으면 false — prod와 충돌 회피)"
-  type        = bool
-  default     = true
-}
-
 variable "ecr_repository" {
   description = "푸시 대상 ECR 리포지토리 이름(prod와 공유)"
   type        = string

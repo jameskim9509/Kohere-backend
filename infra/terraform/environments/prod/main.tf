@@ -150,7 +150,6 @@ module "iam" {
   github_deploy_branch        = var.github_deploy_branch
   region                      = var.aws_region
   account_id                  = data.aws_caller_identity.current.account_id
-  create_github_oidc_provider = var.create_github_oidc_provider
   images_bucket_arn           = module.s3_cloudfront.bucket_arn
 }
 

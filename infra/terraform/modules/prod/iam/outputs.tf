@@ -14,6 +14,6 @@ output "github_actions_role_arn" {
 }
 
 output "github_oidc_provider_arn" {
-  description = "GitHub OIDC provider ARN"
-  value       = try(aws_iam_openid_connect_provider.github[0].arn, data.aws_iam_openid_connect_provider.github[0].arn)
+  description = "GitHub OIDC provider ARN(bootstrap 생성, data 조회)"
+  value       = data.aws_iam_openid_connect_provider.github.arn
 }

@@ -59,3 +59,16 @@ resource "aws_s3_bucket_policy" "state" {
 
 # 상태 잠금은 S3 native lockfile(backend "s3" 의 use_lockfile=true)로 처리한다 — 별도 DynamoDB 테이블이 필요 없다.
 # S3가 조건부 쓰기(If-None-Match)로 <key>.tflock 객체를 만들어 동시 실행을 직렬화한다.
+
+# ===== GitHub Actions OIDC provider — 계정당 1개(URL당) 싱글톤. bootstrap 이 단일 소유하고
+#        environments/{prod,dev} 는 data 로 조회만 한다(생성 충돌 방지). =====
+data "tls_certificate" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.github.certificates[length(data.tls_certificate.github.certificates) - 1].sha1_fingerprint]
+  tags            = { Name = "${var.project}-github-oidc" }
+}

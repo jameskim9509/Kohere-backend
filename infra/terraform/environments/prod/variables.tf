@@ -287,12 +287,6 @@ variable "github_deploy_branch" {
   default     = "main"
 }
 
-variable "create_github_oidc_provider" {
-  description = "GitHub OIDC provider 생성 여부(계정에 이미 있으면 false)"
-  type        = bool
-  default     = true
-}
-
 # ===== S3 / CloudFront =====
 variable "images_bucket_name" {
   description = "매물 이미지 버킷 이름 — 필수(S3는 전역 유일)"

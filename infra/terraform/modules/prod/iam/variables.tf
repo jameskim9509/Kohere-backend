@@ -45,12 +45,6 @@ variable "account_id" {
   type        = string
 }
 
-variable "create_github_oidc_provider" {
-  description = "GitHub OIDC provider를 새로 생성할지(false면 계정 내 기존 provider 조회)"
-  type        = bool
-  default     = true
-}
-
 variable "kms_key_arns" {
   description = "시크릿 복호화에 필요한 고객 관리형 KMS 키 ARN 목록(기본 AWS 관리형 키면 비워둠)"
   type        = list(string)

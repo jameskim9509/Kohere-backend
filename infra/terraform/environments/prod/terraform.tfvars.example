@@ -17,8 +17,6 @@ images_bucket_name = "kohere-prod-listing-images"
 github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"
 github_deploy_branch = "main"
-# 계정에 GitHub OIDC provider 가 이미 있으면 false 로:
-# create_github_oidc_provider = true
 
 # ----- 외부 발급 시크릿/설정 (운영 전 반드시 채울 것 — 앱이 fail-fast) -----
 # OIDC audience (우리 앱의 client ID)

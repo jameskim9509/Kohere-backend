@@ -88,26 +88,13 @@ resource "aws_iam_role_policy" "task_exec_command" {
   policy = data.aws_iam_policy_document.task_exec_command.json
 }
 
-# ===== GitHub Actions OIDC =====
-data "tls_certificate" "github" {
+# ===== GitHub Actions OIDC provider — bootstrap 이 계정당 1개 생성·소유. 여기선 data 로 조회만. =====
+data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
 
-resource "aws_iam_openid_connect_provider" "github" {
-  count           = var.create_github_oidc_provider ? 1 : 0
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.github.certificates[length(data.tls_certificate.github.certificates) - 1].sha1_fingerprint]
-  tags            = merge(var.tags, { Name = "${var.name_prefix}-github-oidc" })
-}
-
-data "aws_iam_openid_connect_provider" "github" {
-  count = var.create_github_oidc_provider ? 0 : 1
-  url   = "https://token.actions.githubusercontent.com"
-}
-
 locals {
-  oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+  oidc_provider_arn = data.aws_iam_openid_connect_provider.github.arn
 }
 
 data "aws_iam_policy_document" "github_assume" {
