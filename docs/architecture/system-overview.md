@@ -233,7 +233,7 @@ flowchart TB
 
 | 요소 | dev 구성 | 비고 |
 | --- | --- | --- |
-| 컴퓨트 | EC2 `t3.medium` 1대(x86), `docker compose` 컨테이너들 | ALB·ECS 없음 |
+| 컴퓨트 | EC2 `t3.small` 1대(2vCPU/2GB, x86), `docker compose` 컨테이너들 | ALB·ECS 없음 |
 | HTTPS | **Caddy**(자동 인증서·Let's Encrypt) | 80/443 종단 → app(내부 8080) 프록시. 갱신·reload 자체 처리([ADR-0022](../adr/0022-dev-https-caddy.md)) |
 | DB | 자가호스팅 `mysql:8.0`·`mongo:7`·`redis:7`(같은 EC2) | local과 동일 엔진. 매니지드(RDS/DocDB/ElastiCache) 대체 |
 | 메일 | 실 SMTP(예: Amazon SES) | **MailHog는 로컬 compose 전용이라 dev엔 없음** |
@@ -261,7 +261,7 @@ flowchart TB
       S3IMG[("S3<br/>이미지 원본")]
       CW["CloudWatch 알람<br/>→ SNS(이메일)"]
       IGW["Internet Gateway"]
-      subgraph EC2["EC2 t3.medium · EIP (public subnet)"]
+      subgraph EC2["EC2 t3.small · EIP (public subnet)"]
         CADDY["Caddy<br/>80/443 · 자동 HTTPS"]
         APP["app (ECR 이미지)"]
         MYSQL["mysql:8.0"]

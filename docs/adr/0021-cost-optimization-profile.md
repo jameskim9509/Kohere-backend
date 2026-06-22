@@ -27,7 +27,7 @@ Accepted
 
 **dev는 단일 EC2 1대에 dev 전용 `docker-compose`(Caddy · app · mysql · mongo · redis)를 기동하고, EIP를 Route53 A 레코드로 노출한다.** ALB·ECS·RDS·DocumentDB·ElastiCache·NAT를 **쓰지 않는다**.
 
-- **컴퓨트**: EC2 `t3.medium` 1대(x86 — ECR 앱 이미지가 amd64, prod ECS `X86_64`와 일치). `docker compose`로 컨테이너를 `restart: unless-stopped`로 기동.
+- **컴퓨트**: EC2 `t3.small` 1대(2vCPU/2GB, x86 — ECR 앱 이미지가 amd64, prod ECS `X86_64`와 일치). `docker compose`로 컨테이너를 `restart: unless-stopped`로 기동.
 - **이미지**: **app은 ECR**(CI가 push한 prod와 동일 빌드)에서 pull, `mysql:8.0`·`mongo:7`·`redis:7`은 Docker Hub. **MailHog는 로컬 compose 전용이라 dev에는 없다** — dev는 실 SMTP(예: Amazon SES)를 쓴다.
 - **HTTPS(443)**: **Caddy** 컨테이너가 80/443을 받아 **Let's Encrypt 인증서를 자동 발급·갱신**하고 app(내부 8080)으로 프록시한다([ADR-0022](./0022-dev-https-caddy.md)). 도메인 제공 시 HTTPS(443), 없으면 `:80`(HTTP) 폴백. (prod의 ALB 443 종단을 dev에선 Caddy가 대신 — 갱신·reload를 자체 처리해 호스트 docker 명령 불필요.)
 - **시크릿**: **SSM Parameter Store SecureString**(무료·**Secrets Manager 미사용**, [ADR-0023](./0023-secrets-in-ssm-parameter-store.md)). `JWT_SECRET`·`REFRESH_PEPPER`·`EMAIL_PEPPER`는 Terraform이 자동 생성, `GOOGLE_CLIENT_ID`·SMTP 자격증명 등은 변수로 받아 파라미터로 저장. EC2가 부팅 시 인스턴스 프로파일로 `GetParameter`(+`kms:Decrypt`)하여 `/opt/kohere/.env`(0600)에 주입 — compose만 읽고 `docker inspect`/명령행 미노출.
@@ -50,7 +50,7 @@ flowchart TB
       S3IMG[("S3<br/>이미지 원본")]
       CW["CloudWatch 알람<br/>→ SNS(이메일)"]
       IGW["Internet Gateway"]
-      subgraph EC2["EC2 t3.medium · EIP (public subnet)"]
+      subgraph EC2["EC2 t3.small · EIP (public subnet)"]
         CADDY["Caddy<br/>(80/443 · 자동 HTTPS)"]
         APP["app (ECR 이미지)"]
         MYSQL["mysql:8.0"]
@@ -93,7 +93,7 @@ prod(매니지드)은 [system-overview §1-3-2](../architecture/system-overview.
 ## Consequences
 
 - **긍정**
-  - **dev 고정비 급감** — EC2 `t3.medium` ~$30/mo + 데이터 EBS(20GB gp3) ~$2/mo + EIP(연결 시 무료) ≈ **~$32/mo**(매니지드 복제 대비 ~$340/mo 절감).
+  - **dev 고정비 급감** — EC2 `t3.small` ~$15/mo + 데이터 EBS(20GB gp3) ~$2/mo + EIP(연결 시 무료) ≈ **~$17/mo**(매니지드 복제 대비 ~$350/mo 절감).
   - **로컬↔dev 엔진 일치** — 같은 `mysql:8.0`/`mongo:7`/`redis:7`로 재현·디버깅이 쉽다. 시크릿은 **SSM Parameter Store SecureString(무료·Secrets Manager 미사용)**, 메일은 실 SMTP(SES), HTTPS는 nginx-proxy+Let's Encrypt.
   - **prod 영향 없음** — prod은 매니지드 토폴로지를 그대로 유지([ADR-0018](./0018-documentdb-for-mongodb-on-aws.md)/[ADR-0019](./0019-infrastructure-as-code-terraform.md)). 환경 간 분리는 Terraform `environments/{prod,dev}` 루트로 한다.
 - **부정/트레이드오프**

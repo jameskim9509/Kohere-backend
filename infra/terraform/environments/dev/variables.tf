@@ -22,9 +22,9 @@ variable "app_image" {
 }
 
 variable "instance_type" {
-  description = "dev 호스트 EC2 타입(x86 — ECR 이미지 amd64)"
+  description = "dev 호스트 EC2 타입(x86 — ECR 이미지 amd64). 기본 t3.small=2vCPU/2GB"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 variable "data_volume_size" {
@@ -180,9 +180,9 @@ variable "github_repo" {
 }
 
 variable "github_deploy_branch" {
-  description = "배포를 허용할 브랜치"
+  description = "배포(CD)를 허용·트리거할 브랜치 — dev는 release 브랜치 머지 시 배포(deploy.yml on.push.branches 와 일치해야 함)"
   type        = string
-  default     = "main"
+  default     = "release"
 }
 
 variable "ecr_repository" {

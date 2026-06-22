@@ -2,7 +2,7 @@
 
 이 문서 하나로 **AWS 계정도 Terraform도 없는 상태에서 dev 환경을 `apply` 까지** 끝낸다. dev는 매니지드 서비스 대신 **EC2 1대 위 docker-compose**(Caddy·app·MySQL·MongoDB·Redis)로 도는 저비용 구성이다([ADR-0021](../../../../docs/adr/0021-cost-optimization-profile.md)).
 
-**결과물**: 고정 IP(EIP)에 도메인을 붙여 **항상 HTTPS**로 접속되는 앱, 매물 이미지용 S3 + CloudFront CDN(커스텀 도메인), `main` push 시 자동 재배포되는 CI/CD 배포 역할.
+**결과물**: 고정 IP(EIP)에 도메인을 붙여 **항상 HTTPS**로 접속되는 앱, 매물 이미지용 S3 + CloudFront CDN(커스텀 도메인), `release` 브랜치 머지(push) 시 자동 재배포되는 CI/CD 배포 역할.
 
 - 상위 문서: [infra/terraform/README.md](../../README.md) (전체 아키텍처·prod 포함)
 - 원격 상태 부트스트랩: [bootstrap/README.md](../../bootstrap/README.md)
@@ -226,7 +226,7 @@ mail_from        = "noreply@kohere.app"
 # --- CI/CD (모두 default 있음) ---
 github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"
-github_deploy_branch = "main"
+github_deploy_branch = "release"
 ```
 
 **보안 주의 — 시크릿 / DB 외부 개방**
@@ -273,7 +273,7 @@ docker push <account_id>.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev
 
 ### 대안 (B) — 리포만 만들고 apply 후 CI로 채우기
 
-ECR 리포지토리만 만들고(`aws ecr create-repository ...`) 바로 apply한다. 이때 app은 pull 실패로 안 뜨지만 **인프라·DB(MySQL·Mongo·Redis)는 정상**이며, user_data의 `reconcile-db.sh`·`refresh-env.sh` 도 첫 부팅에서 그대로 돌아 DB 초기화(.env 주입 포함)가 끝난다 — app 컨테이너만 빠진 상태다. 이후 6단계에서 `AWS_DEPLOY_ROLE_ARN` 을 설정하고 `main` push(또는 `gh workflow run deploy.yml`)하면 CI가 이미지를 push + SSM 재배포해 app을 살린다.
+ECR 리포지토리만 만들고(`aws ecr create-repository ...`) 바로 apply한다. 이때 app은 pull 실패로 안 뜨지만 **인프라·DB(MySQL·Mongo·Redis)는 정상**이며, user_data의 `reconcile-db.sh`·`refresh-env.sh` 도 첫 부팅에서 그대로 돌아 DB 초기화(.env 주입 포함)가 끝난다 — app 컨테이너만 빠진 상태다. 이후 6단계에서 `AWS_DEPLOY_ROLE_ARN` 을 설정하고 `release` 브랜치 머지(또는 `gh workflow run deploy.yml`)하면 CI가 이미지를 push + SSM 재배포해 app을 살린다.
 
 ---
 
@@ -323,7 +323,7 @@ gh variable set DEV_IMAGE_TAG       --body "dev"              --repo swyp-app-5t
 gh variable set DEV_HOST_NAME       --body "kohere-dev-host"  --repo swyp-app-5th-team1/Kohere-backend
 ```
 
-설정 후 `main` push(또는 수동 `gh workflow run deploy.yml`)하면 배포된다: OIDC 자격증명 발급 → ECR push(`:dev`) → SSM run-command로 dev EC2에서 `ecr-login.sh`·`refresh-env.sh`·`reconcile-db.sh` 실행 후 `docker compose pull app` → `up -d --force-recreate app` → `docker image prune -f`.
+설정 후 `release` 브랜치 머지(또는 수동 `gh workflow run deploy.yml`)하면 배포된다: OIDC 자격증명 발급 → ECR push(`:dev`) → SSM run-command로 dev EC2에서 `ecr-login.sh`·`refresh-env.sh`·`reconcile-db.sh` 실행 후 `docker compose pull app` → `up -d --force-recreate app` → `docker image prune -f`.
 
 ```bash
 gh workflow run deploy.yml --repo swyp-app-5th-team1/Kohere-backend
@@ -331,7 +331,7 @@ gh workflow run deploy.yml --repo swyp-app-5th-team1/Kohere-backend
 
 **GitHub OIDC provider 소유권**: provider는 계정당 1개라 **bootstrap이 단일 생성·소유**한다. dev `cicd.tf` 는 이를 `data` 로 **조회만** 하므로(별도 토글 변수 없음), **1단계 bootstrap apply가 선행**돼야 한다 — 안 돼 있으면 provider lookup이 실패한다. dev·prod는 같은 provider를 공유한다.
 
-> 배포 역할 신뢰 정책은 `main` 브랜치 ref만 assume을 허용한다 — 다른 브랜치/PR에서는 거부된다(최소 권한·단기 자격증명).
+> 배포 역할 신뢰 정책은 `release` 브랜치 ref만 assume을 허용한다 — 다른 브랜치/PR에서는 거부된다(최소 권한·단기 자격증명).
 
 ---
 
@@ -361,7 +361,7 @@ cd /opt/kohere && sudo docker compose ps
 
 - **시크릿**: SSM Parameter Store SecureString에 저장되고, 부팅 시 인스턴스 프로파일로 조회해 `/opt/kohere/.env`(0600)로 주입된다([ADR-0023](../../../../docs/adr/0023-secrets-in-ssm-parameter-store.md)). `tfvars` 의 시크릿만 바꿔 apply하면 SSM 파라미터만 갱신될 뿐 **실행 중 앱에는 자동 반영되지 않는다** — 배포 워크플로(`gh workflow run deploy.yml`)를 돌려야 반영된다([ADR-0024](../../../../docs/adr/0024-secret-change-propagation.md)).
 - **DB 자격증명 회전**: 최초 init 이후 username/비번을 바꾸면 배포 시 `reconcile-db.sh` 가 EBS의 마커(`/data/.db-state-*`)를 근거로 **데이터를 보존한 채** live DB에 회전 적용한다([ADR-0025](../../../../docs/adr/0025-dev-db-credential-reconcile.md)).
-- **비용**: 단일 EC2(t3.medium 기본) + EBS + EIP로 월 ~$32 수준([ADR-0021](../../../../docs/adr/0021-cost-optimization-profile.md)). prod 매니지드(~$370) 대비 저비용.
+- **비용**: 단일 EC2(t3.small 기본, 2vCPU/2GB) + EBS + EIP로 월 ~$17 수준([ADR-0021](../../../../docs/adr/0021-cost-optimization-profile.md)). prod 매니지드(~$370) 대비 저비용.
 - **HTTPS**: `domain_name` 이 필수이므로 Caddy가 **항상** Let's Encrypt 인증서를 자동 발급·갱신한다([ADR-0022](../../../../docs/adr/0022-dev-https-caddy.md)). HTTP-only(:80) 모드는 코드상 존재하지 않는다.
 - **시간**: 날짜/시간은 UTC 기준.
 - **데이터 보존**: mysql/mongo 데이터가 들어있는 데이터 EBS 볼륨에는 `prevent_destroy = true`(`modules/dev/storage/main.tf`)가 걸려 있어, `terraform destroy` 가 그대로는 **에러로 전체 중단**된다(아래 정리 섹션 참고). 인스턴스를 교체해도 볼륨은 잔존한다. (참고: 볼륨 어태치먼트에 걸린 `skip_destroy = true` 는 볼륨 자체가 아니라 attach 관계만 보존하는 별개 설정이다.)
@@ -374,7 +374,7 @@ cd /opt/kohere && sudo docker compose ps
 | --- | --- |
 | user_data 실패 / app 미기동 | `aws ssm start-session` 으로 접속 → `sudo cat /var/log/devhost-init.log` 확인 → `cd /opt/kohere && sudo docker compose ps`. 이미지 부재면 6단계, 시크릿이면 `sudo cat /opt/kohere/.env`(주의) 확인 후 재배포 |
 | `terraform apply` 가 ACM 검증에서 멈춤/타임아웃 | `route53_zone_id` 호스팅 영역의 NS 위임 미완료. 도메인 등록·NS 위임을 끝낸 뒤 재시도(2.5 참고) |
-| `main` push했는데 배포가 안 됨 | `AWS_DEPLOY_ROLE_ARN` Variable이 비면 deploy job이 skip된다(성공처럼 보임). Variables 탭에 설정됐는지 확인 |
+| `release` 브랜치 머지했는데 배포가 안 됨 | `AWS_DEPLOY_ROLE_ARN` Variable이 비면 deploy job이 skip된다(성공처럼 보임). Variables 탭에 설정됐는지 확인 |
 | `cicd.tf` OIDC provider lookup 실패 | bootstrap이 OIDC provider를 아직 안 만들었다. **1단계 bootstrap을 먼저 apply** 하면 생성된다(provider는 bootstrap 단일 소유) |
 | 디스크에 dangling 이미지 누적 | 배포는 `:dev` 이동 태그를 덮어써 옛 이미지가 dangling된다. 배포 워크플로가 `docker image prune -f` 로 정리하지만, 수동 정리는 SSM 세션에서 `sudo docker image prune -f` |
 | DB에 외부 도구로 접속이 안 됨 | 기본은 미개방이다. `db_ingress_cidrs = ["<내 IP>/32"]` 추가 후 apply. 전체 개방(`0.0.0.0/0`)은 피한다 |

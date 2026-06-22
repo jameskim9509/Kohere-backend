@@ -41,7 +41,7 @@ mail_from     = "noreply@kohere.app"
 
 # ----- 알람 / 규모 (옵셔널) -----
 # alarm_email      = "ops@kohere.app"   # 채우면 EC2 다운/CPU 알람을 이메일 구독
-# instance_type    = "t3.medium"        # x86 (ECR 이미지 amd64)
+# instance_type    = "t3.small"         # x86 (ECR 이미지 amd64) · 2vCPU/2GB
 # data_volume_size = 20
 # ingress_cidrs    = ["0.0.0.0/0"]      # dev 편의상 개방. 사무실 IP 등으로 제한 권장
 
@@ -52,5 +52,5 @@ mail_from     = "noreply@kohere.app"
 # ----- CI/CD (GitHub Actions OIDC 배포 역할) -----
 github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"
-github_deploy_branch = "main"
+github_deploy_branch = "release"
 # apply 후 `terraform output github_deploy_role_arn` 값을 리포 Variables 의 AWS_DEPLOY_ROLE_ARN 에 설정.

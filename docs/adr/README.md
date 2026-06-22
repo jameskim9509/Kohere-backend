@@ -49,6 +49,7 @@
 | [0023](./0023-secrets-in-ssm-parameter-store.md) | 시크릿은 SSM Parameter Store SecureString에 둔다(Secrets Manager 미사용) | Accepted | 2026-06-21 |
 | [0024](./0024-secret-change-propagation.md) | 변경된 시크릿은 배포(CI/CD)에서 재조회·재생성으로 반영한다(prod·dev 대칭, ADR-0023 후속) | Accepted | 2026-06-22 |
 | [0025](./0025-dev-db-credential-reconcile.md) | dev 자가호스팅 DB 자격증명은 데이터 보존하며 reconcile로 회전한다(마커 기반, ADR-0021 후속) | Accepted | 2026-06-22 |
+| [0026](./0026-dev-host-memory-budget.md) | dev 단일 호스트(t3.small·2GB) 메모리 예산을 스왑 + 엔진 캡으로 맞춘다(ADR-0021 후속) | Accepted | 2026-06-22 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

@@ -5,6 +5,21 @@
 set -euo pipefail
 exec > >(tee /var/log/devhost-init.log) 2>&1
 
+# 0) 스왑 2GB — t3.small(2GB RAM)에서 app(JVM)+mysql+mongo+redis 동시 기동 시 OOM-kill 완충(ADR-0021).
+#    엔진 베이스라인은 compose에서 캡(mongo WiredTiger·mysql buffer pool·app JVM Xmx)하고, 스왑은 버스트를 흡수한다.
+#    실패해도 부트는 계속한다(set -e 회피) — 스왑 없이도 앱은 떠야 진단이 가능.
+setup_swap() {
+  [ -f /swapfile ] && return 0
+  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab
+  echo 'vm.swappiness=10' >/etc/sysctl.d/99-swap.conf
+  sysctl -w vm.swappiness=10
+}
+setup_swap || echo "WARN: 스왑 설정 실패 — 부트 계속(메모리 여유 부족 가능)"
+
 # 1) docker + compose v2 플러그인 (x86_64 — ECR 앱 이미지가 amd64)
 dnf install -y docker
 systemctl enable --now docker

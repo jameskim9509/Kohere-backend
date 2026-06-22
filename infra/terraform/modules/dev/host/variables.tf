@@ -42,9 +42,9 @@ variable "volume_id" {
 
 # ----- 인스턴스 -----
 variable "instance_type" {
-  description = "EC2 인스턴스 타입. x86 — ECR 앱 이미지가 amd64"
+  description = "EC2 인스턴스 타입. x86 — ECR 앱 이미지가 amd64. 기본 t3.small=2vCPU/2GB"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 # ----- 앱 / compose 렌더 -----

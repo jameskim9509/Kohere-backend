@@ -1,4 +1,4 @@
-# dev 배포 — main push 시 이미지 빌드 → ECR push(:dev) → dev EC2에 SSM run-command로 refresh .env + compose pull/recreate.
+# dev 배포 — release 브랜치 push(머지) 시 이미지 빌드 → ECR push(:dev) → dev EC2에 SSM run-command로 refresh .env + compose pull/recreate.
 # dev는 ECS가 아니라 EC2 1대 docker-compose(ADR-0021). 시크릿 반영(refresh-env + recreate) 설계는 ADR-0024.
 # prod(ECS) 배포는 운영 시점에 별도 도입 예정 — prod는 태스크 롤(force-new-deployment)이 시크릿 반영 경로(ADR-0024).
 # OIDC로 AWS 자격증명을 단기 발급(저장 키 없음). module.iam이 만든 배포 역할 ARN을 리포지토리 Variables
@@ -7,7 +7,7 @@ name: Deploy (dev)
 
 on:
   push:
-    branches: [main]
+    branches: [release]
   workflow_dispatch:
 
 env:
