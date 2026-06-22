@@ -73,9 +73,15 @@ RECONCILE
 chmod +x /opt/kohere/reconcile-db.sh
 
 # 6) 기동 + DB 자격증명 reconcile(최초엔 마커 시드=no-op, 데이터 보존 회전 — ADR-0025)
+#    공용 이미지(mysql/mongo/redis/caddy)는 항상 기동한다. 앱 이미지(ECR :dev)는 첫 CI 배포 전엔 없을 수 있어
+#    best-effort로만 시도 — 없어도 인프라·DB는 정상(README §6 대안 B). pull 한 번 실패가 전체를 중단(set -e)시키지 않게 분리.
 cd /opt/kohere
-docker compose pull
-docker compose up -d
+docker compose up -d mysql mongo redis caddy
+if docker compose pull app 2>/dev/null; then
+  docker compose up -d app
+else
+  echo "WARN: app 이미지(ECR :dev) 없음 — DB·인프라만 기동. CI 배포(release 머지)로 app이 채워진다."
+fi
 bash /opt/kohere/reconcile-db.sh || true
 docker image prune -f # 직전 :dev 이미지(dangling) 즉시 정리 — root 볼륨 보호
 
