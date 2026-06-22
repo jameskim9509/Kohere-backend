@@ -4,15 +4,17 @@
 # 주의: .env 갱신만으로는 실행 중 컨테이너에 반영되지 않는다. 적용엔 app 컨테이너 recreate가 필요(deploy가 --force-recreate).
 set -euo pipefail
 get() { aws ssm get-parameter --region ${aws_region} --name "$1" --with-decryption --query Parameter.Value --output text; }
+# 옵션 시크릿: 미설정이면 secrets 모듈이 파라미터를 아예 안 만든다(빈 값 제외) → 없으면 빈 값으로.
+get_opt() { aws ssm get-parameter --region ${aws_region} --name "$1" --with-decryption --query Parameter.Value --output text 2>/dev/null || echo ""; }
 umask 077
 cat >/opt/kohere/.env <<EOF
 JWT_SECRET=$(get "${ssm_prefix}/JWT_SECRET")
 REFRESH_PEPPER=$(get "${ssm_prefix}/REFRESH_PEPPER")
 EMAIL_PEPPER=$(get "${ssm_prefix}/EMAIL_PEPPER")
-GOOGLE_CLIENT_ID=$(get "${ssm_prefix}/GOOGLE_CLIENT_ID")
-APPLE_CLIENT_ID=$(get "${ssm_prefix}/APPLE_CLIENT_ID")
-SPRING_MAIL_USERNAME=$(get "${ssm_prefix}/SMTP_USERNAME")
-SPRING_MAIL_PASSWORD=$(get "${ssm_prefix}/SMTP_PASSWORD")
+GOOGLE_CLIENT_ID=$(get_opt "${ssm_prefix}/GOOGLE_CLIENT_ID")
+APPLE_CLIENT_ID=$(get_opt "${ssm_prefix}/APPLE_CLIENT_ID")
+SPRING_MAIL_USERNAME=$(get_opt "${ssm_prefix}/SMTP_USERNAME")
+SPRING_MAIL_PASSWORD=$(get_opt "${ssm_prefix}/SMTP_PASSWORD")
 MYSQL_PASSWORD=$(get "${ssm_prefix}/MYSQL_PASSWORD")
 MYSQL_ROOT_PASSWORD=$(get "${ssm_prefix}/MYSQL_ROOT_PASSWORD")
 MONGO_PASSWORD=$(get "${ssm_prefix}/MONGO_PASSWORD")

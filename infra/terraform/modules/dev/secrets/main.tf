@@ -16,20 +16,30 @@ resource "random_password" "email_pepper" {
 
 locals {
   ssm_prefix = "/${var.name_prefix}"
-  # 키 → 값 (자동 생성 + 외부 발급 + DB 자격증명). SecureString 기본 키(aws/ssm) 사용.
-  secure_params = {
-    JWT_SECRET       = random_password.jwt_secret.result
-    REFRESH_PEPPER   = random_password.refresh_pepper.result
-    EMAIL_PEPPER     = random_password.email_pepper.result
-    GOOGLE_CLIENT_ID = var.google_client_id
-    APPLE_CLIENT_ID  = var.apple_client_id
-    SMTP_USERNAME    = var.smtp_username
-    SMTP_PASSWORD    = var.smtp_password
-    # DB 자격증명(dev — 자가호스팅 컨테이너). 외부 노출 가능성 있어 SSM SecureString으로 관리.
+
+  # 자동 생성 시크릿 — 항상 존재(빈 값 불가). random 값은 plan 시점 미정이라 무조건 생성(필터 X).
+  generated_params = {
+    JWT_SECRET     = random_password.jwt_secret.result
+    REFRESH_PEPPER = random_password.refresh_pepper.result
+    EMAIL_PEPPER   = random_password.email_pepper.result
+  }
+
+  # 외부 발급(OIDC·SMTP) + DB 자격증명 — vars라 plan 시점 known. 빈 값은 SSM이 거부(길이 ≥ 1)하므로 생성 제외.
+  provided_params = {
+    GOOGLE_CLIENT_ID    = var.google_client_id
+    APPLE_CLIENT_ID     = var.apple_client_id
+    SMTP_USERNAME       = var.smtp_username
+    SMTP_PASSWORD       = var.smtp_password
     MYSQL_PASSWORD      = var.mysql_password
     MYSQL_ROOT_PASSWORD = var.mysql_root_password
     MONGO_PASSWORD      = var.mongo_password
   }
+
+  # nonsensitive: 빈 값 여부만 for_each 키 결정에 쓴다(값 자체는 노출 안 함). vars라 plan 시점 known.
+  secure_params = merge(
+    local.generated_params,
+    { for k, v in local.provided_params : k => v if nonsensitive(v) != "" },
+  )
 }
 
 resource "aws_ssm_parameter" "secure" {
