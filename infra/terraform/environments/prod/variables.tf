@@ -62,15 +62,9 @@ variable "health_check_path" {
 
 # ===== ECR / 이미지 =====
 variable "ecr_repo_name" {
-  description = "ECR 리포지토리 이름"
+  description = "ECR 리포지토리 이름(bootstrap 이 생성한 공유 리포를 data 로 조회)"
   type        = string
   default     = "kohere-backend"
-}
-
-variable "ecr_image_retention_count" {
-  description = "ECR 보관 이미지 수"
-  type        = number
-  default     = 20
 }
 
 variable "app_image_tag" {

@@ -72,3 +72,41 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = [data.tls_certificate.github.certificates[length(data.tls_certificate.github.certificates) - 1].sha1_fingerprint]
   tags            = { Name = "${var.project}-github-oidc" }
 }
+
+# ===== ECR — 앱 이미지 레지스트리. dev·prod 공유라 bootstrap 이 단일 소유하고
+#        environments/{prod,dev} 는 이름(data)으로 조회만 한다(생성 충돌 방지). =====
+resource "aws_ecr_repository" "app" {
+  name                 = var.ecr_repository
+  image_tag_mutability = "MUTABLE"
+  force_delete         = false
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = { Name = var.ecr_repository }
+}
+
+# 최신 N개만 보관 — 누적 이미지 비용 방지.
+resource "aws_ecr_lifecycle_policy" "app" {
+  repository = aws_ecr_repository.app.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last ${var.ecr_image_retention_count} images"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = var.ecr_image_retention_count
+        }
+        action = { type = "expire" }
+      }
+    ]
+  })
+}

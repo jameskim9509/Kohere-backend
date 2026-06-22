@@ -20,3 +20,15 @@ variable "state_bucket_name" {
   description = "상태 버킷 이름 — 필수(S3는 전역 유일)"
   type        = string
 }
+
+variable "ecr_repository" {
+  description = "앱 이미지 ECR 리포지토리 이름 — dev·prod 공유(bootstrap 단일 생성, 환경들은 data 조회)"
+  type        = string
+  default     = "kohere-backend"
+}
+
+variable "ecr_image_retention_count" {
+  description = "ECR 보관 최신 이미지 수(초과분은 lifecycle policy로 만료)"
+  type        = number
+  default     = 20
+}

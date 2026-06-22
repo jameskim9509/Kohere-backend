@@ -156,7 +156,7 @@ terraform apply -var="state_bucket_name=kohere-tfstate-<account_id>"   # state_b
 terraform init -migrate-state
 ```
 
-`state_bucket_name` 은 **자동생성되지 않으므로 직접 지정**해야 한다(S3는 전역 유일 — 예: `kohere-tfstate-<account_id>`). 잠금은 S3 native lockfile이라 DynamoDB 테이블은 만들지 않는다([ADR-0020](../../../../docs/adr/0020-terraform-remote-state-s3-dynamodb.md)). bootstrap은 **GitHub OIDC provider(계정당 1개)** 도 생성하므로, 6단계의 dev 배포 역할이 이를 `data` 로 조회할 수 있다.
+`state_bucket_name` 은 **자동생성되지 않으므로 직접 지정**해야 한다(S3는 전역 유일 — 예: `kohere-tfstate-<account_id>`). 잠금은 S3 native lockfile이라 DynamoDB 테이블은 만들지 않는다([ADR-0020](../../../../docs/adr/0020-terraform-remote-state-s3-dynamodb.md)). bootstrap은 **GitHub OIDC provider**와 **앱 이미지 ECR 리포지토리**(둘 다 dev·prod 공유)도 생성하므로, 4단계에서 ECR이 이미 존재하고 6단계 dev 배포 역할이 OIDC를 `data` 로 조회할 수 있다.
 
 ---
 
@@ -245,19 +245,16 @@ github_deploy_branch = "release"
 
 ## 6. 4단계: 첫 앱 이미지 준비 (중요 — 닭-달걀)
 
-**dev Terraform은 ECR 리포지토리를 만들지 않는다**(ECR 리소스는 `modules/prod/ecr` 에만 있다). dev는 `ecr_repository`(기본 `kohere-backend`) **이름만 참조**한다. 그리고 EC2 user_data가 **부팅 시 ECR에서 `app_image` 를 `docker compose pull`** 한다. 따라서 apply 전에:
+**ECR 리포지토리는 bootstrap 이 만든다**(dev·prod 공유 자원 — 상태 버킷·OIDC와 동일하게 bootstrap 단일 소유). dev는 `ecr_repository`(기본 `kohere-backend`) **이름만 참조**하고, EC2 user_data가 **부팅 시 ECR에서 `app_image` 를 `docker compose pull`** 한다. 3단계 bootstrap apply로 **리포는 이미 존재**하므로, apply 전엔 **첫 이미지만 push** 하면 된다:
 
-1. ECR 리포지토리가 존재해야 하고,
-2. `app_image` 태그(예 `:dev`) 이미지가 이미 ECR에 있어야 app 컨테이너가 정상 기동한다.
+1. ECR 리포지토리는 **bootstrap apply로 이미 존재**하고(3단계),
+2. `app_image` 태그(예 `:dev`) 이미지가 ECR에 있어야 app 컨테이너가 정상 기동한다.
 
 (MySQL·MongoDB·Redis·Caddy는 public 이미지라 영향 없음.)
 
 ### 권장 순서 (A) — 첫 이미지를 먼저 push
 
 ```bash
-# ECR 리포 생성 (이름은 var.ecr_repository 기본값과 일치)
-aws ecr create-repository --repository-name kohere-backend --region ap-northeast-2
-
 # ECR 로그인 (<account_id> 는 aws sts get-caller-identity 의 Account)
 aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin <account_id>.dkr.ecr.ap-northeast-2.amazonaws.com
@@ -269,9 +266,9 @@ docker push <account_id>.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev
 
 > `:dev` 태그와 `tfvars` 의 `app_image` 태그, `deploy.yml` 의 `DEV_IMAGE_TAG` 가 모두 같아야 한다. 불일치 시 compose가 다른 이미지를 본다.
 
-### 대안 (B) — 리포만 만들고 apply 후 CI로 채우기
+### 대안 (B) — 이미지 없이 apply 후 CI로 채우기
 
-ECR 리포지토리만 만들고(`aws ecr create-repository ...`) 바로 apply한다. 이때 app은 pull 실패로 안 뜨지만 **인프라·DB(MySQL·Mongo·Redis)는 정상**이며, user_data의 `reconcile-db.sh`·`refresh-env.sh` 도 첫 부팅에서 그대로 돌아 DB 초기화(.env 주입 포함)가 끝난다 — app 컨테이너만 빠진 상태다. 이후 6단계에서 `AWS_DEPLOY_ROLE_ARN` 을 설정하고 `release` 브랜치 머지(또는 `gh workflow run deploy.yml`)하면 CI가 이미지를 push + SSM 재배포해 app을 살린다.
+리포는 bootstrap이 이미 만들었으니 이미지 push 없이 바로 apply한다. 이때 app은 pull 실패로 안 뜨지만 **인프라·DB(MySQL·Mongo·Redis)는 정상**이며, user_data의 `reconcile-db.sh`·`refresh-env.sh` 도 첫 부팅에서 그대로 돌아 DB 초기화(.env 주입 포함)가 끝난다 — app 컨테이너만 빠진 상태다. 이후 6단계에서 `AWS_DEPLOY_ROLE_ARN` 을 설정하고 `release` 브랜치 머지(또는 `gh workflow run deploy.yml`)하면 CI가 이미지를 push + SSM 재배포해 app을 살린다.
 
 ---
 
@@ -404,7 +401,7 @@ aws ec2 delete-volume --volume-id <vol-id> --region ap-northeast-2
 기타 주의:
 
 - 원격 **state 버킷**(`bootstrap/`)은 이 destroy 대상이 아니다 — 여러 환경이 공유하므로 그대로 둔다.
-- ECR 리포지토리/이미지도 dev destroy 대상이 아니다(prod와 공유).
+- ECR 리포지토리/이미지도 dev destroy 대상이 아니다(bootstrap 소유·prod와 공유).
 
 ---
 

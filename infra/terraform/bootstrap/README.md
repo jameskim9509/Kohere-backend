@@ -1,14 +1,15 @@
-# Terraform 부트스트랩 — 원격 상태 백엔드 + GitHub OIDC provider
+# Terraform 부트스트랩 — 원격 상태 백엔드 + 공유 자원(OIDC·ECR)
 
-`environments/{prod,dev}` 가 공유할 두 가지를 만든다(이들보다 **먼저 1회** 실행):
+`environments/{prod,dev}` 가 공유할 세 가지를 만든다(이들보다 **먼저 1회** 실행):
 
 - **원격 상태 저장소(S3 버킷)** — 잠금은 **S3 native lockfile**(`use_lockfile`, TF 1.10+)이라 별도 DynamoDB 테이블이 필요 없다.
 - **GitHub Actions OIDC provider** — 계정당(URL당) 1개인 싱글톤. bootstrap이 단일 소유하고 `environments/{prod,dev}` 는 `data` 로 조회만 한다(생성 충돌 방지). 상세는 [§4](#4-github-actions-oidc-provider).
+- **앱 이미지 ECR 리포지토리** — dev·prod가 같은 이미지를 쓰는 공유 리포. bootstrap이 단일 생성하고 환경들은 이름(`data`)으로 조회만 한다. 상세는 [§5](#5-앱-이미지-ecr-리포지토리).
 
 > **닭-달걀**: 이 구성이 만드는 S3 버킷이 아직 없는 최초 1회는 backend(S3)를 켤 수 없다(첫 `init` 실패).
 > 그래서 **로컬 state로 먼저 apply** 한 뒤, 그 state를 방금 만든 S3로 **이전(migrate)** 한다.
 
-## 1) 최초 apply — 로컬 state로 버킷·OIDC provider 생성
+## 1) 최초 apply — 로컬 state로 버킷·OIDC·ECR 생성
 
 [backend.tf](backend.tf) 의 `backend "s3"` 블록은 주석 처리된 상태여야 한다(초기값).
 
@@ -60,4 +61,17 @@ provider ARN은 `github_oidc_provider_arn` 으로 출력된다(참고용 — 환
 
 ```bash
 terraform output github_oidc_provider_arn
+```
+
+## 5) 앱 이미지 ECR 리포지토리
+
+dev·prod는 **같은 앱 이미지**(같은 빌드)를 쓴다 → ECR 리포지토리(`kohere-backend`)도 **공유 자원**이다. 어느 한 환경이 만들면 다른 환경과 생성 충돌이 나므로, **bootstrap이 단일 생성**하고([main.tf](main.tf) 의 `aws_ecr_repository.app` + 보관 lifecycle) 환경들은 이름으로만 참조한다:
+
+- **dev** — `var.ecr_repository`(기본 `kohere-backend`)로 ARN을 조립해 CI push 권한·호스트 pull 권한·`app_image` URI에 쓴다.
+- **prod** — `data "aws_ecr_repository"` 로 조회해 ECS 태스크 이미지·배포 역할 IAM에 쓴다.
+
+따라서 **이 bootstrap을 먼저 apply** 해야 dev/prod가 ECR을 참조할 수 있다(없으면 prod의 data 조회 실패, dev 호스트의 이미지 pull 실패). provider처럼 위 1)의 `terraform apply` 에서 함께 만들어진다. 리포명·보관 개수는 `ecr_repository`·`ecr_image_retention_count` 변수로 바꾼다. 출력:
+
+```bash
+terraform output ecr_repository_url   # CI push·compose pull 대상
 ```

@@ -9,8 +9,8 @@ output "app_url" {
 }
 
 output "ecr_repository_url" {
-  description = "ECR 리포지토리 URL(CD push 대상)"
-  value       = module.ecr.repository_url
+  description = "ECR 리포지토리 URL(CD push 대상 — bootstrap 생성분을 data 조회)"
+  value       = data.aws_ecr_repository.app.repository_url
 }
 
 output "ecs_cluster_name" {

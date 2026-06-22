@@ -13,3 +13,5 @@ state_bucket_name = "kohere-tfstate-123456789012"
 # project     = "kohere"
 # environment = "shared"   # bootstrap 리소스는 prod·dev 공용 → 환경값 아님(태그 라벨)
 # aws_region  = "ap-northeast-2"
+# ecr_repository            = "kohere-backend"   # dev·prod 공유 앱 이미지 리포명
+# ecr_image_retention_count = 20                 # ECR 보관 최신 이미지 수

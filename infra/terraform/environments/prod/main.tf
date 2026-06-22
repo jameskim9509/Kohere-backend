@@ -40,14 +40,9 @@ module "security" {
   alb_ingress_cidrs = var.alb_ingress_cidrs
 }
 
-# ===== ECR =====
-module "ecr" {
-  source = "../../modules/prod/ecr"
-
-  name_prefix           = local.name_prefix
-  tags                  = local.common_tags
-  repo_name             = var.ecr_repo_name
-  image_retention_count = var.ecr_image_retention_count
+# ===== ECR — bootstrap 이 단일 생성(dev·prod 공유). 여기선 이름으로 조회만. =====
+data "aws_ecr_repository" "app" {
+  name = var.ecr_repo_name
 }
 
 # ===== ACM — ALB HTTPS 종단(리전) =====
@@ -141,16 +136,16 @@ module "secrets" {
 module "iam" {
   source = "../../modules/prod/iam"
 
-  name_prefix                 = local.name_prefix
-  tags                        = local.common_tags
-  secret_arns                 = concat(values(module.secrets.param_arns), [module.rds.password_param_arn, module.documentdb.uri_param_arn])
-  ecr_repository_arn          = module.ecr.repository_arn
-  github_org                  = var.github_org
-  github_repo                 = var.github_repo
-  github_deploy_branch        = var.github_deploy_branch
-  region                      = var.aws_region
-  account_id                  = data.aws_caller_identity.current.account_id
-  images_bucket_arn           = module.s3_cloudfront.bucket_arn
+  name_prefix          = local.name_prefix
+  tags                 = local.common_tags
+  secret_arns          = concat(values(module.secrets.param_arns), [module.rds.password_param_arn, module.documentdb.uri_param_arn])
+  ecr_repository_arn   = data.aws_ecr_repository.app.arn
+  github_org           = var.github_org
+  github_repo          = var.github_repo
+  github_deploy_branch = var.github_deploy_branch
+  region               = var.aws_region
+  account_id           = data.aws_caller_identity.current.account_id
+  images_bucket_arn    = module.s3_cloudfront.bucket_arn
 }
 
 # ===== ALB =====
@@ -169,7 +164,7 @@ module "alb" {
 
 # ===== ECS 컨테이너 환경/시크릿 매핑 (application-prod.yml 계약) =====
 locals {
-  container_image = "${module.ecr.repository_url}:${var.app_image_tag}"
+  container_image = "${data.aws_ecr_repository.app.repository_url}:${var.app_image_tag}"
 
   container_environment = [
     { name = "SPRING_PROFILES_ACTIVE", value = "prod" },
