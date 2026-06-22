@@ -3,7 +3,7 @@
 # 잠금은 S3 native lockfile(use_lockfile, TF 1.10+) — DynamoDB 불요.
 terraform {
   backend "s3" {
-    bucket       = "REPLACE_WITH_BOOTSTRAP_STATE_BUCKET"
+    bucket       = "kohere-tfstate-471597061265"
     key          = "dev/terraform.tfstate"
     region       = "ap-northeast-2"
     use_lockfile = true

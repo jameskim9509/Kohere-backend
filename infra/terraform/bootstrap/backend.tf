@@ -6,13 +6,13 @@
 #   2) 아래 블록 주석 해제 + bucket 을 apply 출력값으로 채움
 #   3) terraform init -migrate-state                                      # 로컬 state → S3 이전
 #
-# prod 와 같은 버킷을 쓰되 key 를 분리한다(prod 는 prod/terraform.tfstate). 잠금은 S3 native lockfile(use_lockfile).
-# terraform {
-#   backend "s3" {
-#     bucket       = "REPLACE_WITH_BOOTSTRAP_STATE_BUCKET" # bootstrap 출력 state_bucket_name
-#     key          = "bootstrap/terraform.tfstate"
-#     region       = "ap-northeast-2"
-#     use_lockfile = true
-#     encrypt      = true
-#   }
-# }
+# 공용 버킷을 쓰되 key 를 분리한다(prod 는 prod/terraform.tfstate). 잠금은 S3 native lockfile(use_lockfile).
+terraform {
+  backend "s3" {
+    bucket       = "kohere-tfstate-471597061265" # bootstrap 출력 state_bucket_name
+    key          = "bootstrap/terraform.tfstate"
+    region       = "ap-northeast-2"
+    use_lockfile = true
+    encrypt      = true
+  }
+}
