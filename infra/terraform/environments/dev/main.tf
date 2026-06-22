@@ -35,7 +35,6 @@ module "s3_cloudfront" {
 
   name_prefix = local.name_prefix
   tags        = local.common_tags
-  account_id  = data.aws_caller_identity.current.account_id
   bucket_name = var.images_bucket_name
 
   # 커스텀 도메인(별칭 + us-east-1 ACM) — 필수. HTTPS·커스텀 도메인 강제.

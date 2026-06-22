@@ -10,13 +10,7 @@ variable "tags" {
 }
 
 variable "bucket_name" {
-  description = "매물 이미지 버킷 이름(빈 값이면 name_prefix-listing-images-<account_id>)"
-  type        = string
-  default     = ""
-}
-
-variable "account_id" {
-  description = "버킷 이름 유일성 보장용 AWS 계정 ID"
+  description = "매물 이미지 버킷 이름 — 필수(S3는 전역 유일)"
   type        = string
 }
 

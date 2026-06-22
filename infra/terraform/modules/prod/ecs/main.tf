@@ -2,7 +2,7 @@
 # 태스크 정의/desired_count는 런타임에 CI/CD·오토스케일링이 바꾸므로 ignore_changes로 보호한다.
 
 locals {
-  container_name = var.container_name != "" ? var.container_name : "${var.name_prefix}-app"
+  container_name = var.container_name
   cluster_name   = "${var.name_prefix}-cluster"
   service_name   = "${var.name_prefix}-service"
 }

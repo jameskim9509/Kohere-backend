@@ -206,6 +206,7 @@ module "ecs" {
   source = "../../modules/prod/ecs"
 
   name_prefix             = local.name_prefix
+  container_name          = "${local.name_prefix}-app"
   tags                    = local.common_tags
   aws_region              = var.aws_region
   app_subnet_ids          = module.network.app_subnet_ids
@@ -237,7 +238,6 @@ module "s3_cloudfront" {
   name_prefix = local.name_prefix
   tags        = local.common_tags
   bucket_name = var.images_bucket_name
-  account_id  = data.aws_caller_identity.current.account_id
   price_class = var.cloudfront_price_class
 
   # 커스텀 도메인(별칭 + us-east-1 ACM) — 필수. HTTPS·커스텀 도메인 강제.

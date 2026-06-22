@@ -2,13 +2,9 @@
 # 서빙 경로에 앱은 없다(읽기는 CloudFront 직결, 앱은 URL만 저장). 이 모듈은 버킷·CDN·읽기 정책만
 # 정의하며, 앱의 업로드(PutObject) 권한은 iam 모듈이 태스크 역할에 부여한다(images_bucket_arn 연결 시).
 
-locals {
-  bucket = var.bucket_name != "" ? var.bucket_name : "${var.name_prefix}-listing-images-${var.account_id}"
-}
-
 resource "aws_s3_bucket" "images" {
-  bucket = local.bucket
-  tags   = merge(var.tags, { Name = local.bucket })
+  bucket = var.bucket_name
+  tags   = merge(var.tags, { Name = var.bucket_name })
 }
 
 resource "aws_s3_bucket_public_access_block" "images" {

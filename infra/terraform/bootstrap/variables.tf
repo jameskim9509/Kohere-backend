@@ -17,7 +17,6 @@ variable "aws_region" {
 }
 
 variable "state_bucket_name" {
-  description = "상태 버킷 이름(빈 값이면 <project>-tfstate-<account_id>)"
+  description = "상태 버킷 이름 — 필수(S3는 전역 유일)"
   type        = string
-  default     = ""
 }

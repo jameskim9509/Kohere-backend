@@ -129,9 +129,8 @@ variable "enable_execute_command" {
 }
 
 variable "container_name" {
-  description = "컨테이너 이름(빈 값이면 name_prefix-app)"
+  description = "컨테이너 이름 — 필수"
   type        = string
-  default     = ""
 }
 
 variable "assign_public_ip" {

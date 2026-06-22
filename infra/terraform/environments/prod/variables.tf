@@ -295,9 +295,8 @@ variable "create_github_oidc_provider" {
 
 # ===== S3 / CloudFront =====
 variable "images_bucket_name" {
-  description = "매물 이미지 버킷 이름(빈 값이면 자동 생성)"
+  description = "매물 이미지 버킷 이름 — 필수(S3는 전역 유일)"
   type        = string
-  default     = ""
 }
 
 variable "cloudfront_price_class" {

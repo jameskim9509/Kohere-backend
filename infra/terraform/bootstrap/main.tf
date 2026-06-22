@@ -1,16 +1,10 @@
 # Terraform 원격 상태 백엔드 부트스트랩 — S3(state). 잠금은 S3 native lockfile(use_lockfile, TF 1.10+) → DynamoDB 불요.
 # environments/{prod,dev} 보다 먼저 1회 apply 한다. (최초엔 로컬 state → 이후 backend.tf로 S3 이전: migrate-state.)
 
-data "aws_caller_identity" "current" {}
-
-locals {
-  bucket = var.state_bucket_name != "" ? var.state_bucket_name : "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}"
-}
-
 resource "aws_s3_bucket" "state" {
-  bucket = local.bucket
+  bucket = var.state_bucket_name
 
-  tags = { Name = local.bucket }
+  tags = { Name = var.state_bucket_name }
 }
 
 resource "aws_s3_bucket_versioning" "state" {

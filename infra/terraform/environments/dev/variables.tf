@@ -162,9 +162,8 @@ variable "alarm_email" {
 }
 
 variable "images_bucket_name" {
-  description = "매물 이미지 S3 버킷 이름(빈 값이면 자동 생성)"
+  description = "매물 이미지 S3 버킷 이름 — 필수(S3는 전역 유일)"
   type        = string
-  default     = ""
 }
 
 # ----- CI/CD (GitHub Actions OIDC 배포 역할) -----
