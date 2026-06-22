@@ -8,7 +8,7 @@ resource "aws_security_group" "host" {
 
 resource "aws_security_group_rule" "http_in" {
   type              = "ingress"
-  description       = "HTTP(80) — ACME 챌린지·HTTPS 리다이렉트"
+  description       = "HTTP(80) - ACME challenge / HTTPS redirect"
   security_group_id = aws_security_group.host.id
   from_port         = 80
   to_port           = 80
@@ -40,7 +40,7 @@ resource "aws_security_group_rule" "egress_all" {
 resource "aws_security_group_rule" "mysql_in" {
   count             = length(var.db_ingress_cidrs) > 0 ? 1 : 0
   type              = "ingress"
-  description       = "MySQL(3306) 외부 접속 — db_ingress_cidrs로 제한"
+  description       = "MySQL(3306) external access - limited by db_ingress_cidrs"
   security_group_id = aws_security_group.host.id
   from_port         = 3306
   to_port           = 3306
@@ -51,7 +51,7 @@ resource "aws_security_group_rule" "mysql_in" {
 resource "aws_security_group_rule" "mongo_in" {
   count             = length(var.db_ingress_cidrs) > 0 ? 1 : 0
   type              = "ingress"
-  description       = "MongoDB(27017) 외부 접속 — db_ingress_cidrs로 제한"
+  description       = "MongoDB(27017) external access - limited by db_ingress_cidrs"
   security_group_id = aws_security_group.host.id
   from_port         = 27017
   to_port           = 27017
