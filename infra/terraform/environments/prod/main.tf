@@ -247,6 +247,7 @@ module "monitoring" {
   name_prefix                = local.name_prefix
   tags                       = local.common_tags
   alarm_email                = var.alarm_email
+  discord_webhook_url        = var.discord_webhook_url
   alb_arn_suffix             = module.alb.alb_arn_suffix
   target_group_arn_suffix    = module.alb.target_group_arn_suffix
   ecs_cluster_name           = module.ecs.cluster_name

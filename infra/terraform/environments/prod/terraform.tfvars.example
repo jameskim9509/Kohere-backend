@@ -30,8 +30,9 @@ smtp_username = ""  # sensitive
 smtp_password = ""  # sensitive
 mail_from     = "noreply@kohere.app"
 
-# ----- 알람 -----
-# alarm_email = "ops@kohere.app"
+# ----- 알람 (이메일·Discord 병행 가능 — 둘 다 채우면 양쪽으로 통보) -----
+# alarm_email         = "ops@kohere.app"
+# discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda, ADR-0027)  # sensitive
 
 # ----- 규모 조정(선택) -----
 # rds_multi_az   = true
