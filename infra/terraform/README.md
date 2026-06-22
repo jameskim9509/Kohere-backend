@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | MongoDB | **Amazon DocumentDB** | AWS 네이티브(단일 provider, VPC 내). `SPRING_DATA_MONGODB_URI`는 Mongo 드라이버 배선(추후)에 대비해 미리 주입 |
 | 환경 | **prod(매니지드) · dev(저비용)** | prod=이 매니지드 토폴로지, dev=단일 EC2 docker-compose([ADR-0021](../../docs/adr/0021-cost-optimization-profile.md)). `environments/{prod,dev}` 로 분리 |
-| 도메인·TLS | **옵셔널 변수** | (prod) `domain_name`+`route53_zone_id` 제공 시 ACM·HTTPS·Route53 alias, 아니면 ALB는 HTTP(80)만. (dev) 제공 시 Route53 A 레코드(EIP) |
+| 도메인·TLS | (prod) 옵셔널 · (dev) **필수** | (prod) `domain_name`+`route53_zone_id` 제공 시 ACM·HTTPS·Route53 alias, 아니면 ALB는 HTTP(80)만. (dev) `domain_name`·`route53_zone_id`·`cdn_domain_name` **필수** — Caddy 자동 HTTPS + Route53 A(EIP) + CloudFront 커스텀 도메인(us-east-1 ACM) |
 | 컴퓨트 | (prod) ECS Fargate + ALB / (dev) EC2 1대 compose | prod: access 무상태 → CPU 오토스케일링. dev: ALB 없이 EIP 직접 노출 |
 | 상태 | S3 + native lockfile(DynamoDB 불요) | `bootstrap/` 에서 1회 생성. prod·dev는 `key`로 분리 |
 
@@ -60,7 +60,7 @@ infra/terraform/
 
 ## 사전 준비
 
-- Terraform >= 1.6, AWS CLI, 배포 권한이 있는 AWS 자격증명(`aws configure` 또는 SSO).
+- Terraform >= 1.10(원격 백엔드 `use_lockfile`), AWS CLI, 배포 권한이 있는 AWS 자격증명(`aws configure` 또는 SSO).
 - 로컬에는 Terraform/AWS CLI가 설치돼 있지 않을 수 있다 — 먼저 설치한다.
 
 ## 적용 순서
@@ -81,6 +81,8 @@ terraform apply
 
 > ⚠️ **첫 apply 시점에는 ECR이 비어 있다.** ECS 서비스는 이미지를 풀할 때까지 태스크가 헬시해지지 않는다.
 > apply 직후(또는 직전) GitHub Actions/수동으로 이미지를 한 번 push하면 서비스가 정상화된다(아래 CI/CD).
+
+> **dev 환경 처음 배포**(AWS 계정 생성·초기 IAM·도구 설치부터 `apply`·CI/CD 연결까지)는 0에서 따라 하는 전용 워크스루가 별도로 있다 → [environments/dev/README.md](environments/dev/README.md).
 
 ## CI/CD (GitHub Actions → ECR → Fargate)
 

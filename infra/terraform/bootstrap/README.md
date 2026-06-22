@@ -44,4 +44,4 @@ terraform {
 
 그 다음 각 환경에서 `terraform init -reconfigure` 로 원격 백엔드를 연결한다.
 
-> 버킷 이름은 전역 유일해야 하므로 기본값은 `<project>-tfstate-<account_id>` 다. 필요하면 `state_bucket_name` 으로 덮어쓴다.
+> 버킷 이름은 전역 유일해야 하므로 `state_bucket_name` 으로 **직접 지정**한다(필수 — 자동생성 없음). 예: `kohere-tfstate-<account_id>`.
