@@ -36,7 +36,7 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
 | `modules/dev/storage` | 데이터 EBS(mysql/mongo 영속) |
 | `modules/dev/host` | EC2 + EIP + EBS attach, user_data(compose·Caddyfile·refresh-env·reconcile-db) |
 | `modules/dev/dns` | Route53 A 레코드(domain→EIP) — **항상 생성**(domain·zone 필수) |
-| `modules/dev/monitoring` | CloudWatch 알람 + SNS — `alarm_email` 제공 시 |
+| `modules/dev/monitoring` | CloudWatch 알람 + SNS → Discord(`discord_webhook_url`, SNS→Lambda) |
 | `modules/shared/s3-cloudfront` | 매물 이미지 S3 + CloudFront(OAC, 커스텀 도메인 별칭) — **항상 생성** |
 | `cdn_acm`(루트 `main.tf`) | 이미지 CDN 커스텀 도메인용 us-east-1 ACM + DNS 검증 — **항상 생성** |
 
@@ -240,8 +240,6 @@ github_deploy_branch = "release"
   > `0.0.0.0/0`(전체 개방)을 막는 validation은 **없다** — Terraform이 막아주지 않으니 직접 좁혀야 한다. 약한 DB 비번 + 전체 개방 조합은 매우 위험하다.
 - `ingress_cidrs`(80/443, app 접속)는 `db_ingress_cidrs` 와 별개이며 기본값이 `["0.0.0.0/0"]`(dev 편의상 전체 개방)다. 필요하면 사무실 IP 등으로 좁힌다.
 - `images_bucket_name` 은 **필수**다(S3는 전역 유일 — 직접 지정, 자동생성 없음).
-
-> **`le_email` 변수**: `variables.tf` 에 남아 있으나 현재 Caddy 경로(`Caddyfile.tftpl`)에 **주입되지 않는 미배선(무시됨) 변수**다. Caddy는 native ACME로 인증서를 발급하므로 별도 등록 이메일 입력이 필요 없다 — 채워도 효과가 없다.
 
 ---
 

@@ -139,8 +139,8 @@ module "dns" {
 module "monitoring" {
   source = "../../modules/dev/monitoring"
 
-  name_prefix = local.name_prefix
-  tags        = local.common_tags
-  alarm_email = var.alarm_email
-  instance_id = module.host.instance_id
+  name_prefix         = local.name_prefix
+  tags                = local.common_tags
+  discord_webhook_url = var.discord_webhook_url
+  instance_id         = module.host.instance_id
 }

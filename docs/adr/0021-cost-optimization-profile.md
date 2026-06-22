@@ -34,7 +34,7 @@ Accepted
 - **매물 이미지**: prod과 **동일한 S3 + CloudFront 모듈**을 dev에도 둔다. **앱(백엔드)은 S3에 업로드만** 하고(인스턴스 역할) 응답에 **CDN URL**을 담는다 → **클라이언트가 그 URL로 CloudFront에서 직접** 이미지를 받는다(앱은 이미지 서빙 경로에 없음). 커스텀 도메인(`cdn.dev.kohere.app`) 지정 시 **Route53 alias→CloudFront**로 받고(인증서는 us-east-1 ACM·무료, Route53 레코드 무시 가능), 미지정 시 `*.cloudfront.net` 직접 — **비용 영향 없음**.
 - **데이터 영속**: 전용 **암호화 EBS**(gp3, `prevent_destroy`)를 `/data`에 마운트하고 **mysql/mongo** 데이터를 bind-mount한다(인스턴스 교체에도 보존). **Redis는 인메모리 — EBS 미사용**(재시작 시 캐시·refresh 토큰 소실, dev 수용).
 - **노출/통제**: **EIP** + (도메인 제공 시) **Route53 A 레코드**. 보안그룹은 **80/443만** 인바운드, **SSH 미개방**(관리자 접속 **SSM Session Manager** 전용), **IMDSv2 강제**, EBS 암호화. IAM 인스턴스 프로파일은 SSM + ECR read + 지정 파라미터·이미지 버킷만(최소권한).
-- **모니터링**: EC2 `StatusCheckFailed`·`CPUUtilization` **CloudWatch 알람** + SNS(옵션 이메일) — 단일 박스 다운 통보.
+- **모니터링**: EC2 `StatusCheckFailed`·`CPUUtilization` **CloudWatch 알람** + SNS → Discord(웹훅, SNS→Lambda; [ADR-0027](./0027-dev-discord-alerting.md)) — 단일 박스 다운 통보.
 
 ### dev 배포 토폴로지 (각 컨테이너는 EC2 안의 박스)
 
@@ -48,7 +48,7 @@ flowchart TB
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
       CF["CloudFront<br/>이미지 서빙(별칭 cdn.dev.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
-      CW["CloudWatch 알람<br/>→ SNS(이메일)"]
+      CW["CloudWatch 알람<br/>→ SNS→Discord"]
       IGW["Internet Gateway"]
       subgraph EC2["EC2 t3.small · EIP (public subnet)"]
         CADDY["Caddy<br/>(80/443 · 자동 HTTPS)"]

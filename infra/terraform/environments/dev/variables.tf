@@ -101,12 +101,6 @@ variable "cdn_domain_name" {
   type        = string
 }
 
-variable "le_email" {
-  description = "Let's Encrypt 등록 이메일(acme-companion)"
-  type        = string
-  default     = ""
-}
-
 # ----- 시크릿 (SSM Parameter Store SecureString — SM 미사용) -----
 variable "google_client_id" {
   description = "Google OIDC audience"
@@ -155,10 +149,11 @@ variable "mail_from" {
 }
 
 # ----- 알람 / 이미지 -----
-variable "alarm_email" {
-  description = "CloudWatch 알람 SNS 이메일 구독(빈 값이면 미구독)"
+variable "discord_webhook_url" {
+  description = "Discord 웹훅 URL — 채우면 CloudWatch 알람을 Discord로 통보(SNS→Lambda). 빈 값이면 미구성"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "images_bucket_name" {

@@ -9,10 +9,11 @@ variable "tags" {
   default     = {}
 }
 
-variable "alarm_email" {
-  description = "CloudWatch 알람 SNS 이메일 구독(빈 값이면 미구독)"
+variable "discord_webhook_url" {
+  description = "Discord 웹훅 URL(빈 값이면 Discord 알림 미구성). SNS→Lambda가 알람을 변환·전달"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "instance_id" {

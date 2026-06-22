@@ -40,7 +40,7 @@ mail_from     = "noreply@kohere.app"
 # db_ingress_cidrs = ["203.0.113.7/32"]
 
 # ----- 알람 / 규모 (옵셔널) -----
-# alarm_email      = "ops@kohere.app"   # 채우면 EC2 다운/CPU 알람을 이메일 구독
+# discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda)
 # instance_type    = "t3.small"         # x86 (ECR 이미지 amd64) · 2vCPU/2GB
 # data_volume_size = 20
 # ingress_cidrs    = ["0.0.0.0/0"]      # dev 편의상 개방. 사무실 IP 등으로 제한 권장

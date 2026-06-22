@@ -60,3 +60,6 @@ override.tf.json
 .terraformrc
 terraform.rc
 # .terraform.lock.hcl 은 커밋한다(공급자 버전 고정).
+
+# Lambda 빌드 산출물(archive_file 생성 zip)
+infra/terraform/modules/**/lambda/*.zip
