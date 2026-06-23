@@ -15,7 +15,7 @@
 | # | 영역                                                           | 모듈                                           | 저장소                          |
 | - | -------------------------------------------------------------- | ---------------------------------------------- | ------------------------------- |
 | 1 | 로그인·온보딩(소셜→JWT)                                      | `auth`·`user`                             | MySQL +**Redis**(refresh) |
-| 2 | ★ F-01 큐레이션 챗봇(5단계 진단: 신분·위치·ARC·예산·기간) | `diagnosis`                                  | MongoDB                         |
+| 2 | ★ F-01 큐레이션 챗봇(6단계 진단: 지역·입국목적(유학여부)·대학/지역선택·주거조건·예산·ARC) | `diagnosis`                                  | MongoDB                         |
 | 3 | ★ F-02 맞춤 매물 추천(리스트+지도, 거리·예산 필터)           | `listing`(+`favorite`·`recent-listing`) | MongoDB                         |
 | 4 | 매물 탐색·찜(지도 탭 검색·조건 필터·매물 상세, 찜·최근 본) | `listing`(+`favorite`·`recent-listing`) | MongoDB                         |
 | 5 | F-03 임대인에게 신청하기→인앱 채팅 기록                       | `booking`·`chat`                          | (저장소 추후 결정)              |
@@ -87,6 +87,7 @@ flowchart TB
     FILTER --> REST --> Mods
 
     DIAG -. "RecommendationCriteria<br/>(공개 쿼리, 조인 아님)" .-> LIST
+    DIAG -. "등록 국가→언어(번역)<br/>(user 공개 query 동기 호출·ADR-0002 D5)" .-> USER
     BOOKING -. "BookingCreatedEvent" .-> CHAT
 
     AUTH --> MYSQL
@@ -99,6 +100,8 @@ flowchart TB
 ```
 
 > 추천 흐름(ADR-0005 Decision 2): `diagnosis`가 진단 조건을 값 객체 `RecommendationCriteria`로 만들어 넘기면 `listing`이 `recommendByCriteria(...)`로 **자기 Mongo 컬렉션만** 질의한다. 둘 다 Mongo지만 **cross-collection 조인은 하지 않는다**(co-location은 부수적).
+>
+> 문항·번역 흐름(US-2-5·US-2-6, ADR-0002 정합): 클라이언트는 `GET /api/v1/diagnoses/questions/{step}`(인증 필수)로 받을 단계 `step`(1~6)을 path로 지정해 그 단계 질문 1개를 받고(`{ step, field, question(사용자 언어 라벨 문자열), select{ type, max }, options[{ code, label }] }`), 그 단계 답을 `POST /api/v1/diagnoses/answers`(body `{ field, code }`, conditions처럼 다중은 `codes` 배열)로 보내면 서버가 **본인 in-progress 진단에 저장**한다(단계별 server-stateful, 누적 답 묶음 전송 없음; 다음 단계 번호는 클라이언트가 정한다). ③ 대학/지역 질문은 **서비스 비즈니스 로직**이 저장된 `purpose`로 골라 반환한다(`STUDY`→`university`, `NON_STUDY`→`district` — `diagnosisQuestions`에는 분기 메타 없음, 데이터만, 클라 분기 아님). 선택지 `code`는 제출 검증 enum과 **동일 출처**(1:1)·언어 무관 불변, 표시 `label`·`question`만 **사용자 언어로 채운다**(미지원 언어 키는 **영어 폴백**). 모든 단계 답이 저장되면 별도 제출(`POST /api/v1/diagnoses`)이 서버 저장 답을 재검증해 in-progress 진단을 `COMPLETED`로 확정한다(201, `data.diagnosisId`·status `COMPLETED`·`submittedAt`, `Location` 헤더). 번역에 필요한 **등록 국가는 `diagnosis`가 `user` 모듈 공개 query를 동기 호출**해 취득한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 분기 없음, 모듈 간 직접 호출/엔티티 공유 없이). **번역은 별도 컬렉션·키 없이 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버가 사용자 언어 키로 값을 고르고 부재 시 `en` 폴백한다(`code`는 언어 무관 불변). `country→language` 매핑도 서버에서 처리한다(Accept-Language 비의존).
 
 ### 1-3. 아키텍처: 로컬 개발 ↔ 클라우드 배포
 
@@ -317,7 +320,7 @@ flowchart TB
 | domain              | Aggregate·VO·도메인 규칙,**Repository 인터페이스**                                                | —                              | POJO, enum                                             |
 | infrastructure      | **Repository 구현**, 외부 어댑터(OIDC)                                                              | 모듈별 저장소                   | Spring Data JPA / Data MongoDB / Data Redis            |
 | listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본,**지도 bbox/반경 + 거리순** | **MongoDB**               | `2dsphere` + 서버 격자 집계                          |
-| diagnosis(진단)     | 5단계 진단 도큐먼트[신분·위치·ARC·예산·기간], 결과 생성, 추천 criteria 발행                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
+| diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학/지역선택·주거조건·예산·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 국가 기반 번역), 결과 생성, 추천 criteria 발행                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
 | booking(신청)       | F-03 임대인에게 신청하기,`BookingCreatedEvent` 발행                                                     | (저장소 추후 결정)              | Modulith Application Events                            |
 | chat(채팅)          | F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                                                | (저장소 추후 결정)              | 이벤트 리스너                                          |
 | community(커뮤니티) | 게시글·댓글·좋아요, 키워드·해시태그 검색 (**MVP 이후로 이연**, 코드 골격만)                      | MySQL                           | FULLTEXT +**ngram**(한국어), 유니크·카운트 정합 |
@@ -369,7 +372,7 @@ flowchart TB
 
 | 영역                         | 채택                                                                                | 상태   | 비고                                                                                                                            |
 | ---------------------------- | ----------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                           | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `RecommendationCriteria` 공개 쿼리                      |
+| 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                           | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `diagnosis`→`listing` `RecommendationCriteria` 공개 쿼리. **번역용 등록 국가/언어**는 `diagnosis`→`user` **공개 query 동기 호출**(ADR-0002 Decision 5; 토큰 클레임 분기 제거) |
 | 임대인 연락                  | **F-03 신청하기 → 인앱 채팅방 기록**(booking→chat, `BookingCreatedEvent`) | 도입   | 실시간 WebSocket·푸시는 추후. booking·chat 저장소 추후 결정                                                                   |
 | 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                       | 도입   | 매물 사진 호스팅 — 클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖 |
 | 푸시 알림(FCM/APNs)          | —                                                                                  | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                       |
@@ -386,7 +389,7 @@ flowchart TB
 | API 문서        | **REST Docs**(HTML) + **OpenAPI3(restdocs-api-spec)→Swagger UI**                   | ✅ 배선   | [ADR-0007](../adr/0007-api-docs-spring-rest-docs.md)·[ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md). 같은 테스트로 `/docs/index.html`(HTML)·`/swagger-ui/index.html`(try-it-out) 생성. 어노테이션 미사용(드리프트 0). [api/specs](../api/specs/README.md) Markdown은 설계 정본 |
 | DTO 매핑        | 수동 정적 팩토리(`of(...)`)                                                            | 도입   | MapStruct → 추후                                                                                                                                                                         |
 | 시간            | UTC 강제(`jackson.time-zone`, `hibernate.jdbc.time_zone`); Mongo 문서도 UTC ISO-8601 | 도입   | [api-design-guide §6](../api/api-design-guide.md)                                                                                                                                           |
-| i18n            | 클라이언트 code→text 매핑                                                               | 결정됨 | 서버 MessageSource → 추후                                                                                                                                                                |
+| i18n            | **진단 문항·선택지**: 서버가 등록 국가(언어) 기준 표시 문자열 채움 / 그 외 일반 code→text: 클라이언트(추후 서버) | 결정됨 | 진단 문항·선택지 번역은 별도 컬렉션·키 없이 **MongoDB `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다(질문 `question: {"en":..,"ja":..}`, 옵션 `options[].label: {"en":..,"ja":..}` — 언어 코드가 키). 선택지 `code`는 언어 무관 불변이다. 서버가 **등록 국가→언어**(`country→language` 매핑)로 정한 언어 키의 값을 채워 제공(US-2-6, 해당 언어 키 부재 시 영어(`en`) 폴백, Accept-Language 비의존). 번역에 필요한 **등록 국가는 `user` 모듈 공개 query 동기 호출**로 취득([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 그 외 일반 code→text 매핑은 클라이언트, 서버 MessageSource → 추후                                                                                                                                                                |
 
 ### 3-6. 결정 필요 항목(ADR/문서 갱신)
 
