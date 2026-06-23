@@ -88,14 +88,14 @@
   Given `firstName`/`lastName`/`country`가 비었거나(`country`가 `countries`에 없는 ISO 코드이거나), `gender`가 `MALE`/`FEMALE` 외 값이거나, `occupation`이 정의된 enum(`STUDENT`·`EMPLOYEE`·`SELF_EMPLOYED`·`JOB_SEEKER`·`ETC` — 임시) 외 값이거나, `birthDate`가 `YYYY-MM-DD` 형식 위반/미래 날짜이거나, `visaType`이 정의된 enum(`VISA_STUDENT`·`VISA_WORK`·`VISA_RESIDENCE`·`VISA_WORKING_HOLIDAY`·`VISA_TOURISM`·`VISA_ETC`) 외 값이거나, `email` 형식이 어긋나면
   When `POST /api/v1/auth/onboarding`을 호출하면
   Then `400` + `error.code=INVALID_INPUT` + `errors[]`로 위반 필드를 반환한다.
-- **비즈니스 규칙 — 이메일 미인증**
-  Given 제출 `email`이 인증번호로 검증(US-1-6)되지 않았거나 검증한 이메일과 다르면
-  When `POST /api/v1/auth/onboarding`을 호출하면
-  Then `422` + `error.code=AUTH_EMAIL_NOT_VERIFIED`를 반환하고 상태를 전이하지 않는다.
-- **비즈니스 규칙 — 약관 미동의 상태**
+- **비즈니스 규칙 — 약관 미동의 상태(우선 판정)**
   Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
   When `POST /api/v1/auth/onboarding`을 호출하면
-  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 상태를 전이하지 않는다(약관 동의 US-1-7 선행 필요).
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 상태를 전이하지 않는다(약관 동의 US-1-7 선행 필요 — 이메일 미인증보다 **약관 동의 안내가 먼저**).
+- **비즈니스 규칙 — 이메일 미인증**
+  Given 약관까지 동의한(`TERMS_AGREED`) 사용자의 제출 `email`이 인증번호로 검증(US-1-6)되지 않았거나 검증한 이메일과 다르면
+  When `POST /api/v1/auth/onboarding`을 호출하면
+  Then `422` + `error.code=AUTH_EMAIL_NOT_VERIFIED`를 반환하고 상태를 전이하지 않는다.
 - **인증·권한 — 잘못된/누락 토큰**
   Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
   When `POST /api/v1/auth/onboarding`을 호출하면
@@ -218,9 +218,13 @@
 **AC (Given / When / Then)**
 
 - **정상 — 인증번호 발송**
-  Given 온보딩 토큰(PENDING·TERMS_AGREED)을 보유한 사용자가 이메일을 입력하고
+  Given 약관 동의를 마친(`TERMS_AGREED`) 사용자가 이메일을 입력하고
   When `POST /api/v1/auth/email/verification-code`에 `{ email }`을 담아 호출하면
   Then `200 OK` + `data.expiresIn`(만료 초)을 반환하고 해당 이메일로 인증번호를 발송한다. 메일 발송에 성공한 뒤에만 인증번호 챌린지를 저장하며(인증번호 원문은 저장·로그하지 않고 해시로만 보관), `email`은 마스킹해 반환한다.
+- **비즈니스 규칙 — 약관 미동의(선행 게이트)**
+  Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
+  When `POST /api/v1/auth/email/verification-code`(또는 `/email/verify`)를 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 인증번호를 발송하지 않는다(약관 동의 US-1-7 선행 필요 — 이메일 인증은 약관 동의 이후 단계).
 - **장애 — 메일 발송 실패**
   Given 메일 provider 장애·타임아웃 등으로 인증번호 발송이 실패하면
   When `POST /api/v1/auth/email/verification-code`를 호출하면

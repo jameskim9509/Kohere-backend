@@ -434,8 +434,20 @@ class AuthOnboardingDocsTest {
         "auth-email-verification-code-token-expired",
         "이메일 인증번호 발송 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
 
+    // 약관 미동의(PENDING) 상태로 인증번호 발송 → 약관 동의 선행 안내 422 (이메일 인증은 약관 동의가 선행)
+    perform(
+        post("/api/v1/auth/email/verification-code")
+            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"email\":\"" + emailFor("err-pending") + "\"}"),
+        status().isUnprocessableEntity(),
+        "AUTH_TERMS_AGREEMENT_REQUIRED",
+        "auth-email-verification-code-terms-required",
+        "이메일 인증번호 발송 — 약관 미동의(PENDING) 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
+
     // 재발송 간격 미달 → 429 (첫 발송 성공 직후 즉시 재요청)
     String resendToken = read(socialLogin("err-resend"), "data", "accessToken");
+    agreeTerms(resendToken);
     mockMvc
         .perform(
             post("/api/v1/auth/email/verification-code")
@@ -455,6 +467,7 @@ class AuthOnboardingDocsTest {
 
     // 메일 발송 실패(provider 장애·타임아웃) → 502, 챌린지 미저장
     String smtpToken = read(socialLogin("err-smtp"), "data", "accessToken");
+    agreeTerms(smtpToken);
     String smtpEmail = emailFor("err-smtp");
     doThrow(new EmailDispatchException(new RuntimeException("smtp down")))
         .when(emailSender)
@@ -531,6 +544,7 @@ class AuthOnboardingDocsTest {
 
     // 코드 불일치 누적 → 시도 상한 초과 429 (오입력 maxAttempts회째에 거절)
     String attemptsToken = read(socialLogin("err-attempts"), "data", "accessToken");
+    agreeTerms(attemptsToken);
     String attemptsEmail = emailFor("err-attempts");
     mockMvc
         .perform(
@@ -598,29 +612,29 @@ class AuthOnboardingDocsTest {
         "auth-onboarding-token-expired",
         "온보딩 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
 
-    // 약관 미동의(PENDING) + 이메일 미인증 상태 → 이메일 검증이 먼저 422
+    // 약관 미동의(PENDING) 상태로 온보딩 제출 → 약관 동의 선행 안내 422 (이메일 인증 안내보다 약관 동의가 먼저)
     perform(
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(onboardingJson(emailFor("err-pending"))),
         status().isUnprocessableEntity(),
-        "AUTH_EMAIL_NOT_VERIFIED",
-        "auth-onboarding-email-not-verified",
-        "온보딩 — 이메일 미인증 (422 AUTH_EMAIL_NOT_VERIFIED)");
-
-    // 이메일은 인증했으나 약관 미동의(PENDING) → 약관 동의 선행 필요 422
-    String termsRequiredToken = read(socialLogin("err-terms"), "data", "accessToken");
-    sendAndVerifyEmail(termsRequiredToken, emailFor("err-terms"));
-    perform(
-        post("/api/v1/auth/onboarding")
-            .header(HttpHeaders.AUTHORIZATION, bearer(termsRequiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson(emailFor("err-terms"))),
-        status().isUnprocessableEntity(),
         "AUTH_TERMS_AGREEMENT_REQUIRED",
         "auth-onboarding-terms-required",
         "온보딩 — 약관 미동의 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
+
+    // 약관은 동의했으나(TERMS_AGREED) 이메일 미인증 → 이메일 인증 선행 필요 422
+    String emailNeedToken = read(socialLogin("err-emailneed"), "data", "accessToken");
+    agreeTerms(emailNeedToken);
+    perform(
+        post("/api/v1/auth/onboarding")
+            .header(HttpHeaders.AUTHORIZATION, bearer(emailNeedToken))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(onboardingJson(emailFor("err-emailneed"))),
+        status().isUnprocessableEntity(),
+        "AUTH_EMAIL_NOT_VERIFIED",
+        "auth-onboarding-email-not-verified",
+        "온보딩 — 약관 동의 후 이메일 미인증 (422 AUTH_EMAIL_NOT_VERIFIED)");
 
     // 이미 온보딩 완료한 사용자(약관·이메일 모두 통과) 재요청 → 409
     perform(

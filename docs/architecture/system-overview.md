@@ -161,7 +161,7 @@ flowchart TB
 | Redis       | ElastiCache                             | refresh 토큰(TTL). **AOF·복제 권장**(§3-7)                                                                           |
 | 매물 사진   | S3 + CloudFront (+ Route53 별칭)         | 백엔드는 S3 업로드 + URL 응답. **클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드**(커스텀 도메인 미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM |
 | 시크릿      | **SSM Parameter Store**(SecureString)   | DB·JWT·provider 시크릿. 태스크 시작 시 주입, **변경 반영은 배포(태스크 롤)**([ADR-0024](../adr/0024-secret-change-propagation.md)). **Secrets Manager 미사용**([ADR-0023](../adr/0023-secrets-in-ssm-parameter-store.md)) |
-| 모니터링    | CloudWatch 알람 + SNS                   | ALB·ECS·RDS·DocDB·Redis 지표 → 이메일 통보                                                                                 |
+| 모니터링    | CloudWatch 알람 + SNS                   | ALB·ECS·RDS·DocDB·Redis 지표 → SNS → **Lambda → Discord**(+ 이메일 옵션, [ADR-0027](../adr/0027-dev-discord-alerting.md))                                                                                 |
 | CI/CD       | GitHub Actions (OIDC)                   | build·ECR push·ECS deploy([ADR-0019](../adr/0019-infrastructure-as-code-terraform.md))                                       |
 
 > **booking·chat 저장소는 추후 결정**(추후 ADR) — 위 표/토폴로지에는 강제 반영하지 않는다.
@@ -174,6 +174,7 @@ AWS 배포 토폴로지 — GitHub Actions가 빌드한 **동일 이미지**가 
 flowchart TB
     APP["모바일 앱<br/>(iOS / Android · 클라이언트)"]
     EXT["Google OIDC / JWKS<br/>(로그인 검증 · AWS 밖)"]
+    DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
       GHA["GitHub Actions (OIDC)<br/>build · ECR push · ECS deploy"]
@@ -185,7 +186,9 @@ flowchart TB
       CF["CloudFront<br/>이미지 서빙(별칭 cdn.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
-      CW["CloudWatch 알람<br/>→ SNS(이메일)"]
+      CW["CloudWatch 알람"]
+      SNS["SNS 알람 토픽"]
+      LMBD["Lambda<br/>discord_notify (SNS→Discord)"]
       IGW["Internet Gateway"]
       subgraph VPC["VPC 10.0.0.0/16 (3-tier)"]
         subgraph PUB["public subnet ×2AZ"]
@@ -220,7 +223,10 @@ flowchart TB
     APP -. "이미지 GET(cdn.kohere.app)" .-> R53
     R53 -. "alias → CloudFront" .-> CF
     FARGATE -. "idToken 검증" .-> EXT
-    CW -. "지표 감시" .-> FARGATE
+    CW -. "지표 감시(ALB·ECS·RDS·DocDB·Redis)" .-> FARGATE
+    CW -- "알람 발동" --> SNS
+    SNS -- "lambda 구독" --> LMBD
+    LMBD -. "알람 임베드 POST(웹훅)" .-> DISCORD
 ```
 
 > 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google OIDC/JWKS는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
@@ -241,13 +247,14 @@ flowchart TB
 | 이미지 | **S3 + CloudFront**(+ Route53 별칭, prod 동일 모듈) | 앱은 S3 업로드 + URL 응답. **클라이언트는 `cdn.dev.kohere.app`(Route53 alias→CloudFront)에서 GET**(미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM |
 | 노출 | EIP → Route53 A 레코드(`dev.kohere.app`) | SG 80/443만. 관리자 접속은 SSM 전용(SSH 미개방) |
 | 데이터 | 전용 암호화 EBS(`/data`) bind-mount | 인스턴스 교체에도 보존 |
-| 모니터링 | CloudWatch StatusCheckFailed·CPU 알람 + SNS | 단일 박스 다운 통보 |
+| 모니터링 | CloudWatch StatusCheckFailed·CPU 알람 + SNS | 단일 박스 다운 → SNS → **Lambda → Discord** 통보([ADR-0027](../adr/0027-dev-discord-alerting.md)) |
 | 비용 | EC2 ~$30/mo + EBS ~$2/mo + S3/CF(CF 무료티어) ≈ **~$32/mo+** | 매니지드 복제 대비 큰 절감 |
 
 ```mermaid
 flowchart TB
     DEV["개발자 / 테스터"]
     EXT["Google OIDC / JWKS · SES SMTP<br/>(AWS 밖)"]
+    DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
       GHA["GitHub Actions (OIDC)<br/>build · ECR push · SSM deploy"]
@@ -259,7 +266,9 @@ flowchart TB
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
       CF["CloudFront<br/>이미지 서빙(별칭 cdn.dev.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
-      CW["CloudWatch 알람<br/>→ SNS(이메일)"]
+      CW["CloudWatch 알람<br/>(StatusCheck·CPU)"]
+      SNS["SNS 알람 토픽"]
+      LMBD["Lambda<br/>discord_notify (SNS→Discord)"]
       IGW["Internet Gateway"]
       subgraph EC2["EC2 t3.small · EIP (public subnet)"]
         CADDY["Caddy<br/>80/443 · 자동 HTTPS"]
@@ -275,6 +284,9 @@ flowchart TB
     GHA -. "SSM run-command<br/>refresh-env + recreate app" .-> EC2
     ECR -. "app pull" .-> APP
     CW -. "지표 감시" .-> EC2
+    CW -- "알람 발동" --> SNS
+    SNS -- "lambda 구독" --> LMBD
+    LMBD -. "알람 임베드 POST(웹훅)" .-> DISCORD
     DEV -- "HTTPS 443" --> R53
     R53 --> IGW
     IGW -- "공인 IP(EIP)" --> CADDY

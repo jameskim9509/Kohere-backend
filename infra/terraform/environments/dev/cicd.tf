@@ -69,7 +69,8 @@ data "aws_iam_policy_document" "github_deploy" {
     sid     = "SsmDevDeploy"
     actions = ["ssm:SendCommand"]
     resources = [
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/AWS-RunShellScript",
+      # AWS-RunShellScript는 AWS 소유 퍼블릭 문서 — ARN에 계정 ID가 없다(:: 빈 계정). 계정 ID를 박으면 매칭 실패로 SendCommand 거부됨.
+      "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
       "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${module.host.instance_id}",
     ]
   }
