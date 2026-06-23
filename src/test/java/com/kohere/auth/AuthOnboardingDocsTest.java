@@ -79,6 +79,21 @@ class AuthOnboardingDocsTest {
   private static final String INVALID_SOCIAL_TOKEN = "invalid-social-token";
   private static final String MALFORMED_BODY = "{ \"oops\" }";
 
+  // 서명이 깨진(다른 키로 서명) 액세스 토큰. 서버 검증에서 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라,
+  // restdocs-api-spec 이 "무인증" 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다. 무인증 예시는 본래 헤더를
+  // 안 보내는데, 그 예시가 오퍼레이션 "대표"로 뽑히면(스니펫 병합 순서는 비결정적) security 가 통째로 누락된다 →
+  // Swagger 자물쇠 사라지고 토큰 미전송 → 401. 모든 예시가 Bearer JWT 헤더를 갖게 해 순서와 무관하게 막는다.
+  private static final String FORGED_TOKEN =
+      Jwts.builder()
+          .issuer("kohere")
+          .subject("1")
+          .claim("onboardingCompleted", true)
+          .signWith(
+              Keys.hmacShaKeyFor(
+                  "forged-doc-only-wrong-secret-please-override-32bytes-min!!"
+                      .getBytes(StandardCharsets.UTF_8)))
+          .compact();
+
   @TestConfiguration
   static class FakeOidcConfig {
     @Bean
@@ -367,6 +382,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/terms")
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
             .content(termsJson(true, true, false)),
         status().isUnauthorized(),
@@ -417,6 +433,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/email/verification-code")
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"" + emailFor("err-pending") + "\"}"),
         status().isUnauthorized(),
@@ -525,6 +542,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/email/verify")
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"" + emailFor("err-pending") + "\",\"code\":\"000000\"}"),
         status().isUnauthorized(),
@@ -595,6 +613,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/onboarding")
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
             .content(onboardingJson(emailFor("err-pending"))),
         status().isUnauthorized(),
@@ -678,6 +697,7 @@ class AuthOnboardingDocsTest {
     // ===== logout =====
     perform(
         post("/api/v1/auth/logout")
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"refreshToken\":\"rt_any\"}"),
         status().isUnauthorized(),
@@ -727,7 +747,7 @@ class AuthOnboardingDocsTest {
 
     // ===== GET /users/me =====
     perform(
-        get("/api/v1/users/me"),
+        get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "user-get-me-unauthenticated",
@@ -770,6 +790,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         patch("/api/v1/users/me")
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"marketingAgreed\":true}"),
         status().isUnauthorized(),
@@ -809,7 +830,7 @@ class AuthOnboardingDocsTest {
 
     // ===== DELETE /users/me =====
     perform(
-        delete("/api/v1/users/me"),
+        delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "user-withdraw-unauthenticated",
