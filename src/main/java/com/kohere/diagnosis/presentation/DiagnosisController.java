@@ -6,7 +6,9 @@ import com.kohere.diagnosis.application.DiagnosisService;
 import com.kohere.diagnosis.application.dto.DiagnosisCreatedResponse;
 import com.kohere.diagnosis.application.dto.DiagnosisResponse;
 import com.kohere.diagnosis.application.dto.LatestDiagnosisResponse;
+import com.kohere.diagnosis.application.dto.QuestionResponse;
 import com.kohere.diagnosis.application.dto.RecommendationResponse;
+import com.kohere.diagnosis.presentation.dto.AnswerRequest;
 import com.kohere.diagnosis.presentation.dto.DiagnosisRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,17 @@ public class DiagnosisController {
   public ApiResponse<DiagnosisCreatedResponse> submit(
       @Valid @RequestBody DiagnosisRequest request) {
     return ApiResponse.success(diagnosisService.submit(request));
+  }
+
+  @GetMapping("/questions/{step}")
+  public ApiResponse<QuestionResponse> getQuestion(@PathVariable int step) {
+    return ApiResponse.success(diagnosisService.getQuestion(step));
+  }
+
+  @PostMapping("/answers")
+  public ApiResponse<Void> submitAnswer(@RequestBody AnswerRequest request) {
+    diagnosisService.submitAnswer(request);
+    return ApiResponse.success(null);
   }
 
   @GetMapping

@@ -4,8 +4,10 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.diagnosis.application.dto.DiagnosisCreatedResponse;
 import com.kohere.diagnosis.application.dto.DiagnosisResponse;
 import com.kohere.diagnosis.application.dto.LatestDiagnosisResponse;
+import com.kohere.diagnosis.application.dto.QuestionResponse;
 import com.kohere.diagnosis.application.dto.RecommendationResponse;
 import com.kohere.diagnosis.domain.DiagnosisRepository;
+import com.kohere.diagnosis.presentation.dto.AnswerRequest;
 import com.kohere.diagnosis.presentation.dto.DiagnosisRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,16 @@ import org.springframework.stereotype.Service;
 public class DiagnosisService {
 
   private final DiagnosisRepository diagnosisRepository;
+
+  public QuestionResponse getQuestion(int step) {
+    throw new UnsupportedOperationException(
+        "TODO: 단계별 질문 조회 — diagnosisQuestions 데이터·서버 분기(③ purpose→university/district)·등록국가 번역, #34 Mongo 선행");
+  }
+
+  public void submitAnswer(AnswerRequest request) {
+    throw new UnsupportedOperationException(
+        "TODO: 단계별 답 저장 — in-progress(IN_PROGRESS) 진단에 field별 답 저장·미정의 enum/목적-대학지역 불일치 검증(INVALID_INPUT), #34 Mongo 선행");
+  }
 
   public DiagnosisCreatedResponse submit(DiagnosisRequest request) {
     throw new UnsupportedOperationException("TODO: 진단 제출·저장(재진단 = 새 레코드 생성)");
