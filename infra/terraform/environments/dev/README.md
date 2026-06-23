@@ -243,32 +243,27 @@ github_deploy_branch = "release"
 
 ---
 
-## 6. 4단계: 첫 앱 이미지 준비 (중요 — 닭-달걀)
+## 6. 4단계: 앱 이미지 (release 머지로 CI가 채운다)
 
-**ECR 리포지토리는 bootstrap 이 만든다**(dev·prod 공유 자원 — 상태 버킷·OIDC와 동일하게 bootstrap 단일 소유). dev는 `ecr_repository`(기본 `kohere-backend`) **이름만 참조**하고, EC2 user_data가 **부팅 시 ECR에서 `app_image` 를 `docker compose pull`** 한다. 3단계 bootstrap apply로 **리포는 이미 존재**하므로, apply 전엔 **첫 이미지만 push** 하면 된다:
+**ECR 리포지토리는 bootstrap 이 만든다**(dev·prod 공유 자원 — 상태 버킷·OIDC와 동일하게 bootstrap 단일 소유). dev는 `ecr_repository`(기본 `kohere-backend`) **이름만 참조**한다.
 
-1. ECR 리포지토리는 **bootstrap apply로 이미 존재**하고(3단계),
-2. `app_image` 태그(예 `:dev`) 이미지가 ECR에 있어야 app 컨테이너가 정상 기동한다.
+**앱 이미지를 미리 push할 필요는 없다.** user_data는 공용 이미지(MySQL·MongoDB·Redis·Caddy)를 **항상 기동**하고, 앱 이미지(ECR `:dev`)는 있으면 띄우고 **없으면 건너뛴다**(best-effort). 그래서 이미지 없이 바로 apply해도 **인프라·DB는 정상**이며, `refresh-env.sh`(시크릿 .env 주입)·`reconcile-db.sh`(DB 초기화)도 그대로 돈다 — **app 컨테이너만 빠진 상태**다.
 
-(MySQL·MongoDB·Redis·Caddy는 public 이미지라 영향 없음.)
+→ 그냥 **apply(7단계)** 하고, **6단계에서 `AWS_DEPLOY_ROLE_ARN` 을 설정한 뒤 `release` 브랜치에 머지**하면 CI가 이미지를 빌드·push + SSM 재배포해 app을 살린다(`gh workflow run deploy.yml` 로 수동 트리거도 가능). DB가 이미 떠 있으니 배포는 app만 추가한다.
 
-### 권장 순서 (A) — 첫 이미지를 먼저 push
+### (선택) 지금 바로 app까지 띄우려면 — 첫 이미지 직접 push
+
+CI를 기다리지 않고 즉시 app을 띄우고 싶을 때만:
 
 ```bash
 # ECR 로그인 (<account_id> 는 aws sts get-caller-identity 의 Account)
 aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin <account_id>.dkr.ecr.ap-northeast-2.amazonaws.com
-
-# 저장소 루트에서 첫 이미지 build & push
 docker build -t <account_id>.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev .
 docker push <account_id>.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev
 ```
 
-> `:dev` 태그와 `tfvars` 의 `app_image` 태그, `deploy.yml` 의 `DEV_IMAGE_TAG` 가 모두 같아야 한다. 불일치 시 compose가 다른 이미지를 본다.
-
-### 대안 (B) — 이미지 없이 apply 후 CI로 채우기
-
-리포는 bootstrap이 이미 만들었으니 이미지 push 없이 바로 apply한다. 이때 app은 pull 실패로 안 뜨지만 **인프라·DB(MySQL·Mongo·Redis)는 정상**이며, user_data의 `reconcile-db.sh`·`refresh-env.sh` 도 첫 부팅에서 그대로 돌아 DB 초기화(.env 주입 포함)가 끝난다 — app 컨테이너만 빠진 상태다. 이후 6단계에서 `AWS_DEPLOY_ROLE_ARN` 을 설정하고 `release` 브랜치 머지(또는 `gh workflow run deploy.yml`)하면 CI가 이미지를 push + SSM 재배포해 app을 살린다.
+> `:dev` 태그는 `tfvars` 의 `app_image` · `deploy.yml` 의 `DEV_IMAGE_TAG` 와 모두 같아야 한다. 불일치 시 compose가 다른 이미지를 본다.
 
 ---
 

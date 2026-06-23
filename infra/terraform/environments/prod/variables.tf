@@ -300,9 +300,16 @@ variable "cdn_domain_name" {
 
 # ===== 모니터링 =====
 variable "alarm_email" {
-  description = "CloudWatch 알람 이메일 구독(빈 값이면 미구독)"
+  description = "CloudWatch 알람 이메일 구독(빈 값이면 미구독). Discord와 병행 가능"
   type        = string
   default     = ""
+}
+
+variable "discord_webhook_url" {
+  description = "Discord 웹훅 URL — 채우면 CloudWatch 알람을 Discord로 통보(SNS→Lambda, ADR-0027). 빈 값이면 미구성"
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 # ===== 외부 발급 시크릿/설정 (운영 전 채워야 함) =====

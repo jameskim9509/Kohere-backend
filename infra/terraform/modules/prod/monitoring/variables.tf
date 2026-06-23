@@ -10,9 +10,16 @@ variable "tags" {
 }
 
 variable "alarm_email" {
-  description = "알람 구독 이메일(빈 값이면 구독 생성 안 함 — 수동 구독)"
+  description = "알람 구독 이메일(빈 값이면 구독 생성 안 함 — 수동 구독). Discord와 병행 가능(다중 채널)"
   type        = string
   default     = ""
+}
+
+variable "discord_webhook_url" {
+  description = "Discord 웹훅 URL(빈 값이면 Discord 알림 미구성). SNS→Lambda가 알람을 변환·전달(ADR-0027)"
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "alb_arn_suffix" {
