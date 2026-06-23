@@ -79,12 +79,18 @@
 
 | 전략 | 사용 시점 | 특징 |
 | --- | --- | --- |
-| **Squash and merge** *(기본)* | feature/fix → `develop` PR | 이슈 단위 커밋 1개로 압축, 히스토리 깔끔 |
-| Create a merge commit | `develop` → `main` 등 공용 브랜치 통합 | 분기 이력 보존 |
+| **Squash and merge** *(기본)* | feature/fix → `develop` PR (개인 fork 작업) | 이슈 단위 커밋 1개로 압축, 히스토리 깔끔 |
+| **Create a merge commit** | 공용 브랜치 간 통합 — `develop` ↔ `release`, `develop` → `main` | 커밋 SHA를 공유해 분기 이력 보존 |
 
 - Squash 시 최종 커밋 제목은 PR 제목이 되므로, PR 제목은 [commit-convention](./commit-convention.md) 형식을 따른다.
 - **병합 후에도 feature 브랜치는 삭제하지 않고 보존한다.** Squash 머지는 원본 커밋들을
   develop에 1개로 압축하므로, 작업 과정의 원본 커밋 이력은 feature 브랜치가 보관한다.
+
+> **공용 브랜치 간 승격(`develop` ↔ `release`, `develop` → `main`)에는 Squash를 쓰지 않고 Create a merge commit을 쓴다.**
+> Squash는 대상 커밋들을 **새 SHA의 단일 커밋**으로 만든다. 오래 사는 두 공용 브랜치를 squash로 합치면 두 브랜치가
+> 커밋 SHA를 공유하지 못해 **이미 승격한 커밋이 다음 승격 PR에서 다시 잡힌다**(예: `develop → release` PR마다
+> 이전에 올린 커밋이 중복 표시) → PR이 지저분해지고 이후 양방향 머지에서 헛충돌이 난다. Create a merge commit으로
+> 합치면 SHA가 공유되어 다음 승격 PR은 **새 커밋만** 보여준다.
 
 ---
 
