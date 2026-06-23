@@ -17,6 +17,7 @@ import com.kohere.auth.domain.RefreshTokenStatus;
 import com.kohere.auth.domain.RequiredAgreementMissingException;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
+import com.kohere.auth.domain.TermsAgreementRequiredException;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
@@ -122,15 +123,14 @@ public class AuthService {
   }
 
   /**
-   * 온보딩 중 이메일 인증번호 발송. 이메일 인증은 온보딩 단계 전용이므로 이미 완료(ACTIVE)된 사용자의 요청은 409로 거절한다(spec §3). 동기 발송 성공
-   * 시에만 챌린지를 저장한다(발송 실패 502).
+   * 온보딩 중 이메일 인증번호 발송. 약관 동의(TERMS_AGREED)가 선행되어야 하므로 미동의(PENDING)는 422
+   * AUTH_TERMS_AGREEMENT_REQUIRED로, 이미 완료(ACTIVE)된 사용자의 요청은 409로 거절한다(spec §3). 동기 발송 성공 시에만 챌린지를
+   * 저장한다(발송 실패 502).
    */
   @Transactional(readOnly = true)
   public EmailVerificationCodeResponse sendEmailVerificationCode(
       long userId, EmailVerificationCodeRequest request) {
-    if (STATUS_ACTIVE.equals(userAccountService.getAccount(userId).status())) {
-      throw new OnboardingAlreadyCompletedException();
-    }
+    assertTermsAgreed(userId);
     long expiresIn = emailVerificationService.sendCode(userId, request.email());
     return new EmailVerificationCodeResponse(maskEmail(request.email()), expiresIn);
   }
@@ -143,11 +143,13 @@ public class AuthService {
   }
 
   /**
-   * 온보딩 완료. 제출 email의 인증 완료를 선행 확인(미검증·불일치 422)한 뒤 user에 TERMS_AGREED→ACTIVE 전이를 위임하고 정식 토큰을 발급한다.
-   * 약관 미동의(PENDING)면 user가 422(AUTH_TERMS_AGREEMENT_REQUIRED)로 거절한다.
+   * 온보딩 완료. 온보딩 흐름 순서(약관 동의 → 이메일 인증)를 강제한다 — 약관 미동의(PENDING)면 이메일 인증 안내보다 먼저 422
+   * AUTH_TERMS_AGREEMENT_REQUIRED로, 이미 완료(ACTIVE)면 409로 거절한다. 그 뒤 제출 email의 인증 완료를 확인(미검증·불일치 422
+   * AUTH_EMAIL_NOT_VERIFIED)하고 user에 TERMS_AGREED→ACTIVE 전이를 위임한 뒤 정식 토큰을 발급한다.
    */
   @Transactional
   public OnboardingResponse onboarding(long userId, OnboardingRequest request) {
+    assertTermsAgreed(userId);
     emailVerificationService.assertVerified(userId, request.email());
     UserProfileView user =
         userAccountService.completeOnboarding(
@@ -198,6 +200,21 @@ public class AuthService {
     refreshTokenRepository
         .findByTokenHash(tokenHash)
         .ifPresent(token -> refreshTokenRepository.save(token.revoke()));
+  }
+
+  /**
+   * 이메일 인증·온보딩 선행 게이트 — 약관 동의(TERMS_AGREED)를 마쳐야 진행한다. 약관 미동의(PENDING)면 약관 동의 선행 안내(422
+   * AUTH_TERMS_AGREEMENT_REQUIRED), 이미 온보딩 완료(ACTIVE)면 409. 상태 소유자는 user이므로 공개 API로 조회만 한다(판정 책임은
+   * 흐름을 조율하는 auth).
+   */
+  private void assertTermsAgreed(long userId) {
+    String status = userAccountService.getAccount(userId).status();
+    if (STATUS_ACTIVE.equals(status)) {
+      throw new OnboardingAlreadyCompletedException();
+    }
+    if (STATUS_PENDING.equals(status)) {
+      throw new TermsAgreementRequiredException();
+    }
   }
 
   private SocialLoginResponse onboardingResponse(long userId, String status) {

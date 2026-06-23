@@ -84,7 +84,7 @@ include::{snippets}/auth-terms-agreement-missing/http-response.adoc[]
 
 == 이메일 인증번호 발송
 
-`POST /api/v1/auth/email/verification-code` — 온보딩 스코프 토큰 필요. 입력 이메일로 인증번호를 동기 발송하고, 발송에 성공한 뒤에만 챌린지를 저장한다(발송 실패 시 502, 챌린지 미저장). 응답의 `email`은 마스킹한다. 이메일 인증은 온보딩 단계 전용이라 이미 완료(ACTIVE)된 사용자는 409. 재발송은 레이트리밋으로 보호한다.
+`POST /api/v1/auth/email/verification-code` — 온보딩 스코프 토큰 필요. 입력 이메일로 인증번호를 동기 발송하고, 발송에 성공한 뒤에만 챌린지를 저장한다(발송 실패 시 502, 챌린지 미저장). 응답의 `email`은 마스킹한다. 이메일 인증은 약관 동의(`TERMS_AGREED`)가 선행돼야 하므로 미동의(`PENDING`)는 422, 이미 완료(`ACTIVE`)된 사용자는 409. 재발송은 레이트리밋으로 보호한다.
 
 .요청
 include::{snippets}/auth-email-verification-code/http-request.adoc[]
@@ -112,6 +112,9 @@ include::{snippets}/auth-email-verification-code-unauthenticated/http-response.a
 
 *401 TOKEN_EXPIRED* — 액세스(온보딩) 토큰 만료
 include::{snippets}/auth-email-verification-code-token-expired/http-response.adoc[]
+
+*422 AUTH_TERMS_AGREEMENT_REQUIRED* — 약관 미동의(PENDING) 상태의 요청(약관 동의가 이메일 인증에 선행)
+include::{snippets}/auth-email-verification-code-terms-required/http-response.adoc[]
 
 *409 AUTH_ONBOARDING_ALREADY_COMPLETED* — 이미 ACTIVE인 사용자의 요청(이메일 인증은 온보딩 단계 전용)
 include::{snippets}/auth-email-verification-code-already-completed/http-response.adoc[]
