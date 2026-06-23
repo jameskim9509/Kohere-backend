@@ -28,6 +28,7 @@ import com.kohere.auth.domain.RefreshTokenRepository;
 import com.kohere.auth.domain.RequiredAgreementMissingException;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
+import com.kohere.auth.domain.TermsAgreementRequiredException;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
@@ -51,8 +52,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link AuthService} 단위 테스트(Mockito) — 소셜 로그인 분기(신규/ACTIVE/미완료·status), 약관 동의(필수 검증), 이메일 인증 위임,
- * 온보딩(이메일 검증 선행), 재발급(항상 회전·재사용 탐지), 로그아웃 멱등. 도메인 포트·user 공개 API·이메일 인증 서비스를 모킹한다.
+ * {@link AuthService} 단위 테스트(Mockito) — 소셜 로그인 분기(신규/ACTIVE/미완료·status), 약관 동의(필수 검증), 이메일 인증 위임(약관
+ * 동의 선행 게이트), 온보딩(약관 동의 → 이메일 검증 순서 강제), 재발급(항상 회전·재사용 탐지), 로그아웃 멱등. 도메인 포트·user 공개 API·이메일 인증 서비스를
+ * 모킹한다.
  */
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -200,6 +202,19 @@ class AuthServiceTest {
   }
 
   @Test
+  void sendEmailVerificationCode_termsNotAgreed_throwsTermsRequiredAndDoesNotSend() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+
+    assertThatThrownBy(
+            () ->
+                authService.sendEmailVerificationCode(
+                    40L, new EmailVerificationCodeRequest("minh@example.com")))
+        .isInstanceOf(TermsAgreementRequiredException.class);
+
+    verify(emailVerificationService, never()).sendCode(anyLong(), any());
+  }
+
+  @Test
   void verifyEmail_delegatesAndReturnsVerified() {
     EmailVerifyResponse response =
         authService.verifyEmail(40L, new EmailVerifyRequest("minh@example.com", "482915"));
@@ -211,6 +226,7 @@ class AuthServiceTest {
 
   @Test
   void onboarding_completesAndIssuesFullTokensWithProfile() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
     when(jwtTokenService.issueAccessToken(40L)).thenReturn("access-token");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
@@ -232,6 +248,7 @@ class AuthServiceTest {
 
   @Test
   void onboarding_emailNotVerified_throwsAndDoesNotComplete() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
     doThrow(new EmailNotVerifiedException())
         .when(emailVerificationService)
         .assertVerified(40L, "gil@example.com");
@@ -239,6 +256,19 @@ class AuthServiceTest {
     assertThatThrownBy(() -> authService.onboarding(40L, onboardingRequest()))
         .isInstanceOf(EmailNotVerifiedException.class);
 
+    verify(userAccountService, never()).completeOnboarding(anyLong(), any());
+    verify(refreshTokenRepository, never()).save(any());
+  }
+
+  @Test
+  void onboarding_termsNotAgreed_throwsTermsRequiredBeforeEmailCheck() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+
+    assertThatThrownBy(() -> authService.onboarding(40L, onboardingRequest()))
+        .isInstanceOf(TermsAgreementRequiredException.class);
+
+    // 약관 미동의면 이메일 검증·온보딩 완료 전에 차단 — 이메일 인증 안내보다 약관 동의 안내가 먼저
+    verify(emailVerificationService, never()).assertVerified(anyLong(), any());
     verify(userAccountService, never()).completeOnboarding(anyLong(), any());
     verify(refreshTokenRepository, never()).save(any());
   }

@@ -187,7 +187,7 @@
 
 ### 3. POST `/api/v1/auth/email/verification-code` — 이메일 인증번호 발송
 
-온보딩 중인 사용자가 입력한 이메일 주소로 인증번호를 발송한다. 같은 사용자에 미검증 인증 시도가 남아 있으면 새 인증번호로 대체한다. 인증번호는 서버에 **해시로만 보관**하고 일정 시간(예: 5분 — 확인 필요) 후 만료한다. 재발송은 레이트리밋으로 보호한다.
+온보딩 중인 사용자가 입력한 이메일 주소로 인증번호를 발송한다. **약관 동의(§2, `TERMS_AGREED`)가 선행**되어야 한다 — 약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`로 거절하고 약관 동의(§2)를 먼저 유도한다. 같은 사용자에 미검증 인증 시도가 남아 있으면 새 인증번호로 대체한다. 인증번호는 서버에 **해시로만 보관**하고 일정 시간(예: 5분 — 확인 필요) 후 만료한다. 재발송은 레이트리밋으로 보호한다.
 
 메일은 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SES/SMTP — 확인 필요)로 **동기 발송**하며, **발송에 성공한 뒤에만** 인증번호 챌린지를 저장한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(메일 템플릿·다국어, 동기/비동기 정책은 확인 필요).
 
@@ -228,6 +228,7 @@
 | 400 | `INVALID_INPUT` | `email` 누락/빈값/형식 위반(`@NotBlank`/`@Email`) |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 온보딩 토큰 누락/위조 / 만료 |
+| 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태의 요청(약관 동의 §2 선행 필요) |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩 완료(ACTIVE)된 사용자의 요청(이메일 인증은 온보딩 단계 전용) |
 | 429 | `TOO_MANY_REQUESTS` | 재발송 레이트리밋 초과(확인 필요: 임계값) |
 | 502 | `UPSTREAM_ERROR` | 메일 발송 실패(provider 장애·타임아웃). 챌린지 미저장, 클라이언트 재시도 유도(공통 코드 — [error-response-guide](../error-response-guide.md) §3) |
