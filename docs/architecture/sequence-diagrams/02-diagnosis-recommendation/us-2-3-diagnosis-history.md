@@ -18,7 +18,7 @@ sequenceDiagram
     DIAG->>DB: 진단 이력 조회(최신 1건)
     DB-->>DIAG: 최신 진단 또는 없음
     alt 진단 이력 있음
-        DIAG-->>C: 200 OK<br/>data.completed true, diagnosisId,<br/>region, purposes[], submittedAt 등
+        DIAG-->>C: 200 OK<br/>data.completed true, diagnosisId,<br/>region, purpose, submittedAt 등
         C-->>U: 재진단 문구 + 최근 진단 노출
     else 이력 없음(최초 사용자)
         DIAG-->>C: 200 OK<br/>data.completed false
@@ -40,7 +40,7 @@ sequenceDiagram
     Note over DIAG: 소유권 검증
     DIAG->>DB: 진단 단건 조회
     DB-->>DIAG: 진단 입력 전체
-    DIAG-->>C: 200 OK<br/>region, purposes[], conditions[],<br/>monthlyBudgetMax, arcStatus,<br/>status, submittedAt
+    DIAG-->>C: 200 OK<br/>region, purpose, university|district(목적 분기),<br/>conditions[], monthlyBudgetMax, arcStatus,<br/>status, submittedAt
     C-->>U: 진단 입력 전체 표시
 ```
 
@@ -48,4 +48,4 @@ sequenceDiagram
 
 - 홈에서 `GET /api/v1/diagnoses/latest`로 diagnosis 모듈이 MongoDB에서 최신 1건을 조회해 `completed` 값으로 "진단 시작/재진단" 문구를 분기한다(이력 없음도 `200 OK`). 모든 요청은 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 모듈로 전달한다.
 - `GET /api/v1/diagnoses`로 diagnosis 모듈이 MongoDB에서 진단 이력을 최신순(`submittedAt,desc`) 오프셋 페이지네이션으로 조회한다.
-- `GET /api/v1/diagnoses/{diagnosisId}`로 diagnosis 모듈이 소유권을 검증한 뒤 MongoDB에서 본인 소유 진단의 입력 전체를 조회해 다시 본다(타인 `403 FORBIDDEN`, 부재 `404 DIAGNOSIS_NOT_FOUND`).
+- `GET /api/v1/diagnoses/{diagnosisId}`로 diagnosis 모듈이 소유권을 검증한 뒤 MongoDB에서 본인 소유 진단의 입력 전체(6단계 — `region`/`purpose`/대학·지역 선택(목적 분기 `university`|`district`)/`conditions`/`monthlyBudgetMax`/`arcStatus`)를 조회해 다시 본다(타인 `403 FORBIDDEN`, 부재 `404 DIAGNOSIS_NOT_FOUND`).

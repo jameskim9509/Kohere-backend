@@ -18,6 +18,17 @@ spring:
   jackson:
     time-zone: UTC
 
+  # 에러 메시지 i18n: ErrorCode 이름을 키로 messages[_<lang>].properties에서 번역(ADR-0030, #52).
+  # 미지원 언어·키 부재는 영어(messages.properties)로 폴백. locale은 Accept-Language로 결정(기본 en).
+  messages:
+    basename: messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+
+  web:
+    locale: en
+    locale-resolver: accept-header
+
 # 인증·토큰 정책값(비밀 아님). 시크릿·환경 의존값(secret·pepper·oidc audience·datasource)은
 # 프로파일별 파일에서 주입한다 — base에는 운영-위험 기본값(시크릿 폴백·접속정보)을 두지 않는다.
 app:

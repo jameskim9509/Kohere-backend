@@ -4,7 +4,8 @@
 
 | 스토리 | 제목 | 다이어그램 |
 | --- | --- | --- |
-| US-2-1 | 5단계 진단 제출 및 저장 | [us-2-1-submit-diagnosis](us-2-1-submit-diagnosis.md) |
+| US-2-1 | 6단계 진단 제출 및 저장 | [us-2-1-submit-diagnosis](us-2-1-submit-diagnosis.md) |
 | US-2-2 | 진단 결과(추천 매물 + 지도 좌표) 조회 | [us-2-2-recommendations](us-2-2-recommendations.md) |
 | US-2-3 | 진단 이력 조회 및 최근 진단 다시 보기 | [us-2-3-diagnosis-history](us-2-3-diagnosis-history.md) |
-| US-2-4 | 재진단(새 진단 생성)과 중복 제출 방지 | [us-2-4-rediagnosis-duplicate-prevention](us-2-4-rediagnosis-duplicate-prevention.md) |
+| US-2-4 | 재진단(새 진단 생성) | [us-2-4-rediagnosis](us-2-4-rediagnosis.md) |
+| US-2-5 · US-2-6 | 진단 문항·선택지 백엔드 제공 + 국가 기반 번역 | [us-2-5-2-6-diagnosis-questions](us-2-5-2-6-diagnosis-questions.md) |

@@ -51,6 +51,9 @@
 | [0025](./0025-dev-db-credential-reconcile.md) | dev 자가호스팅 DB 자격증명은 데이터 보존하며 reconcile로 회전한다(마커 기반, ADR-0021 후속) | Accepted | 2026-06-22 |
 | [0026](./0026-dev-host-memory-budget.md) | dev 단일 호스트(t3.small·2GB) 메모리 예산을 스왑 + 엔진 캡으로 맞춘다(ADR-0021 후속) | Accepted | 2026-06-22 |
 | [0027](./0027-dev-discord-alerting.md) | 알람 통보는 Discord 웹훅으로 한다(SNS→Lambda 포워더, dev·prod) | Accepted | 2026-06-22 |
+| [0028](./0028-diagnosis-questions-catalog-store.md) | 진단 문항·선택지 카탈로그는 MongoDB diagnosisQuestions 컬렉션에 저장·제공한다 | Accepted | 2026-06-23 |
+| [0029](./0029-diagnosis-i18n-strategy.md) | 진단 i18n은 서버가 등록 국가→언어 매핑으로 표시 라벨을 번역한다(코드 enum 매핑/리소스 번들 대비 DB 채택) | Accepted | 2026-06-23 |
+| [0030](./0030-error-message-i18n-resource-bundle.md) | 에러 응답 메시지 i18n은 리소스 번들(Spring MessageSource)로 번역한다(Accept-Language·영어 폴백) | Accepted | 2026-06-24 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

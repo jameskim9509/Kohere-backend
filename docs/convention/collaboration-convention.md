@@ -225,7 +225,7 @@ Squash merge 시 **PR 제목이 develop의 최종 커밋 메시지가 된다**([
 | base(`develop`)와 충돌 없음           | GitHub       |
 | `P1`/`P2` 코멘트 반영 또는 합의     | 리뷰어 확인  |
 
-- 머지 방식은 **Squash and merge**를 기본으로 한다([branch-convention](./branch-convention.md) §5).
+- 머지 방식은 **Squash and merge**를 기본으로 한다([branch-convention](./branch-convention.md) §5). 단, **공용 브랜치 간 승격(`develop` ↔ `release`, `develop` → `main`)은 Create a merge commit**을 쓴다(squash 금지 — 커밋 SHA를 공유해야 다음 승격 PR이 새 커밋만 보여준다, [branch-convention](./branch-convention.md) §5).
 - 머지는 approve한 리뷰어 또는 maintainer가 수행한다.
 
 ---

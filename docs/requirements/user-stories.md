@@ -289,56 +289,51 @@
 
 > 관련 API 스펙: [02-diagnosis-recommendation](../api/specs/02-diagnosis-recommendation.md)
 
-외국인 사용자가 5단계 진단(지역 / 입국 목적 / 주거 환경 조건 / 월 예산 / ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
+외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학·지역 선택 / ④ 주거 환경 조건 / ⑤ 월 예산 / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자의 등록 국가에 따라 번역되어 내려간다(US-2-5·US-2-6). 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
 
-- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purposes` 최소 1개, `conditions` 최대 3개(4개 이상이면 검증 실패), `monthlyBudgetMax`는 0 이상 정수.
+- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학·지역 선택**(두 필드로 분리한다 — `university`(enum `University`: `SNU`·`CAU`·`SOONGSIL`·`HUFS`·`KHU`·`KOREA`·`SKKU`·`SUNGSHIN`·`KONKUK`·`SEJONG`·`HYU`·`HONGIK`·`YONSEI`·`EWHA`·`ETC`), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현), `conditions`(enum `ConditionTag`: `IMMEDIATE_MOVE_IN`·`FEMALE_ONLY`·`PRIVATE_TOILET`·`PRIVATE_BATH`·`ENGLISH_AVAILABLE`·`RESIDENT_REGISTRATION`·`NO_MAINTENANCE_FEE`·`MEALS_PROVIDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyBudgetMax`는 0 이상 정수.
 - MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 선택지로 허용하되, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
-- 추천 결과의 매물 요약은 매물 탐색 도메인의 요약 DTO(`ListingSummary`)를 재사용한다(확인 필요 — 01 매물 탐색 스펙 확정 시 필드 동기화).
+- 추천 결과의 매물 요약은 매물 탐색 도메인의 요약 DTO(`ListingSummaryResponse`)를 재사용한다(확인 필요 — 01 매물 탐색 스펙 확정 시 필드 동기화).
 - 진단·결과는 본인만 접근 가능하다(소유권 검증). 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
 - 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·예산 음수·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
 
-### US-2-1 — 5단계 진단 제출 및 저장
+### US-2-1 — 진단 제출(진행 중 진단 확정 및 저장)
 
 **As a** 한국 주거를 처음 찾는 외국인 사용자
-**I want** 지역·입국 목적·주거 환경 조건·월 예산·ARC 발급 여부 5단계 답변을 한 번에 제출해 진단 레코드로 저장하고
+**I want** 단계별로 서버에 저장해 둔 답으로 채워진 진행 중(`IN_PROGRESS`) 진단을 제출로 확정하고
 **So that** 내 조건이 서버에 영속화되어 매번 다시 입력하지 않고 결과를 재조회·재진단할 수 있다
 
 - **우선순위**: High
 - **관련 NFR**: 입력 검증·보안(민감하지 않은 진단 입력이나 본인 소유로 격리), 진단 제출 p95 응답시간 목표(확인 필요 — NFR 문서 미확정)
-- **백엔드 관점**: 제출 시 서버 측 재검증 → 새 `diagnosis` 레코드 생성(상태 `COMPLETED`) → 생성 리소스 식별자(`diagnosisId`) 반환. 진단 입력은 정규화(중복 제거, enum 검증)되어 저장된다.
+- **백엔드 관점**: 진단 진행은 서버가 단계별로 저장한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`, in-progress draft)을 두고 단계마다 받은 답을 채워 간다(US-2-5). 제출은 별도 단계다 — `POST /api/v1/diagnoses`는 6필드 누적 답을 다시 보내는 요청이 아니라, **서버에 이미 저장된 진행 중 진단을 확정하는 요청**이다. 서버는 저장된 답을 재검증(정규화·중복 제거·enum 검증·조건부 필수)한 뒤 진단 상태를 `IN_PROGRESS` → `COMPLETED`로 전이하고 생성 리소스 식별자(`diagnosisId`)·`submittedAt`을 반환한다. 진단 생성(`COMPLETED`)은 이 제출 시점이며, 이력·목록 조회는 `COMPLETED`만 노출한다(`IN_PROGRESS` 제외). 재진단은 새 진행 중 진단을 시작한다. 입국 목적에 따른 대학·지역 선택은 두 필드(`university`(enum `University`)·`district`(enum `District`))로 분리해 저장한다 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음(조건부 필수, 위반은 공통 `INVALID_INPUT`(400)+`errors[]`).
 
 **AC (Given / When / Then)**
 
-- 시나리오: 정상 제출
+- 시나리오: 정상 제출 — 진행 중 진단 확정
 
-  - **Given** 로그인한 사용자가 유효한 access token을 보유하고, `region=SEOUL`, `purposes=[STUDY]`, `conditions=[FEMALE_ONLY,PRIVATE_BATH]`(3개 이하), `monthlyBudgetMax=600000`, `arcStatus=ARC_ISSUED`인 본문을 보낸다
+  - **Given** 로그인한 사용자가 유효한 access token을 보유하고, 단계별 응답(US-2-5)으로 진행 중 진단(`IN_PROGRESS`)에 `region=SEOUL`, `purpose=STUDY`, `university=SNU`(③ 대학 — 유학(`STUDY`) 시 `university` 필수·`district` 없음), `conditions=[FEMALE_ONLY,PRIVATE_BATH]`(3개 이하), `monthlyBudgetMax=600000`, `arcStatus=ARC_ISSUED`가 모두 저장되어 있다
+  - **When** `POST /api/v1/diagnoses`(진행 중 진단 확정 요청)를 호출한다
+  - **Then** 서버가 저장된 답을 재검증한 뒤 진단을 `IN_PROGRESS` → `COMPLETED`로 확정하고, `201 Created`와 함께 `data.diagnosisId`·`data.status=COMPLETED`·`data.submittedAt`(UTC ISO-8601)을 반환하고, `Location: /api/v1/diagnoses/{diagnosisId}` 헤더를 포함한다
+- 시나리오: 검증 실패 — 저장된 답이 조건 4개 이상 / 필수 단계 미완료
+
+  - **Given** 진행 중 진단에 저장된 답이 `conditions` 4개를 담았거나 `region`이 아직 채워지지 않았다
   - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** `201 Created`와 함께 `data.diagnosisId`·`data.status=COMPLETED`·`data.submittedAt`(UTC ISO-8601)을 반환하고, `Location: /api/v1/diagnoses/{diagnosisId}` 헤더를 포함한다
-- 시나리오: 입력 검증 실패 — 조건 4개 이상 / 필수값 누락
+  - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환하고(확정하지 않음), `error.errors[]`에 위반 필드(`conditions`/`region`)와 사유를 담는다 (개수 초과는 `conditions` reason으로 "최대 3개까지 선택할 수 있습니다.")
+- 시나리오: 검증 실패 — 정의되지 않은 enum 값
 
-  - **Given** `conditions`에 4개 값을 담거나 `region`을 누락한 본문을 보낸다
-  - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환하고, `error.errors[]`에 위반 필드(`conditions`/`region`)와 사유를 담는다 (개수 초과는 `conditions` reason으로 "최대 3개까지 선택할 수 있습니다.")
-- 시나리오: 입력 검증 실패 — 정의되지 않은 enum 값
-
-  - **Given** `region=JEJU`처럼 허용 목록(`SEOUL`/`BUSAN`/`GYEONGGI`)에 없는 값 또는 `conditions`에 미정의 코드를 보낸다
+  - **Given** 진행 중 진단에 저장된 답이 `region=JEJU`처럼 허용 목록(`SEOUL`/`BUSAN`/`GYEONGGI`)에 없는 값 또는 `conditions`에 미정의 코드를 담고 있다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환한다 (허용되지 않은 enum 값을 무시하지 않고 명시적으로 거부 — api-design-guide §5)
-- 시나리오: 본문 파싱 불가 — 타입 불일치
-
-  - **Given** `monthlyBudgetMax`에 문자열을 넣는 등 JSON 파싱·타입 변환이 불가능한 본문을 보낸다
-  - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** `400 Bad Request`와 `error.code=MALFORMED_REQUEST`를 반환한다(검증 이전 단계의 파싱 실패)
 - 시나리오: 인증 실패
 
   - **Given** `Authorization` 헤더가 없거나 만료된 token을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** 토큰 부재/위조는 `401`+`error.code=UNAUTHENTICATED`, 만료는 `401`+`error.code=TOKEN_EXPIRED`(재발급 유도)를 반환한다
-- 시나리오: 경계 — 예산 0 / 음수
+- 시나리오: 경계 — 저장된 예산 0 / 음수
 
-  - **Given** `monthlyBudgetMax=0`(허용) 또는 `monthlyBudgetMax=-1`(불허)을 보낸다
+  - **Given** 진행 중 진단에 저장된 `monthlyBudgetMax`가 `0`(허용)이거나 `-1`(불허)이다
   - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** 0은 `201 Created`로 정상 저장, 음수는 `400`+`error.code=INVALID_INPUT`(`errors[]`의 `monthlyBudgetMax` reason "0 이상이어야 합니다.")을 반환한다
+  - **Then** 0은 `201 Created`로 정상 확정, 음수는 `400`+`error.code=INVALID_INPUT`(`errors[]`의 `monthlyBudgetMax` reason "0 이상이어야 합니다.")을 반환한다
 
 ### US-2-2 — 진단 결과(추천 매물 + 지도 좌표) 조회
 
@@ -348,7 +343,7 @@
 
 - **우선순위**: High
 - **관련 NFR**: 성능(추천 쿼리·좌표 집계 응답시간 목표, 확인 필요 — NFR 문서 미확정), 보안(본인 진단만 조회)
-- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 요약 DTO(`ListingSummary`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100), 정렬은 추천/가격/거리순. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다.
+- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 요약 DTO(`ListingSummaryResponse`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100), 정렬은 추천/가격/거리순. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다. `suggestions`의 `reason`/`type`은 언어 무관 enum, 사람이 보는 `message`/`detail`은 **서버가 등록 국가 언어로 번역**해 전송한다(enum 보유 라벨, `user` 공개 query로 국가 취득, 미지원=영어 폴백 — US-2-6 일관).
 
 **AC (Given / When / Then)**
 
@@ -404,7 +399,7 @@
 
   - **Given** 본인이 소유한 최근 진단 `diagnosisId`가 있다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
-  - **Then** `200 OK`와 진단 입력 전체(`region`/`purposes`/`conditions`/`monthlyBudgetMax`/`arcStatus`/`submittedAt`)를 반환한다
+  - **Then** `200 OK`와 진단 입력 전체(`region`/`purpose`/대학·지역 선택/`conditions`/`monthlyBudgetMax`/`arcStatus`/`submittedAt`)를 반환한다
 - 시나리오: 인증 실패
 
   - **Given** 토큰 없이 요청한다
@@ -421,15 +416,15 @@
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
   - **Then** `404`와 `error.code=DIAGNOSIS_NOT_FOUND`를 반환한다
 
-### US-2-4 — 재진단(새 진단 생성)과 중복 제출 방지
+### US-2-4 — 재진단(새 진단 생성)
 
 **As a** 조건이 바뀐 외국인 사용자
-**I want** 기존 진단을 덮어쓰지 않고 새 진단을 생성(재진단)하되 짧은 시간 내 동일 제출이 중복 저장되지 않도록 하고
-**So that** 진단 이력이 보존되면서도 더블탭/네트워크 재시도로 같은 진단이 여러 건 쌓이지 않는다
+**I want** 기존 진단을 덮어쓰지 않고 새 진단을 생성(재진단)하고
+**So that** 진단 이력이 보존되면서 바뀐 조건으로 다시 결과를 받을 수 있다
 
 - **우선순위**: Mid
-- **관련 NFR**: 신뢰성/멱등성(중복 제출 방지), 동시성(동시 제출 직렬화)
-- **백엔드 관점**: 재진단은 US-2-1과 동일한 `POST /api/v1/diagnoses`(항상 새 레코드 = 비멱등 생성). 단, 중복 위험이 있어 `Idempotency-Key` 헤더 지원을 검토한다(api-design-guide §6, 확인 필요 — 멱등성 키 정책 미확정). 동일 키의 동시 요청은 한 건만 생성하고 나머지는 동일 결과를 반환한다.
+- **관련 NFR**: 신뢰성(진단 이력 보존 — 재진단이 기존 진단을 덮어쓰지 않음)
+- **백엔드 관점**: 재진단은 US-2-1과 동일한 `POST /api/v1/diagnoses`로, 항상 새 레코드를 생성하고 기존 진단을 덮어쓰지 않아 이력이 보존된다.
 
 **AC (Given / When / Then)**
 
@@ -440,24 +435,85 @@
   - **Then** `201 Created`로 **새** `diagnosisId`가 발급되고 기존 진단은 그대로 이력에 남는다(덮어쓰지 않음)
 - 시나리오: 입력 검증 실패 — 재진단 본문도 동일 규칙 적용
 
-  - **Given** 재진단 본문에서 `purposes=[]`(빈 배열)로 보낸다
+  - **Given** 재진단 본문에서 `purpose`를 누락(단일 enum 미선택)해 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** `400`과 `error.code=INVALID_INPUT`(`errors[]`의 `purposes` reason "최소 1개 이상 선택해야 합니다.")을 반환한다
-- 시나리오: 동시성/멱등 — 같은 Idempotency-Key 동시 2회 제출 (멱등성 키 정책 도입 시)
-
-  - **Given** 동일한 `Idempotency-Key` 헤더와 동일 본문으로 2건의 요청이 거의 동시에 도착한다
-  - **When** `POST /api/v1/diagnoses`가 병렬 처리된다
-  - **Then** 진단 레코드는 **1건만** 생성되고, 두 응답 모두 동일 `diagnosisId`를 반환한다 (멱등성 키 미지원 시: 본 시나리오 보류 — 확인 필요)
-- 시나리오: 충돌 — 동일 키 + 다른 본문 (멱등성 키 정책 도입 시)
-
-  - **Given** 같은 `Idempotency-Key`로 본문 내용을 바꿔 다시 보낸다
-  - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** `409 Conflict`와 `error.code=DIAGNOSIS_IDEMPOTENCY_CONFLICT`를 반환한다 (멱등성 키 정책 확정 시 적용 — 확인 필요)
+  - **Then** `400`과 `error.code=INVALID_INPUT`(`errors[]`의 `purpose` reason "필수 항목입니다.")을 반환한다
 - 시나리오: 인증 실패
 
   - **Given** 만료된 token으로 재진단을 시도한다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `401`과 `error.code=TOKEN_EXPIRED`를 반환한다
+
+### US-2-5 — 진단 문항·선택지 백엔드 제공
+
+**As a** 진단을 시작하는 외국인 사용자
+**I want** 받을 단계 번호로 질문 1개를 조회하고 그 단계의 답 1개를 보내 서버가 저장하게 하는 흐름을 한 단계씩 반복하고
+**So that** 앱을 새로 배포하지 않고도 질문·선택지(지역·대학·조건 등)와 분기 흐름을 서버에서 갱신·관리할 수 있다
+
+- **우선순위**: High (진단 제출 플로우의 선행 단계)
+- **관련 NFR**: 일관성(문항 카탈로그의 선택지 코드가 진단 제출 검증 enum과 1:1 일치), 단계별 분기를 서버가 결정(클라이언트 로컬 분기 아님)
+- **백엔드 관점**: 진단 문항을 단계별로 내려주는 server-stateful 흐름을 두 엔드포인트로 제공한다(둘 다 인증 필수, 02 스펙 상세 §1에 반영) — 질문 조회 `GET /api/v1/diagnoses/questions/{step}`와 답 저장 `POST /api/v1/diagnoses/answers`. 진행 답은 **서버가 저장**한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`)을 in-progress draft로 두고 채워 간다. 클라이언트는 받을 `step`(1~6)을 **path로 지정**해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개와 선택지를 조회하고, 화면에서 받은 **현재 단계의 답 1개**(그 단계의 `field`+`code`; `conditions`처럼 다중 선택은 `codes` 배열)만 `POST /api/v1/diagnoses/answers` 본문에 담아 보내며, 서버가 그 답을 진행 중 진단에 저장한다 — 6단계(① 지역 / ② 입국 목적 / ③ 대학·지역 / ④ 주거 조건 / ⑤ 월 예산 / ⑥ ARC)를 한 번에 주지 않고 한 단계씩 내려간다. 다음 `step` 번호는 클라이언트가 정해 다시 `GET`을 호출한다. 요청 본문에 누적 답(`answers` 묶음)을 담지 않는다. 질문 조회 응답은 `{ "step", "field", "question"(번역된 표시 라벨), "select"(단일/다중·최대), "options": [ { "code", "label" } ] }`이며, 6단계 답이 모두 저장되면 클라이언트는 이후 `POST /api/v1/diagnoses`로 진행 중 진단을 확정 제출한다(US-2-1). ③ 단계 분기는 **서버가 저장된 `purpose`로 결정**하는 비즈니스 로직이다(`STUDY`면 `university` 질문, `NON_STUDY`면 `district` 질문 — 알맞은 한 질문만 내려준다). 분기 메타는 `diagnosisQuestions`에 두지 않으며(데이터만), 대학 질문·지역 질문은 각각 카탈로그 데이터로 존재하고 어느 것을 낼지는 서비스가 결정한다. 선택지 코드는 제출 시 검증하는 enum과 동일 출처여야 한다. 잘못된 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현한다. MVP 데이터는 서울 기준.
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — step 지정으로 질문 조회
+
+  - **Given** 진단을 시작한 사용자가 유효한 access token을 보유한다
+  - **When** `GET /api/v1/diagnoses/questions/1`을 호출한다
+  - **Then** `200 OK`와 함께 ① 지역(`field=region`) 질문 1개와 그 선택지(각 선택지의 코드·표시 라벨, 단일/다중·최대 선택 수 제약)를 `{ "step", "field", "question", "select", "options" }`로 반환한다
+- 시나리오: 정상 — 단계 답 저장 후 다음 step 조회
+
+  - **Given** ① 지역 질문을 받은 사용자가 그 단계의 답 1개(`field=region`, `code=SEOUL`)를 구성한다
+  - **When** 그 답 1개를 `POST /api/v1/diagnoses/answers` 본문에 담아 보낸다
+  - **Then** 서버가 그 답을 진행 중 진단에 저장하고 `200 OK`를 반환하며, 클라이언트는 이후 `GET /api/v1/diagnoses/questions/2`로 다음 단계(② 입국 목적) 질문을 조회한다(누적 답 재전송 없음)
+- 시나리오: 일관성 — 선택지 코드 ↔ 제출 enum 일치
+
+  - **Given** 응답으로 받은 선택지 코드(예: `conditions`의 `FEMALE_ONLY`)로 단계 답을 구성해 단계별로 저장한다
+  - **When** 모든 단계 저장 후 `POST /api/v1/diagnoses`로 확정 제출한다
+  - **Then** 문항 카탈로그와 제출 검증이 동일 enum을 쓰므로 `INVALID_INPUT` 없이 수용된다
+- 시나리오: 입국 목적 분기 — 서버가 ③ 대학/지역 질문을 결정
+
+  - **Given** ②까지 저장된 진행 중 진단의 `purpose`가 `STUDY`(또는 `NON_STUDY`)이다
+  - **When** `GET /api/v1/diagnoses/questions/3`을 호출한다
+  - **Then** 서버가 저장된 `purpose`로 ③ 질문을 결정해, 유학이면 `field=university` 목록(`SNU`·`CAU`·`SOONGSIL`·`HUFS`·`KHU`·`KOREA`·`SKKU`·`SUNGSHIN`·`KONKUK`·`SEJONG`·`HYU`·`HONGIK`·`YONSEI`·`EWHA`·`ETC`)을, 비유학이면 `field=district`(구) 목록(`GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`)을 — 알맞은 한 질문만 `options`에 담아 내려준다(클라이언트 로컬 분기 아님, 분기는 서버 비즈니스 로직)
+- 시나리오: 완료 — 모든 단계 저장 후 제출로 이어짐
+
+  - **Given** ① ~ ⑥ 단계 답이 모두 `POST /api/v1/diagnoses/answers`로 진행 중 진단에 저장되었다
+  - **When** 마지막 단계(⑥ ARC) 답까지 저장을 마친다
+  - **Then** 별도의 추가 질문 조회 없이 클라이언트는 이후 `POST /api/v1/diagnoses`로 진행 중 진단을 확정 제출한다
+- 시나리오: 잘못된 답 — 검증 실패
+
+  - **Given** 미정의 enum 또는 그 단계의 목적-대학/지역이 불일치하는 답 1개를 구성한다
+  - **When** `POST /api/v1/diagnoses/answers`를 호출한다
+  - **Then** `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하며 `error.errors[]`에 위반 필드를 담는다
+
+### US-2-6 — 사용자 국가 기반 진단 문항·선택지 번역 제공
+
+**As a** 한국어가 익숙하지 않은 외국인 사용자
+**I want** 진단 문항·선택지를 내 국가(언어)에 맞게 번역된 텍스트로 받고
+**So that** 모국어 또는 영어로 질문을 이해하고 정확히 답할 수 있다
+
+- **우선순위**: High (외국인 대상 서비스의 핵심 접근성)
+- **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 폴백), 보안(본인 국가 정보 기반 — 온보딩 수집값)
+- **백엔드 관점**: 번역 기준은 **사용자의 등록 국가**(온보딩 수집값)다 — 클라이언트가 언어를 지정하지 않고, 서버가 등록 국가→언어 매핑으로 정한 언어의 문항·선택지 **표시 라벨**을 채워 반환한다(`Accept-Language` 헤더에 의존하지 않음; 가입 시 확보한 국가가 기기 설정보다 안정적). 표시 언어는 `diagnosis`가 **`user` 모듈 공개 query(`getLanguage`)를 동기 호출**해 취득한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기는 사용하지 않음; ADR-0002 Decision 5 — 모듈 의존 `diagnosis→user` 추가). 번역은 별도 컬렉션·키 없이 **`diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": ..., "ja": ..., "ko": ... }`, 선택지는 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버는 사용자 언어 키(예 `ja`)로 message·label을 고르고, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다. `country→language` 매핑은 `user`의 `countries.lang`이 보유한다. 선택지 **코드는 언어와 무관하게 동일·불변**(UPPER_SNAKE)하며 언어-키 맵의 값(표시 문자열)만 언어별이다(제출은 코드로 검증). US-2-5와 동일 엔드포인트에서 처리한다.
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — 국가에 맞는 번역 제공
+
+  - **Given** 등록 국가가 일본인 사용자가 진단 문항을 조회한다
+  - **When** 진단 문항 조회 엔드포인트를 호출한다
+  - **Then** 질문·선택지 표시 라벨이 해당 언어로 번역되어 반환되고, 선택지 코드는 언어와 무관하게 동일하다
+- 시나리오: 폴백 — 미지원 언어
+
+  - **Given** 번역이 준비되지 않은 국가/언어의 사용자다
+  - **When** 진단 문항을 조회한다
+  - **Then** 기본 언어(영어)로 폴백해 반환한다(에러 아님)
+- 시나리오: 코드 불변 — 번역과 무관한 제출 검증
+
+  - **Given** 번역된 라벨로 표시된 선택지를 골라 그 **코드**로 제출한다
+  - **When** `POST /api/v1/diagnoses`를 호출한다
+  - **Then** 언어와 무관하게 동일 코드로 정상 검증·저장된다
 
 ## 3. 매물 탐색 · 찜
 
