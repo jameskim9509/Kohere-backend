@@ -97,6 +97,12 @@ public class UserAccountServiceImpl implements UserAccountService {
     return new UserAccountView(user.getId(), user.getStatus().name());
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public String getRegisteredCountry(long userId) {
+    return userRepository.findById(userId).orElseThrow(UserNotFoundException::new).getCountry();
+  }
+
   private UserProfileView toProfileView(User u) {
     Country country = countryRepository.findByCode(u.getCountry()).orElse(null);
     return new UserProfileView(
