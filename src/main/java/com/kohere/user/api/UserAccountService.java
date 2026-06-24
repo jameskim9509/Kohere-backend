@@ -36,10 +36,11 @@ public interface UserAccountService {
   UserAccountView getAccount(long userId);
 
   /**
-   * 등록 국가(ISO 코드) 조회. diagnosis가 진단 문항·선택지 라벨의 표시 언어를 결정하기 위해 동기 호출한다(ADR-0002 Decision 5 — 즉시 결과가
-   * 필요한 조회, 토큰 클레임 미사용·ADR-0029). 온보딩 전이거나 미설정이면 {@code null}을 반환할 수 있다(호출 측은 영어로 폴백).
+   * 표시 언어(ISO 639-1) 조회. diagnosis 등 다국어 표시 모듈이 사용자 언어를 결정하기 위해 동기 호출한다(ADR-0002 Decision 5 — 즉시
+   * 결과가 필요한 조회, 토큰 클레임 미사용·ADR-0029). 등록 국가({@code countries.lang})로 도출하며, 온보딩 전이거나 국가→언어 미매핑이면
+   * 영어({@code en})로 폴백한다(에러 아님).
    *
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
    */
-  String getRegisteredCountry(long userId);
+  String getLanguage(long userId);
 }

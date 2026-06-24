@@ -6,8 +6,8 @@
  *
  * <p>모듈 경계·계층 규칙은 docs/convention/code-style.md §3을 따른다. 공유 커널 {@code common} 외에 두 모듈의 공개
  * API(NamedInterface "api")에 의존한다 — {@code listing :: api}는 추천 매물 동기 조회({@code
- * recommendByCriteria}), {@code user :: api}는 진단 문항 라벨 번역을 위한 등록 국가 조회용이다(ADR-0002 Decision 5, 즉시
- * 결과가 필요한 동기 공개 쿼리).
+ * recommendByCriteria}), {@code user :: api}는 진단 문항·추천 제안 라벨 번역을 위한 표시 언어 조회용이다(ADR-0002 Decision
+ * 5, 즉시 결과가 필요한 동기 공개 쿼리).
  */
 @org.springframework.modulith.ApplicationModule(
     displayName = "Diagnosis",
