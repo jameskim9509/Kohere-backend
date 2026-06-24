@@ -73,10 +73,11 @@ dependencies {
   // API 문서 — 테스트 기반 REST Docs(HTML, ADR-0007) + OpenAPI3 캡처(Swagger UI, ADR-0016)
   testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
   testImplementation 'com.epages:restdocs-api-spec-mockmvc:0.19.4'
-  // 통합 테스트 — 실제 엔진(MySQL·Redis)으로 검증 (test-strategy §4)
+  // 통합 테스트 — 실제 엔진(MySQL·Redis·MongoDB)으로 검증 (test-strategy §4)
   testImplementation 'org.springframework.boot:spring-boot-testcontainers'
   testImplementation 'org.testcontainers:junit-jupiter'
   testImplementation 'org.testcontainers:mysql'
+  testImplementation 'org.testcontainers:mongodb'
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
