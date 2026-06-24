@@ -9,7 +9,6 @@ import static org.mockito.BDDMockito.given;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
-import com.kohere.diagnosis.application.CountryLanguageResolver;
 import com.kohere.diagnosis.application.DiagnosisService;
 import com.kohere.diagnosis.application.SuggestionMessages;
 import com.kohere.diagnosis.application.dto.DiagnosisCreatedResponse;
@@ -60,7 +59,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
   DiagnosisRepositoryImpl.class,
   SequenceGenerator.class,
   DiagnosisQuestionCatalogImpl.class,
-  CountryLanguageResolver.class,
+  SuggestionCatalogImpl.class,
   SuggestionMessages.class
 })
 class DiagnosisMongoIntegrationTest {
@@ -71,6 +70,7 @@ class DiagnosisMongoIntegrationTest {
   @Autowired DiagnosisRepository diagnosisRepository;
   @Autowired DiagnosisMongoRepository diagnosisMongoRepository;
   @Autowired DiagnosisQuestionMongoRepository questionMongoRepository;
+  @Autowired DiagnosisSuggestionMongoRepository suggestionMongoRepository;
 
   @MockitoBean ListingRecommendationService listingRecommendationService;
   @MockitoBean UserAccountService userAccountService;
@@ -79,6 +79,7 @@ class DiagnosisMongoIntegrationTest {
   void clean() {
     diagnosisMongoRepository.deleteAll();
     questionMongoRepository.deleteAll();
+    suggestionMongoRepository.deleteAll();
   }
 
   @Test
@@ -160,13 +161,13 @@ class DiagnosisMongoIntegrationTest {
   void questionTranslation() {
     seedRegionQuestion();
 
-    given(userAccountService.getRegisteredCountry(10L)).willReturn("KR");
+    given(userAccountService.getLanguage(10L)).willReturn("ko");
     QuestionResponse ko = diagnosisService.getQuestion(10L, 1);
     assertThat(ko.field()).isEqualTo("region");
     assertThat(ko.question()).isEqualTo("지역 선택");
     assertThat(ko.options()).extracting(QuestionResponse.Option::label).contains("서울");
 
-    given(userAccountService.getRegisteredCountry(11L)).willReturn("JP");
+    given(userAccountService.getLanguage(11L)).willReturn("ja");
     QuestionResponse fallback = diagnosisService.getQuestion(11L, 1);
     assertThat(fallback.question()).isEqualTo("Select region");
     assertThat(fallback.options()).extracting(QuestionResponse.Option::label).contains("Seoul");
@@ -177,7 +178,7 @@ class DiagnosisMongoIntegrationTest {
   void step3PurposeBranch() {
     seedUniversityQuestion();
     seedDistrictQuestion();
-    given(userAccountService.getRegisteredCountry(anyLong())).willReturn("KR");
+    given(userAccountService.getLanguage(anyLong())).willReturn("ko");
 
     long study = 12L;
     answer(study, "purpose", "STUDY");
@@ -237,7 +238,8 @@ class DiagnosisMongoIntegrationTest {
     long userId = 20L;
     completeStudyFlow(userId);
     DiagnosisCreatedResponse created = diagnosisService.submit(userId);
-    given(userAccountService.getRegisteredCountry(anyLong())).willReturn("KR");
+    seedNoMatchSuggestion();
+    given(userAccountService.getLanguage(anyLong())).willReturn("ko");
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(emptyPage());
 
     RecommendationResponse rec =
@@ -399,6 +401,23 @@ class DiagnosisMongoIntegrationTest {
                     OptionSpec.builder()
                         .code("GURO_GU")
                         .label(Map.of("en", "Guro-gu", "ko", "구로구"))
+                        .build()))
+            .build());
+  }
+
+  private void seedNoMatchSuggestion() {
+    suggestionMongoRepository.save(
+        DiagnosisSuggestionDocument.builder()
+            .id("NO_MATCH")
+            .message(
+                Map.of(
+                    "en", "No listings matched your criteria. Try adjusting the options below.",
+                    "ko", "조건에 맞는 매물이 없습니다. 아래 항목을 조정해 보세요."))
+            .actions(
+                List.of(
+                    DiagnosisSuggestionDocument.ActionSpec.builder()
+                        .type("RELAX_REGION")
+                        .detail(Map.of("en", "Widen the region.", "ko", "지역 범위를 넓혀 보세요."))
                         .build()))
             .build());
   }
