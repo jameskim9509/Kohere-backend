@@ -57,11 +57,13 @@ public class DiagnosisService {
       Set.of("recommended", "price", "distance");
   private static final String DEFAULT_RECOMMENDATION_SORT = "recommended,desc";
 
+  /** 라벨·메시지 언어-키 맵에서 사용자 언어 값이 없을 때의 폴백 언어(ADR-0029). */
+  private static final String DEFAULT_LANGUAGE = "en";
+
   private final DiagnosisRepository diagnosisRepository;
   private final DiagnosisQuestionCatalog questionCatalog;
   private final ListingRecommendationService listingRecommendationService;
   private final UserAccountService userAccountService;
-  private final CountryLanguageResolver countryLanguageResolver;
   private final SuggestionMessages suggestionMessages;
 
   /** 단계별 질문 1개 조회(③은 저장된 purpose로 university/district 택일, 등록 국가 언어로 번역). */
@@ -69,13 +71,28 @@ public class DiagnosisService {
     if (step < 1 || step > 6) {
       throw new InvalidInputException("step은 1~6 사이여야 합니다: " + step);
     }
-    String field = resolveField(userId, step);
-    DiagnosisQuestion question =
-        questionCatalog
-            .findByField(field)
-            .orElseThrow(() -> new IllegalStateException("진단 문항 카탈로그가 없습니다: " + field));
+    // ③(step 3)은 저장된 purpose로 어느 문항을 낼지 서버가 정한다(분기). 카탈로그 조회 전에 결정해 purpose
+    // 미선행이면 INVALID_INPUT으로 먼저 막는다(카탈로그에는 분기 메타를 두지 않는다 — ADR-0028).
+    String branchField = step == 3 ? resolveStep3Field(userId) : null;
+    List<DiagnosisQuestion> questions = questionCatalog.findByStep(step);
+    if (questions.isEmpty()) {
+      throw new IllegalStateException("진단 문항 카탈로그가 없습니다: step=" + step);
+    }
+    DiagnosisQuestion question = selectQuestion(questions, branchField);
     String language = resolveLanguage(userId);
     return toQuestionResponse(question, language);
+  }
+
+  /** step 3은 {@code branchField}(university/district)로 택일하고, 그 외 단계는 단일 문항을 그대로 쓴다. */
+  private static DiagnosisQuestion selectQuestion(
+      List<DiagnosisQuestion> questions, String branchField) {
+    if (branchField == null) {
+      return questions.get(0);
+    }
+    return questions.stream()
+        .filter(q -> branchField.equals(q.field()))
+        .findFirst()
+        .orElseThrow(() -> new IllegalStateException("진단 문항 카탈로그가 없습니다: " + branchField));
   }
 
   /** 현재 step의 답 1개를 진행 중(IN_PROGRESS) 진단에 저장한다(없으면 초안 생성). */
@@ -155,19 +172,7 @@ public class DiagnosisService {
     return new RecommendationResponse(content, markers, result.page(), suggestions);
   }
 
-  // --- 단계 → 필드 결정 ---
-
-  private String resolveField(long userId, int step) {
-    return switch (step) {
-      case 1 -> "region";
-      case 2 -> "purpose";
-      case 3 -> resolveStep3Field(userId);
-      case 4 -> "conditions";
-      case 5 -> "monthlyBudgetMax";
-      case 6 -> "arcStatus";
-      default -> throw new InvalidInputException("step은 1~6 사이여야 합니다: " + step);
-    };
-  }
+  // --- ③ 단계 분기(purpose → university/district) ---
 
   private String resolveStep3Field(long userId) {
     Purpose purpose =
@@ -261,7 +266,7 @@ public class DiagnosisService {
   // --- 번역 ---
 
   private String resolveLanguage(long userId) {
-    return countryLanguageResolver.resolve(userAccountService.getRegisteredCountry(userId));
+    return userAccountService.getLanguage(userId);
   }
 
   private static QuestionResponse toQuestionResponse(DiagnosisQuestion question, String language) {
@@ -287,9 +292,7 @@ public class DiagnosisService {
     if (value != null) {
       return value;
     }
-    return labels.getOrDefault(
-        CountryLanguageResolver.DEFAULT_LANGUAGE,
-        labels.values().stream().findFirst().orElse(null));
+    return labels.getOrDefault(DEFAULT_LANGUAGE, labels.values().stream().findFirst().orElse(null));
   }
 
   // --- 매핑 ---
