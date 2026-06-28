@@ -8,9 +8,9 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 통합 테스트용 실제 엔진 컨테이너(test-strategy §4). MySQL(auth·user, ADR-0005)·Redis(refresh, ADR-0006)를
- * Testcontainers로 띄우고 {@code @ServiceConnection}으로 datasource·redis 설정을 자동 주입한다(application.yml의
- * localhost 기본값을 덮어씀). MongoDB는 auth-onboarding 범위 밖이라 두지 않는다.
+ * 통합 테스트용 공용 엔진 컨테이너(test-strategy §4). MySQL(auth·user, ADR-0005)·Redis(refresh, ADR-0006)를
+ * Testcontainers로 띄우고 {@code @ServiceConnection}으로 datasource·redis 설정을 자동 주입한다. MongoDB는 필요한 테스트가
+ * 직접 선언한다.
  *
  * <p>실행에 Docker 데몬이 필요하다(로컬·CI 공통).
  */
