@@ -41,7 +41,8 @@ sequenceDiagram
             AUTH->>SQL: social_accounts에서 userId 조회<br/>(삭제 전에 apple_refresh_token 읽기)
             SQL-->>AUTH: 매핑(+ apple_refresh_token)
             opt Apple 연동 + apple_refresh_token 존재
-                AUTH->>AP: POST /auth/revoke<br/>client_id, client_secret(ES256 JWT),<br/>token=refresh_token, token_type_hint=refresh_token
+                Note over AUTH: client_secret(ES256 JWT)은 /auth/token과 공용 인메모리 캐시 재사용<br/>만료 임박 시 .p8로 재서명(ADR-0031)
+                AUTH->>AP: POST /auth/revoke<br/>client_id, client_secret,<br/>token=refresh_token, token_type_hint=refresh_token
                 Note over AUTH,AP: best-effort(ADR-0031) — 200·invalid_grant/invalid_token=성공(이미 폐기)<br/>그 외 실패는 WARN+metric, 탈퇴 차단 안 함(짧은 타임아웃)
                 AP-->>AUTH: 200 (빈 본문)
             end
