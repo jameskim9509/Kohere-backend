@@ -33,7 +33,7 @@
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
-| POST | `/api/v1/auth/social-login` | 소셜 `idToken` 검증 후 서버 JWT 발급(기존 로그인/신규 온보딩 분기) | 불필요 | 200 |
+| POST | `/api/v1/auth/social-login` | 소셜 자격 검증 후 서버 JWT 발급(기존 로그인/신규 온보딩 분기) — Google은 `idToken`, **Apple은 `authorizationCode`**([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)) | 불필요 | 200 |
 | POST | `/api/v1/auth/terms` | 약관 동의 제출(이용약관·개인정보처리방침·마케팅), 약관 동의 완료(TERMS_AGREED 전이) | 필수(온보딩 토큰) | 200 |
 | POST | `/api/v1/auth/email/verification-code` | 온보딩 중 입력 이메일로 인증번호 발송 | 필수(온보딩 토큰) | 200 |
 | POST | `/api/v1/auth/email/verify` | 인증번호 확인 → 이메일 검증 완료 처리 | 필수(온보딩 토큰) | 200 |
@@ -53,7 +53,7 @@
 
 ### 1. POST `/api/v1/auth/social-login` — 소셜 로그인/온보딩 분기
 
-앱이 provider(Apple/Google)에서 받은 `idToken`을 서버가 서명·`aud`·`iss`·`exp`로 검증한다. 기존 `ACTIVE` 회원이면 로그인 처리하고 access+refresh 토큰을 발급한다(`status=ACTIVE`, `onboardingRequired=false`). 신규이거나 **가입을 끝내지 못한 회원(`PENDING`·`TERMS_AGREED`)** 이면 온보딩 전용 access 토큰(`onboardingCompleted=false` 클레임)과 `onboardingRequired=true`로 응답한다(refresh 토큰은 발급하지 않음). 신규면 `PENDING` 레코드를 새로 만든다.
+앱이 provider에서 받은 자격을 서버가 검증한다 — **Google은 `idToken`** 을 서명·`aud`·`iss`·`exp`로 검증하고, **Apple은 `authorizationCode`** 를 `POST https://appleid.apple.com/auth/token`에서 교환해 받은 `id_token`을 같은 방식으로 검증한 뒤 신원(`sub`·`email`)을 얻는다. Apple은 교환으로 받은 `refresh_token`을 저장해 **탈퇴 시 토큰 폐기**(§10)에 사용한다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)). 기존 `ACTIVE` 회원이면 로그인 처리하고 access+refresh 토큰을 발급한다(`status=ACTIVE`, `onboardingRequired=false`). 신규이거나 **가입을 끝내지 못한 회원(`PENDING`·`TERMS_AGREED`)** 이면 온보딩 전용 access 토큰(`onboardingCompleted=false` 클레임)과 `onboardingRequired=true`로 응답한다(refresh 토큰은 발급하지 않음). 신규면 `PENDING` 레코드를 새로 만든다.
 
 응답의 **`status`로 클라이언트가 다음 화면을 분기**한다 — `PENDING`(소셜 로그인만 하고 약관 미동의)이면 **약관 동의 화면(§2)**, `TERMS_AGREED`(약관 동의했으나 온보딩 미완료)이면 **온보딩 화면(§5)**, `ACTIVE`이면 홈. 온보딩 토큰으로는 `GET /users/me`(ROLE_USER)가 `403`이라 상태를 따로 조회할 수 없으므로, 재개 지점은 이 응답의 `status`로 판단한다.
 
@@ -62,17 +62,31 @@
 
 #### Request Body
 
+provider별로 **자격 필드 하나**를 채운다 — Google은 `idToken`, Apple은 `authorizationCode`(둘 다 단일 엔드포인트·동일 응답, [ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md) A안).
+
 ```json
+// Google
 {
   "provider": "GOOGLE",
   "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6..."
 }
 ```
 
+```json
+// Apple
+{
+  "provider": "APPLE",
+  "authorizationCode": "c1a2b3..."
+}
+```
+
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
 | `provider` | string(enum) | 필수 | `APPLE` \| `GOOGLE` 중 하나(누락은 `INVALID_INPUT`, 허용 외 값은 역직렬화 실패로 `MALFORMED_REQUEST`) |
-| `idToken` | string | 필수 | provider 발급 OIDC ID 토큰. 빈 문자열 불가 |
+| `idToken` | string | provider별 | **Google 필수**. Google 발급 OIDC ID 토큰. Apple은 사용하지 않음 |
+| `authorizationCode` | string | provider별 | **Apple 필수**. `ASAuthorizationAppleIDCredential.authorizationCode`(UTF-8 디코드한 문자열, 1회용·약 5분). Google은 사용하지 않음 |
+
+> 필수 여부가 provider에 따라 달라(`idToken`↔`authorizationCode`) Bean Validation 대신 **application 계층에서 검증**한다 — 해당 provider의 자격 필드가 비어 있으면 `400 AUTH_MISSING_CREDENTIAL`. Apple `authorizationCode`는 1회용이므로 서버가 즉시 교환한다(재사용 시 `401 AUTH_INVALID_SOCIAL_TOKEN`).
 
 #### 성공 Response — 기존 회원(ACTIVE) (200 OK)
 
@@ -122,11 +136,12 @@
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `provider` 누락(null), `idToken` 누락/빈값 (Bean Validation: `@NotNull`/`@NotBlank`) |
+| 400 | `INVALID_INPUT` | `provider` 누락(null) (Bean Validation: `@NotNull`) |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치. **`provider`가 허용 외 enum 문자열(`APPLE`/`GOOGLE` 외)이면 역직렬화 단계에서 거부되어 이 코드로 처리**된다 |
-| 401 | `AUTH_INVALID_SOCIAL_TOKEN` | 소셜 `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패. **provider JWKS 조회 실패 등 OIDC 연동 오류도 현재 구현은 이 코드로 통합 처리**한다(아래 노트) |
+| 400 | `AUTH_MISSING_CREDENTIAL` | provider의 자격 필드 누락/빈값(Google `idToken` 또는 Apple `authorizationCode` 미전송) — application 계층 검증 |
+| 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패, 또는 Apple 교환 실패(`invalid_grant`/`invalid_client` — 만료·재사용 코드, 잘못된 client_secret)와 교환으로 받은 `id_token` 검증 실패. **provider JWKS 조회 실패 등 OIDC 연동 오류도 현재 구현은 이 코드로 통합 처리**한다(아래 노트) |
 
-> **연동 실패 처리(현행)**: `OidcTokenVerifierImpl`은 JWKS 조회 실패·provider 응답 오류를 포함한 모든 OIDC 검증 실패를 `401 AUTH_INVALID_SOCIAL_TOKEN`으로 변환한다. 따라서 이 엔드포인트는 `502 UPSTREAM_ERROR`/`503 SERVICE_UNAVAILABLE`를 반환하지 않는다(시퀀스 [US-1-1](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-1-social-login.md)·REST Docs 스니펫과 정합). 외부 연동 견고화(타임아웃·재시도·서킷브레이커) 도입 시 연동 실패를 `502`/`503`으로 분리하는 것을 검토한다([error-response-guide](../error-response-guide.md) §3).
+> **연동 실패 처리(현행)**: `OidcTokenVerifierImpl`은 JWKS 조회 실패·provider 응답 오류를 포함한 모든 OIDC 검증 실패를 `401 AUTH_INVALID_SOCIAL_TOKEN`으로 변환한다. Apple `/auth/token` 교환 호출의 인증 실패(`invalid_grant`/`invalid_client`)도 `401`로 통합하고, Apple 측 일시 장애·타임아웃 등 I/O·5xx는 `502 UPSTREAM_ERROR`로 분리한다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)). Google 경로는 종전대로 `502`/`503`을 내지 않는다(시퀀스 [US-1-1](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-1-social-login.md)·REST Docs 스니펫과 정합). 외부 연동 견고화(타임아웃·재시도·서킷브레이커) 확대는 [error-response-guide](../error-response-guide.md) §3 참고.
 
 ---
 
@@ -542,7 +557,7 @@
 
 ### 10. DELETE `/api/v1/users/me` — 회원 탈퇴
 
-본인 계정을 탈퇴 처리한다. 사용자 상태를 `WITHDRAWN`으로 전이하고 모든 refresh 토큰을 무효화한다. PENDING(온보딩 미완료) 사용자도 탈퇴할 수 있다(온보딩 중단·정리 목적).
+본인 계정을 탈퇴 처리한다. 사용자 상태를 `WITHDRAWN`으로 전이하고 모든 refresh 토큰을 무효화한다. PENDING(온보딩 미완료) 사용자도 탈퇴할 수 있다(온보딩 중단·정리 목적). **Apple 연동 계정은 저장된 `apple_refresh_token`으로 Apple `/auth/revoke`를 호출해 앱↔Apple ID 연동까지 폐기**한다(App Store 5.1.1(v), [ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 - **인증**: 필수.
 - Path/Query 파라미터: 없음.
@@ -550,7 +565,7 @@
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 개인정보(이름·생년월일·국적·직업·이메일·비자·닉네임)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)).
+본문 없음. 개인정보(이름·생년월일·국적·직업·이메일·비자·닉네임)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 #### 발생 가능한 에러
 
@@ -568,7 +583,8 @@
 
 | code | status | 의미 |
 | --- | --- | --- |
-| `AUTH_INVALID_SOCIAL_TOKEN` | 401 | 소셜 `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패(위조·만료·앱 불일치) |
+| `AUTH_MISSING_CREDENTIAL` | 400 | provider의 자격 필드 누락(Google `idToken` 또는 Apple `authorizationCode` 미전송) |
+| `AUTH_INVALID_SOCIAL_TOKEN` | 401 | Google `idToken` 검증 실패(서명/`aud`/`iss`/`exp`), 또는 Apple `authorizationCode` 교환 실패·교환 `id_token` 검증 실패(위조·만료·앱 불일치·재사용 코드) |
 | `AUTH_EMAIL_VERIFICATION_FAILED` | 422 | 이메일 인증번호 불일치 또는 만료(미발송·만료·오입력) |
 | `AUTH_EMAIL_NOT_VERIFIED` | 422 | 온보딩 제출 `email`이 미검증이거나 검증한 이메일과 불일치 |
 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 422 | 필수 약관(이용약관/개인정보처리방침) 미동의(약관 동의 `POST /auth/terms`) |

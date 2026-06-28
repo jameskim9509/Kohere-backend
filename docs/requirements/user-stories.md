@@ -156,6 +156,10 @@
   Given 인증된 사용자(`ACTIVE` 또는 `PENDING`)가
   When `DELETE /api/v1/users/me`를 호출하면
   Then `204 No Content`를 반환하고 사용자 상태를 `WITHDRAWN`으로 전이하며 모든 refresh 토큰을 무효화한다(개인정보 파기/익명화는 정책 — 확인 필요).
+- **정상 — Apple 연동 폐기(App Store 5.1.1(v))**
+  Given Apple로 가입해 `apple_refresh_token`이 저장된 사용자가
+  When `DELETE /api/v1/users/me`로 탈퇴하면
+  Then `social_accounts` 매핑 삭제 전에 Apple `POST /auth/revoke`(`token_type_hint=refresh_token`)로 앱↔Apple ID 연동을 폐기한다([ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)). 이 폐기는 **best-effort** — Apple 장애·이미 폐기(`invalid_grant`)여도 탈퇴는 `204`로 완료한다(저장된 토큰이 없으면 스킵).
 - **입력 검증 실패**
   Given 로그아웃 요청에 `refreshToken`이 누락되면
   When `POST /api/v1/auth/logout`을 호출하면
