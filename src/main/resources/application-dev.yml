@@ -37,3 +37,9 @@ app:
       audience: ${GOOGLE_CLIENT_ID:} # dev 옵션 — 미설정 시 Google 로그인만 미동작
     apple:
       audience: ${APPLE_CLIENT_ID:} # dev 옵션 — 미설정 시 Apple 로그인만 미동작
+  apple:
+    # dev 옵션 — 미설정(빈 폴백)이면 Apple 로그인만 미동작(다른 흐름은 기동·동작). client-id는 oidc.apple.audience와 동일 env.
+    client-id: ${APPLE_CLIENT_ID:}
+    team-id: ${APPLE_TEAM_ID:}
+    key-id: ${APPLE_KEY_ID:}
+    private-key: ${APPLE_PRIVATE_KEY:}

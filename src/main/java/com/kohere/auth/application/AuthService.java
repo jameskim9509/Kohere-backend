@@ -6,10 +6,13 @@ import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
+import com.kohere.auth.domain.MissingCredentialException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
 import com.kohere.auth.domain.OnboardingAlreadyCompletedException;
+import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.RefreshToken;
 import com.kohere.auth.domain.RefreshTokenHasher;
 import com.kohere.auth.domain.RefreshTokenRepository;
@@ -37,6 +40,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 인증·온보딩 유스케이스 조율(ADR-0003/0006/0010/0011). 소셜 OIDC 검증·서버 JWT 발급·refresh 회전/재사용 탐지/무효화를 담당하고, 약관
@@ -63,20 +67,32 @@ public class AuthService {
   private final UserAccountService userAccountService;
   private final EmailVerificationService emailVerificationService;
   private final AuthProperties authProperties;
+  private final AppleAuthClient appleAuthClient;
 
   /**
-   * 소셜 로그인. idToken 검증 후 (기존 ACTIVE)→정식 토큰 / (기존 PENDING·TERMS_AGREED·신규)→온보딩 임시 토큰. 응답 {@code
-   * status}로 클라이언트가 재개 지점을 분기한다.
+   * 소셜 로그인. provider별 자격을 검증해 신원을 얻은 뒤 (기존 ACTIVE)→정식 토큰 / (기존 PENDING·TERMS_AGREED·신규)→온보딩 임시 토큰을
+   * 발급한다. <b>Google</b>은 전달받은 {@code idToken}을, <b>Apple</b>은 {@code authorizationCode}를 {@code
+   * /auth/token}에서 교환해 받은 {@code id_token}을 검증 대상으로 한다(ADR-0031). 응답 {@code status}로 클라이언트가 재개 지점을
+   * 분기한다.
    */
   @Transactional
   public SocialLoginResponse socialLogin(SocialLoginRequest request) {
-    OidcUser oidcUser = oidcTokenVerifier.verify(request.provider(), request.idToken());
+    ResolvedIdentity identity = resolveIdentity(request);
+    OidcUser oidcUser = identity.oidcUser();
+    String appleRefreshToken = identity.appleRefreshToken();
+
     Optional<SocialAccount> existing =
         socialAccountRepository.findByProviderAndProviderUserId(
             oidcUser.provider(), oidcUser.subject());
 
     if (existing.isPresent()) {
-      long userId = existing.get().getUserId();
+      SocialAccount account = existing.get();
+      long userId = account.getUserId();
+      // Apple 재로그인: refresh token이 새로 반환됐을 때만 upsert(없으면 기존 값 보존, ADR-0031 #4)
+      if (request.provider() == Provider.APPLE && StringUtils.hasText(appleRefreshToken)) {
+        socialAccountRepository.save(
+            account.toBuilder().appleRefreshToken(appleRefreshToken).build());
+      }
       String status = userAccountService.getAccount(userId).status();
       if (STATUS_ACTIVE.equals(status)) {
         TokenResponse tokens = issueFullTokens(userId);
@@ -101,9 +117,46 @@ public class AuthService {
             .email(oidcUser.email())
             .userId(userId)
             .linkedAt(Instant.now())
+            .appleRefreshToken(appleRefreshToken)
             .build());
     return onboardingResponse(userId, STATUS_PENDING);
   }
+
+  /**
+   * provider별 자격을 검증해 신원(과 Apple refresh token)을 얻는다. Google은 전달받은 {@code idToken}을 그대로 검증하고,
+   * Apple은 {@code authorizationCode}를 {@code /auth/token}에서 교환해 받은 {@code id_token}을 동일 {@link
+   * OidcTokenVerifier}로 재검증한다 — 교환 응답을 맹신하지 않는다(ADR-0031 #1). provider별 필수 자격 누락은 400 {@code
+   * AUTH_MISSING_CREDENTIAL}.
+   */
+  private ResolvedIdentity resolveIdentity(SocialLoginRequest request) {
+    return switch (request.provider()) {
+      case GOOGLE -> {
+        requireCredential(request.idToken());
+        yield new ResolvedIdentity(
+            oidcTokenVerifier.verify(Provider.GOOGLE, request.idToken()), null);
+      }
+      case APPLE -> {
+        requireCredential(request.authorizationCode());
+        // 인가코드는 1회용(약 5분)이라 즉시 교환한다. 교환은 이 @Transactional 안에서 일어나므로, 최초 동의 시 받은 (유일한)
+        // refresh token이 이후 단계 실패로 롤백되면 유실될 수 있다 — Apple은 일반 재로그인에 refresh token을 재발급하지
+        // 않는다. 이는 ADR-0031이 수용한 best-effort 폐기 범위(durable 재시도 없음)이며, 토큰 부재 시 탈퇴 흐름이
+        // skip+WARN+metric으로 가시화한다(UserWithdrawnEventListener). 빈도를 더 줄이려면 교환을 트랜잭션 밖으로 분리한다.
+        AppleAuthClient.AppleTokens tokens =
+            appleAuthClient.exchangeAuthorizationCode(request.authorizationCode());
+        yield new ResolvedIdentity(
+            oidcTokenVerifier.verify(Provider.APPLE, tokens.idToken()), tokens.refreshToken());
+      }
+    };
+  }
+
+  private static void requireCredential(String credential) {
+    if (!StringUtils.hasText(credential)) {
+      throw new MissingCredentialException();
+    }
+  }
+
+  /** {@link #resolveIdentity} 결과 — 검증된 신원과 (Apple만) 교환받은 refresh token(없으면 null). */
+  private record ResolvedIdentity(OidcUser oidcUser, String appleRefreshToken) {}
 
   /** 약관 동의(PENDING→TERMS_AGREED). 필수 약관 미동의는 422. 토큰은 갱신하지 않는다(상태만 전이). */
   @Transactional

@@ -133,12 +133,14 @@
 | `provider` | VARCHAR(20) (enum `Provider`) | NOT NULL |
 | `provider_user_id` | VARCHAR(255) | NOT NULL · provider OIDC `sub` |
 | `email` | VARCHAR(255) | NULL · 제공자 이메일 — 민감정보 |
+| `apple_refresh_token` | VARCHAR(512) | NULL · Apple 전용 — 코드 교환(`/auth/token`)으로 받은 refresh token. 탈퇴 시 `/auth/revoke` 폐기용([ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)). Google·교환 전 행은 NULL — **1급 민감정보(로그·응답 비노출)** |
 | `linked_at` | DATETIME(6) | NOT NULL · 자격 연결 시각 |
 
 **인덱스**: PK `id` / UNIQUE `(provider, provider_user_id)`(중복 연동 방지·로그인 분기 등치 조회) / INDEX `user_id`(회원 연동 목록·탈퇴 정리).
 
 - **교차 모듈 no-FK**: `user_id`는 user 소유 → FK 미설정(값 참조). 회원 상태/프로필은 user 공개 쿼리/애플리케이션 조인.
-- 연동 매핑은 불변(생성/삭제만) → `updated_at`/소프트삭제 미적용.
+- 연동 매핑은 불변(생성/삭제만) → `updated_at`/소프트삭제 미적용. 단 `apple_refresh_token`은 Apple 재동의 시 갱신될 수 있다(코드 교환 응답에 있을 때만 upsert, 없으면 기존 값 보존 — [ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)).
+- **Apple refresh token**: 1급 민감정보 — 로그·응답·`toString` 비노출. MVP는 평문(RDS 저장소 암호화 의존, [ADR-0015](../adr/0015-sensitive-column-encryption.md))이며 컬럼 암호화 도입 시 후보. 전진 마이그레이션(Flyway)으로 추가하며, 탈퇴 시 매핑 삭제로 함께 제거된다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)).
 
 ### 4-2. `user`
 

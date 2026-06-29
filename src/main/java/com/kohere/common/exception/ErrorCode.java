@@ -24,6 +24,7 @@ public enum ErrorCode {
   SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "서비스를 일시적으로 사용할 수 없습니다."),
 
   // --- 인증·회원 (auth/user) — docs/api/specs/01-auth-onboarding.md ---
+  AUTH_MISSING_CREDENTIAL(HttpStatus.BAD_REQUEST, "소셜 로그인에 필요한 자격 정보가 누락되었습니다."),
   AUTH_INVALID_SOCIAL_TOKEN(HttpStatus.UNAUTHORIZED, "소셜 토큰 검증에 실패했습니다."),
   AUTH_REQUIRED_AGREEMENT_MISSING(HttpStatus.UNPROCESSABLE_ENTITY, "필수 약관에 동의해야 합니다."),
   AUTH_TERMS_AGREEMENT_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "약관 동의가 선행되어야 합니다."),

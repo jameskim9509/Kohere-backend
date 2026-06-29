@@ -24,6 +24,11 @@ public class SocialAccountRepositoryImpl implements SocialAccountRepository {
   }
 
   @Override
+  public Optional<SocialAccount> findByUserId(Long userId) {
+    return jpaRepository.findByUserId(userId).map(SocialAccountRepositoryImpl::toDomain);
+  }
+
+  @Override
   public SocialAccount save(SocialAccount socialAccount) {
     return toDomain(jpaRepository.save(toEntity(socialAccount)));
   }
@@ -42,6 +47,7 @@ public class SocialAccountRepositoryImpl implements SocialAccountRepository {
         .email(e.getEmail())
         .userId(e.getUserId())
         .linkedAt(e.getLinkedAt())
+        .appleRefreshToken(e.getAppleRefreshToken())
         .build();
   }
 
@@ -53,6 +59,7 @@ public class SocialAccountRepositoryImpl implements SocialAccountRepository {
         .email(s.getEmail())
         .userId(s.getUserId())
         .linkedAt(s.getLinkedAt())
+        .appleRefreshToken(s.getAppleRefreshToken())
         .build();
   }
 }

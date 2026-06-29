@@ -21,6 +21,16 @@ images_bucket_name = "kohere-dev-listing-images"
 # JWT_SECRET·REFRESH_PEPPER·EMAIL_PEPPER 는 Terraform이 자동 생성한다. 아래만 채운다:
 google_client_id = ""  # sensitive
 apple_client_id  = ""  # sensitive
+# Apple 인가코드 흐름(ADR-0031) — 탈퇴 시 /auth/revoke에 필요. 미설정이면 Apple 로그인만 미동작(다른 흐름 정상).
+apple_team_id = ""  # sensitive — Apple Developer Team ID
+apple_key_id  = ""  # sensitive — Sign in with Apple .p8 Key ID
+# .p8 개인키 전체(PKCS#8 PEM). heredoc로 실제 개행 그대로 붙여넣는다 — refresh-env가 dev .env용으로 개행을 \n로 이스케이프한다.
+# apple_private_key = <<-EOT
+# -----BEGIN PRIVATE KEY-----
+# MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHB...
+# -----END PRIVATE KEY-----
+# EOT
+apple_private_key = ""  # sensitive
 # 실 SMTP (dev는 MailHog 없음 — 예: Amazon SES SMTP)
 smtp_host     = "email-smtp.ap-northeast-2.amazonaws.com"
 smtp_port     = 587

@@ -42,3 +42,10 @@ app:
       audience: ${GOOGLE_CLIENT_ID:}
     apple:
       audience: ${APPLE_CLIENT_ID:}
+  apple:
+    # 로컬 옵션 — 빈 폴백이면 Apple 로그인만 미동작. 실제 Apple 연동 테스트 시 .p8 등을 env로 주입한다.
+    client-id: ${APPLE_CLIENT_ID:}
+    team-id: ${APPLE_TEAM_ID:}
+    key-id: ${APPLE_KEY_ID:}
+    private-key: ${APPLE_PRIVATE_KEY:}
+

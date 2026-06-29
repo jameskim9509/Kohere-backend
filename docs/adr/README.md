@@ -54,6 +54,7 @@
 | [0028](./0028-diagnosis-questions-catalog-store.md) | 진단 문항·선택지 카탈로그는 MongoDB diagnosisQuestions 컬렉션에 저장·제공한다 | Accepted | 2026-06-23 |
 | [0029](./0029-diagnosis-i18n-strategy.md) | 진단 i18n은 서버가 등록 국가→언어 매핑으로 표시 라벨을 번역한다(코드 enum 매핑/리소스 번들 대비 DB 채택) | Accepted | 2026-06-23 |
 | [0030](./0030-error-message-i18n-resource-bundle.md) | 에러 응답 메시지 i18n은 리소스 번들(Spring MessageSource)로 번역한다(Accept-Language·영어 폴백) | Accepted | 2026-06-24 |
+| [0031](./0031-apple-sign-in-authorization-code-flow.md) | Apple 로그인은 authorization code 방식으로 전환해 탈퇴 시 토큰을 폐기한다(Google은 idToken 유지) | Accepted | 2026-06-28 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

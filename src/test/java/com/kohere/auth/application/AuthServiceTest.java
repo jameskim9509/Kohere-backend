@@ -16,8 +16,10 @@ import com.kohere.auth.application.dto.OnboardingResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.EmailNotVerifiedException;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
+import com.kohere.auth.domain.MissingCredentialException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
 import com.kohere.auth.domain.OnboardingAlreadyCompletedException;
@@ -48,6 +50,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -66,6 +69,7 @@ class AuthServiceTest {
   @Mock private JwtTokenService jwtTokenService;
   @Mock private UserAccountService userAccountService;
   @Mock private EmailVerificationService emailVerificationService;
+  @Mock private AppleAuthClient appleAuthClient;
 
   private AuthService authService;
 
@@ -83,7 +87,8 @@ class AuthServiceTest {
             jwtTokenService,
             userAccountService,
             emailVerificationService,
-            authProperties);
+            authProperties,
+            appleAuthClient);
   }
 
   @Test
@@ -97,7 +102,7 @@ class AuthServiceTest {
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("PENDING");
@@ -120,7 +125,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
 
     assertThat(response.onboardingRequired()).isFalse();
     assertThat(response.status()).isEqualTo("ACTIVE");
@@ -142,13 +147,100 @@ class AuthServiceTest {
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("TERMS_AGREED");
     assertThat(response.refreshToken()).isNull();
     verify(userAccountService, never()).createPendingUser();
     verify(socialAccountRepository, never()).save(any());
+  }
+
+  @Test
+  void socialLogin_apple_newUser_exchangesCodeVerifiesIdTokenAndStoresRefresh() {
+    when(appleAuthClient.exchangeAuthorizationCode("apple-code"))
+        .thenReturn(new AppleAuthClient.AppleTokens("apple-id-token", "apple-rt-1"));
+    when(oidcTokenVerifier.verify(Provider.APPLE, "apple-id-token"))
+        .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@privaterelay.appleid.com"));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
+        .thenReturn(Optional.empty());
+    when(userAccountService.createPendingUser()).thenReturn(11L);
+    when(jwtTokenService.issueOnboardingToken(11L)).thenReturn("onboarding-token");
+    when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
+
+    SocialLoginResponse response =
+        authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+
+    assertThat(response.onboardingRequired()).isTrue();
+    assertThat(response.status()).isEqualTo("PENDING");
+    // 교환받은 id_token을 동일 검증기로 재검증한다(교환 응답 맹신 금지, ADR-0031 #1)
+    verify(appleAuthClient).exchangeAuthorizationCode("apple-code");
+    verify(oidcTokenVerifier).verify(Provider.APPLE, "apple-id-token");
+    ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
+    verify(socialAccountRepository).save(captor.capture());
+    assertThat(captor.getValue().getProvider()).isEqualTo(Provider.APPLE);
+    assertThat(captor.getValue().getAppleRefreshToken()).isEqualTo("apple-rt-1");
+  }
+
+  @Test
+  void socialLogin_apple_existingActive_upsertsRefreshTokenWhenReturned() {
+    when(appleAuthClient.exchangeAuthorizationCode("apple-code"))
+        .thenReturn(new AppleAuthClient.AppleTokens("apple-id-token", "apple-rt-new"));
+    when(oidcTokenVerifier.verify(Provider.APPLE, "apple-id-token"))
+        .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@example.com"));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
+        .thenReturn(Optional.of(appleAccount(21L, "apple-rt-old")));
+    when(userAccountService.getAccount(21L)).thenReturn(new UserAccountView(21L, "ACTIVE"));
+    when(jwtTokenService.issueAccessToken(21L)).thenReturn("access-token");
+    when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
+    when(refreshTokenHasher.hash(any())).thenReturn("hash");
+
+    SocialLoginResponse response =
+        authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+
+    assertThat(response.status()).isEqualTo("ACTIVE");
+    ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
+    verify(socialAccountRepository).save(captor.capture());
+    assertThat(captor.getValue().getAppleRefreshToken()).isEqualTo("apple-rt-new");
+    verify(refreshTokenRepository).save(any(RefreshToken.class));
+  }
+
+  @Test
+  void socialLogin_apple_reLoginWithoutRefreshToken_preservesStoredToken() {
+    when(appleAuthClient.exchangeAuthorizationCode("apple-code"))
+        .thenReturn(new AppleAuthClient.AppleTokens("apple-id-token", null));
+    when(oidcTokenVerifier.verify(Provider.APPLE, "apple-id-token"))
+        .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@example.com"));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
+        .thenReturn(Optional.of(appleAccount(22L, "apple-rt-existing")));
+    when(userAccountService.getAccount(22L)).thenReturn(new UserAccountView(22L, "ACTIVE"));
+    when(jwtTokenService.issueAccessToken(22L)).thenReturn("access-token");
+    when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
+    when(refreshTokenHasher.hash(any())).thenReturn("hash");
+
+    authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+
+    // refresh token이 새로 안 왔으면 매핑을 다시 저장하지 않는다 → 저장된 토큰 보존(ADR-0031 #4)
+    verify(socialAccountRepository, never()).save(any(SocialAccount.class));
+    verify(refreshTokenRepository).save(any(RefreshToken.class));
+  }
+
+  @Test
+  void socialLogin_apple_missingAuthorizationCode_throwsMissingCredential() {
+    assertThatThrownBy(
+            () -> authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, null)))
+        .isInstanceOf(MissingCredentialException.class);
+
+    verify(appleAuthClient, never()).exchangeAuthorizationCode(any());
+  }
+
+  @Test
+  void socialLogin_google_blankIdToken_throwsMissingCredential() {
+    assertThatThrownBy(
+            () -> authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "  ", null)))
+        .isInstanceOf(MissingCredentialException.class);
+
+    verify(oidcTokenVerifier, never()).verify(any(), any());
   }
 
   @Test
@@ -367,6 +459,18 @@ class AuthServiceTest {
         .email("a@example.com")
         .userId(userId)
         .linkedAt(Instant.now())
+        .build();
+  }
+
+  private static SocialAccount appleAccount(long userId, String appleRefreshToken) {
+    return SocialAccount.builder()
+        .id(2L)
+        .provider(Provider.APPLE)
+        .providerUserId("apple-sub")
+        .email("a@example.com")
+        .userId(userId)
+        .linkedAt(Instant.now())
+        .appleRefreshToken(appleRefreshToken)
         .build();
   }
 

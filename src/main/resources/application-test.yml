@@ -21,3 +21,10 @@ app:
       audience: test-google-client-id
     apple:
       audience: test-apple-client-id
+  apple:
+    # 테스트 고정값 — 컨텍스트 로딩용. 실제 Apple 연동은 AppleAuthClient 포트를 @Bean @Primary 스텁으로 대체하므로
+    # private-key는 파싱되지 않는다(placeholder). client-id는 oidc.apple.audience와 동일.
+    client-id: test-apple-client-id
+    team-id: test-team-id
+    key-id: test-key-id
+    private-key: test-apple-private-key-placeholder

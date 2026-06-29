@@ -6,6 +6,8 @@ set -euo pipefail
 get() { aws ssm get-parameter --region ${aws_region} --name "$1" --with-decryption --query Parameter.Value --output text; }
 # 옵션 시크릿: 미설정이면 secrets 모듈이 파라미터를 아예 안 만든다(빈 값 제외) → 없으면 빈 값으로.
 get_opt() { aws ssm get-parameter --region ${aws_region} --name "$1" --with-decryption --query Parameter.Value --output text 2>/dev/null || echo ""; }
+# 멀티라인 .p8 → 한 줄(개행을 리터럴 \n로 이스케이프). .env는 KEY=VALUE 한 줄이라 개행 보존 불가 → 앱이 \n를 복원(ADR-0031).
+get_pem_opt() { aws ssm get-parameter --region ${aws_region} --name "$1" --with-decryption --query Parameter.Value --output text 2>/dev/null | sed ':a;N;$!ba;s/\n/\\n/g' || echo ""; }
 umask 077
 cat >/opt/kohere/.env <<EOF
 JWT_SECRET=$(get "${ssm_prefix}/JWT_SECRET")
@@ -13,6 +15,9 @@ REFRESH_PEPPER=$(get "${ssm_prefix}/REFRESH_PEPPER")
 EMAIL_PEPPER=$(get "${ssm_prefix}/EMAIL_PEPPER")
 GOOGLE_CLIENT_ID=$(get_opt "${ssm_prefix}/GOOGLE_CLIENT_ID")
 APPLE_CLIENT_ID=$(get_opt "${ssm_prefix}/APPLE_CLIENT_ID")
+APPLE_TEAM_ID=$(get_opt "${ssm_prefix}/APPLE_TEAM_ID")
+APPLE_KEY_ID=$(get_opt "${ssm_prefix}/APPLE_KEY_ID")
+APPLE_PRIVATE_KEY=$(get_pem_opt "${ssm_prefix}/APPLE_PRIVATE_KEY")
 SPRING_MAIL_USERNAME=$(get_opt "${ssm_prefix}/SMTP_USERNAME")
 SPRING_MAIL_PASSWORD=$(get_opt "${ssm_prefix}/SMTP_PASSWORD")
 MYSQL_PASSWORD=$(get "${ssm_prefix}/MYSQL_PASSWORD")

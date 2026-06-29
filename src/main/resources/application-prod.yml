@@ -33,3 +33,9 @@ app:
       audience: ${GOOGLE_CLIENT_ID}
     apple:
       audience: ${APPLE_CLIENT_ID}
+  apple:
+    # Apple 인가코드 흐름 시크릿 — 폴백 없음(fail-fast). client-id는 oidc.apple.audience와 같은 번들 ID(같은 env 재사용).
+    client-id: ${APPLE_CLIENT_ID}
+    team-id: ${APPLE_TEAM_ID}
+    key-id: ${APPLE_KEY_ID}
+    private-key: ${APPLE_PRIVATE_KEY} # .p8 PKCS#8 PEM — 절대 로깅 금지
