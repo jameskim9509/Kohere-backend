@@ -27,7 +27,7 @@ Accepted
 1. **Apple 인가 코드 교환**: 앱은 `ASAuthorizationAppleIDCredential.authorizationCode`(1회용·약 5분)를 서버로 전달한다. 서버는 `POST https://appleid.apple.com/auth/token`(grant_type=authorization_code)으로 교환해 `{ id_token, refresh_token }`을 받고, **반환된 `id_token`을 기존 `OidcTokenVerifier`로 검증**(서명·`iss`·`aud`·`exp`)해 `sub`·`email`을 얻는다(교환 응답을 맹신하지 않음). 네이티브 iOS이므로 `redirect_uri`는 보내지 않는다.
 2. **Google 불변**: Google은 기존 `idToken` 검증(JWKS) 경로를 그대로 둔다.
 3. **요청 계약(A안)**: 단일 엔드포인트 `POST /api/v1/auth/social-login`·단일 응답을 유지하고, 요청 바디만 provider별 선택 필드로 둔다 — `{ provider, idToken?, authorizationCode? }`. Google은 `idToken`, Apple은 `authorizationCode`를 채운다. provider별 필수 여부는 Bean Validation 대신 **application 계층에서 검증**하고 누락 시 `400 AUTH_MISSING_CREDENTIAL`로 응답한다(통합 단일 `credential` 필드(B안)는 의미 오버로드로 비채택).
-4. **refresh token 저장**: `social_accounts`에 nullable `apple_refresh_token` 컬럼을 추가(Flyway 전진 마이그레이션)한다. Apple은 refresh token을 **최초 동의/재동의 때만** 반환하므로, **응답에 비어있지 않은 refresh token이 있을 때만 upsert하고 없으면 기존 값을 보존**한다(일반 재로그인이 저장된 토큰을 null로 덮어쓰지 않게 한다). [ADR-0015](./0015-sensitive-column-encryption.md)에 따라 MVP는 평문 컬럼(RDS 저장소 암호화 의존)으로 두되 **로그·응답·`toString`에 절대 노출하지 않는다**(향후 컬럼 암호화 대상 워치리스트).
+4. **refresh token 저장**: `social_accounts`에 nullable `apple_refresh_token` 컬럼을 추가(Flyway 전진 마이그레이션)한다. Apple은 authorization code 교환(`grant_type=authorization_code`) 응답에 **보통 매번 refresh token을 포함**하므로 정상 경로에선 최신 값으로 갱신된다(네이티브 iOS는 로그인마다 새 인가코드를 발급하고, Apple refresh token은 회전·무효화가 없어 최신 저장이 안전). 다만 **응답에 비어있지 않은 refresh token이 있을 때만 upsert하고 비어 있으면 기존 값을 보존**하는 방어 가드를 둔다 — 예외·계약 변경으로 토큰이 비어 와도 저장된 값을 null로 덮어쓰지 않게 한다(Apple에서 최초 인증 때만 내려오는 건 refresh token이 아니라 `email`·`fullName`이다). [ADR-0015](./0015-sensitive-column-encryption.md)에 따라 MVP는 평문 컬럼(RDS 저장소 암호화 의존)으로 두되 **로그·응답·`toString`에 절대 노출하지 않는다**(향후 컬럼 암호화 대상 워치리스트).
 5. **탈퇴 시 폐기(best-effort)**: `UserWithdrawnEvent` 처리에서 매핑 삭제 **이전에** Apple `apple_refresh_token`을 읽어 `POST /auth/revoke`(`token_type_hint=refresh_token`)를 호출한다. **멱등 처리** — HTTP 200, 그리고 `invalid_grant`/`invalid_token`(이미 폐기)은 성공으로 간주한다. 그 외 실패(타임아웃·5xx)는 **WARN 로그 + 메트릭**만 남기고 **탈퇴를 막지 않는다**([ADR-0014](./0014-withdrawal-pii-anonymization.md): 삭제는 차단되면 안 됨). 로컬 정리(매핑 삭제·우리 refresh 무효화)는 기존대로 탈퇴 트랜잭션 안에서 수행하고, 외부 호출은 짧은 connect/read 타임아웃으로 제한한다. 마이그레이션 이전 Apple 사용자(저장된 토큰 없음)는 다음 로그인 때 백필되며, 그때까지는 폐기를 스킵(WARN 메트릭으로 잔여 갭 가시화)한다.
 6. **client_secret**: `/auth/token`·`/auth/revoke` 공용으로 **ES256(P-256) 서명 JWT**를 쓴다 — 헤더 `{alg:ES256, kid:Key ID}`, 클레임 `iss=Team ID`, `sub=client_id`, `aud=https://appleid.apple.com`, `exp≤6개월`. **네이티브 iOS는 `client_id`·`sub`가 App ID(번들 ID)** 이며 Services ID가 아니다(`app.apple.client-id`는 `app.oidc.apple.audience`와 동일한 번들 ID여야 함). `.p8` 개인키·식별자는 SSM에서 주입([ADR-0023](./0023-secrets-in-ssm-parameter-store.md)), JWT는 메모리 캐시 후 만료 전 재생성한다. 이 client_secret은 사용자와 무관한 **앱 단위 단일 값**이라 인스턴스별로 인메모리에 1개만 캐시한다(사용자별 캐시·공유 저장소 불필요). 만료가 임박하면 같은 `.p8`로 새 JWT를 재서명해 교체한다.
 
@@ -55,7 +55,7 @@ Accepted
 
 ## Validation
 
-- Apple 신규 로그인 시 `/auth/token` 교환 후 `apple_refresh_token`이 저장되고, 일반 재로그인(refresh token 미반환)에서 기존 값이 보존되는지 확인.
+- Apple 신규 로그인 시 `/auth/token` 교환 후 `apple_refresh_token`이 저장되고, 교환 응답에 refresh token이 비어 오는 경우(방어 가드)에 기존 저장 값이 null로 덮이지 않고 보존되는지 확인.
 - 교환 응답의 `id_token`이 `aud`(번들 ID) 불일치 시 거부되는지(audience 검증이 비활성화되지 않는지) 확인.
 - 탈퇴 시 `/auth/revoke` 호출 후 동일 Apple 계정 재로그인이 재동의를 요구(연동 해제)하는지, Apple 장애/`invalid_grant`에도 탈퇴가 완료되는지 확인.
 - refresh token·client_secret·`.p8`이 어떤 로그에도 남지 않는지(마스킹/no-log) 확인.

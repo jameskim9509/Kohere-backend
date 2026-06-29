@@ -55,7 +55,7 @@
 | `linkedAt` | Instant | 자격 연결(최초 발견) 시각(UTC) |
 | `appleRefreshToken` | String | Apple 전용 — 코드 교환(`/auth/token`)으로 받은 refresh token. 탈퇴 시 `/auth/revoke` 폐기에 사용([ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)). Google은 `null`. 1급 민감정보 — 로그·응답 비노출, 평문 저장(저장소 암호화 의존, [ADR-0015](../adr/0015-sensitive-column-encryption.md)) |
 
-**불변식:** `(provider, providerUserId)` 조합은 전역 유니크 — 동일 제공자 자격은 정확히 한 회원에만 매핑; 소셜 로그인 시 `(provider, providerUserId)`로 조회해 존재하면 기존 회원 로그인, 없으면 신규 자격 생성 + `user` 모듈에 새 `PENDING` 회원 생성을 요청한 뒤 그 식별자로 연결(기존/신규 분기의 단일 진실원); `providerUserId`는 검증 통과 토큰(서명·`iss`·`aud`·`exp` — Google `idToken` / Apple은 코드 교환으로 받은 `id_token`)에서만 채워짐 — 검증 실패 토큰으로는 자격을 만들지 않음(`401 AUTH_INVALID_SOCIAL_TOKEN`); 한 번 연결된 `userId`는 재할당 불가(자격 소유권 고정); `appleRefreshToken`은 코드 교환 응답에 refresh token이 있을 때만 갱신(없으면 기존 값 보존 — Apple은 최초 동의/재동의 때만 반환, [ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)); `email`·`appleRefreshToken`은 응답·로그 비노출.
+**불변식:** `(provider, providerUserId)` 조합은 전역 유니크 — 동일 제공자 자격은 정확히 한 회원에만 매핑; 소셜 로그인 시 `(provider, providerUserId)`로 조회해 존재하면 기존 회원 로그인, 없으면 신규 자격 생성 + `user` 모듈에 새 `PENDING` 회원 생성을 요청한 뒤 그 식별자로 연결(기존/신규 분기의 단일 진실원); `providerUserId`는 검증 통과 토큰(서명·`iss`·`aud`·`exp` — Google `idToken` / Apple은 코드 교환으로 받은 `id_token`)에서만 채워짐 — 검증 실패 토큰으로는 자격을 만들지 않음(`401 AUTH_INVALID_SOCIAL_TOKEN`); 한 번 연결된 `userId`는 재할당 불가(자격 소유권 고정); `appleRefreshToken`은 코드 교환 응답에 refresh token이 있을 때만 갱신(없으면 기존 값 보존 — 보통 매번 반환되나 비어 올 경우를 대비한 방어 가드, [ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)); `email`·`appleRefreshToken`은 응답·로그 비노출.
 
 **`RefreshToken`** — 한 로그인 세션의 refresh 자격을 표현하는 애그리거트 루트(발급·만료·무효화·회전 세대 관리). 식별자 `id`, 비즈니스 키 `tokenHash`(불투명 토큰의 해시 — 조회·검증 키).
 
