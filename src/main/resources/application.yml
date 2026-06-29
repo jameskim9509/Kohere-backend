@@ -65,3 +65,10 @@ app:
     client-secret-ttl-seconds: 1800 # client_secret 캐시 만료(≤6개월, 만료 전 재서명)
     connect-timeout-millis: 3000 # Apple 외부 호출 connect 타임아웃(탈퇴·로그인 비차단용 짧은 값)
     read-timeout-millis: 5000 # Apple 외부 호출 read 타임아웃
+
+# MongoDB 1회성 마이그레이션(Mongock @ChangeUnit) — Flyway의 MongoDB 대응(ADR-0032).
+# @ChangeUnit은 컬렉션 소유 모듈의 infrastructure에 두고 com.kohere 하위를 스캔한다. test는 비활성(application-test.yml).
+mongock:
+  migration-scan-package:
+    - com.kohere
+  transaction-enabled: false # 단일 노드 Mongo·DocumentDB는 멀티도큐먼트 트랜잭션 미지원

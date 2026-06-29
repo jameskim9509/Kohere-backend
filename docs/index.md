@@ -67,7 +67,7 @@
 | 문서 | 설명 |
 | --- | --- |
 | [database-design](database/database-design.md) | 폴리글랏 데이터 모델 — 모듈별 스키마(MySQL ERD·MongoDB 컬렉션·Redis 키스페이스) |
-| [migration-policy](database/migration-policy.md) | 마이그레이션 정책 — MySQL Flyway·MongoDB·Redis([ADR-0008](adr/0008-mysql-migration-flyway.md)) |
+| [migration-policy](database/migration-policy.md) | 마이그레이션 정책 — MySQL Flyway·MongoDB Mongock·Redis([ADR-0008](adr/0008-mysql-migration-flyway.md), [ADR-0032](adr/0032-mongodb-migration-runner.md)) |
 
 ### adr — 아키텍처 결정 기록
 

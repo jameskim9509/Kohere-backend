@@ -13,7 +13,7 @@ import lombok.Getter;
  *
  * <p>서버 stateful 진단: 사용자당 진행 중(IN_PROGRESS) 진단 1건에 단계별 답을 채워 가고, 확정 시 {@link #complete(Instant)}로
  * COMPLETED로 전이한다. 입국 목적이 {@code STUDY}이면 {@code university}가, {@code NON_STUDY}이면 {@code
- * district}가 채워진다(반대 필드는 null). 확정 시 6단계 필수·조건부 대학/지역·조건 최대 3·예산 0 이상 불변식을 강제한다.
+ * district}가 채워진다(반대 필드는 null). 확정 시 6단계 필수·조건부 대학(그룹)/지역·조건 최대 3·월세 범위(min≤max) 불변식을 강제한다.
  *
  * <p>스펙: docs/api/specs/02-diagnosis-recommendation.md · 시퀀스 US-2-1/US-2-5.
  */
@@ -28,10 +28,11 @@ public class Diagnosis {
   private final Long userId;
   private final Region region;
   private final Purpose purpose;
-  private final University university;
+  private final UniversityGroup university;
   private final District district;
   private final Set<DiagnosisCondition> conditions;
-  private final Integer monthlyBudgetMax;
+  private final Integer monthlyRentMin;
+  private final Integer monthlyRentMax;
   private final ArcStatus arcStatus;
   private final DiagnosisStatus status;
   private final Instant submittedAt;
@@ -54,7 +55,7 @@ public class Diagnosis {
     return toBuilder().status(DiagnosisStatus.COMPLETED).submittedAt(now).build();
   }
 
-  /** 확정 전 저장된 답의 완결성·정합성을 검증한다(6단계 필수·조건부 대학/지역·조건 최대 3·예산 0 이상). */
+  /** 확정 전 저장된 답의 완결성·정합성을 검증한다(6단계 필수·조건부 대학(그룹)/지역·조건 최대 3·월세 범위 min≤max). */
   public void validateComplete() {
     if (region == null) {
       throw new InvalidInputException("region 답변이 필요합니다.");
@@ -66,11 +67,14 @@ public class Diagnosis {
     if (conditions != null && conditions.size() > MAX_CONDITIONS) {
       throw new InvalidInputException("conditions는 최대 3개까지 선택할 수 있습니다.");
     }
-    if (monthlyBudgetMax == null) {
-      throw new InvalidInputException("monthlyBudgetMax 답변이 필요합니다.");
+    if (monthlyRentMin == null || monthlyRentMax == null) {
+      throw new InvalidInputException("monthlyRent 답변이 필요합니다.");
     }
-    if (monthlyBudgetMax < 0) {
-      throw new InvalidInputException("monthlyBudgetMax는 0 이상이어야 합니다.");
+    if (monthlyRentMin < 0 || monthlyRentMax < 0) {
+      throw new InvalidInputException("0 이상이어야 합니다.");
+    }
+    if (monthlyRentMin > monthlyRentMax) {
+      throw new InvalidInputException("monthlyRentMin은 monthlyRentMax 이하여야 합니다.");
     }
     if (arcStatus == null) {
       throw new InvalidInputException("arcStatus 답변이 필요합니다.");

@@ -207,7 +207,7 @@
 | `address` | VO `Address` | 표시 주소·행정구역 |
 | `nearestTransit` | VO `NearestTransit` | 가까운 교통수단과 도보 시간 |
 | `nearbyPlacesDescription` | String | 집주인이 자유 입력한 주변 시설 안내 |
-| `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 학교 코드 |
+| `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 **개별 대학(member) 코드**(`SNU`·`CAU` 등) — 진단의 `UniversityGroup` 그룹 코드가 아니라 개별 대학 코드를 저장한다(저장 형식 불변). 진단은 선택 그룹을 member 코드로 펼쳐 `$in`으로 매칭([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)) |
 | `building` | VO `Building` | 건물 유형·층수·주차·엘리베이터·난방 |
 | `propertyPolicies` | VO `PropertyPolicies` | 건물/전체 방 공통 정책(ARC·전입신고·식사·영어 안내 등) |
 | `facilities` | VO `Facilities` | 공용 편의·보안·공간·제공 물품 |
@@ -381,7 +381,7 @@
 
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox/반경 모드·클러스터 단위·결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 기준 좌표 필요, 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 
-**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·예산·지역으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다. 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자·대표 가격·썸네일이 필요할 때 공개 쿼리로 검증한다.
+**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·월세 범위·지역·대학 그룹으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다 — `diagnosis`가 선택 대학 그룹을 펼친 member 코드 집합을 넘기면 `nearbyUniversityCodes`를 `$in`(ANY member)으로 매칭하고(빈 집합이면 대학 필터 생략), 월세는 `pricing.monthlyRent`를 `[monthlyRentMin, monthlyRentMax]`의 각 경계(존재 시)로 거른다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자·대표 가격·썸네일이 필요할 때 공개 쿼리로 검증한다.
 
 ---
 
@@ -389,7 +389,7 @@
 
 > [API 스펙](../api/specs/02-diagnosis-recommendation.md) · [시퀀스](sequence-diagrams/02-diagnosis-recommendation/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`)
 
-6단계 맞춤 진단(지역·입국 목적(유학 여부)·대학/지역(구) 선택·주거 환경 조건·월 예산 상한·ARC 발급 여부)을 본인 소유 레코드로 영속하고, 진단 조건으로 `listing` 공개 쿼리와 협력해 추천 매물을 제공한다. **진행 중 답은 서버가 DB에 저장**한다 — 사용자당 진행 중(`IN_PROGRESS`) 진단 1건을 in-progress draft로 들고 단계별 답을 채워가다가, 제출 시 `COMPLETED`로 확정한다(누적 답 재전송 없음). 재진단은 기존을 수정하지 않고 새 in-progress 진단을 시작해 항상 새 레코드로 이력을 보존한다.
+6단계 맞춤 진단(지역·입국 목적(유학 여부)·대학 그룹/지역(구) 선택·주거 환경 조건·월세 최소-최대 범위·ARC 발급 여부)을 본인 소유 레코드로 영속하고, 진단 조건으로 `listing` 공개 쿼리와 협력해 추천 매물을 제공한다. **진행 중 답은 서버가 DB에 저장**한다 — 사용자당 진행 중(`IN_PROGRESS`) 진단 1건을 in-progress draft로 들고 단계별 답을 채워가다가, 제출 시 `COMPLETED`로 확정한다(누적 답 재전송 없음). 재진단은 기존을 수정하지 않고 새 in-progress 진단을 시작해 항상 새 레코드로 이력을 보존한다.
 
 **`Diagnosis`** — 한 사용자의 6단계 진단(애그리거트 루트). **진행 중(`IN_PROGRESS`)에는 서버가 단계별 답을 채워가는 in-progress draft**이고, **제출 시 `COMPLETED`로 확정**된다. 식별자 `id`, 비즈니스 키 `(userId, idempotencyKey)`(멱등성 키가 제시된 경우에 한해 유일).
 
@@ -399,7 +399,7 @@
 | --- | --- | --- |
 | `id` | 식별자 | 애그리거트 식별자 |
 | `userId` | 식별자 | 진단 소유자 → `User` 식별자 참조 |
-| `criteria` | VO `DiagnosisCriteria` | 6단계 입력(지역·입국 목적·대학/지역(구) 선택·조건·예산·ARC). `IN_PROGRESS`에는 서버가 단계별로 채워가는 부분 값, `COMPLETED` 확정 시 불변 |
+| `criteria` | VO `DiagnosisCriteria` | 6단계 입력(지역·입국 목적·대학 그룹/지역(구) 선택·조건·월세 범위·ARC). `IN_PROGRESS`에는 서버가 단계별로 채워가는 부분 값, `COMPLETED` 확정 시 불변 |
 | `status` | enum `DiagnosisStatus` | 진단 상태(`IN_PROGRESS` → `COMPLETED`) |
 | `idempotencyKey` | String | 중복 제출 방지용 멱등성 키(선택) |
 | `submittedAt` | Instant, nullable | 제출 확정 시각(UTC). `COMPLETED` 확정 시 기록(`IN_PROGRESS`에는 부재) |
@@ -412,10 +412,11 @@
 | --- | --- | --- | --- |
 | `DiagnosisCriteria` | `region` | enum `Region` | 지역. 필수 1택 |
 | | `purpose` | enum `Purpose` | 입국 목적(유학 여부). 필수 1택(`STUDY`/`NON_STUDY`) |
-| | `university` | enum `University`, nullable | 대학(③ 대학·지역 선택의 유학 분기). `purpose`가 `STUDY`일 때 필수, 그 외엔 비움(두 필드 분리·조건부 필수) |
+| | `university` | enum `UniversityGroup`, nullable | 대학 그룹(③ 대학·지역 선택의 유학 분기). 6개 그룹 중 단일 선택(1택). `purpose`가 `STUDY`일 때 필수, 그 외엔 비움(두 필드 분리·조건부 필수). 필드 키는 `university`로 유지(`district`와 대칭). 추천 시 선택 그룹을 소속 개별 대학 코드(member)로 확장해 전달([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)) |
 | | `district` | enum `District`, nullable | 지역(구)(③ 대학·지역 선택의 비유학 분기). `NON_STUDY`일 때 필수, 그 외엔 비움(UPPER_SNAKE; 두 필드 분리·조건부 필수) |
 | | `conditions` | `Set<DiagnosisCondition>` | 주거 환경 조건. 0~3개·중복 제거 |
-| | `monthlyBudgetMax` | int(KRW) | 월 예산 상한. 0 이상 |
+| | `monthlyRentMin` | int(KRW) | 월세 최솟값. 0 이상 정수, `monthlyRentMin <= monthlyRentMax`(위반은 `400 INVALID_INPUT`, 사유 `"0 이상이어야 합니다."`·`"monthlyRentMin은 monthlyRentMax 이하여야 합니다."`) |
+| | `monthlyRentMax` | int(KRW) | 월세 최댓값. 0 이상 정수, `monthlyRentMin <= monthlyRentMax` |
 | | `arcStatus` | enum `ArcStatus` | ARC 발급 여부. 필수 1택(위반은 `400 INVALID_INPUT`, 필드별 사유) |
 | `RecommendationSuggestions` | `reason` | enum `NoMatchReason` | 매칭 0건 사유 |
 | | `message` | String | 안내 메시지 — `diagnosisSuggestions` 컬렉션의 `reason`별 인라인 언어-키 맵(`{ "en": .., "ja": .. }`)에서 **사용자 언어 키로 서버가 선택**(해당 언어 키 부재 시 영어(`en`) 폴백, US-2-6 일관) |
@@ -423,7 +424,7 @@
 | `SuggestionAction` | `type` | enum `SuggestionActionType` | 조정 유형 |
 | | `detail` | String | 결과를 늘리기 위한 단일 조정 제안 — `diagnosisSuggestions` 컬렉션의 `type`별 인라인 언어-키 맵(`{ "en": .., "ja": .. }`)에서 **사용자 언어 키로 서버가 선택**(해당 언어 키 부재 시 영어(`en`) 폴백) |
 
-> 진단 결과 화면은 `Diagnosis.criteria`를 입력으로 `listing`의 공개 추천 쿼리를 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 조립한다. 매물은 본 모듈 애그리거트가 아니므로 식별자(`listingId`)로만 참조하며, 추천 결과는 진단에 종속된 읽기 결과로 영속하지 않는다. 0건 추천 제안의 `message`/`detail`은 **MongoDB `diagnosisSuggestions` 컬렉션**(사유 `reason`을 `_id`로)의 `reason`/`type`별 **인라인 언어-키 맵**(`{ "en": .., "ja": .. }`)에서 서버가 사용자 언어 키로 골라 제공한다 — `user` 공개 query(`getLanguage`)로 취득한 표시 언어로 message·detail을 고른다(해당 언어 키 부재 시 영어(`en`) 폴백, US-2-6과 동일 i18n 경로 — 문항 라벨과 같은 인라인 언어-키 맵 방식 재사용).
+> 진단 결과 화면은 `Diagnosis.criteria`를 입력으로 `listing`의 공개 추천 쿼리를 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 조립한다. 매물은 본 모듈 애그리거트가 아니므로 식별자(`listingId`)로만 참조하며, 추천 결과는 진단에 종속된 읽기 결과로 영속하지 않는다. **대학 그룹 매칭**: 진단은 선택된 `UniversityGroup`을 소속 개별 대학 코드(member)로 확장해 넘기고, `listing`은 `nearbyUniversityCodes`를 그 member 코드 집합으로 `$in`(ANY member) 매칭한다 — `ETC`(member 빈 집합)면 대학 필터를 생략하고 지역(`region`) 기반 매칭만 적용한다. **월세 범위 매칭**: `monthlyRentMin`/`monthlyRentMax`는 listing에서 `pricing.monthlyRent >= min` AND `<= max`를 각각 별개 조건으로 적용한다(각 경계가 존재할 때만). 교차 모듈 계약은 `RecommendationCriteria`로 전달한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 0건 추천 제안의 `message`/`detail`은 **MongoDB `diagnosisSuggestions` 컬렉션**(사유 `reason`을 `_id`로)의 `reason`/`type`별 **인라인 언어-키 맵**(`{ "en": .., "ja": .. }`)에서 서버가 사용자 언어 키로 골라 제공한다 — `user` 공개 query(`getLanguage`)로 취득한 표시 언어로 message·detail을 고른다(해당 언어 키 부재 시 영어(`en`) 폴백, US-2-6과 동일 i18n 경로 — 문항 라벨과 같은 인라인 언어-키 맵 방식 재사용).
 
 **상태(enum):**
 
@@ -434,20 +435,11 @@
 | | `GYEONGGI` | 경기 |
 | `Purpose` | `STUDY` | 학업(유학·연수) |
 | | `NON_STUDY` | 비학업(취업 등) |
-| `University` | `SNU` | 서울대학교(③ 대학 선택, 유학 분기) |
-| | `CAU` | 중앙대학교 |
-| | `SOONGSIL` | 숭실대학교 |
-| | `HUFS` | 한국외국어대학교 |
-| | `KHU` | 경희대학교 |
-| | `KOREA` | 고려대학교 |
-| | `SKKU` | 성균관대학교 |
-| | `SUNGSHIN` | 성신여자대학교 |
-| | `KONKUK` | 건국대학교 |
-| | `SEJONG` | 세종대학교 |
-| | `HYU` | 한양대학교 |
-| | `HONGIK` | 홍익대학교 |
-| | `YONSEI` | 연세대학교 |
-| | `EWHA` | 이화여자대학교 |
+| `UniversityGroup` | `HUFS_KHU_KOREA` | 한국외대·경희대·고려대(③ 대학 그룹 선택, 유학 분기) |
+| | `SKKU_SUNGSHIN` | 성균관대·성신여대 |
+| | `SNU_CAU_SOONGSIL` | 서울대·중앙대·숭실대 |
+| | `HONGIK_YONSEI_EWHA` | 홍익대·연세대·이화여대 |
+| | `KONKUK_SEJONG_HYU` | 건국대·세종대·한양대 |
 | | `ETC` | 기타 |
 | `District` | `GURO_GU` | 구로구(③ 지역 선택, 비유학 분기, UPPER_SNAKE) |
 | | `YEONGDEUNGPO_GU` | 영등포구 |
@@ -471,16 +463,29 @@
 | `NoMatchReason` | `NO_MATCH` | 조건에 맞는 매물 없음 |
 | `SuggestionActionType` | `RELAX_REGION` | 지역 조건 완화 |
 | | `RELAX_CONDITIONS` | 주거 조건 일부 해제 |
-| | `INCREASE_BUDGET` | 월 예산 상한 상향 |
+| | `INCREASE_BUDGET` | 월세 범위 확대(최소를 낮추거나 최대를 높임 — enum 코드는 유지) |
 | | `ADJUST_KEYWORD` | 키워드 조정 |
 
 > `DiagnosisCondition`은 `listing`의 `ConditionTag`와 동일 이름을 쓴다(각 모듈이 자기 enum을 소유·공유 금지).
 >
-> `University`·`District`는 ③ 대학·지역 선택 단계의 입력 enum으로, **enum 값 카탈로그의 정본은 이 문서**다(위 표에 등재). **고정 enum(코드 1:1 검증용)은 MongoDB `diagnosisQuestions` 카탈로그**(`step`·`field`·`options[{code, label}]`·`select{type,max}` — **데이터만**, 분기 메타 없음)로 두고, **표시 문자열(번역)은 같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — `code`(UPPER_SNAKE)는 제출 검증 enum과 단일 출처(1:1)로 고정·언어 무관이고, 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`처럼 **언어 코드를 키로 하는 맵**으로 둔다(서버가 사용자 언어 키로 선택, 부재 시 영어(`en`) 폴백; 닉네임 풀·`countries`와 다른 부류로, reference로 분리하지 않음). 대학 질문(`university`)·지역 질문(`district`)은 각각 별도 step 데이터로 카탈로그에 존재하고, **어느 질문을 낼지는 서비스가 저장된 `purpose`로 결정**한다(데이터에 분기 메타 없음).
+> `UniversityGroup`·`District`는 ③ 대학·지역 선택 단계의 입력 enum으로, **enum 값 카탈로그의 정본은 이 문서**다(위 표에 등재). **고정 enum(코드 1:1 검증용)은 MongoDB `diagnosisQuestions` 카탈로그**(`step`·`field`·`options[{code, label}]`·`select{type,max}` — **데이터만**, 분기 메타 없음)로 두고, **표시 문자열(번역)은 같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — `code`(UPPER_SNAKE)는 제출 검증 enum과 단일 출처(1:1)로 고정·언어 무관이고, 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`처럼 **언어 코드를 키로 하는 맵**으로 둔다(서버가 사용자 언어 키로 선택, 부재 시 영어(`en`) 폴백; 닉네임 풀·`countries`와 다른 부류로, reference로 분리하지 않음). 대학 그룹 질문(`university`)·지역 질문(`district`)은 각각 별도 step 데이터로 카탈로그에 존재하고, **어느 질문을 낼지는 서비스가 저장된 `purpose`로 결정**한다(데이터에 분기 메타 없음). 대학 그룹 질문의 `options[].code`는 `UniversityGroup`과 1:1(6개 그룹), 사용자는 그중 1개를 단일 선택한다.
+>
+> **대학 그룹 → 소속 개별 대학 코드(member) 매핑** — `UniversityGroup`은 ③ 단계의 **선택 입력**이고, member 개별 코드(`SNU`·`CAU` 등 기존 개별 University 코드)는 **추천 질의 시 그룹을 펼친(query-time expansion) 결과**다. 개별 코드는 여전히 `listing`의 `nearbyUniversityCodes`에 저장되는 값으로(**listing 저장 형식은 변경하지 않음** — 그룹 코드가 아니라 member 개별 코드를 저장), 진단은 선택 그룹을 아래 member 집합으로 확장해 listing 공개 추천 쿼리에 넘기고 listing은 `nearbyUniversityCodes`를 그 집합으로 `$in`(ANY member) 매칭한다. `ETC`는 member가 빈 집합이라 대학 필터를 생략한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)).
+>
+> | `UniversityGroup` | ko 라벨 | en 라벨 | member 개별 대학 코드 |
+> | --- | --- | --- | --- |
+> | `HUFS_KHU_KOREA` | 한국외대·경희대·고려대 | HUFS · Kyung Hee · Korea Univ. | `HUFS`·`KHU`·`KOREA` |
+> | `SKKU_SUNGSHIN` | 성균관대·성신여대 | Sungkyunkwan · Sungshin Women's | `SKKU`·`SUNGSHIN` |
+> | `SNU_CAU_SOONGSIL` | 서울대·중앙대·숭실대 | Seoul National · Chung-Ang · Soongsil | `SNU`·`CAU`·`SOONGSIL` |
+> | `HONGIK_YONSEI_EWHA` | 홍익대·연세대·이화여대 | Hongik · Yonsei · Ewha Womans | `HONGIK`·`YONSEI`·`EWHA` |
+> | `KONKUK_SEJONG_HYU` | 건국대·세종대·한양대 | Konkuk · Sejong · Hanyang | `KONKUK`·`SEJONG`·`HYU` |
+> | `ETC` | 기타 | Other | (빈 집합) — 대학 필터 생략, 지역 기반 매칭만 |
+>
+> **⑤ 월세 범위(`monthlyRent`) — `NUMBER_RANGE` 카브아웃** — 5단계 월세 입력은 enum 옵션이 아니라 **숫자 범위 자유 입력**이라 `diagnosisQuestions`의 step-5 `select.type`을 `"NUMBER_RANGE"`(두 숫자 입력 필드, `options`는 빈 배열)로 둔다 — "모든 step은 코드가 enum과 1:1인 고정 옵션 목록"이라는 전제에서 의도적으로 갈라진 예외다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)).
 
-**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다 — `userId`(→ `user`), 추천 결과의 `listingId`(→ `listing`). 추천은 `Diagnosis.criteria`로 **조건·예산·지역(+대학/지역구)으로 매물 요약을 조회하는 `listing` 공개 추천 쿼리**(예: `recommendByCriteria`)를 동기 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 받아 조립한다(엔티티 비공유, listing 내부 스키마는 변경하지 않고 호출 인터페이스만 참조; ADR-0002 Decision 5). 라벨 번역에 쓸 **표시 언어는 `user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출) — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(토큰 클레임 분기 제거; ADR-0002 Decision 5). 이로써 **모듈 의존 `diagnosis → user`를 추가**한다(아래 `allowedDependencies` 항목). 진단 제출·재진단은 본 모듈 내부에서 완결되며 외부 발행 이벤트는 없다.
+**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다 — `userId`(→ `user`), 추천 결과의 `listingId`(→ `listing`). 추천은 `Diagnosis.criteria`로 **조건·월세 범위·지역(+대학 그룹/지역구)으로 매물 요약을 조회하는 `listing` 공개 추천 쿼리**(예: `recommendByCriteria`)를 동기 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 받아 조립한다(엔티티 비공유, listing 내부 스키마는 변경하지 않고 호출 인터페이스만 참조; ADR-0002 Decision 5). 교차 모듈 계약(`RecommendationCriteria`)에서 `university`는 단일 `String`이 아니라 **member 개별 대학 코드의 `Set<String>`**(`ETC`면 빈 집합)이고, `monthlyRentMin`/`monthlyRentMax`는 nullable(null/부재 = 해당 경계 무제한)로 전달해 listing이 `pricing.monthlyRent >= min` AND `<= max`를 각 경계가 존재할 때만 별개 조건으로 적용한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 라벨 번역에 쓸 **표시 언어는 `user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출) — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(토큰 클레임 분기 제거; ADR-0002 Decision 5). 이로써 **모듈 의존 `diagnosis → user`를 추가**한다(아래 `allowedDependencies` 항목). 진단 제출·재진단은 본 모듈 내부에서 완결되며 외부 발행 이벤트는 없다.
 
-- **문항·선택지 카탈로그(US-2-5)** — 6단계별 {질문(`question`), 선택지[`code`], 선택 제약(`select{type, max}`)}는 `Diagnosis` 애그리거트가 아니라 **MongoDB `diagnosisQuestions` 컬렉션(도메인 포트로 조회)**로 제공한다 — **데이터만 보유**하고 분기 메타(`branchOn` 등)는 두지 않는다(분기는 서비스 비즈니스 로직 소관). 번역(표시 문자열)은 분리 컬렉션 없이 **같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`로 두고 선택지 `code`(UPPER_SNAKE)는 언어 무관 불변이다. 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)을 호출하면, 서버가 (카탈로그 + 본인 진행 중(`IN_PROGRESS`) 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question, select{type, max}, options[{code, label}] }`(`question`·`label`은 서버가 인라인 언어-키 맵에서 사용자 언어 키로 고른 표시 문자열, `code`는 언어 무관)로 내려준다(한 번에 다 주지 않음; 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열)로 보내면 서버가 **본인 진행 중(`IN_PROGRESS`) 진단에 저장**한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`(제출)가 진행 중 진단의 저장된 답을 재검증해 `COMPLETED`로 확정한다. **분기는 서비스 비즈니스 로직이 결정한다(클라 로컬 분기·데이터 분기 메타 아님)** — ③ 대학·지역 단계(step 3)는 저장된 `purpose`를 보고 서비스가 알맞은 질문만 낸다: `STUDY`면 대학 질문(`university`, 목록 `University`)을, `NON_STUDY`면 지역 질문(`district`, 목록 `District`)을 내려준다(두 질문 데이터는 카탈로그에 각각 존재하고, 노출은 서비스가 결정; 한 응답에 두 목록을 함께 주지 않는다). 선택지 `code`는 제출 검증 enum과 **동일 출처(1:1)** 라 코드로 제출하면 `INVALID_INPUT` 없이 수용된다(카탈로그·번역 모두 `diagnosisQuestions` 도큐먼트에 함께 보유). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`로 거른다.
+- **문항·선택지 카탈로그(US-2-5)** — 6단계별 {질문(`question`), 선택지[`code`], 선택 제약(`select{type, max}`)}는 `Diagnosis` 애그리거트가 아니라 **MongoDB `diagnosisQuestions` 컬렉션(도메인 포트로 조회)**로 제공한다 — **데이터만 보유**하고 분기 메타(`branchOn` 등)는 두지 않는다(분기는 서비스 비즈니스 로직 소관). 번역(표시 문자열)은 분리 컬렉션 없이 **같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`로 두고 선택지 `code`(UPPER_SNAKE)는 언어 무관 불변이다. 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)을 호출하면, 서버가 (카탈로그 + 본인 진행 중(`IN_PROGRESS`) 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question, select{type, max}, options[{code, label}] }`(`question`·`label`은 서버가 인라인 언어-키 맵에서 사용자 언어 키로 고른 표시 문자열, `code`는 언어 무관)로 내려준다(한 번에 다 주지 않음; 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열; **⑤ 월세 범위는 enum 코드가 아니라 두 숫자 필드** `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` — 순서 없는 `codes[]` 배열을 재사용하지 않는다)로 보내면 서버가 **본인 진행 중(`IN_PROGRESS`) 진단에 저장**한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`(제출)가 진행 중 진단의 저장된 답을 재검증해 `COMPLETED`로 확정한다. **분기는 서비스 비즈니스 로직이 결정한다(클라 로컬 분기·데이터 분기 메타 아님)** — ③ 대학·지역 단계(step 3)는 저장된 `purpose`를 보고 서비스가 알맞은 질문만 낸다: `STUDY`면 대학 그룹 질문(`university`, 목록 `UniversityGroup` 6개 그룹)을, `NON_STUDY`면 지역 질문(`district`, 목록 `District`)을 내려준다(두 질문 데이터는 카탈로그에 각각 존재하고, 노출은 서비스가 결정; 한 응답에 두 목록을 함께 주지 않는다). 선택지 `code`는 제출 검증 enum과 **동일 출처(1:1)** 라 코드로 제출하면 `INVALID_INPUT` 없이 수용된다(카탈로그·번역 모두 `diagnosisQuestions` 도큐먼트에 함께 보유). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`로 거른다.
 - **라벨 번역(US-2-6)** — 표시 `label`·`question`은 **사용자 표시 언어**의 값으로 채운다. `code`는 언어 무관 동일(UPPER_SNAKE)이며 인라인 언어-키 맵의 값(표시 문자열)만 언어별이고, 해당 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님; `Accept-Language` 비의존). 표시 언어는 **`user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기 제거; ADR-0002 Decision 5) — `user`는 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다. 표시 문자열은 **`diagnosisQuestions` 도큐먼트의 `question`/`options[].label`에 인라인 언어-키 맵으로 임베드**한다: `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**이다(문항·옵션은 `diagnosisQuestions`, 추천 사유/액션은 `diagnosisSuggestions` 컬렉션에 같은 인라인 언어-키 맵 방식 재사용). **국가→언어 매핑은 `user`의 `countries.lang`이 보유**하며, 미지원 언어의 **폴백 기본 언어는 영어**다. 서버 동작: 표시 언어(`user` `getLanguage`) → 도큐먼트의 언어-키 맵에서 그 언어 키 값을 골라(부재 시 `en`) 응답 조립.
 - **`allowedDependencies`** — 라벨 번역이 표시 언어를 `user` 공개 쿼리(`getLanguage`)로 동기 취득하므로 `diagnosis`의 `allowedDependencies`는 **`user`를 포함**한다(즉 `{common, user}`; 토큰 클레임 분기 제거로 `{common}` 유지 안 함). 이는 `package-info.java`/`@ApplicationModule`에 반영된다.
 
