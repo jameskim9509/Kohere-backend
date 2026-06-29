@@ -11,7 +11,7 @@
 | 스토어 | 도구/방식 | 변경 단위 | 비고 |
 | --- | --- | --- | --- |
 | **MySQL** | **Flyway**(`flyway-core`+`flyway-mysql`) + JPA `ddl-auto=validate` | 버전드 SQL(`V__`) | DDL은 Flyway만, JPA는 검증만(§1~§7) |
-| **MongoDB** | 부트스트랩/마이그레이션 스크립트 + 앱 레벨 `schemaVersion` | 인덱스 생성·문서 진화 | 스키마리스 — DDL 없음(§8) |
+| **MongoDB** | 인덱스 부트스트랩 + **Mongock**(`@ChangeUnit`, 모듈별) + 앱 레벨 `schemaVersion` | 인덱스 생성·문서 진화·1회성 이행 | 스키마리스 — DDL 없음(§8) |
 | **Redis** | 코드 상수(키스페이스·TTL) | 키 네임스페이스 버전 | 스키마 없음 — 별도 마이그레이션 없음(§9) |
 
 ---
@@ -86,6 +86,7 @@
 
 - **인덱스**: `2dsphere`(매물 지오)·TTL(`recentListings` 7일)·UNIQUE(`favorites`/`recentListings`의 `(userId,listingId)` 등)는 **부트스트랩/마이그레이션 스크립트로 기동 시 멱등 생성**한다(이미 있으면 무시). 인덱스 정의 정본은 [database-design](./database-design.md) §4.
 - **문서 구조 진화**: 컬렉션 문서에 **`schemaVersion` 필드**를 두고, 읽을 때 구버전을 신버전으로 변환(**lazy**) 또는 **배치 마이그레이션**으로 점진 이행한다.
+- **초기 시드·1회성 마이그레이션 모두 Mongock changeUnit**([ADR-0032](../adr/0032-mongodb-migration-runner.md)): **최초 적재는 init changeUnit(order `0000`)이 레퍼런스 카탈로그(`diagnosisQuestions`·`diagnosisSuggestions`)를 비우고 캐노니컬 시드를 재적재**(Flyway V1 from-scratch 대응), 이후 **구조·데이터 진화는 order `0001`+ changeUnit**으로 둔다. 별도 `ApplicationRunner` 시더를 두지 않는다 — 생애주기를 Mongock 단일 메커니즘으로 통합한다. Mongock이 **자체 changelog 컬렉션에 적용 이력**을 남기고 기동 시 **미적용 changeUnit만 순서대로 1회 실행**한다(Flyway `flyway_schema_history`의 MongoDB 대응). 멀티 인스턴스 동시 기동은 Mongock **분산 락**으로 직렬화된다(자체 `_migrations`·유니크 `_id` 직렬화를 손수 구현하지 않는다). 각 `@ChangeUnit`은 **컬렉션을 소유한 모듈의 `infrastructure`**에 두어 소유권·이력을 모듈별로 유지한다(미래 MSA/DB-per-service 친화 — `common` 공유 골격 금지). **사용자 데이터(`diagnoses`)는 컬렉션 drop 없이 영향 문서만 교체/이행**한다(레퍼런스 카탈로그 베이스라인 재적재는 예외 — 아래 파괴적 일괄 변경 금지 준수).
 - **파괴적 일괄 변경 금지**([ADR-0005](../adr/0005-polyglot-persistence.md) D7): 컬렉션 전체를 멈추고 바꾸지 않고, 확장→점진 이행으로 처리한다.
 - 대형 인덱스 생성은 백그라운드/복제 지연을 고려한다.
 
@@ -104,10 +105,11 @@
 - [ ] 대형 테이블 인덱스/타입 변경의 **락 영향**을 검토했다([§6](#6-인덱스-추가-시-락-주의))
 - [ ] 스키마가 [database-design](./database-design.md) 및 도메인 엔티티와 일치하고 JPA `validate`가 green이다
 - [ ] (MongoDB) 새 인덱스(`2dsphere`·TTL·UNIQUE)를 부트스트랩 스크립트에 **멱등** 추가했다
+- [ ] (MongoDB) 초기 시드(init changeUnit `0000`)·이미 적재된 컬렉션의 1회성 변경 모두 컬렉션 소유 모듈의 **Mongock `@ChangeUnit`**으로 처리했다(별도 `ApplicationRunner` 시더 금지 — [§8](#8-mongodb-변경-관리))
 - [ ] (Redis) 키 구조 변경 시 네임스페이스 버전/만료 교체 전략을 적었다
 - [ ] CI에서 빈 DB 전체 적용이 통과한다
 
 ## 관련 문서
 
-- [ADR-0008](../adr/0008-mysql-migration-flyway.md)(마이그레이션 도구 결정) · [ADR-0005](../adr/0005-polyglot-persistence.md)(폴리글랏) · [ADR-0006](../adr/0006-refresh-token-store-redis.md)(refresh=Redis)
+- [ADR-0008](../adr/0008-mysql-migration-flyway.md)(MySQL 마이그레이션 도구 결정) · [ADR-0032](../adr/0032-mongodb-migration-runner.md)(MongoDB=Mongock) · [ADR-0005](../adr/0005-polyglot-persistence.md)(폴리글랏) · [ADR-0006](../adr/0006-refresh-token-store-redis.md)(refresh=Redis)
 - [database-design](./database-design.md)(스키마·인덱스 정본) · [system-overview §3-2·§1-3](../architecture/system-overview.md)(스택·배포)
