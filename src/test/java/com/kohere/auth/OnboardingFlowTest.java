@@ -31,9 +31,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * auth-onboarding 시나리오 종단 통합 테스트(@SpringBootTest + MockMvc). 소셜 OIDC 검증만 가짜로 주입(idToken==subject)하고
- * 메일 발송은 모킹(인증번호 캡처)하며 Security·JPA(MySQL/Testcontainers)·Redis·JWT·이벤트는 실제로 구동한다. 스키마는 Flyway가
- * 적용한다(ADR-0008).
+ * 로그인 이후 온보딩 여정 종단 통합 테스트(@SpringBootTest + MockMvc). Google 로그인으로 PENDING 토큰을 얻은 뒤(진입 셋업) 약관
+ * 동의→이메일 인증→온보딩(ACTIVE)→프로필→재발급→탈퇴까지의 흐름을 검증한다. 소셜 OIDC 검증만 가짜로 주입(idToken==subject)하고 메일 발송은
+ * 모킹(인증번호 캡처)하며 Security·JPA(MySQL/Testcontainers)·Redis·JWT·이벤트는 실제로 구동한다(스키마는 Flyway, ADR-0008).
+ * provider별 sign-in 자체는 {@link GoogleSignInFlowTest}·{@link AppleSignInFlowTest}가 담당한다.
  *
  * <p>흐름: 소셜로그인(신규)→온보딩 미완료 차단(403)→약관 동의(TERMS_AGREED)→이메일 인증(코드 발송·확인)→온보딩(ACTIVE)→프로필
  * 조회·수정→재발급→재사용 탐지(401)→탈퇴(204)→탈퇴 후 조회(404)→재가입 분리.
@@ -42,7 +43,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
-class AuthOnboardingFlowTest {
+class OnboardingFlowTest {
 
   @TestConfiguration
   static class FakeOidcConfig {
@@ -207,16 +208,6 @@ class AuthOnboardingFlowTest {
         .perform(get("/api/v1/users/me"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
-  }
-
-  @Test
-  void socialLogin_isPublic_andInvalidEnumIsRejected() throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/auth/social-login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"provider\":\"FACEBOOK\",\"idToken\":\"x\"}"))
-        .andExpect(status().isBadRequest());
   }
 
   private String read(String json, String... path) throws Exception {
