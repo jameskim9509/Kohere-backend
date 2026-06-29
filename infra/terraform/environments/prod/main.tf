@@ -124,12 +124,15 @@ module "elasticache" {
 module "secrets" {
   source = "../../modules/prod/secrets"
 
-  name_prefix      = local.name_prefix
-  tags             = local.common_tags
-  google_client_id = var.google_client_id
-  apple_client_id  = var.apple_client_id
-  smtp_username    = var.smtp_username
-  smtp_password    = var.smtp_password
+  name_prefix       = local.name_prefix
+  tags              = local.common_tags
+  google_client_id  = var.google_client_id
+  apple_client_id   = var.apple_client_id
+  apple_team_id     = var.apple_team_id
+  apple_key_id      = var.apple_key_id
+  apple_private_key = var.apple_private_key
+  smtp_username     = var.smtp_username
+  smtp_password     = var.smtp_password
 }
 
 # ===== IAM (ECS 역할 + GitHub OIDC) =====
@@ -190,6 +193,9 @@ locals {
     { name = "EMAIL_PEPPER", valueFrom = module.secrets.param_arns["EMAIL_PEPPER"] },
     { name = "GOOGLE_CLIENT_ID", valueFrom = module.secrets.param_arns["GOOGLE_CLIENT_ID"] },
     { name = "APPLE_CLIENT_ID", valueFrom = module.secrets.param_arns["APPLE_CLIENT_ID"] },
+    { name = "APPLE_TEAM_ID", valueFrom = module.secrets.param_arns["APPLE_TEAM_ID"] },
+    { name = "APPLE_KEY_ID", valueFrom = module.secrets.param_arns["APPLE_KEY_ID"] },
+    { name = "APPLE_PRIVATE_KEY", valueFrom = module.secrets.param_arns["APPLE_PRIVATE_KEY"] },
     { name = "SPRING_MAIL_USERNAME", valueFrom = module.secrets.param_arns["SPRING_MAIL_USERNAME"] },
     { name = "SPRING_MAIL_PASSWORD", valueFrom = module.secrets.param_arns["SPRING_MAIL_PASSWORD"] },
   ]

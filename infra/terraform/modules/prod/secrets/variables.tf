@@ -24,6 +24,27 @@ variable "apple_client_id" {
   sensitive   = true
 }
 
+variable "apple_team_id" {
+  description = "Apple Team ID(client_secret JWT iss, ADR-0031)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_key_id" {
+  description = "Apple Key ID(.p8 kid)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_private_key" {
+  description = "Apple .p8 개인키(PKCS#8 PEM) — ES256 client_secret 서명"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "smtp_username" {
   description = "운영 SMTP 사용자명(SES 등)"
   type        = string

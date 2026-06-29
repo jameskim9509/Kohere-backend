@@ -327,6 +327,28 @@ variable "apple_client_id" {
   sensitive   = true
 }
 
+# Apple 인가코드 흐름(ADR-0031) — 탈퇴 시 /auth/revoke용 client_secret(ES256) 재료. 운영 전 채워야 동작.
+variable "apple_team_id" {
+  description = "Apple Team ID(client_secret JWT iss)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_key_id" {
+  description = "Apple Key ID(.p8 kid)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_private_key" {
+  description = "Apple .p8 개인키(PKCS#8 PEM) — ES256 client_secret 서명"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "smtp_host" {
   description = "운영 SMTP 호스트(예: email-smtp.ap-northeast-2.amazonaws.com)"
   type        = string

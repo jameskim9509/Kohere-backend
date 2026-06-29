@@ -81,6 +81,9 @@ module "secrets" {
   tags                = local.common_tags
   google_client_id    = var.google_client_id
   apple_client_id     = var.apple_client_id
+  apple_team_id       = var.apple_team_id
+  apple_key_id        = var.apple_key_id
+  apple_private_key   = var.apple_private_key
   smtp_username       = var.smtp_username
   smtp_password       = var.smtp_password
   mysql_password      = var.mysql_password

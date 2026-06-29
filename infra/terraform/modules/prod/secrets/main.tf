@@ -25,6 +25,9 @@ locals {
     EMAIL_PEPPER         = random_password.email_pepper.result
     GOOGLE_CLIENT_ID     = var.google_client_id != "" ? var.google_client_id : "REPLACE_ME"
     APPLE_CLIENT_ID      = var.apple_client_id != "" ? var.apple_client_id : "REPLACE_ME"
+    APPLE_TEAM_ID        = var.apple_team_id != "" ? var.apple_team_id : "REPLACE_ME"
+    APPLE_KEY_ID         = var.apple_key_id != "" ? var.apple_key_id : "REPLACE_ME"
+    APPLE_PRIVATE_KEY    = var.apple_private_key != "" ? var.apple_private_key : "REPLACE_ME"
     SPRING_MAIL_USERNAME = var.smtp_username != "" ? var.smtp_username : "REPLACE_ME"
     SPRING_MAIL_PASSWORD = var.smtp_password != "" ? var.smtp_password : "REPLACE_ME"
   }

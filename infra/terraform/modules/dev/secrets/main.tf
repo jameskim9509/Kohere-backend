@@ -28,6 +28,9 @@ locals {
   provided_params = {
     GOOGLE_CLIENT_ID    = var.google_client_id
     APPLE_CLIENT_ID     = var.apple_client_id
+    APPLE_TEAM_ID       = var.apple_team_id
+    APPLE_KEY_ID        = var.apple_key_id
+    APPLE_PRIVATE_KEY   = var.apple_private_key
     SMTP_USERNAME       = var.smtp_username
     SMTP_PASSWORD       = var.smtp_password
     MYSQL_PASSWORD      = var.mysql_password
