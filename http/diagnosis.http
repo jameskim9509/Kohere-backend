@@ -66,14 +66,15 @@ Content-Type: application/json
 GET {{baseUrl}}/api/v1/diagnoses/questions/3
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
 
-### 7. ③ 대학 답 저장 (STUDY 경로)
+### 7. ③ 대학 그룹 답 저장 (STUDY 경로 — code 는 6개 그룹 중 하나)
+#    그룹: HUFS_KHU_KOREA / SKKU_SUNGSHIN / SNU_CAU_SOONGSIL / HONGIK_YONSEI_EWHA / KONKUK_SEJONG_HYU / ETC
 POST {{baseUrl}}/api/v1/diagnoses/answers
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
 Content-Type: application/json
 
 {
   "field": "university",
-  "code": "SNU"
+  "code": "SNU_CAU_SOONGSIL"
 }
 
 ### 8. ④ 주거 조건 문항 조회 (step 4) — 다중 선택(최대 3)
@@ -90,18 +91,19 @@ Content-Type: application/json
   "codes": ["FEMALE_ONLY", "PRIVATE_BATH"]
 }
 
-### 10. ⑤ 월 예산 문항 조회 (step 5) — 숫자 입력(NUMBER, 선택지 없음)
+### 10. ⑤ 월세 범위 문항 조회 (step 5) — 범위 입력(NUMBER_RANGE: min/max 두 숫자, 선택지 없음)
 GET {{baseUrl}}/api/v1/diagnoses/questions/5
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
 
-### 11. ⑤ 월 예산 답 저장 (KRW 정수 문자열 → code)
+### 11. ⑤ 월세 범위 답 저장 (min/max 두 숫자 — code/codes 아님, min ≤ max)
 POST {{baseUrl}}/api/v1/diagnoses/answers
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
 Content-Type: application/json
 
 {
-  "field": "monthlyBudgetMax",
-  "code": "600000"
+  "field": "monthlyRent",
+  "min": 300000,
+  "max": 600000
 }
 
 ### 12. ⑥ ARC 발급 상태 문항 조회 (step 6)
@@ -137,6 +139,7 @@ GET {{baseUrl}}/api/v1/diagnoses/{{submit.response.body.$.data.diagnosisId}}
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
 
 ### 18. 진단 결과 추천 매물 + 지도 좌표
-#     listing 영속 미구현이라 현재는 매칭 0건 → content/markers 빈 목록 + suggestions(NO_MATCH, 번역) 반환.
+#     주의(ADR-0032 그룹화 임시): 추천 criteria가 아직 listing 계약 확장 전이라 대학 필터 비활성·월세 상한(max)만 전달
+#     → STUDY도 지역(region)+조건+예산 기반 매칭. 매칭 0건이면 content/markers 빈 목록 + suggestions(NO_MATCH).
 GET {{baseUrl}}/api/v1/diagnoses/{{submit.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
 Authorization: Bearer {{login.response.body.$.data.accessToken}}

@@ -25,7 +25,7 @@ import com.kohere.diagnosis.domain.DiagnosisRepository;
 import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.diagnosis.domain.Purpose;
 import com.kohere.diagnosis.domain.Region;
-import com.kohere.diagnosis.domain.University;
+import com.kohere.diagnosis.domain.UniversityGroup;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.diagnosis.presentation.dto.AnswerRequest;
@@ -43,6 +43,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -54,6 +55,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @DataMongoTest
 @Testcontainers
+// Mongock(@ChangeUnit)은 실행 컨텍스트 전용 — 이 슬라이스 테스트에선 비활성화(ConnectionDriver 미구성, ADR-0032).
+@TestPropertySource(properties = "mongock.enabled=false")
 @Import({
   DiagnosisService.class,
   DiagnosisRepositoryImpl.class,
@@ -88,9 +91,9 @@ class DiagnosisMongoIntegrationTest {
     long userId = 1L;
     answer(userId, "region", "SEOUL");
     answer(userId, "purpose", "STUDY");
-    answer(userId, "university", "SNU");
+    answer(userId, "university", "SNU_CAU_SOONGSIL");
     answerCodes(userId, "conditions", Set.of("FEMALE_ONLY", "PRIVATE_BATH"));
-    answer(userId, "monthlyBudgetMax", "600000");
+    answerRent(userId, 300000, 600000);
     answer(userId, "arcStatus", "ARC_ISSUED");
 
     DiagnosisCreatedResponse created = diagnosisService.submit(userId);
@@ -101,11 +104,12 @@ class DiagnosisMongoIntegrationTest {
     DiagnosisResponse detail = diagnosisService.getDetail(userId, created.diagnosisId());
     assertThat(detail.region()).isEqualTo(Region.SEOUL);
     assertThat(detail.purpose()).isEqualTo(Purpose.STUDY);
-    assertThat(detail.university()).isEqualTo(University.SNU);
+    assertThat(detail.university()).isEqualTo(UniversityGroup.SNU_CAU_SOONGSIL);
     assertThat(detail.district()).isNull();
     assertThat(detail.conditions())
         .containsExactlyInAnyOrder(DiagnosisCondition.FEMALE_ONLY, DiagnosisCondition.PRIVATE_BATH);
-    assertThat(detail.monthlyBudgetMax()).isEqualTo(600000);
+    assertThat(detail.monthlyRentMin()).isEqualTo(300000);
+    assertThat(detail.monthlyRentMax()).isEqualTo(600000);
     assertThat(detail.arcStatus()).isEqualTo(ArcStatus.ARC_ISSUED);
     assertThat(detail.status()).isEqualTo(DiagnosisStatus.COMPLETED);
 
@@ -215,7 +219,7 @@ class DiagnosisMongoIntegrationTest {
 
     long userId = 17L;
     answer(userId, "purpose", "NON_STUDY");
-    assertThatThrownBy(() -> answer(userId, "university", "SNU"))
+    assertThatThrownBy(() -> answer(userId, "university", "SNU_CAU_SOONGSIL"))
         .isInstanceOf(InvalidInputException.class);
   }
 
@@ -315,19 +319,23 @@ class DiagnosisMongoIntegrationTest {
   // --- helpers ---
 
   private void answer(long userId, String field, String code) {
-    diagnosisService.submitAnswer(userId, new AnswerRequest(field, code, null));
+    diagnosisService.submitAnswer(userId, new AnswerRequest(field, code, null, null, null));
   }
 
   private void answerCodes(long userId, String field, Set<String> codes) {
-    diagnosisService.submitAnswer(userId, new AnswerRequest(field, null, codes));
+    diagnosisService.submitAnswer(userId, new AnswerRequest(field, null, codes, null, null));
+  }
+
+  private void answerRent(long userId, int min, int max) {
+    diagnosisService.submitAnswer(userId, new AnswerRequest("monthlyRent", null, null, min, max));
   }
 
   private void completeStudyFlow(long userId) {
     answer(userId, "region", "SEOUL");
     answer(userId, "purpose", "STUDY");
-    answer(userId, "university", "SNU");
+    answer(userId, "university", "SNU_CAU_SOONGSIL");
     answerCodes(userId, "conditions", Set.of("FEMALE_ONLY"));
-    answer(userId, "monthlyBudgetMax", "500000");
+    answerRent(userId, 200000, 500000);
     answer(userId, "arcStatus", "ARC_ISSUED");
   }
 
@@ -336,9 +344,10 @@ class DiagnosisMongoIntegrationTest {
         .userId(userId)
         .region(Region.SEOUL)
         .purpose(Purpose.STUDY)
-        .university(University.SNU)
+        .university(UniversityGroup.SNU_CAU_SOONGSIL)
         .conditions(Set.of())
-        .monthlyBudgetMax(500000)
+        .monthlyRentMin(200000)
+        .monthlyRentMax(500000)
         .arcStatus(ArcStatus.ARC_ISSUED)
         .status(DiagnosisStatus.COMPLETED)
         .submittedAt(submittedAt)
@@ -382,8 +391,10 @@ class DiagnosisMongoIntegrationTest {
             .options(
                 List.of(
                     OptionSpec.builder()
-                        .code("SNU")
-                        .label(Map.of("en", "Seoul National University", "ko", "서울대학교"))
+                        .code("SNU_CAU_SOONGSIL")
+                        .label(
+                            Map.of(
+                                "en", "Seoul National · Chung-Ang · Soongsil", "ko", "서울대·중앙대·숭실대"))
                         .build()))
             .build());
   }
