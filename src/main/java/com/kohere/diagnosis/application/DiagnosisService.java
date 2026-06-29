@@ -20,7 +20,7 @@ import com.kohere.diagnosis.domain.DiagnosisRepository;
 import com.kohere.diagnosis.domain.District;
 import com.kohere.diagnosis.domain.Purpose;
 import com.kohere.diagnosis.domain.Region;
-import com.kohere.diagnosis.domain.University;
+import com.kohere.diagnosis.domain.UniversityGroup;
 import com.kohere.diagnosis.presentation.dto.AnswerRequest;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
@@ -137,7 +137,7 @@ public class DiagnosisService {
         .orElseGet(
             () ->
                 new LatestDiagnosisResponse(
-                    false, null, null, null, null, null, null, null, null, null));
+                    false, null, null, null, null, null, null, null, null, null, null));
   }
 
   /** 진단 단건 상세(본인 소유만, 타인 403·미존재 404). */
@@ -203,14 +203,17 @@ public class DiagnosisService {
               .district(null);
       case "university" -> {
         requirePurpose(draft, Purpose.STUDY, "university");
-        builder.university(parseEnum(University.class, requireCode(request))).district(null);
+        builder.university(parseEnum(UniversityGroup.class, requireCode(request))).district(null);
       }
       case "district" -> {
         requirePurpose(draft, Purpose.NON_STUDY, "district");
         builder.district(parseEnum(District.class, requireCode(request))).university(null);
       }
       case "conditions" -> builder.conditions(parseConditions(request));
-      case "monthlyBudgetMax" -> builder.monthlyBudgetMax(parseBudget(requireCode(request)));
+      case "monthlyRent" -> {
+        validateRent(request);
+        builder.monthlyRentMin(request.min()).monthlyRentMax(request.max());
+      }
       case "arcStatus" -> builder.arcStatus(parseEnum(ArcStatus.class, requireCode(request)));
       default -> throw new InvalidInputException("지원하지 않는 field입니다: " + field);
     }
@@ -243,15 +246,15 @@ public class DiagnosisService {
     return result;
   }
 
-  private static int parseBudget(String code) {
-    try {
-      int value = Integer.parseInt(code.trim());
-      if (value < 0) {
-        throw new InvalidInputException("monthlyBudgetMax는 0 이상이어야 합니다.");
-      }
-      return value;
-    } catch (NumberFormatException e) {
-      throw new InvalidInputException("monthlyBudgetMax는 숫자여야 합니다: " + code);
+  private static void validateRent(AnswerRequest request) {
+    if (request.min() == null || request.max() == null) {
+      throw new InvalidInputException("monthlyRent는 min과 max가 모두 필요합니다.");
+    }
+    if (request.min() < 0 || request.max() < 0) {
+      throw new InvalidInputException("monthlyRent는 0 이상이어야 합니다.");
+    }
+    if (request.min() > request.max()) {
+      throw new InvalidInputException("monthlyRentMin은 monthlyRentMax 이하여야 합니다.");
     }
   }
 
@@ -298,13 +301,16 @@ public class DiagnosisService {
   // --- 매핑 ---
 
   private RecommendationCriteria toCriteria(Diagnosis d, int page, int size, String sort) {
+    // TODO(ADR-0032 그룹화): listing.api.RecommendationCriteria가 아직 단일 university String·단일 예산만 받는다.
+    // 대학 그룹→소속 멤버 코드 Set(d.getUniversity().memberCodes())·월세 하한(min) 전달은 listing 모듈 계약 확장
+    // (별도 패스) 후 연결한다. 그때까지 university 필터는 임시 비활성(STUDY도 지역 기반 추천), 예산은 상한(max)만 전달한다.
     return new RecommendationCriteria(
         d.getRegion() == null ? null : d.getRegion().name(),
-        d.getMonthlyBudgetMax() == null ? 0 : d.getMonthlyBudgetMax(),
+        d.getMonthlyRentMax() == null ? 0 : d.getMonthlyRentMax(),
         d.getConditions() == null
             ? Set.of()
             : d.getConditions().stream().map(Enum::name).collect(Collectors.toSet()),
-        d.getUniversity() == null ? null : d.getUniversity().name(),
+        null,
         d.getDistrict() == null ? null : d.getDistrict().name(),
         page,
         size,
@@ -333,7 +339,8 @@ public class DiagnosisService {
         d.getUniversity(),
         d.getDistrict(),
         conditionsList(d),
-        d.getMonthlyBudgetMax() == null ? 0 : d.getMonthlyBudgetMax(),
+        d.getMonthlyRentMin() == null ? 0 : d.getMonthlyRentMin(),
+        d.getMonthlyRentMax() == null ? 0 : d.getMonthlyRentMax(),
         d.getArcStatus(),
         d.getStatus(),
         d.getSubmittedAt());
@@ -348,7 +355,8 @@ public class DiagnosisService {
         d.getUniversity(),
         d.getDistrict(),
         conditionsList(d),
-        d.getMonthlyBudgetMax(),
+        d.getMonthlyRentMin(),
+        d.getMonthlyRentMax(),
         d.getArcStatus(),
         d.getSubmittedAt());
   }

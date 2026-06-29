@@ -6,7 +6,7 @@ import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.diagnosis.domain.District;
 import com.kohere.diagnosis.domain.Purpose;
 import com.kohere.diagnosis.domain.Region;
-import com.kohere.diagnosis.domain.University;
+import com.kohere.diagnosis.domain.UniversityGroup;
 import java.time.Instant;
 import java.util.List;
 
@@ -21,10 +21,11 @@ public record DiagnosisResponse(
     Long diagnosisId,
     Region region,
     Purpose purpose,
-    University university,
+    UniversityGroup university,
     District district,
     List<DiagnosisCondition> conditions,
-    int monthlyBudgetMax,
+    int monthlyRentMin,
+    int monthlyRentMax,
     ArcStatus arcStatus,
     DiagnosisStatus status,
     Instant submittedAt) {}
