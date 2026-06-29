@@ -28,3 +28,7 @@ app:
     team-id: test-team-id
     key-id: test-key-id
     private-key: test-apple-private-key-placeholder
+
+# Mongock 비활성 — 테스트는 Mongo 미가용(슬라이스 테스트만 Testcontainers). 1회성 마이그레이션은 test에서 돌리지 않는다.
+mongock:
+  enabled: false
