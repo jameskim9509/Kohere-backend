@@ -45,12 +45,13 @@ app:
     team-id: ${APPLE_TEAM_ID:}
     key-id: ${APPLE_KEY_ID:}
     private-key: ${APPLE_PRIVATE_KEY:}
-  twilio:
-    # 연락처 SMS(Twilio, ADR-0034). 미설정이면 enabled=false → LoggingVerificationSmsSender 폴백(실발송 안 함).
-    enabled: ${TWILIO_ENABLED:false}
-    account-sid: ${TWILIO_ACCOUNT_SID:}
-    auth-token: ${TWILIO_AUTH_TOKEN:} # 1급 시크릿(SSM)
-    from-number: ${TWILIO_FROM_NUMBER:}
+  solapi:
+    # 연락처 SMS(SOLAPI 국내 SMS API, ADR-0034). 미설정이면 enabled=false → LoggingVerificationSmsSender 폴백(실발송 안 함).
+    # API KEY·SECRET은 SSM Parameter Store에서 env로 주입(ADR-0023) — 앱이 평문 보관하지 않는다.
+    enabled: ${SOLAPI_ENABLED:false}
+    api-key: ${SOLAPI_API_KEY:}
+    api-secret: ${SOLAPI_API_SECRET:} # 1급 시크릿(SSM)
+    from: ${SOLAPI_FROM:} # 사전 등록 발신번호
   bizno:
     # 사업자번호 검증(비즈노, ADR-0033). 미설정이면 enabled=false → StubBusinessRegistryVerifier 폴백.
     enabled: ${BIZNO_ENABLED:false}

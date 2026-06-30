@@ -88,7 +88,7 @@ class PhoneVerificationServiceTest {
   @Test
   void sendCode_dispatchFails_doesNotStoreChallenge() {
     when(repository.findChallenge(USER_ID)).thenReturn(Optional.empty());
-    doThrow(new SmsDispatchException(new RuntimeException("twilio down")))
+    doThrow(new SmsDispatchException(new RuntimeException("solapi down")))
         .when(smsSender)
         .send(eq(PHONE), anyString());
 

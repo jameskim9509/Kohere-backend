@@ -41,12 +41,13 @@ app:
     team-id: ${APPLE_TEAM_ID}
     key-id: ${APPLE_KEY_ID}
     private-key: ${APPLE_PRIVATE_KEY} # .p8 PKCS#8 PEM — 절대 로깅 금지
-  twilio:
-    # 연락처 SMS(Twilio, ADR-0034). enabled=true 시 실 발송 — 크리덴셜 미확정 동안 false면 폴백(운영 부적합, 활성화 전 확정 필요).
-    enabled: ${TWILIO_ENABLED:false}
-    account-sid: ${TWILIO_ACCOUNT_SID:}
-    auth-token: ${TWILIO_AUTH_TOKEN:} # 1급 시크릿(SSM)
-    from-number: ${TWILIO_FROM_NUMBER:}
+  solapi:
+    # 연락처 SMS(SOLAPI 국내 SMS API, ADR-0034). enabled=true 시 실 발송 — 크리덴셜·발신번호 확정 전 false면 폴백(운영 부적합, 활성화 전 확정 필요).
+    # API KEY·SECRET은 SSM Parameter Store에서 env로 주입(ADR-0023).
+    enabled: ${SOLAPI_ENABLED:false}
+    api-key: ${SOLAPI_API_KEY:}
+    api-secret: ${SOLAPI_API_SECRET:} # 1급 시크릿(SSM)
+    from: ${SOLAPI_FROM:} # 사전 등록 발신번호
   bizno:
     # 사업자번호 검증(비즈노, ADR-0033). enabled=true 시 실 검증 — API 계약 확정 전 false면 스텁(운영 부적합).
     enabled: ${BIZNO_ENABLED:false}

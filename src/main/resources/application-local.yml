@@ -50,4 +50,11 @@ app:
     team-id: ${APPLE_TEAM_ID:}
     key-id: ${APPLE_KEY_ID:}
     private-key: ${APPLE_PRIVATE_KEY:}
+  solapi:
+    # 연락처 SMS(SOLAPI, ADR-0034). 로컬은 enabled=false → LoggingVerificationSmsSender 폴백(실발송 안 함, 콘솔 로그).
+    # API KEY·SECRET은 환경변수 관리 — 로컬은 폴백값(운영 미사용). 실연동 테스트 시 env로 실제 값 주입.
+    enabled: ${SOLAPI_ENABLED:false}
+    api-key: ${SOLAPI_API_KEY:local-dev-solapi-key}
+    api-secret: ${SOLAPI_API_SECRET:local-dev-solapi-secret}
+    from: ${SOLAPI_FROM:01000000000}
 

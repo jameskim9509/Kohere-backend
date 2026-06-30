@@ -302,7 +302,7 @@ class LandlordOnboardingDocsTest {
     String smsFailToken = read(socialLogin("err-l-sms"), "data", "accessToken");
     agreeTerms(smsFailToken);
     String smsFailPhone = "01099990000";
-    doThrow(new SmsDispatchException(new RuntimeException("twilio down")))
+    doThrow(new SmsDispatchException(new RuntimeException("solapi down")))
         .when(smsSender)
         .send(eq(smsFailPhone), any());
     perform(

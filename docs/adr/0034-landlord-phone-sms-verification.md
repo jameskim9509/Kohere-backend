@@ -28,7 +28,7 @@ Proposed
    - `POST /api/v1/auth/phone/verification-code` — `{ phoneNumber }`로 인증번호를 SMS 발송. **발송 성공 후에만** 챌린지를 저장한다.
    - `POST /api/v1/auth/phone/verify` — `{ phoneNumber, code }`로 인증번호를 확인. 일치 시 VERIFIED 마커를 남긴다.
    - 두 엔드포인트 모두 **약관 동의(`TERMS_AGREED`)를 선행 게이트**로 둔다(이메일 인증과 동일). `PENDING`이면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`, `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`.
-2. **아웃바운드 포트**: 도메인에 `VerificationSmsSender` 포트를 둔다. 인프라 어댑터가 **Twilio Programmable SMS**를 호출한다 — 외부 연동·HTTP 세부는 어댑터 안에만 존재한다([ADR-0003](./0003-jwt-auth-after-oauth-login.md)의 포트/어댑터, [ADR-0033](./0033-business-registry-verification.md)의 `BusinessRegistryVerifier`와 동일 패턴). 이메일의 `VerificationEmailSender`(SMTP)와 대칭이다. 인증번호 생성·해시·검증은 서버가 보유하고 Twilio는 발송만 담당한다(Twilio Verify의 관리형 OTP 대신 대칭 구조 유지).
+2. **아웃바운드 포트**: 도메인에 `VerificationSmsSender` 포트를 둔다. 인프라 어댑터가 **SOLAPI(국내 SMS API)** 를 SDK로 호출한다 — 외부 연동·SDK 세부는 어댑터 안에만 존재한다([ADR-0003](./0003-jwt-auth-after-oauth-login.md)의 포트/어댑터, [ADR-0033](./0033-business-registry-verification.md)의 `BusinessRegistryVerifier`와 동일 패턴). 이메일의 `VerificationEmailSender`(SMTP)와 대칭이다. 인증번호 생성·해시·검증은 서버가 보유하고 어댑터는 발송만 담당한다.
 3. **챌린지·VERIFIED 마커(Redis)**: 이메일 인증 마커와 동일 패턴이다([ADR-0006](./0006-refresh-token-store-redis.md)의 키-값+TTL). **인증번호 정책은 이메일 인증과 통일한다** — 인증번호 6자리·코드 TTL 5분·검증 마커 TTL 30분·검증 시도 상한 5회·재발송 간격 60초.
    - `phone-verify:code:{userId}` — `{ phoneNumber, codeHash, attempts, issuedAt, expiresAt, status }`, TTL=인증번호 만료(5분 — 이메일과 동일). 인증번호는 **단방향 해시(SHA-256(+pepper))로만** 보관(원문은 SMS로만).
    - `phone-verify:verified:{userId}` — 검증 완료 `phoneNumber`, TTL=온보딩 토큰 만료(30분 — 이메일과 동일).
@@ -40,7 +40,7 @@ Proposed
    - `AUTH_PHONE_NOT_VERIFIED`(422) — 온보딩 제출 시 **미인증(마커 없음)·불일치**.
    - SMS **발송 장애**(타임아웃·5xx)는 신규 코드를 만들지 않고 기존 공통 `UPSTREAM_ERROR`(502)를 재사용한다(이메일 발송 실패와 대칭).
    - 재발송·검증 시도 레이트리밋 초과는 `429 TOO_MANY_REQUESTS`(임계값 확인 필요).
-8. **보안 경로 티어**: `/auth/phone/verification-code`·`/auth/phone/verify` 두 신규 엔드포인트는 **온보딩 토큰 허용 티어**(약관·이메일 인증·온보딩·사업자번호 검증과 동일)에 둔다. **단 프로필 연락처 변경(US-1-5, §6)을 위해 정식 토큰(`ACTIVE`, `ROLE_USER`)도 함께 허용**한다 — `SecurityConfig`에서 `/auth/phone/**`를 온보딩 토큰·정식 토큰 양쪽이 통과하는 경로로 설정한다(검증·마커 로직은 두 컨텍스트 공용). Twilio API 키(Account SID/Auth Token)는 SSM에서 주입한다([ADR-0023](./0023-secrets-in-ssm-parameter-store.md)).
+8. **보안 경로 티어**: `/auth/phone/verification-code`·`/auth/phone/verify` 두 신규 엔드포인트는 **온보딩 토큰 허용 티어**(약관·이메일 인증·온보딩·사업자번호 검증과 동일)에 둔다. **단 프로필 연락처 변경(US-1-5, §6)을 위해 정식 토큰(`ACTIVE`, `ROLE_USER`)도 함께 허용**한다 — `SecurityConfig`에서 `/auth/phone/**`를 온보딩 토큰·정식 토큰 양쪽이 통과하는 경로로 설정한다(검증·마커 로직은 두 컨텍스트 공용). SOLAPI API Key·Secret은 환경변수로 주입하고(운영은 SSM, [ADR-0023](./0023-secrets-in-ssm-parameter-store.md)) 1급 시크릿(apiSecret)은 로그에 노출하지 않는다.
 
 ## Alternatives
 
@@ -55,13 +55,13 @@ Proposed
 
 - **긍정**: 임대인 휴대폰 소유를 온보딩 단계에서 확인해 연락처 신뢰도를 확보한다. 이메일 인증(US-1-6)과 동일한 포트/어댑터·Redis 마커·게이트 패턴이라 구조가 일관되고 코드 재사용이 크다. 임대인 이메일을 보관하지 않아 PII 노출면이 줄고, 세입자 흐름은 영향받지 않는다.
 - **부정/트레이드오프**: 임대인 사인업 경로에 SMS provider 외부 의존·발송 비용·rate-limit·장애 모드가 추가된다(이메일과 동일 성격). SMS 발송 실패 시 `UPSTREAM_ERROR` 폴백·관측을 정의해야 하고, provider·단가·국가(국내외 번호) 정책을 확정해야 한다.
-- **후속 작업(구현 PR)**: `ErrorCode`에 두 코드 추가 + 메시지 리소스 번들([ADR-0030](./0030-error-message-i18n-resource-bundle.md)), `VerificationSmsSender` 포트 + Twilio 어댑터(RestClient·SSM에 Account SID/Auth Token), `PhoneVerification` 도메인·Redis 마커 저장/대조(이메일 인증 클래스 대칭 복제), `SecurityConfig`에 `/auth/phone/**` 경로 티어, `user`에 `phone_number` 영속(임대인). 문서 정합: [01-auth-onboarding](../api/specs/01-auth-onboarding.md)·[user-stories](../requirements/user-stories.md)·[domain-model](../architecture/domain-model.md)·[database-design](../database/database-design.md)·시퀀스 다이어그램(US-1-9·US-1-10)·[ADR-0033](./0033-business-registry-verification.md)(게이트 우선순위 문구) 갱신.
+- **후속 작업(구현 PR)**: `ErrorCode`에 두 코드 추가 + 메시지 리소스 번들([ADR-0030](./0030-error-message-i18n-resource-bundle.md)), `VerificationSmsSender` 포트 + SOLAPI 어댑터(SOLAPI Java SDK `com.solapi:sdk`·자격은 env/SSM 주입), `PhoneVerification` 도메인·Redis 마커 저장/대조(이메일 인증 클래스 대칭 복제), `SecurityConfig`에 `/auth/phone/**` 경로 티어, `user`에 `phone_number` 영속(임대인). 문서 정합: [01-auth-onboarding](../api/specs/01-auth-onboarding.md)·[user-stories](../requirements/user-stories.md)·[domain-model](../architecture/domain-model.md)·[database-design](../database/database-design.md)·시퀀스 다이어그램(US-1-9·US-1-10)·[ADR-0033](./0033-business-registry-verification.md)(게이트 우선순위 문구) 갱신.
 - **결정됨**:
-  - SMS **provider = Twilio**(Programmable SMS). 어댑터가 인증번호를 발송만 하고, OTP 생성·해시·검증은 서버 보유.
+  - SMS **provider = SOLAPI**(국내 SMS API). 어댑터가 인증번호를 발송만 하고, OTP 생성·해시·검증은 서버 보유. **국내 발신 제한이 없고 개발자 경험(SDK·콘솔)이 우수**해 채택했다. API Key·Secret은 env/SSM로 주입하고 발신번호는 SOLAPI 콘솔에 사전 등록한다.
   - 인증번호 **정책 = 이메일 인증(US-1-6)과 통일**: 6자리·코드 TTL 5분·검증 마커 TTL 30분·검증 시도 5회·재발송 간격 60초.
   - **프로필 연락처 변경 시 SMS 재인증 필수**(US-1-5): 새 번호를 재인증(VERIFIED)해야 반영, 미인증 `422 AUTH_PHONE_NOT_VERIFIED`.
 - **미결(확인 필요)**:
-  - Twilio **단가·국내외(한국) 번호 발신** 정책, 발신번호(sender ID)·발신자 등록.
+  - SOLAPI **단가·발송 한도**·발신번호 **사전등록**(국내 규정) 정책 확정.
   - 연락처 **유니크 제약**(동일 번호 다계정 허용 여부 — 현재 미적용).
 
 ## Validation

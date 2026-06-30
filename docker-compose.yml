@@ -97,6 +97,12 @@ services:
       SPRING_DATA_REDIS_PORT: "6379"
       SPRING_MAIL_HOST: mailhog
       SPRING_MAIL_PORT: "1025"
+      # 연락처 SMS(SOLAPI, ADR-0034) — 기본 비활성(LoggingVerificationSmsSender 폴백, 인증번호는 앱 로그).
+      # 실발송 테스트 시에만 .env/셸 env로 SOLAPI_ENABLED=true + 키/발신번호를 채운다.
+      SOLAPI_ENABLED: ${SOLAPI_ENABLED:-false}
+      SOLAPI_API_KEY: ${SOLAPI_API_KEY:-local-dev-solapi-key}
+      SOLAPI_API_SECRET: ${SOLAPI_API_SECRET:-local-dev-solapi-secret}
+      SOLAPI_FROM: ${SOLAPI_FROM:-01000000000}
     ports:
       - "8080:8080"
 
