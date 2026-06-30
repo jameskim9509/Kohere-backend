@@ -150,6 +150,67 @@ class UserTest {
         .isInstanceOf(UserAlreadyWithdrawnException.class);
   }
 
+  @Test
+  void completeLandlordOnboarding_transitionsTermsAgreedToActiveAsLandlord() {
+    User termsAgreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
+
+    User active =
+        termsAgreed.completeLandlordOnboarding(
+            "Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW);
+
+    assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
+    assertThat(active.getUserType()).isEqualTo(UserType.LANDLORD);
+    // 단일 name은 firstName에 보관하고 lastName은 미사용(null)
+    assertThat(active.getFirstName()).isEqualTo("Kim Imdae");
+    assertThat(active.getLastName()).isNull();
+    assertThat(active.getPhoneNumber()).isEqualTo("01012345678");
+    assertThat(active.getBusinessRegistrationNumberHash()).isEqualTo("biz-hash");
+    assertThat(active.getNickname()).isEqualTo("CalmFox");
+    // 임대인은 성별·국적·직업·비자·생년월일·이메일을 수집하지 않는다
+    assertThat(active.getGender()).isNull();
+    assertThat(active.getCountry()).isNull();
+    assertThat(active.getOccupation()).isNull();
+    assertThat(active.getVisaType()).isNull();
+    assertThat(active.getBirthDate()).isNull();
+    assertThat(active.getEmail()).isNull();
+  }
+
+  @Test
+  void completeLandlordOnboarding_whenPending_throwsTermsAgreementRequired() {
+    User pending = User.createPending(NOW);
+
+    assertThatThrownBy(
+            () ->
+                pending.completeLandlordOnboarding(
+                    "Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW))
+        .isInstanceOf(TermsAgreementRequiredException.class);
+  }
+
+  @Test
+  void completeLandlordOnboarding_whenAlreadyActive_throws() {
+    User active = activeUser();
+
+    assertThatThrownBy(
+            () ->
+                active.completeLandlordOnboarding(
+                    "Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW))
+        .isInstanceOf(OnboardingAlreadyCompletedException.class);
+  }
+
+  @Test
+  void withdraw_landlord_anonymizesPhoneAndBusinessHash() {
+    User landlord =
+        User.createPending(NOW)
+            .agreeToTerms(true, "v1.0", NOW)
+            .completeLandlordOnboarding("Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW);
+
+    User withdrawn = landlord.withdraw(NOW);
+
+    assertThat(withdrawn.getStatus()).isEqualTo(UserStatus.WITHDRAWN);
+    assertThat(withdrawn.getPhoneNumber()).isNull();
+    assertThat(withdrawn.getBusinessRegistrationNumberHash()).isNull();
+  }
+
   private static User activeUser() {
     return User.createPending(NOW)
         .agreeToTerms(true, "v1.0", NOW)

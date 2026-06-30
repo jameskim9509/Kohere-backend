@@ -1132,6 +1132,10 @@ class AuthOnboardingDocsTest {
     java.util.ArrayList<FieldDescriptor> fields = new java.util.ArrayList<>();
     fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     fields.addAll(profileFields("data.user."));
+    fields.add(field("data.user.userType", JsonFieldType.STRING, "회원 역할(TENANT|LANDLORD)"));
+    fields.add(
+        optField(
+            "data.user.phoneNumber", JsonFieldType.STRING, "연락처 — 세입자는 미수집(null), 임대인은 인증된 연락처"));
     fields.add(field("data.user.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"));
     fields.add(field("data.user.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"));
     fields.add(field("data.user.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"));
