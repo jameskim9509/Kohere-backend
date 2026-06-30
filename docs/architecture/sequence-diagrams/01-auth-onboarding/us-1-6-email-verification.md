@@ -33,7 +33,7 @@ sequenceDiagram
             AUTH-->>C: 429 TOO_MANY_REQUESTS
             C-->>U: 잠시 후 재시도 안내
         else 발송 시도
-            AUTH->>MAIL: 인증번호 메일 동기 발송<br/>(VerificationEmailSender → SES/SMTP)
+            AUTH->>MAIL: 인증번호 메일 동기 발송<br/>(VerificationEmailSender → SMTP)
             alt 발송 실패 (provider 장애·타임아웃)
                 MAIL-->>AUTH: 발송 실패
                 AUTH-->>C: 502 UPSTREAM_ERROR (챌린지 미저장)
@@ -79,7 +79,7 @@ sequenceDiagram
 
 - 온보딩 중인 사용자가 입력한 이메일로 인증번호를 받는다. 공통 보안 필터(SEC)가 **온보딩 토큰(`ROLE_ONBOARDING`)** 을 검증하고 이메일 인증 경로를 인가한 뒤 `auth 모듈`로 `userId`를 전달한다(온보딩 흐름이라 온보딩 토큰을 허용 — [API 스펙](../../../api/specs/01-auth-onboarding.md)).
 - **선행 게이트**: 이메일 인증은 **약관 동의(US-1-7, `TERMS_AGREED`)가 선행**되어야 한다. `auth`가 `user 모듈` 공개 API로 계정 상태를 조회해 **약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`**(약관 동의 안내가 먼저), 이미 완료(`ACTIVE`)면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`로 거절한다. `TERMS_AGREED`일 때만 아래 발송·확인을 진행한다.
-- **인증번호 발송**(`POST /api/v1/auth/email/verification-code`): `auth`가 인증번호를 생성해 **아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SES/SMTP — 확인 필요)로 동기 발송**하고, **발송에 성공한 뒤에만** 인증번호의 **단방향 해시**를 Redis `email-verify:code:{userId}`에 저장(TTL=만료, 예: 5분 — 확인 필요)한다(원문은 메일로만). provider 장애·타임아웃 등 **발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`** 로 응답해 재시도를 유도한다. 재발송 레이트리밋 초과는 `429 TOO_MANY_REQUESTS`. 응답의 `email`은 마스킹한다.
+- **인증번호 발송**(`POST /api/v1/auth/email/verification-code`): `auth`가 인증번호를 생성해 **아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SMTP)로 동기 발송**하고, **발송에 성공한 뒤에만** 인증번호의 **단방향 해시**를 Redis `email-verify:code:{userId}`에 저장(TTL=만료, 예: 5분 — 확인 필요)한다(원문은 메일로만). provider 장애·타임아웃 등 **발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`** 로 응답해 재시도를 유도한다. 재발송 레이트리밋 초과는 `429 TOO_MANY_REQUESTS`. 응답의 `email`은 마스킹한다.
 - **인증번호 확인**(`POST /api/v1/auth/email/verify`): 챌린지가 **없으면**(미발송·만료·이미 검증) 올릴 `attempts` 레코드가 없으므로 즉시 `422 AUTH_EMAIL_VERIFICATION_FAILED`로 거절하고 인증번호 재요청을 유도한다. 챌린지가 **있고** 입력 인증번호 해시가 `codeHash`와 **불일치**하면 `attempts`를 올려 상한 초과 시 `429 TOO_MANY_REQUESTS`, 아니면 `422`다. **일치**(미만료·시도 미초과)하면 `email-verify:verified:{userId}`에 검증 이메일을 기록(TTL=온보딩 토큰 만료)하고 코드 키를 제거한다.
 - 이후 **온보딩 제출(US-1-2)** 에서 `auth`가 제출 `email`을 `email-verify:verified:{userId}`와 대조해 일치할 때만 `user` 온보딩 완료 명령을 진행한다(미인증·불일치 `422 AUTH_EMAIL_NOT_VERIFIED`). 인증 흔적은 TTL로 자동 소멸하며, 확정 이메일만 `users.email`로 영속한다([database-design](../../../database/database-design.md) §4-1·§4-2).
 - 인증번호 원문은 저장·로그하지 않고(해시만), `email`은 응답·로그 마스킹한다([error-response-guide §6](../../../api/error-response-guide.md)).
