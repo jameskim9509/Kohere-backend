@@ -36,7 +36,9 @@ app:
     secret: ${JWT_SECRET:local-dev-only-hs256-secret-please-override-32bytes-min!!}
   auth:
     refresh-pepper: ${REFRESH_PEPPER:local-dev-refresh-pepper} # SHA-256(token+pepper) (ADR-0006)
-    email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 인증번호 해시 pepper
+    email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 이메일 인증번호 해시 pepper
+    phone-pepper: ${PHONE_PEPPER:local-dev-phone-pepper} # 연락처 인증번호 해시 pepper
+    business-pepper: ${BUSINESS_PEPPER:local-dev-business-pepper} # 사업자번호 해시 pepper
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID:}

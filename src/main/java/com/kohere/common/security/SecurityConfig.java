@@ -44,13 +44,18 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health", "/docs/**", "/swagger-ui/**")
                     .permitAll()
-                    // (2) 온보딩 스코프 이상 허용 — 약관 동의·이메일 인증·온보딩 흐름(PENDING/TERMS_AGREED 토큰 허용)
+                    // (2) 온보딩 스코프 이상 허용 — 약관 동의·이메일/연락처 인증·사업자번호 검증·온보딩 흐름(PENDING/TERMS_AGREED 토큰
+                    // 허용)
                     .requestMatchers(
                         HttpMethod.POST,
                         "/api/v1/auth/terms",
                         "/api/v1/auth/email/verification-code",
                         "/api/v1/auth/email/verify",
-                        "/api/v1/auth/onboarding")
+                        "/api/v1/auth/phone/verification-code",
+                        "/api/v1/auth/phone/verify",
+                        "/api/v1/auth/business/verify",
+                        "/api/v1/auth/onboarding",
+                        "/api/v1/auth/landlord/onboarding")
                     .authenticated()
                     .requestMatchers(HttpMethod.DELETE, "/api/v1/users/me")
                     .authenticated()

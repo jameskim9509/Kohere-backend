@@ -16,4 +16,6 @@ public class AuthProperties {
   private long refreshTtlSeconds = 1209600;
   private String refreshPepper;
   private String emailPepper;
+  private String phonePepper;
+  private String businessPepper;
 }

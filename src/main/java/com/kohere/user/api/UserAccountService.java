@@ -29,6 +29,15 @@ public interface UserAccountService {
   UserProfileView completeOnboarding(long userId, OnboardingProfile profile);
 
   /**
+   * 임대인 온보딩 완료 — TERMS_AGREED→ACTIVE 전이 + 임대인 프로필 확정(name·연락처·사업자번호 해시) + userType=LANDLORD 확정 +
+   * 닉네임 자동 배정. 연락처 SMS 인증·사업자번호 검증 완료 확인은 호출자(auth)가 선행한다(ADR-0034).
+   *
+   * @throws com.kohere.user.domain.TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(422)
+   * @throws com.kohere.user.domain.OnboardingAlreadyCompletedException 이미 ACTIVE인 경우(409)
+   */
+  UserProfileView completeLandlordOnboarding(long userId, LandlordOnboardingProfile profile);
+
+  /**
    * 계정 식별·상태 조회(소셜 로그인 분기 판정용).
    *
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우

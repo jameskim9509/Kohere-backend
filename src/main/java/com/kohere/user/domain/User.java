@@ -26,6 +26,9 @@ public class User {
   private final Occupation occupation;
   private final String email;
   private final VisaType visaType;
+  private final UserType userType;
+  private final String phoneNumber;
+  private final String businessRegistrationNumberHash;
   private final UserStatus status;
   private final boolean termsOfServiceAgreed;
   private final boolean privacyPolicyAgreed;
@@ -36,9 +39,17 @@ public class User {
   private final Instant updatedAt;
   private final Instant withdrawnAt;
 
-  /** 소셜 검증만 완료한 신규 회원(PENDING). 약관 동의·프로필은 이후 단계에서 채운다. */
+  /**
+   * 소셜 검증만 완료한 신규 회원(PENDING). 약관 동의·프로필은 이후 단계에서 채운다. 역할은 기본 {@code TENANT}이며 임대인 온보딩 시 {@code
+   * LANDLORD}로 확정한다(V8 DEFAULT 'TENANT'와 정합, 온보딩 전에는 미확정 의미).
+   */
   public static User createPending(Instant now) {
-    return User.builder().status(UserStatus.PENDING).createdAt(now).updatedAt(now).build();
+    return User.builder()
+        .userType(UserType.TENANT)
+        .status(UserStatus.PENDING)
+        .createdAt(now)
+        .updatedAt(now)
+        .build();
   }
 
   /**
@@ -99,6 +110,39 @@ public class User {
         .occupation(occupation)
         .email(email)
         .visaType(visaType)
+        .userType(UserType.TENANT)
+        .status(UserStatus.ACTIVE)
+        .updatedAt(now)
+        .build();
+  }
+
+  /**
+   * 임대인 온보딩 완료(TERMS_AGREED→ACTIVE). 단일 {@code name}(성·이름 합친 전체 이름 — {@code firstName}에 보관, {@code
+   * lastName} 미사용)·연락처·사업자번호 해시와 시스템 배정 닉네임을 확정하고 {@code userType}을 LANDLORD로 확정한다. 연락처는 auth가 SMS
+   * 인증을, 사업자번호는 auth가 외부 검증을 선행 확인한다. 임대인은 성별·국적·직업·비자정보·생년월일·이메일을 수집하지 않는다(ADR-0034).
+   *
+   * @throws TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(422)
+   * @throws OnboardingAlreadyCompletedException 이미 ACTIVE(또는 WITHDRAWN)인 경우(409)
+   */
+  public User completeLandlordOnboarding(
+      String name,
+      String phoneNumber,
+      String businessRegistrationNumberHash,
+      String nickname,
+      Instant now) {
+    if (status == UserStatus.PENDING) {
+      throw new TermsAgreementRequiredException();
+    }
+    if (status != UserStatus.TERMS_AGREED) {
+      throw new OnboardingAlreadyCompletedException();
+    }
+    return toBuilder()
+        .firstName(name)
+        .lastName(null)
+        .nickname(nickname)
+        .phoneNumber(phoneNumber)
+        .businessRegistrationNumberHash(businessRegistrationNumberHash)
+        .userType(UserType.LANDLORD)
         .status(UserStatus.ACTIVE)
         .updatedAt(now)
         .build();
@@ -167,6 +211,8 @@ public class User {
         .occupation(null)
         .email(null)
         .visaType(null)
+        .phoneNumber(null)
+        .businessRegistrationNumberHash(null)
         .status(UserStatus.WITHDRAWN)
         .withdrawnAt(now)
         .updatedAt(now)
