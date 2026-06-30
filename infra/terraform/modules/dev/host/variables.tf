@@ -106,3 +106,16 @@ variable "images_cdn_domain" {
   type        = string
   default     = ""
 }
+
+# ----- 연락처 SMS(SOLAPI, ADR-0034) — 비밀 아닌 설정(enabled·from)을 compose env로 주입 -----
+variable "solapi_enabled" {
+  description = "SOLAPI 실 발송 활성화(앱 app.solapi.enabled). false면 로깅 폴백(콘솔 로그)"
+  type        = bool
+  default     = false
+}
+
+variable "solapi_from" {
+  description = "SOLAPI 발신번호(사전 등록)"
+  type        = string
+  default     = ""
+}

@@ -40,6 +40,13 @@ smtp_username = ""  # sensitive
 smtp_password = ""  # sensitive
 mail_from     = "noreply@kohere.app"
 
+# ----- 연락처 SMS (SOLAPI 국내 SMS API — 임대인 인증, ADR-0034) -----
+# 기본 비활성(로깅 폴백). 켜려면 SOLAPI 콘솔에서 발신번호 등록·API 키 발급 후 채우고 solapi_enabled=true.
+# solapi_enabled    = true
+# solapi_from       = "01012345678"   # 사전 등록 발신번호(평문)
+# solapi_api_key    = ""  # sensitive — SSM SecureString
+# solapi_api_secret = ""  # sensitive — SSM SecureString
+
 # ----- 알람 (이메일·Discord 병행 가능 — 둘 다 채우면 양쪽으로 통보) -----
 # alarm_email         = "ops@kohere.app"
 # discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda, ADR-0027)  # sensitive

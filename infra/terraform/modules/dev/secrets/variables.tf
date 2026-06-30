@@ -78,3 +78,17 @@ variable "mongo_password" {
   default     = "kohere"
   sensitive   = true
 }
+
+variable "solapi_api_key" {
+  description = "SOLAPI API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "solapi_api_secret" {
+  description = "SOLAPI API Secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

@@ -30,6 +30,8 @@ locals {
     APPLE_PRIVATE_KEY    = var.apple_private_key != "" ? var.apple_private_key : "REPLACE_ME"
     SPRING_MAIL_USERNAME = var.smtp_username != "" ? var.smtp_username : "REPLACE_ME"
     SPRING_MAIL_PASSWORD = var.smtp_password != "" ? var.smtp_password : "REPLACE_ME"
+    SOLAPI_API_KEY       = var.solapi_api_key != "" ? var.solapi_api_key : "REPLACE_ME"
+    SOLAPI_API_SECRET    = var.solapi_api_secret != "" ? var.solapi_api_secret : "REPLACE_ME"
   }
 }
 

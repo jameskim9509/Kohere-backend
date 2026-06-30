@@ -89,6 +89,8 @@ module "secrets" {
   mysql_password      = var.mysql_password
   mysql_root_password = var.mysql_root_password
   mongo_password      = var.mongo_password
+  solapi_api_key      = var.solapi_api_key
+  solapi_api_secret   = var.solapi_api_secret
 }
 
 # ===== 데이터 EBS (mysql/mongo 영속) =====
@@ -124,6 +126,10 @@ module "host" {
   mongo_username        = var.mongo_username
   images_bucket         = module.s3_cloudfront.bucket_name
   images_cdn_domain     = module.s3_cloudfront.cdn_domain
+
+  # 연락처 SMS(SOLAPI, ADR-0034) — 비밀 아닌 설정(enabled·from)을 compose env로 주입(API 키는 .env/SSM).
+  solapi_enabled = var.solapi_enabled
+  solapi_from    = var.solapi_from
 
   # 시크릿 파라미터가 먼저 존재해야 부팅 시 refresh-env가 .env로 주입할 수 있다.
   depends_on = [module.secrets]

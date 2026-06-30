@@ -133,6 +133,8 @@ module "secrets" {
   apple_private_key = var.apple_private_key
   smtp_username     = var.smtp_username
   smtp_password     = var.smtp_password
+  solapi_api_key    = var.solapi_api_key
+  solapi_api_secret = var.solapi_api_secret
 }
 
 # ===== IAM (ECS 역할 + GitHub OIDC) =====
@@ -182,6 +184,9 @@ locals {
     # APP_IMAGES_CDN_DOMAIN은 커스텀 별칭(cdn_domain_name)으로 고정 — 필수·강제(폴백 없음).
     { name = "APP_IMAGES_BUCKET", value = module.s3_cloudfront.bucket_name },
     { name = "APP_IMAGES_CDN_DOMAIN", value = module.s3_cloudfront.cdn_domain },
+    # 연락처 SMS(SOLAPI, ADR-0034) — enabled/from은 비밀 아님(평문 env). api-key/secret은 container_secrets(SSM).
+    { name = "SOLAPI_ENABLED", value = tostring(var.solapi_enabled) },
+    { name = "SOLAPI_FROM", value = var.solapi_from },
   ]
 
   # valueFrom = SSM 파라미터 ARN (Parameter Store SecureString — ADR-0023). 값 전체가 곧 시크릿.
@@ -198,6 +203,8 @@ locals {
     { name = "APPLE_PRIVATE_KEY", valueFrom = module.secrets.param_arns["APPLE_PRIVATE_KEY"] },
     { name = "SPRING_MAIL_USERNAME", valueFrom = module.secrets.param_arns["SPRING_MAIL_USERNAME"] },
     { name = "SPRING_MAIL_PASSWORD", valueFrom = module.secrets.param_arns["SPRING_MAIL_PASSWORD"] },
+    { name = "SOLAPI_API_KEY", valueFrom = module.secrets.param_arns["SOLAPI_API_KEY"] },
+    { name = "SOLAPI_API_SECRET", valueFrom = module.secrets.param_arns["SOLAPI_API_SECRET"] },
   ]
 }
 
