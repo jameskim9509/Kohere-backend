@@ -24,7 +24,9 @@
 
 > 관련 API 스펙: [01-auth-onboarding](../api/specs/01-auth-onboarding.md)
 
-외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 온보딩(이메일 인증 포함)** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다. 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
+외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 본인 확인 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(본인 확인은 세입자 이메일 인증·임대인 연락처 SMS 인증으로 갈린다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
+
+사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 이메일 인증(US-1-6)을 거쳐 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 이름(성·이름을 합친 단일 `name`)·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하고 **사업자등록번호를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반)로 검증**(US-1-8)하는 단계를 거친다(임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-8·US-1-9·US-1-10은 임대인 전용**이다.
 
 > 관련 NFR: [non-functional-requirements](non-functional-requirements.md) — 4. 보안(토큰/민감정보 보호), 1. 성능(소셜 검증 응답시간), 5. 관측성(인증 실패 로깅·마스킹). 구체 목표값은 NFR 문서 확정 전이라 (확인 필요).
 
@@ -48,7 +50,7 @@
 - **정상 — 신규 회원 약관 동의 유도**
   Given 해당 provider 계정으로 가입한 회원이 없고
   When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
-  Then `200 OK` + `data.onboardingRequired=true`·`data.status="PENDING"`으로 응답하고, 서버는 provider/providerUserId/email만 보유한 **온보딩 미완료(PENDING)** 사용자 레코드를 생성한다. 이때 발급되는 access 토큰은 온보딩 흐름(약관 동의·이메일 인증·온보딩) API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). 앱은 `status`로 분기해 다음으로 **약관 동의 화면**(US-1-7)으로 이동한다. (확인 필요: 온보딩 전용 임시 토큰 만료시간)
+  Then `200 OK` + `data.onboardingRequired=true`·`data.status="PENDING"`으로 응답하고, 서버는 provider/providerUserId/email만 보유한 **온보딩 미완료(PENDING)** 사용자 레코드를 생성한다. 이때 발급되는 access 토큰은 온보딩 흐름(약관 동의·본인 확인(세입자 이메일 인증·임대인 연락처/사업자번호 검증)·온보딩) API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). 앱은 `status`로 분기해 다음으로 **약관 동의 화면**(US-1-7)으로 이동한다. (확인 필요: 온보딩 전용 임시 토큰 만료시간)
 - **정상 — 가입 미완료 회원 재로그인(재개 지점 분기)**
   Given 소셜 로그인은 했으나 가입을 끝내지 못한 회원이 다시 로그인하고(신규 행은 만들지 않음)
   When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
@@ -68,9 +70,9 @@
 
 ---
 
-### US-1-2 — 필수 온보딩 정보 제출하기
+### US-1-2 — 필수 온보딩 정보 제출하기 (세입자 전용)
 
-**As a** 약관 동의를 마친(TERMS_AGREED) 사용자
+**As a** 약관 동의·이메일 인증을 마친(TERMS_AGREED) 세입자(외국인) 사용자
 **I want** 이름·성·성별·생년월일·국적·직업·이메일·비자정보를 한 번에 제출하기를(이메일은 사전 인증, 닉네임은 서버 자동 배정)
 **So that** 회원 가입을 완료하고 정식 access/refresh 토큰으로 보호 기능을 이용할 수 있다.
 
@@ -183,17 +185,33 @@
 
 - 우선순위: **Mid**
 - 관련 NFR: 보안(본인 리소스만 접근), 보안(민감정보 응답 마스킹 정책 — 확인 필요)
+- 백엔드 관점: `GET`/`PATCH /api/v1/users/me`는 세입자·임대인 **공통 엔드포인트**이며, `userType`(`TENANT`/`LANDLORD`)에 따라 응답·수정 가능 필드가 갈린다.
+  - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`·`birthDate`)를 포함한다(기존 동작 그대로).
+  - **임대인(`LANDLORD`)**: 단일 `name`(내부 저장은 세입자와 동일한 `FullName` VO의 `firstName` 재사용 — `lastName`은 미사용/`null`, 별도 `name` 컬럼/필드를 두지 않음. API 요청·응답 필드명은 `name` 유지)·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`만 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인은 `email`을 수집하지 않아 응답에 포함하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`/`birthDate`)도 **임대인 응답에 포함하지 않는다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
+  - 두 역할 공통으로 `userType`·`nickname`은 불변이고, 세입자 `email`은 재인증이 필요해 이 경로로 수정하지 않는다(임대인은 `email` 미보유).
 
 **AC (Given / When / Then)**
 
-- **정상 — 조회**
-  Given 유효한 access 토큰을 보유한 `ACTIVE` 사용자가
+- **정상 — 조회(세입자)**
+  Given 유효한 access 토큰을 보유한 `ACTIVE` 세입자(`userType=TENANT`)가
   When `GET /api/v1/users/me`를 호출하면
   Then `200 OK` + `data`에 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드)+서버 resolve `countryName`·`countryFlag`·`occupation`·`email`·`visaType`·약관 동의 상태)을 반환한다.
-- **정상 — 부분 수정**
-  Given 유효한 access 토큰을 보유하고
+- **정상 — 부분 수정(세입자)**
+  Given 유효한 access 토큰을 보유한 세입자(`userType=TENANT`)가
   When `PATCH /api/v1/users/me`에 변경할 필드(예: `country`, `occupation`, `visaType`, `marketingAgreed`)만 담아 호출하면
   Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `nickname`은 시스템 배정값이라 수정 대상이 아니며, `email` 변경은 재인증이 필요해 이 엔드포인트로는 처리하지 않는다(확인 필요).
+- **정상 — 조회(임대인)**
+  Given 유효한 access 토큰을 보유한 `ACTIVE` 임대인(`userType=LANDLORD`)이
+  When `GET /api/v1/users/me`를 호출하면
+  Then `200 OK` + `data`에 `userType="LANDLORD"`·`name`(=`FullName.firstName`)·`nickname`·`phoneNumber`·`status`·약관 동의 상태(`termsOfServiceAgreed`/`privacyPolicyAgreed`/`marketingAgreed`)·`createdAt`을 반환한다. 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`/`birthDate`)와 `email`(임대인 미수집)·`businessRegistrationNumber`는 응답에 포함하지 않는다.
+- **정상 — 부분 수정(임대인)**
+  Given 유효한 access 토큰을 보유한 임대인(`userType=LANDLORD`)이
+  When `PATCH /api/v1/users/me`에 자유 수정 필드(`name`·`marketingAgreed`) 중 일부(예: `name`)만 담아 호출하면
+  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 내부적으로 `FullName.firstName`에 매핑해 저장한다. `businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`은 이 경로로 수정할 수 없다(임대인은 `email` 미보유). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
+- **비즈니스 규칙 — 임대인 연락처 변경 시 SMS 재인증(임대인)**
+  Given 임대인이 새 `phoneNumber`로 변경하려 하나 그 번호를 SMS 재인증(US-1-10)하지 않았으면(VERIFIED 마커 없음·불일치)
+  When `PATCH /api/v1/users/me`에 새 `phoneNumber`를 담아 호출하면
+  Then `422` + `error.code=AUTH_PHONE_NOT_VERIFIED`를 반환하고 연락처를 변경하지 않는다. 새 번호를 SMS 인증번호로 재인증(`POST /auth/phone/verification-code`·`/auth/phone/verify`)해 VERIFIED된 뒤에 다시 호출하면 변경이 반영된다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용).
 - **입력 검증 실패**
   Given 수정 본문의 `gender`/`visaType`/`occupation`이 정의된 enum 외 값이거나 `birthDate`가 형식/범위 위반이거나 `country`가 빈값이면
   When `PATCH /api/v1/users/me`를 호출하면
@@ -209,15 +227,15 @@
 
 ---
 
-### US-1-6 — 온보딩 중 이메일 인증하기
+### US-1-6 — 온보딩 중 이메일 인증하기 (세입자 전용)
 
-**As a** 소셜 로그인은 마쳤으나 온보딩 미완료(PENDING·TERMS_AGREED) 사용자
+**As a** 약관 동의를 마쳤으나 온보딩 미완료(TERMS_AGREED) 세입자(외국인) 사용자
 **I want** 온보딩에서 입력한 이메일로 인증번호를 받아 확인하기를
-**So that** 본인 소유 이메일임을 증명하고(US-1-2 온보딩 제출의 선행 조건) 가입을 완료할 수 있다.
+**So that** 본인 소유 이메일임을 증명하고(US-1-2 세입자 온보딩 제출의 선행 조건) 가입을 완료할 수 있다.
 
 - 우선순위: **High**
 - 관련 NFR: 보안(이메일 소유 인증·인증번호 해시 보관·재발송/시도 레이트리밋), 보안(이메일·인증번호 로그 마스킹)
-- 백엔드 관점: `auth`가 인증번호를 생성해 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SES/SMTP — 확인 필요)로 **동기 발송**하고, **발송에 성공한 뒤에만** 인증번호를 **해시로 보관**(Redis, TTL 자동 소멸)한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답한다. 검증 성공 시 해당 사용자의 이메일을 `VERIFIED`로 마킹하고, 온보딩 제출(US-1-2)에서 제출 `email`과 대조한다.
+- 백엔드 관점: `auth`가 인증번호를 생성해 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SMTP)로 **동기 발송**하고, **발송에 성공한 뒤에만** 인증번호를 **해시로 보관**(Redis, TTL 자동 소멸)한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답한다. 검증 성공 시 해당 사용자의 이메일을 `VERIFIED`로 마킹하고, 온보딩 제출(US-1-2)에서 제출 `email`과 대조한다.
 
 **AC (Given / When / Then)**
 
@@ -227,8 +245,8 @@
   Then `200 OK` + `data.expiresIn`(만료 초)을 반환하고 해당 이메일로 인증번호를 발송한다. 메일 발송에 성공한 뒤에만 인증번호 챌린지를 저장하며(인증번호 원문은 저장·로그하지 않고 해시로만 보관), `email`은 마스킹해 반환한다.
 - **비즈니스 규칙 — 약관 미동의(선행 게이트)**
   Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
-  When `POST /api/v1/auth/email/verification-code`(또는 `/email/verify`)를 호출하면
-  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 인증번호를 발송하지 않는다(약관 동의 US-1-7 선행 필요 — 이메일 인증은 약관 동의 이후 단계).
+  When `POST /api/v1/auth/email/verification-code`를 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 인증번호를 발송하지 않는다(약관 동의 US-1-7 선행 필요 — 이메일 인증은 약관 동의 이후 단계). (`/email/verify`는 약관 게이트를 두지 않으며, PENDING은 챌린지 부재로 `AUTH_EMAIL_VERIFICATION_FAILED`가 난다 — 아래 "인증번호 불일치/만료" 참조)
 - **장애 — 메일 발송 실패**
   Given 메일 provider 장애·타임아웃 등으로 인증번호 발송이 실패하면
   When `POST /api/v1/auth/email/verification-code`를 호출하면
@@ -288,6 +306,144 @@
   Given 이미 `TERMS_AGREED`인 사용자가 (네트워크 재시도 등으로) 다시 호출하거나, 이미 온보딩을 완료(`ACTIVE`)한 사용자가
   When `POST /api/v1/auth/terms`를 호출하면
   Then `TERMS_AGREED` 중복 호출은 상태·동의를 바꾸지 않고 멱등하게 `200 OK`(현재 동의 상태)를 반환하고(의도적 재동의 아님 — 마케팅 동의 변경은 `PATCH /users/me`로 처리), 이미 `ACTIVE`이면 `409` + `error.code=AUTH_ONBOARDING_ALREADY_COMPLETED`를 반환한다.
+
+---
+
+### US-1-8 — 온보딩 중 사업자등록번호 검증하기 (임대인 전용)
+
+**As a** 소셜 로그인·약관 동의를 마친(TERMS_AGREED) 임대인 가입자
+**I want** 입력한 사업자등록번호를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반)로 진위·영업 상태까지 확인받기를
+**So that** 실제 영업 중인 사업자임을 증명하고(US-1-9 임대인 온보딩 제출의 선행 조건) 임대인 가입을 완료할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(사업자등록번호 등 민감정보 저장·로그 마스킹), 보안·신뢰성(외부 연동 타임아웃·관측성·장애 시 가입 흐름 degrade), 보안(검증 시도 레이트리밋)
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)가 완료되어야 한다. 이 단계는 **임대인 트랙 전용**으로 세입자 온보딩(US-1-2)에는 없다.
+- 백엔드 관점: `auth`가 사업자등록번호를 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터: 사업자등록정보 검증 API — 국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md))로 **동기 검증**한다. **정상(계속) 사업자일 때만** 해당 사용자의 사업자등록번호를 `VERIFIED`로 마킹(원문은 저장·로그하지 않고 해시/마스킹 보관 — 확인 필요)하고, 임대인 온보딩 제출(US-1-9)에서 제출 번호와 대조한다. 미등록·휴업·폐업 번호는 마킹하지 않고 `422`로 거절한다. 검증 API 장애·타임아웃 등 연동 실패는 검증 결과를 만들지 않고 `502 UPSTREAM_ERROR`로 응답해 재시도를 유도한다(임대인 연락처 인증 US-1-10·세입자 이메일 인증 US-1-6의 동기 호출·실패 정책과 대칭).
+
+**AC (Given / When / Then)**
+
+- **정상 — 사업자등록번호 검증 성공**
+  Given 약관 동의를 마친(`TERMS_AGREED`) 사용자가 유효한 온보딩 토큰으로 정상 영업 중인 사업자등록번호를 입력하고
+  When `POST /api/v1/auth/business/verify`에 `{ businessRegistrationNumber }`를 담아 호출하면
+  Then `200 OK` + `data.verified=true`(+ 검증 서비스가 회신한 상호·대표자 등 표시용 정보 — 확인 필요)를 반환하고 해당 번호를 `VERIFIED`로 마킹해 임대인 온보딩 제출(US-1-9)에 사용할 수 있게 한다. 사업자등록번호는 응답·로그에서 마스킹한다.
+- **비즈니스 규칙 — 약관 미동의(선행 게이트, 우선 판정)**
+  Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 외부 검증을 수행하지 않는다(약관 동의 US-1-7 선행 필요).
+- **입력 검증 실패**
+  Given `businessRegistrationNumber`가 누락·빈값이거나 형식(숫자 10자리)에 어긋나면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `400` + `error.code=INVALID_INPUT`을 반환한다(형식 위반은 외부 호출 전에 거른다).
+- **비즈니스 규칙 — 진위·상태 검증 실패(미등록/휴업/폐업)**
+  Given 검증 서비스 조회 결과 존재하지 않거나 휴업·폐업 상태인 사업자등록번호이면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `422` + `error.code=AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`를 반환하고 번호를 검증 완료로 표시하지 않는다.
+- **장애 — 외부 검증 서비스 실패**
+  Given 사업자등록정보 검증 API가 장애·타임아웃·5xx로 응답하면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `502` + `error.code=UPSTREAM_ERROR`를 반환하고 검증 결과를 저장하지 않아 클라이언트가 재시도하도록 유도한다(동기 검증 정책).
+- **경계·동시성 — 검증 시도 레이트리밋**
+  Given 짧은 시간에 검증을 반복 호출하면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `429` + `error.code=TOO_MANY_REQUESTS`를 반환한다(확인 필요: 시도 상한·간격 임계값).
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
+
+---
+
+### US-1-9 — 임대인 온보딩 정보 제출하기 (임대인 전용)
+
+**As a** 약관 동의·연락처 인증·사업자등록번호 검증을 마친(TERMS_AGREED) 임대인 가입자
+**I want** 이름(성·이름을 합친 단일 `name`)·연락처(전화)를 한 번에 제출하기를(연락처·사업자번호는 사전 검증, 닉네임은 서버 자동 배정, 이메일은 미수집)
+**So that** 임대인으로 가입을 완료하고 정식 access/refresh 토큰으로 임대인 기능(매물 연결·세입자 채팅 등)을 이용할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(연락처·이메일·사업자등록번호 등 민감정보 저장·로그 마스킹), 보안(이메일 소유 인증·사업자 진위 검증)
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)·사업자등록번호 검증(US-1-8)이 완료되어야 한다.
+- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)), 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 → 사업자번호 미검증 순이다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 임대인 온보딩 완료**
+  Given 약관 동의를 마친(`TERMS_AGREED`) 사용자의 유효한 온보딩 토큰을 보유하고 제출 `phoneNumber`가 사전 인증(US-1-10)·`businessRegistrationNumber`가 사전 검증(US-1-8)되어 있으며
+  When 모든 필수 필드(`name`·`phoneNumber`·`businessRegistrationNumber`)를 담아 `POST /api/v1/auth/landlord/onboarding`을 호출하면(약관 필드는 담지 않음)
+  Then `200 OK` + `data`에 완성된 임대인 프로필(`userType="LANDLORD"`·서버가 자동 배정한 `nickname` 포함)과 정식 `accessToken`/`refreshToken`을 내려주고, 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이한다.
+- **입력 검증 실패**
+  Given `name`/`phoneNumber`/`businessRegistrationNumber` 중 빈값이 있거나 형식(전화번호·사업자번호 10자리)이 어긋나면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`로 위반 필드를 반환한다.
+- **비즈니스 규칙 — 약관 미동의 상태(우선 판정)**
+  Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 상태를 전이하지 않는다(약관 동의 US-1-7 선행 — 이메일·사업자번호 안내보다 **약관 동의가 먼저**).
+- **비즈니스 규칙 — 연락처 미인증**
+  Given 약관까지 동의한(`TERMS_AGREED`) 사용자의 제출 `phoneNumber`가 SMS 인증번호로 검증(US-1-10)되지 않았거나 검증한 번호와 다르면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `422` + `error.code=AUTH_PHONE_NOT_VERIFIED`를 반환하고 상태를 전이하지 않는다.
+- **비즈니스 규칙 — 사업자등록번호 미검증**
+  Given 약관·연락처를 통과한 사용자의 제출 `businessRegistrationNumber`가 외부 사업자등록정보 검증(US-1-8)되지 않았거나 검증한 번호와 다르면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `422` + `error.code=AUTH_BUSINESS_NUMBER_NOT_VERIFIED`를 반환하고 상태를 전이하지 않는다.
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
+- **경계·동시성 — 중복 온보딩**
+  Given 이미 온보딩을 완료(`ACTIVE`)한 사용자이거나, 동일 사용자가 온보딩 요청을 동시에 두 번 보내면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then 한 요청만 성공하고 나머지는 `409` + `error.code=AUTH_ONBOARDING_ALREADY_COMPLETED`를 반환한다(서버는 사용자 단위 멱등 처리).
+
+---
+
+### US-1-10 — 온보딩 중 연락처(휴대폰) 인증하기 (임대인 전용)
+
+**As a** 약관 동의를 마쳤으나 온보딩 미완료(TERMS_AGREED) 임대인 가입자
+**I want** 온보딩에서 입력한 연락처(휴대폰)로 SMS 인증번호를 받아 확인하기를
+**So that** 본인 소유 휴대폰임을 증명하고(US-1-9 임대인 온보딩 제출의 선행 조건) 임대인 가입을 완료할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(휴대폰 소유 인증·인증번호 해시 보관·재발송/시도 레이트리밋), 보안(연락처·인증번호 로그 마스킹)
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)가 완료되어야 한다. 이 단계는 **임대인 트랙 전용**으로, 세입자 이메일 인증(US-1-6)을 임대인 트랙에서 대체한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)).
+- 백엔드 관점: `auth`가 인증번호를 생성해 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS API — 구체 provider는 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md))로 **동기 발송**하고, **발송에 성공한 뒤에만** 인증번호를 **해시로 보관**(Redis, TTL 자동 소멸)한다. 인증번호 생성·해시·검증은 서버가 보유하고 어댑터는 발송만 담당한다(이메일 인증 US-1-6과 대칭). provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답한다. 검증 성공 시 해당 사용자의 연락처를 `VERIFIED`로 마킹하고, 임대인 온보딩 제출(US-1-9)에서 제출 `phoneNumber`와 대조한다.
+- **인증번호 정책은 이메일 인증(US-1-6)과 동일하게 적용한다** — 인증번호 6자리·코드 TTL 5분·검증 마커(VERIFIED) TTL 30분(온보딩 토큰 만료)·검증 시도 상한 5회·재발송 간격 60초([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)).
+- 이 발송·확인(`POST /auth/phone/verification-code`·`/auth/phone/verify`)은 **프로필에서 임대인 연락처를 변경할 때(US-1-5)도 재사용**해 새 번호를 재인증한다(정식 토큰(`ACTIVE`) 컨텍스트 허용). 변경은 새 번호가 VERIFIED된 뒤에만 반영하며 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 인증번호 발송**
+  Given 약관 동의를 마친(`TERMS_AGREED`) 사용자가 연락처(휴대폰)를 입력하고
+  When `POST /api/v1/auth/phone/verification-code`에 `{ phoneNumber }`를 담아 호출하면
+  Then `200 OK` + `data.expiresIn`(만료 초)을 반환하고 해당 번호로 SMS 인증번호를 발송한다. SMS 발송에 성공한 뒤에만 인증번호 챌린지를 저장하며(인증번호 원문은 저장·로그하지 않고 해시로만 보관), `phoneNumber`는 마스킹해 반환한다.
+- **비즈니스 규칙 — 약관 미동의(선행 게이트)**
+  Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
+  When `POST /api/v1/auth/phone/verification-code`를 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 인증번호를 발송하지 않는다(약관 동의 US-1-7 선행 필요). (`/phone/verify`는 약관 게이트를 두지 않으며, PENDING은 챌린지 부재로 `AUTH_PHONE_VERIFICATION_FAILED`가 난다 — 아래 "인증번호 불일치/만료" 참조)
+- **장애 — SMS 발송 실패**
+  Given SMS provider 장애·타임아웃 등으로 인증번호 발송이 실패하면
+  When `POST /api/v1/auth/phone/verification-code`를 호출하면
+  Then `502` + `error.code=UPSTREAM_ERROR`를 반환하고, 인증번호 챌린지를 저장하지 않아 클라이언트가 재시도하도록 유도한다(동기 발송 정책).
+- **정상 — 인증번호 확인**
+  Given 발송된 인증번호가 유효(미만료·시도 미초과)하고
+  When `POST /api/v1/auth/phone/verify`에 `{ phoneNumber, code }`를 담아 호출하면
+  Then `200 OK` + `data.verified=true`를 반환하고 해당 연락처를 `VERIFIED`로 마킹해 임대인 온보딩 제출(US-1-9)에 사용할 수 있게 한다.
+- **입력 검증 실패**
+  Given `phoneNumber`가 누락·형식 위반이거나 확인 요청에 `code`가 빈 문자열이면
+  When 연락처 인증 API를 호출하면
+  Then `400` + `error.code=INVALID_INPUT`을 반환한다.
+- **비즈니스 규칙 — 인증번호 불일치/만료**
+  Given 잘못된 인증번호이거나 만료(미발송 포함)된 인증번호로
+  When `POST /api/v1/auth/phone/verify`를 호출하면
+  Then `422` + `error.code=AUTH_PHONE_VERIFICATION_FAILED`를 반환하고 연락처를 검증 완료로 표시하지 않는다.
+- **경계·동시성 — 재발송/시도 레이트리밋**
+  Given 짧은 시간에 인증번호 재발송을 반복하거나 검증 시도 상한을 초과하면
+  When 연락처 인증 API를 호출하면
+  Then `429` + `error.code=TOO_MANY_REQUESTS`를 반환한다(이메일 인증 US-1-6과 동일 임계값 — 재발송 간격 60초·검증 시도 5회).
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When 연락처 인증 API를 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
 
 ## 2. 맞춤 진단 & 매물 추천
 
