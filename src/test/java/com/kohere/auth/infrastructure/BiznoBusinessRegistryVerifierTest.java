@@ -38,6 +38,7 @@ class BiznoBusinessRegistryVerifierTest {
     properties.setBaseUrl(BASE_URL);
     properties.setApiKey("test-key");
     RestClient.Builder builder = RestClient.builder();
+    BiznoClientConfig.applyBiznoMessageConverters(builder); // 실 구성과 동일한 컨버터(모든 Content-Type 처리)
     server = MockRestServiceServer.bindTo(builder).build();
     verifier = new BiznoBusinessRegistryVerifier(properties, builder.build());
   }
@@ -57,7 +58,7 @@ class BiznoBusinessRegistryVerifierTest {
             withSuccess(
                 "{\"resultCode\":0,\"resultMsg\":\"NORMAL SERVICE.\",\"totalCount\":1,"
                     + "\"items\":[{\"company\":\"(주)테스트\",\"bno\":\"123-45-67890\","
-                    + "\"bsttcd\":\"\",\"bstt\":\"\",\"EndDt\":\"\"}]}",
+                    + "\"bsttcd\":\"01\",\"bstt\":\"계속사업자\",\"EndDt\":\"\"}]}",
                 MediaType.APPLICATION_JSON));
 
     // 하이픈 포함 입력도 정규화해 조회·대조한다.
@@ -66,13 +67,28 @@ class BiznoBusinessRegistryVerifierTest {
   }
 
   @Test
-  void verify_closedBusinessWithEndDate_returnsFalse() {
+  void verify_closedBusinessCode03_returnsFalse() {
+    // bsttcd=03(폐업자) → 검증 실패
     server
         .expect(requestTo(containsString("q=1234567890")))
         .andRespond(
             withSuccess(
                 "{\"resultCode\":0,\"totalCount\":1,\"items\":[{\"bno\":\"123-45-67890\","
-                    + "\"bstt\":\"폐업\",\"bsttcd\":\"03\",\"EndDt\":\"20200101\"}]}",
+                    + "\"bstt\":\"폐업자\",\"bsttcd\":\"03\",\"EndDt\":\"20200101\"}]}",
+                MediaType.APPLICATION_JSON));
+
+    assertThat(verifier.verify(NUMBER)).isFalse();
+  }
+
+  @Test
+  void verify_suspendedBusinessCode02_returnsFalse() {
+    // bsttcd=02(휴업자) → 검증 실패
+    server
+        .expect(requestTo(containsString("q=1234567890")))
+        .andRespond(
+            withSuccess(
+                "{\"resultCode\":0,\"totalCount\":1,\"items\":[{\"bno\":\"123-45-67890\","
+                    + "\"bstt\":\"휴업자\",\"bsttcd\":\"02\",\"EndDt\":\"\"}]}",
                 MediaType.APPLICATION_JSON));
 
     assertThat(verifier.verify(NUMBER)).isFalse();
@@ -118,5 +134,51 @@ class BiznoBusinessRegistryVerifierTest {
 
     assertThatThrownBy(() -> verifier.verify(NUMBER))
         .isInstanceOf(BusinessVerificationUpstreamException.class);
+  }
+
+  @Test
+  void verify_jsonReturnedAsTextHtml_stillParses() {
+    // 비즈노가 JSON을 application/json이 아닌 text/html로 반환해도 파싱된다(Content-Type 무관 컨버터).
+    server
+        .expect(requestTo(containsString("q=1234567890")))
+        .andRespond(
+            withSuccess(
+                "{\"resultCode\":0,\"totalCount\":1,\"items\":[{\"bno\":\"123-45-67890\","
+                    + "\"bstt\":\"계속사업자\",\"bsttcd\":\"01\",\"EndDt\":\"\"}]}",
+                MediaType.TEXT_HTML));
+
+    assertThat(verifier.verify(NUMBER)).isTrue();
+  }
+
+  @Test
+  void verify_itemsPaddedWithNull_ignoresNullsAndVerifies() {
+    // 비즈노는 items를 고정 슬롯으로 반환해 빈 자리를 null로 패딩한다 — null을 걸러야 NPE가 안 난다.
+    server
+        .expect(requestTo(containsString("q=1128156766")))
+        .andRespond(
+            withSuccess(
+                "{\"resultCode\":0,\"totalCount\":1,\"items\":[{\"bno\":\"112-81-56766\","
+                    + "\"bstt\":\"계속사업자\",\"bsttcd\":\"01\",\"EndDt\":\"\"},null,null,null]}",
+                MediaType.APPLICATION_JSON));
+
+    // 하이픈 포함 입력 → q=1128156766(하이픈 제거)로 조회·대조.
+    assertThat(verifier.verify("112-81-56766")).isTrue();
+    server.verify();
+  }
+
+  @Test
+  void verify_realClosedBusinessResponse_returnsFalse() {
+    // 실제 비즈노 응답 형태(폐업자 + null 패딩 + text/html) — 파싱되고 폐업으로 판정(false).
+    server
+        .expect(requestTo(containsString("q=1128156766")))
+        .andRespond(
+            withSuccess(
+                "{\"resultCode\":0,\"resultMsg\":\"NORMAL SERVICE.\",\"totalCount\":1,\"items\":["
+                    + "{\"company\":\"(주)리노테크\",\"bno\":\"112-81-56766\",\"cno\":\"\","
+                    + "\"bsttcd\":\"03\",\"bstt\":\"폐업자\",\"TaxTypeCd\":\"\","
+                    + "\"taxtype\":\"부가가치세 일반과세자\",\"EndDt\":\"20250430\"},null,null,null]}",
+                MediaType.TEXT_HTML));
+
+    assertThat(verifier.verify("112-81-56766")).isFalse();
   }
 }

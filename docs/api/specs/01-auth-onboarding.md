@@ -509,7 +509,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `businessRegistrationNumber` | string | 필수 | 숫자 10자리. 빈 문자열·형식 위반 불가(`INVALID_INPUT` — 외부 호출 전 거름) |
+| `businessRegistrationNumber` | string | 필수 | 숫자 10자리 또는 하이픈 형식(예 `123-45-67890`) — 어댑터가 하이픈을 제거해 조회·대조. 빈 문자열·형식 위반 불가(`INVALID_INPUT` — 외부 호출 전 거름) |
 
 #### 성공 Response — 200 OK
 

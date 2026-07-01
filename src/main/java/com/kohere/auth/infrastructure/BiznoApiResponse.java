@@ -6,8 +6,9 @@ import java.util.List;
 
 /**
  * 비즈노 fapi(`type=json`) 응답 매핑(ADR-0033). {@code resultCode=0}이 정상 서비스이고, {@code items}에 조회 결과 사업자
- * 목록이 담긴다. 검증에 쓰는 필드만 선언하고 나머지(company·cno·taxtype 등)는 무시한다. 사업자 상태는 {@code bstt}(텍스트)·{@code
- * bsttcd}(코드)·{@code EndDt}(폐업일)로 표현된다.
+ * 목록이 담긴다 — 고정 슬롯이라 빈 자리는 {@code null}로 패딩될 수 있으므로 소비 시 null을 걸러야 한다. 검증에 쓰는 필드만 선언하고
+ * 나머지(company·cno·taxtype 등)는 무시한다. 사업자 상태는 {@code bstt}(텍스트)·{@code bsttcd}(코드)·{@code
+ * EndDt}(폐업일)로 표현된다.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 record BiznoApiResponse(int resultCode, int totalCount, List<Item> items) {
