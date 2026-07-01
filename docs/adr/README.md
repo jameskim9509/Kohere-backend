@@ -56,7 +56,7 @@
 | [0030](./0030-error-message-i18n-resource-bundle.md) | 에러 응답 메시지 i18n은 리소스 번들(Spring MessageSource)로 번역한다(Accept-Language·영어 폴백) | Accepted | 2026-06-24 |
 | [0031](./0031-apple-sign-in-authorization-code-flow.md) | Apple 로그인은 authorization code 방식으로 전환해 탈퇴 시 토큰을 폐기한다(Google은 idToken 유지) | Accepted | 2026-06-28 |
 | [0032](./0032-mongodb-migration-runner.md) | MongoDB 시드·문서 1회성 변경은 모듈별 Mongock @ChangeUnit으로 1회 자동 적용한다 | Accepted | 2026-06-29 |
-| [0033](./0033-business-registry-verification.md) | 임대인 사업자등록번호는 비즈노 API로 동기 검증하고 정상 사업자만 VERIFIED로 마킹한다 | Proposed | 2026-06-30 |
+| [0033](./0033-business-registry-verification.md) | 임대인 사업자등록번호는 온보딩과 분리된 무상태 API로 비즈노 조회·검증한다 | Proposed | 2026-06-30 |
 | [0034](./0034-landlord-phone-sms-verification.md) | 임대인 연락처는 SMS 인증번호로 검증하고 이메일은 수집하지 않는다 | Proposed | 2026-06-30 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.

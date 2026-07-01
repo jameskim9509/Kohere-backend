@@ -18,8 +18,16 @@ public interface ListingRepository {
   /** 공개 중이고 활성 방 상품이 있는 매물만 페이지로 조회한다. */
   PageResponse<Listing> findPublished(int page, int size);
 
-  /** 지도 범위와 필터 조건을 적용해 공개 매물 목록을 조회한다. */
-  PageResponse<Listing> search(ListingSearchCondition condition);
+  /**
+   * 지도 범위와 필터 조건을 적용해 목록 카드 후보를 조회한다.
+   *
+   * <p>목록 화면은 건물 하나가 아니라 방 상품 하나를 카드 1개로 보여준다. 그래서 반환값도 {@link Listing}만 단독으로 넘기지 않고, 카드에 필요한 건물
+   * 정보와 방 상품 정보를 함께 담은 {@link ListingSearchResult}를 페이지 단위로 반환한다.
+   */
+  PageResponse<ListingSearchResult> search(ListingSearchCondition condition);
+
+  /** 지도 SDK에 전달할 마커 후보를 조회한다. 전체 건수와 지정 상한 내 매물만 반환한다. */
+  ListingMapSearchResult searchForMap(ListingSearchCondition condition, int limit);
 
   /** 진단 결과 조건을 MongoDB 필터로 적용해 추천 매물 페이지를 조회한다. */
   PageResponse<Listing> recommend(
@@ -34,4 +42,10 @@ public interface ListingRepository {
 
   /** 매물 도메인 객체를 저장하고 저장된 결과를 반환한다. */
   Listing save(Listing listing);
+
+  /** 매물 찜 수를 원자적으로 1 증가시키고 변경 후 값을 반환한다. */
+  int increaseFavoriteCount(String listingId);
+
+  /** 매물 찜 수를 원자적으로 1 감소시키되 0 미만으로 내리지 않고 변경 후 값을 반환한다. */
+  int decreaseFavoriteCount(String listingId);
 }
