@@ -197,6 +197,20 @@ variable "solapi_api_secret" {
   sensitive   = true
 }
 
+# ----- 사업자번호 검증 (비즈노 — 임대인 인증, ADR-0033) -----
+variable "bizno_enabled" {
+  description = "비즈노 실 검증 활성화(앱 app.bizno.enabled). false면 StubBusinessRegistryVerifier 폴백"
+  type        = bool
+  default     = false
+}
+
+variable "bizno_api_key" {
+  description = "비즈노 API Key — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # ----- 알람 / 이미지 -----
 variable "discord_webhook_url" {
   description = "Discord 웹훅 URL — 채우면 CloudWatch 알람을 Discord로 통보(SNS→Lambda). 빈 값이면 미구성"

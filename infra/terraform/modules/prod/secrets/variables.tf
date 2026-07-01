@@ -73,6 +73,13 @@ variable "solapi_api_secret" {
   sensitive   = true
 }
 
+variable "bizno_api_key" {
+  description = "비즈노 API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "recovery_window_days" {
   description = "Secrets Manager 삭제 복구 대기일"
   type        = number

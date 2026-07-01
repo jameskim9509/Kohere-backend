@@ -407,3 +407,17 @@ variable "solapi_api_secret" {
   default     = ""
   sensitive   = true
 }
+
+# ----- 사업자번호 검증 (비즈노 — 임대인 인증, ADR-0033) -----
+variable "bizno_enabled" {
+  description = "비즈노 실 검증 활성화(앱 app.bizno.enabled). false면 StubBusinessRegistryVerifier 폴백"
+  type        = bool
+  default     = false
+}
+
+variable "bizno_api_key" {
+  description = "비즈노 API Key — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

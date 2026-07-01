@@ -32,6 +32,7 @@ locals {
     SPRING_MAIL_PASSWORD = var.smtp_password != "" ? var.smtp_password : "REPLACE_ME"
     SOLAPI_API_KEY       = var.solapi_api_key != "" ? var.solapi_api_key : "REPLACE_ME"
     SOLAPI_API_SECRET    = var.solapi_api_secret != "" ? var.solapi_api_secret : "REPLACE_ME"
+    BIZNO_API_KEY        = var.bizno_api_key != "" ? var.bizno_api_key : "REPLACE_ME"
   }
 }
 

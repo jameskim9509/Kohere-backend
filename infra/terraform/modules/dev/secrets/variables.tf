@@ -92,3 +92,10 @@ variable "solapi_api_secret" {
   default     = ""
   sensitive   = true
 }
+
+variable "bizno_api_key" {
+  description = "비즈노 API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

@@ -135,6 +135,7 @@ module "secrets" {
   smtp_password     = var.smtp_password
   solapi_api_key    = var.solapi_api_key
   solapi_api_secret = var.solapi_api_secret
+  bizno_api_key     = var.bizno_api_key
 }
 
 # ===== IAM (ECS 역할 + GitHub OIDC) =====
@@ -187,6 +188,8 @@ locals {
     # 연락처 SMS(SOLAPI, ADR-0034) — enabled/from은 비밀 아님(평문 env). api-key/secret은 container_secrets(SSM).
     { name = "SOLAPI_ENABLED", value = tostring(var.solapi_enabled) },
     { name = "SOLAPI_FROM", value = var.solapi_from },
+    # 사업자번호 검증(비즈노, ADR-0033) — enabled는 비밀 아님(평문 env). api-key는 container_secrets(SSM).
+    { name = "BIZNO_ENABLED", value = tostring(var.bizno_enabled) },
   ]
 
   # valueFrom = SSM 파라미터 ARN (Parameter Store SecureString — ADR-0023). 값 전체가 곧 시크릿.
@@ -205,6 +208,7 @@ locals {
     { name = "SPRING_MAIL_PASSWORD", valueFrom = module.secrets.param_arns["SPRING_MAIL_PASSWORD"] },
     { name = "SOLAPI_API_KEY", valueFrom = module.secrets.param_arns["SOLAPI_API_KEY"] },
     { name = "SOLAPI_API_SECRET", valueFrom = module.secrets.param_arns["SOLAPI_API_SECRET"] },
+    { name = "BIZNO_API_KEY", valueFrom = module.secrets.param_arns["BIZNO_API_KEY"] },
   ]
 }
 

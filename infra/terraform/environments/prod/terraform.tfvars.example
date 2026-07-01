@@ -47,6 +47,11 @@ mail_from     = "noreply@kohere.app"
 # solapi_api_key    = ""  # sensitive — SSM SecureString
 # solapi_api_secret = ""  # sensitive — SSM SecureString
 
+# ----- 사업자번호 검증 (비즈노 — 임대인 인증, ADR-0033) -----
+# 기본 비활성(StubBusinessRegistryVerifier 폴백). 켜려면 비즈노 API 키 발급 후 채우고 bizno_enabled=true.
+# bizno_enabled = true
+# bizno_api_key = ""  # sensitive — SSM SecureString
+
 # ----- 알람 (이메일·Discord 병행 가능 — 둘 다 채우면 양쪽으로 통보) -----
 # alarm_email         = "ops@kohere.app"
 # discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda, ADR-0027)  # sensitive

@@ -60,6 +60,8 @@ resource "aws_instance" "host" {
       # 연락처 SMS(SOLAPI, ADR-0034) — 비밀 아닌 설정만(API 키는 .env/SSM).
       solapi_enabled = var.solapi_enabled
       solapi_from    = var.solapi_from
+      # 사업자번호 검증(비즈노, ADR-0033) — enabled만(API 키는 .env/SSM).
+      bizno_enabled = var.bizno_enabled
     })
   })
 
