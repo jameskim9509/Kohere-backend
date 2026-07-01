@@ -3,6 +3,11 @@
 # 주의: 이전에 ddl-auto=update로 만든 로컬 DB가 있으면 Flyway 도입 후 충돌할 수 있다 →
 #       `docker compose down -v`로 초기화 후 재기동(Flyway가 V1부터 생성).
 spring:
+  # 로컬 실행(bootRun) 시 프로젝트 루트 .env(KEY=VALUE·gitignore)를 선택적으로 로드해 ${ENV} 치환에 반영한다.
+  # optional: 파일이 없어도 무시, [.properties]: 확장자 없는 .env를 properties 포맷으로 파싱. 워킹디렉터리(루트)에서 실행할 것.
+  # docker compose는 .env를 자동 인식하므로 이 설정은 호스트 JVM(bootRun) 전용이다. local 프로파일에만 두어 test/prod엔 영향 없음.
+  config:
+    import: "optional:file:.env[.properties]"
   datasource:
     url: jdbc:mysql://localhost:3306/kohere?serverTimezone=UTC
     username: kohere
