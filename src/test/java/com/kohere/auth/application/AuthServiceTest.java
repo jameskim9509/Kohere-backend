@@ -10,17 +10,24 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.kohere.auth.application.dto.BusinessVerifyResponse;
 import com.kohere.auth.application.dto.EmailVerificationCodeResponse;
 import com.kohere.auth.application.dto.EmailVerifyResponse;
 import com.kohere.auth.application.dto.OnboardingResponse;
+import com.kohere.auth.application.dto.PhoneVerificationCodeResponse;
+import com.kohere.auth.application.dto.PhoneVerifyResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.EmailNotVerifiedException;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
+import com.kohere.auth.domain.LandlordOnlyException;
+import com.kohere.auth.domain.MissingCredentialException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
 import com.kohere.auth.domain.OnboardingAlreadyCompletedException;
+import com.kohere.auth.domain.PhoneNotVerifiedException;
 import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.RefreshToken;
 import com.kohere.auth.domain.RefreshTokenHasher;
@@ -29,14 +36,19 @@ import com.kohere.auth.domain.RequiredAgreementMissingException;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
 import com.kohere.auth.domain.TermsAgreementRequiredException;
+import com.kohere.auth.presentation.dto.BusinessVerifyRequest;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
+import com.kohere.auth.presentation.dto.LandlordOnboardingRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
+import com.kohere.auth.presentation.dto.PhoneVerificationCodeRequest;
+import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.TermsAgreementView;
 import com.kohere.user.api.UserAccountService;
@@ -48,6 +60,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -66,6 +79,9 @@ class AuthServiceTest {
   @Mock private JwtTokenService jwtTokenService;
   @Mock private UserAccountService userAccountService;
   @Mock private EmailVerificationService emailVerificationService;
+  @Mock private PhoneVerificationService phoneVerificationService;
+  @Mock private BusinessVerificationService businessVerificationService;
+  @Mock private AppleAuthClient appleAuthClient;
 
   private AuthService authService;
 
@@ -83,7 +99,10 @@ class AuthServiceTest {
             jwtTokenService,
             userAccountService,
             emailVerificationService,
-            authProperties);
+            phoneVerificationService,
+            businessVerificationService,
+            authProperties,
+            appleAuthClient);
   }
 
   @Test
@@ -97,7 +116,7 @@ class AuthServiceTest {
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("PENDING");
@@ -120,7 +139,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
 
     assertThat(response.onboardingRequired()).isFalse();
     assertThat(response.status()).isEqualTo("ACTIVE");
@@ -142,13 +161,100 @@ class AuthServiceTest {
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok"));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("TERMS_AGREED");
     assertThat(response.refreshToken()).isNull();
     verify(userAccountService, never()).createPendingUser();
     verify(socialAccountRepository, never()).save(any());
+  }
+
+  @Test
+  void socialLogin_apple_newUser_exchangesCodeVerifiesIdTokenAndStoresRefresh() {
+    when(appleAuthClient.exchangeAuthorizationCode("apple-code"))
+        .thenReturn(new AppleAuthClient.AppleTokens("apple-id-token", "apple-rt-1"));
+    when(oidcTokenVerifier.verify(Provider.APPLE, "apple-id-token"))
+        .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@privaterelay.appleid.com"));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
+        .thenReturn(Optional.empty());
+    when(userAccountService.createPendingUser()).thenReturn(11L);
+    when(jwtTokenService.issueOnboardingToken(11L)).thenReturn("onboarding-token");
+    when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
+
+    SocialLoginResponse response =
+        authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+
+    assertThat(response.onboardingRequired()).isTrue();
+    assertThat(response.status()).isEqualTo("PENDING");
+    // 교환받은 id_token을 동일 검증기로 재검증한다(교환 응답 맹신 금지, ADR-0031 #1)
+    verify(appleAuthClient).exchangeAuthorizationCode("apple-code");
+    verify(oidcTokenVerifier).verify(Provider.APPLE, "apple-id-token");
+    ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
+    verify(socialAccountRepository).save(captor.capture());
+    assertThat(captor.getValue().getProvider()).isEqualTo(Provider.APPLE);
+    assertThat(captor.getValue().getAppleRefreshToken()).isEqualTo("apple-rt-1");
+  }
+
+  @Test
+  void socialLogin_apple_existingActive_upsertsRefreshTokenWhenReturned() {
+    when(appleAuthClient.exchangeAuthorizationCode("apple-code"))
+        .thenReturn(new AppleAuthClient.AppleTokens("apple-id-token", "apple-rt-new"));
+    when(oidcTokenVerifier.verify(Provider.APPLE, "apple-id-token"))
+        .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@example.com"));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
+        .thenReturn(Optional.of(appleAccount(21L, "apple-rt-old")));
+    when(userAccountService.getAccount(21L)).thenReturn(new UserAccountView(21L, "ACTIVE"));
+    when(jwtTokenService.issueAccessToken(21L)).thenReturn("access-token");
+    when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
+    when(refreshTokenHasher.hash(any())).thenReturn("hash");
+
+    SocialLoginResponse response =
+        authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+
+    assertThat(response.status()).isEqualTo("ACTIVE");
+    ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
+    verify(socialAccountRepository).save(captor.capture());
+    assertThat(captor.getValue().getAppleRefreshToken()).isEqualTo("apple-rt-new");
+    verify(refreshTokenRepository).save(any(RefreshToken.class));
+  }
+
+  @Test
+  void socialLogin_apple_reLoginWithoutRefreshToken_preservesStoredToken() {
+    when(appleAuthClient.exchangeAuthorizationCode("apple-code"))
+        .thenReturn(new AppleAuthClient.AppleTokens("apple-id-token", null));
+    when(oidcTokenVerifier.verify(Provider.APPLE, "apple-id-token"))
+        .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@example.com"));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
+        .thenReturn(Optional.of(appleAccount(22L, "apple-rt-existing")));
+    when(userAccountService.getAccount(22L)).thenReturn(new UserAccountView(22L, "ACTIVE"));
+    when(jwtTokenService.issueAccessToken(22L)).thenReturn("access-token");
+    when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
+    when(refreshTokenHasher.hash(any())).thenReturn("hash");
+
+    authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+
+    // refresh token이 새로 안 왔으면 매핑을 다시 저장하지 않는다 → 저장된 토큰 보존(ADR-0031 #4)
+    verify(socialAccountRepository, never()).save(any(SocialAccount.class));
+    verify(refreshTokenRepository).save(any(RefreshToken.class));
+  }
+
+  @Test
+  void socialLogin_apple_missingAuthorizationCode_throwsMissingCredential() {
+    assertThatThrownBy(
+            () -> authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, null)))
+        .isInstanceOf(MissingCredentialException.class);
+
+    verify(appleAuthClient, never()).exchangeAuthorizationCode(any());
+  }
+
+  @Test
+  void socialLogin_google_blankIdToken_throwsMissingCredential() {
+    assertThatThrownBy(
+            () -> authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "  ", null)))
+        .isInstanceOf(MissingCredentialException.class);
+
+    verify(oidcTokenVerifier, never()).verify(any(), any());
   }
 
   @Test
@@ -359,6 +465,136 @@ class AuthServiceTest {
     verify(refreshTokenRepository, never()).save(any());
   }
 
+  // ===== 임대인 트랙: 연락처 SMS 인증 · 사업자번호 검증 · 임대인 온보딩(ADR-0034) =====
+
+  @Test
+  void sendPhoneVerificationCode_delegatesAndMasksPhone() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    when(phoneVerificationService.sendCode(40L, "01012345678")).thenReturn(300L);
+
+    PhoneVerificationCodeResponse response =
+        authService.sendPhoneVerificationCode(40L, new PhoneVerificationCodeRequest("01012345678"));
+
+    assertThat(response.expiresIn()).isEqualTo(300L);
+    assertThat(response.phoneNumber()).isEqualTo("010-****-5678");
+    verify(phoneVerificationService).sendCode(40L, "01012345678");
+  }
+
+  @Test
+  void sendPhoneVerificationCode_activeUser_throwsAlreadyCompletedAndDoesNotSend() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "ACTIVE"));
+
+    assertThatThrownBy(
+            () ->
+                authService.sendPhoneVerificationCode(
+                    40L, new PhoneVerificationCodeRequest("01012345678")))
+        .isInstanceOf(OnboardingAlreadyCompletedException.class);
+
+    verify(phoneVerificationService, never()).sendCode(anyLong(), any());
+  }
+
+  @Test
+  void sendPhoneVerificationCode_termsNotAgreed_throwsTermsRequiredAndDoesNotSend() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+
+    assertThatThrownBy(
+            () ->
+                authService.sendPhoneVerificationCode(
+                    40L, new PhoneVerificationCodeRequest("01012345678")))
+        .isInstanceOf(TermsAgreementRequiredException.class);
+
+    verify(phoneVerificationService, never()).sendCode(anyLong(), any());
+  }
+
+  @Test
+  void verifyPhone_delegatesAndReturnsVerified() {
+    PhoneVerifyResponse response =
+        authService.verifyPhone(40L, new PhoneVerifyRequest("01012345678", "482915"));
+
+    assertThat(response.verified()).isTrue();
+    assertThat(response.phoneNumber()).isEqualTo("010-****-5678");
+    verify(phoneVerificationService).verify(40L, "01012345678", "482915");
+  }
+
+  @Test
+  void verifyBusiness_landlord_delegatesAndMasksNumber() {
+    when(userAccountService.getUserType(40L)).thenReturn("LANDLORD");
+
+    BusinessVerifyResponse response =
+        authService.verifyBusiness(40L, new BusinessVerifyRequest("1234567890"));
+
+    assertThat(response.verified()).isTrue();
+    assertThat(response.businessRegistrationNumber()).isEqualTo("****567890");
+    verify(businessVerificationService).verify("1234567890");
+  }
+
+  @Test
+  void verifyBusiness_notLandlord_throwsForbiddenAndDoesNotVerify() {
+    when(userAccountService.getUserType(40L)).thenReturn("TENANT");
+
+    assertThatThrownBy(
+            () -> authService.verifyBusiness(40L, new BusinessVerifyRequest("1234567890")))
+        .isInstanceOf(LandlordOnlyException.class);
+
+    verify(businessVerificationService, never()).verify(any());
+  }
+
+  @Test
+  void landlordOnboarding_completesAndIssuesFullTokensWithLandlordProfile() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    when(userAccountService.completeLandlordOnboarding(
+            eq(40L), any(LandlordOnboardingProfile.class)))
+        .thenReturn(landlordProfileView(40L));
+    when(jwtTokenService.issueAccessToken(40L)).thenReturn("access-token");
+    when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
+    when(refreshTokenHasher.hash(any())).thenReturn("hash");
+
+    OnboardingResponse response = authService.landlordOnboarding(40L, landlordOnboardingRequest());
+
+    assertThat(response.user()).isNotNull();
+    assertThat(response.user().id()).isEqualTo(40L);
+    assertThat(response.user().status()).isEqualTo("ACTIVE");
+    assertThat(response.user().userType()).isEqualTo("LANDLORD");
+    assertThat(response.accessToken()).isEqualTo("access-token");
+    assertThat(response.refreshToken()).isNotNull();
+    // 게이트 통과 순서: 약관 → 연락처(사업자번호는 온보딩에서 수집하지 않음)
+    verify(phoneVerificationService).assertVerified(40L, "01012345678");
+    ArgumentCaptor<LandlordOnboardingProfile> captor =
+        ArgumentCaptor.forClass(LandlordOnboardingProfile.class);
+    verify(userAccountService).completeLandlordOnboarding(eq(40L), captor.capture());
+    assertThat(captor.getValue().name()).isEqualTo("Kim Imdae");
+    assertThat(captor.getValue().phoneNumber()).isEqualTo("01012345678");
+    verify(refreshTokenRepository).save(any(RefreshToken.class));
+  }
+
+  @Test
+  void landlordOnboarding_phoneNotVerified_throwsAndDoesNotComplete() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    doThrow(new PhoneNotVerifiedException())
+        .when(phoneVerificationService)
+        .assertVerified(40L, "01012345678");
+
+    assertThatThrownBy(() -> authService.landlordOnboarding(40L, landlordOnboardingRequest()))
+        .isInstanceOf(PhoneNotVerifiedException.class);
+
+    // 연락처 미인증이면 온보딩 완료 전에 차단
+    verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
+    verify(refreshTokenRepository, never()).save(any());
+  }
+
+  @Test
+  void landlordOnboarding_termsNotAgreed_throwsTermsRequiredBeforeVerificationChecks() {
+    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+
+    assertThatThrownBy(() -> authService.landlordOnboarding(40L, landlordOnboardingRequest()))
+        .isInstanceOf(TermsAgreementRequiredException.class);
+
+    // 약관 미동의면 연락처 검사보다 약관 동의 안내가 먼저
+    verify(phoneVerificationService, never()).assertVerified(anyLong(), any());
+    verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
+    verify(refreshTokenRepository, never()).save(any());
+  }
+
   private static SocialAccount socialAccount(long userId) {
     return SocialAccount.builder()
         .id(1L)
@@ -367,6 +603,18 @@ class AuthServiceTest {
         .email("a@example.com")
         .userId(userId)
         .linkedAt(Instant.now())
+        .build();
+  }
+
+  private static SocialAccount appleAccount(long userId, String appleRefreshToken) {
+    return SocialAccount.builder()
+        .id(2L)
+        .provider(Provider.APPLE)
+        .providerUserId("apple-sub")
+        .email("a@example.com")
+        .userId(userId)
+        .linkedAt(Instant.now())
+        .appleRefreshToken(appleRefreshToken)
         .build();
   }
 
@@ -384,6 +632,8 @@ class AuthServiceTest {
         "STUDENT",
         "gil@example.com",
         "VISA_WORK",
+        "TENANT",
+        null,
         "ACTIVE",
         false,
         Instant.now());
@@ -399,5 +649,31 @@ class AuthServiceTest {
         "STUDENT",
         "gil@example.com",
         "VISA_WORK");
+  }
+
+  /** 임대인 온보딩 응답 프로필 — 성별·국적·직업·비자·생년월일·이메일 미수집(null), userType=LANDLORD. */
+  private static UserProfileView landlordProfileView(long id) {
+    return new UserProfileView(
+        id,
+        "Kim Imdae",
+        null,
+        "CalmFox",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "LANDLORD",
+        "01012345678",
+        "ACTIVE",
+        false,
+        Instant.now());
+  }
+
+  private static LandlordOnboardingRequest landlordOnboardingRequest() {
+    return new LandlordOnboardingRequest("Kim Imdae", "01012345678");
   }
 }

@@ -48,4 +48,8 @@ public class SocialAccountJpaEntity {
   private String email;
   private Long userId;
   private Instant linkedAt;
+
+  // Apple refresh token(폐기용, ADR-0031). nullable·1급 시크릿 — @ToString 미적용으로 로그 노출 차단.
+  @Column(name = "apple_refresh_token")
+  private String appleRefreshToken;
 }

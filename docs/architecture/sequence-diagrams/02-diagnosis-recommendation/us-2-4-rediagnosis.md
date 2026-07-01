@@ -11,7 +11,7 @@ sequenceDiagram
     participant DB as MongoDB
 
     U->>C: 조건 변경 후 재진단 제출
-    C->>SEC: POST /api/v1/diagnoses<br/>변경된 region/purpose/university|district(목적 분기)/<br/>conditions/budget/arcStatus<br/>Authorization: Bearer accessToken
+    C->>SEC: POST /api/v1/diagnoses<br/>변경된 region/purpose/university(대학 그룹 선택)|district(목적 분기)/<br/>conditions/월세 범위(monthlyRentMin·monthlyRentMax)/arcStatus<br/>Authorization: Bearer accessToken
     Note over SEC: JWT 검증 (서명·만료·클레임)
     SEC->>DIAG: 인증된 요청 전달 (userId)
     Note over DIAG: 입력 재검증<br/>항상 새 diagnosis 레코드 생성<br/>(기존 진단 덮어쓰지 않음)

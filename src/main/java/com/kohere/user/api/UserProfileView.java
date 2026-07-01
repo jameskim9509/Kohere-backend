@@ -24,6 +24,8 @@ public record UserProfileView(
     String occupation,
     String email,
     String visaType,
+    String userType,
+    String phoneNumber,
     String status,
     boolean marketingAgreed,
     Instant createdAt) {}

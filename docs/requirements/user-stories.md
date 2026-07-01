@@ -24,7 +24,9 @@
 
 > 관련 API 스펙: [01-auth-onboarding](../api/specs/01-auth-onboarding.md)
 
-외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 온보딩(이메일 인증 포함)** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다. 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
+외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 본인 확인 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(본인 확인은 세입자 이메일 인증·임대인 연락처 SMS 인증으로 갈린다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
+
+사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 이메일 인증(US-1-6)을 거쳐 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 이름(성·이름을 합친 단일 `name`)·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며, 사업자등록번호도 온보딩에서 수집하지 않는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**다.
 
 > 관련 NFR: [non-functional-requirements](non-functional-requirements.md) — 4. 보안(토큰/민감정보 보호), 1. 성능(소셜 검증 응답시간), 5. 관측성(인증 실패 로깅·마스킹). 구체 목표값은 NFR 문서 확정 전이라 (확인 필요).
 
@@ -48,7 +50,7 @@
 - **정상 — 신규 회원 약관 동의 유도**
   Given 해당 provider 계정으로 가입한 회원이 없고
   When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
-  Then `200 OK` + `data.onboardingRequired=true`·`data.status="PENDING"`으로 응답하고, 서버는 provider/providerUserId/email만 보유한 **온보딩 미완료(PENDING)** 사용자 레코드를 생성한다. 이때 발급되는 access 토큰은 온보딩 흐름(약관 동의·이메일 인증·온보딩) API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). 앱은 `status`로 분기해 다음으로 **약관 동의 화면**(US-1-7)으로 이동한다. (확인 필요: 온보딩 전용 임시 토큰 만료시간)
+  Then `200 OK` + `data.onboardingRequired=true`·`data.status="PENDING"`으로 응답하고, 서버는 provider/providerUserId/email만 보유한 **온보딩 미완료(PENDING)** 사용자 레코드를 생성한다. 이때 발급되는 access 토큰은 온보딩 흐름(약관 동의·본인 확인(세입자 이메일 인증·임대인 연락처/사업자번호 검증)·온보딩) API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). 앱은 `status`로 분기해 다음으로 **약관 동의 화면**(US-1-7)으로 이동한다. (확인 필요: 온보딩 전용 임시 토큰 만료시간)
 - **정상 — 가입 미완료 회원 재로그인(재개 지점 분기)**
   Given 소셜 로그인은 했으나 가입을 끝내지 못한 회원이 다시 로그인하고(신규 행은 만들지 않음)
   When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
@@ -68,9 +70,9 @@
 
 ---
 
-### US-1-2 — 필수 온보딩 정보 제출하기
+### US-1-2 — 필수 온보딩 정보 제출하기 (세입자 전용)
 
-**As a** 약관 동의를 마친(TERMS_AGREED) 사용자
+**As a** 약관 동의·이메일 인증을 마친(TERMS_AGREED) 세입자(외국인) 사용자
 **I want** 이름·성·성별·생년월일·국적·직업·이메일·비자정보를 한 번에 제출하기를(이메일은 사전 인증, 닉네임은 서버 자동 배정)
 **So that** 회원 가입을 완료하고 정식 access/refresh 토큰으로 보호 기능을 이용할 수 있다.
 
@@ -156,6 +158,10 @@
   Given 인증된 사용자(`ACTIVE` 또는 `PENDING`)가
   When `DELETE /api/v1/users/me`를 호출하면
   Then `204 No Content`를 반환하고 사용자 상태를 `WITHDRAWN`으로 전이하며 모든 refresh 토큰을 무효화한다(개인정보 파기/익명화는 정책 — 확인 필요).
+- **정상 — Apple 연동 폐기(App Store 5.1.1(v))**
+  Given Apple로 가입해 `apple_refresh_token`이 저장된 사용자가
+  When `DELETE /api/v1/users/me`로 탈퇴하면
+  Then `social_accounts` 매핑 삭제 전에 Apple `POST /auth/revoke`(`token_type_hint=refresh_token`)로 앱↔Apple ID 연동을 폐기한다([ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)). 이 폐기는 **best-effort** — Apple 장애·이미 폐기(`invalid_grant`)여도 탈퇴는 `204`로 완료한다(저장된 토큰이 없으면 스킵).
 - **입력 검증 실패**
   Given 로그아웃 요청에 `refreshToken`이 누락되면
   When `POST /api/v1/auth/logout`을 호출하면
@@ -179,17 +185,33 @@
 
 - 우선순위: **Mid**
 - 관련 NFR: 보안(본인 리소스만 접근), 보안(민감정보 응답 마스킹 정책 — 확인 필요)
+- 백엔드 관점: `GET`/`PATCH /api/v1/users/me`는 세입자·임대인 **공통 엔드포인트**이며, `userType`(`TENANT`/`LANDLORD`)에 따라 응답·수정 가능 필드가 갈린다.
+  - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`·`birthDate`)를 포함한다(기존 동작 그대로).
+  - **임대인(`LANDLORD`)**: 단일 `name`(내부 저장은 세입자와 동일한 `FullName` VO의 `firstName` 재사용 — `lastName`은 미사용/`null`, 별도 `name` 컬럼/필드를 두지 않음. API 요청·응답 필드명은 `name` 유지)·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`만 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인은 `email`을 수집하지 않아 응답에 포함하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`/`birthDate`)도 **임대인 응답에 포함하지 않는다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
+  - 두 역할 공통으로 `userType`·`nickname`은 불변이고, 세입자 `email`은 재인증이 필요해 이 경로로 수정하지 않는다(임대인은 `email` 미보유).
 
 **AC (Given / When / Then)**
 
-- **정상 — 조회**
-  Given 유효한 access 토큰을 보유한 `ACTIVE` 사용자가
+- **정상 — 조회(세입자)**
+  Given 유효한 access 토큰을 보유한 `ACTIVE` 세입자(`userType=TENANT`)가
   When `GET /api/v1/users/me`를 호출하면
   Then `200 OK` + `data`에 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드)+서버 resolve `countryName`·`countryFlag`·`occupation`·`email`·`visaType`·약관 동의 상태)을 반환한다.
-- **정상 — 부분 수정**
-  Given 유효한 access 토큰을 보유하고
+- **정상 — 부분 수정(세입자)**
+  Given 유효한 access 토큰을 보유한 세입자(`userType=TENANT`)가
   When `PATCH /api/v1/users/me`에 변경할 필드(예: `country`, `occupation`, `visaType`, `marketingAgreed`)만 담아 호출하면
   Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `nickname`은 시스템 배정값이라 수정 대상이 아니며, `email` 변경은 재인증이 필요해 이 엔드포인트로는 처리하지 않는다(확인 필요).
+- **정상 — 조회(임대인)**
+  Given 유효한 access 토큰을 보유한 `ACTIVE` 임대인(`userType=LANDLORD`)이
+  When `GET /api/v1/users/me`를 호출하면
+  Then `200 OK` + `data`에 `userType="LANDLORD"`·`name`(=`FullName.firstName`)·`nickname`·`phoneNumber`·`status`·약관 동의 상태(`termsOfServiceAgreed`/`privacyPolicyAgreed`/`marketingAgreed`)·`createdAt`을 반환한다. 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`/`birthDate`)와 `email`(임대인 미수집)·`businessRegistrationNumber`는 응답에 포함하지 않는다.
+- **정상 — 부분 수정(임대인)**
+  Given 유효한 access 토큰을 보유한 임대인(`userType=LANDLORD`)이
+  When `PATCH /api/v1/users/me`에 자유 수정 필드(`name`·`marketingAgreed`) 중 일부(예: `name`)만 담아 호출하면
+  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 내부적으로 `FullName.firstName`에 매핑해 저장한다. `businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`은 이 경로로 수정할 수 없다(임대인은 `email` 미보유). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
+- **비즈니스 규칙 — 임대인 연락처 변경 시 SMS 재인증(임대인)**
+  Given 임대인이 새 `phoneNumber`로 변경하려 하나 그 번호를 SMS 재인증(US-1-10)하지 않았으면(VERIFIED 마커 없음·불일치)
+  When `PATCH /api/v1/users/me`에 새 `phoneNumber`를 담아 호출하면
+  Then `422` + `error.code=AUTH_PHONE_NOT_VERIFIED`를 반환하고 연락처를 변경하지 않는다. 새 번호를 SMS 인증번호로 재인증(`POST /auth/phone/verification-code`·`/auth/phone/verify`)해 VERIFIED된 뒤에 다시 호출하면 변경이 반영된다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용).
 - **입력 검증 실패**
   Given 수정 본문의 `gender`/`visaType`/`occupation`이 정의된 enum 외 값이거나 `birthDate`가 형식/범위 위반이거나 `country`가 빈값이면
   When `PATCH /api/v1/users/me`를 호출하면
@@ -205,15 +227,15 @@
 
 ---
 
-### US-1-6 — 온보딩 중 이메일 인증하기
+### US-1-6 — 온보딩 중 이메일 인증하기 (세입자 전용)
 
-**As a** 소셜 로그인은 마쳤으나 온보딩 미완료(PENDING·TERMS_AGREED) 사용자
+**As a** 약관 동의를 마쳤으나 온보딩 미완료(TERMS_AGREED) 세입자(외국인) 사용자
 **I want** 온보딩에서 입력한 이메일로 인증번호를 받아 확인하기를
-**So that** 본인 소유 이메일임을 증명하고(US-1-2 온보딩 제출의 선행 조건) 가입을 완료할 수 있다.
+**So that** 본인 소유 이메일임을 증명하고(US-1-2 세입자 온보딩 제출의 선행 조건) 가입을 완료할 수 있다.
 
 - 우선순위: **High**
 - 관련 NFR: 보안(이메일 소유 인증·인증번호 해시 보관·재발송/시도 레이트리밋), 보안(이메일·인증번호 로그 마스킹)
-- 백엔드 관점: `auth`가 인증번호를 생성해 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SES/SMTP — 확인 필요)로 **동기 발송**하고, **발송에 성공한 뒤에만** 인증번호를 **해시로 보관**(Redis, TTL 자동 소멸)한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답한다. 검증 성공 시 해당 사용자의 이메일을 `VERIFIED`로 마킹하고, 온보딩 제출(US-1-2)에서 제출 `email`과 대조한다.
+- 백엔드 관점: `auth`가 인증번호를 생성해 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터: SMTP)로 **동기 발송**하고, **발송에 성공한 뒤에만** 인증번호를 **해시로 보관**(Redis, TTL 자동 소멸)한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답한다. 검증 성공 시 해당 사용자의 이메일을 `VERIFIED`로 마킹하고, 온보딩 제출(US-1-2)에서 제출 `email`과 대조한다.
 
 **AC (Given / When / Then)**
 
@@ -223,8 +245,8 @@
   Then `200 OK` + `data.expiresIn`(만료 초)을 반환하고 해당 이메일로 인증번호를 발송한다. 메일 발송에 성공한 뒤에만 인증번호 챌린지를 저장하며(인증번호 원문은 저장·로그하지 않고 해시로만 보관), `email`은 마스킹해 반환한다.
 - **비즈니스 규칙 — 약관 미동의(선행 게이트)**
   Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
-  When `POST /api/v1/auth/email/verification-code`(또는 `/email/verify`)를 호출하면
-  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 인증번호를 발송하지 않는다(약관 동의 US-1-7 선행 필요 — 이메일 인증은 약관 동의 이후 단계).
+  When `POST /api/v1/auth/email/verification-code`를 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 인증번호를 발송하지 않는다(약관 동의 US-1-7 선행 필요 — 이메일 인증은 약관 동의 이후 단계). (`/email/verify`는 약관 게이트를 두지 않으며, PENDING은 챌린지 부재로 `AUTH_EMAIL_VERIFICATION_FAILED`가 난다 — 아래 "인증번호 불일치/만료" 참조)
 - **장애 — 메일 발송 실패**
   Given 메일 provider 장애·타임아웃 등으로 인증번호 발송이 실패하면
   When `POST /api/v1/auth/email/verification-code`를 호출하면
@@ -285,17 +307,155 @@
   When `POST /api/v1/auth/terms`를 호출하면
   Then `TERMS_AGREED` 중복 호출은 상태·동의를 바꾸지 않고 멱등하게 `200 OK`(현재 동의 상태)를 반환하고(의도적 재동의 아님 — 마케팅 동의 변경은 `PATCH /users/me`로 처리), 이미 `ACTIVE`이면 `409` + `error.code=AUTH_ONBOARDING_ALREADY_COMPLETED`를 반환한다.
 
+---
+
+### US-1-8 — 사업자등록번호 검증하기 (임대인 전용, 온보딩 후)
+
+**As a** 온보딩을 완료한(ACTIVE) 임대인
+**I want** 정식 access 토큰으로 사업자등록번호를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반)로 진위·영업 상태까지 확인받기를
+**So that** (매물 등록 등) 실제 영업 중인 사업자임을 증명해야 하는 시점에 온보딩과 분리된 무상태 검증으로 즉시 확인받을 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(사업자등록번호 등 민감정보 저장·로그 마스킹), 보안·신뢰성(외부 연동 타임아웃·관측성·장애 시 degrade), 보안(검증 시도 레이트리밋)
+- 선행: 온보딩 완료(US-1-9, `ACTIVE`)와 정식 access 토큰(`ROLE_USER`)이 필요하다. 이 단계는 **임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용**으로, 온보딩(US-1-9)의 선행 게이트가 아니며 세입자 온보딩(US-1-2)에는 없다.
+- 백엔드 관점: 온보딩과 **분리된 무상태(stateless) 검증 API**다 — 검증 결과를 서버에 저장하지 않고(Redis 마커 없음·`user.businessRegistrationNumberHash`에도 쓰지 않음) **응답(HTTP body)에만** 담아 회신한다. `auth`가 사업자등록번호를 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터: 사업자등록정보 검증 API — 국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md))로 **동기 검증**해 정상(계속) 사업자면 `verified:true`를, 미등록·휴업·폐업·진위 실패면 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`를 응답한다. 검증 API 장애·타임아웃 등 연동 실패는 `502 UPSTREAM_ERROR`로 응답해 재시도를 유도한다(임대인 연락처 인증 US-1-10·세입자 이메일 인증 US-1-6의 동기 호출·실패 정책과 대칭). 인가는 정식 토큰(`ACTIVE`, `ROLE_USER`)이 필수이며, 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출하면 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) `ACTIVE` 사용자면 `403 FORBIDDEN`이다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 사업자등록번호 검증 성공**
+  Given 온보딩을 완료한(`ACTIVE`) 임대인(`userType=LANDLORD`)이 정식 access 토큰(`ROLE_USER`)으로 정상 영업 중인 사업자등록번호를 입력하고
+  When `POST /api/v1/auth/business/verify`에 `{ businessRegistrationNumber }`(숫자 10자리)를 담아 호출하면
+  Then `200 OK` + `data`에 `businessRegistrationNumber`(마스킹)·`verified=true`를 반환한다. **검증 결과는 서버에 저장하지 않고**(Redis 마커 없음·`user.businessRegistrationNumberHash`에도 쓰지 않음) 응답 본문에만 담으며, 사업자등록번호는 응답·로그에서 마스킹한다.
+- **인증·권한 — 온보딩 토큰으로 호출**
+  Given 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 온보딩 토큰(`ROLE_ONBOARDING`)으로
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `403` + `error.code=AUTH_ONBOARDING_REQUIRED`를 반환하고 외부 검증을 수행하지 않는다(온보딩 완료·정식 토큰 필요).
+- **인증·권한 — 임대인이 아닌 사용자**
+  Given 온보딩을 완료한(`ACTIVE`) 세입자(`userType=TENANT`)가 정식 access 토큰으로
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `403` + `error.code=FORBIDDEN`을 반환하고 외부 검증을 수행하지 않는다(임대인 전용 API).
+- **입력 검증 실패**
+  Given `businessRegistrationNumber`가 누락·빈값이거나 형식(숫자 10자리)에 어긋나면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `400` + `error.code=INVALID_INPUT`을 반환한다(형식 위반은 외부 호출 전에 거른다).
+- **비즈니스 규칙 — 진위·상태 검증 실패(미등록/휴업/폐업)**
+  Given 검증 서비스 조회 결과 존재하지 않거나 휴업·폐업 상태인 사업자등록번호이면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `422` + `error.code=AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`를 반환하고 번호를 검증 완료로 표시하지 않는다.
+- **장애 — 외부 검증 서비스 실패**
+  Given 사업자등록정보 검증 API가 장애·타임아웃·5xx로 응답하면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `502` + `error.code=UPSTREAM_ERROR`를 반환하고 검증 결과를 저장하지 않아 클라이언트가 재시도하도록 유도한다(동기 검증 정책).
+- **경계·동시성 — 검증 시도 레이트리밋**
+  Given 짧은 시간에 검증을 반복 호출하면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then `429` + `error.code=TOO_MANY_REQUESTS`를 반환한다(확인 필요: 시도 상한·간격 임계값).
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When `POST /api/v1/auth/business/verify`를 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
+
+---
+
+### US-1-9 — 임대인 온보딩 정보 제출하기 (임대인 전용)
+
+**As a** 약관 동의·연락처 인증을 마친(TERMS_AGREED) 임대인 가입자
+**I want** 이름(성·이름을 합친 단일 `name`)·연락처(전화)를 한 번에 제출하기를(연락처는 사전 인증, 닉네임은 서버 자동 배정, 이메일·사업자번호는 미수집)
+**So that** 임대인으로 가입을 완료하고 정식 access/refresh 토큰으로 임대인 기능(매물 연결·세입자 채팅 등)을 이용할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(연락처 등 민감정보 저장·로그 마스킹), 보안(휴대폰 소유 인증)
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)이 완료되어야 한다(약관 + 연락처만으로 온보딩 완료 — 사업자등록번호 검증(US-1-8)은 온보딩 선행이 아니라 온보딩 후 별도 단계다).
+- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ name, phoneNumber }` 두 필드뿐이다. 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며, 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 추후 매물 등록 시점에 채운다). 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 임대인 온보딩 완료**
+  Given 약관 동의를 마친(`TERMS_AGREED`) 사용자의 유효한 온보딩 토큰을 보유하고 제출 `phoneNumber`가 사전 인증(US-1-10)되어 있으며
+  When 모든 필수 필드(`name`·`phoneNumber`)를 담아 `POST /api/v1/auth/landlord/onboarding`을 호출하면(약관 필드는 담지 않음)
+  Then `200 OK` + `data`에 완성된 임대인 프로필(`userType="LANDLORD"`·서버가 자동 배정한 `nickname` 포함)과 정식 `accessToken`/`refreshToken`을 내려주고, 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이한다.
+- **입력 검증 실패**
+  Given `name`/`phoneNumber` 중 빈값이 있거나 형식(전화번호)이 어긋나면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`로 위반 필드를 반환한다.
+- **비즈니스 규칙 — 약관 미동의 상태(우선 판정)**
+  Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 상태를 전이하지 않는다(약관 동의 US-1-7 선행 — 연락처 안내보다 **약관 동의가 먼저**).
+- **비즈니스 규칙 — 연락처 미인증**
+  Given 약관까지 동의한(`TERMS_AGREED`) 사용자의 제출 `phoneNumber`가 SMS 인증번호로 검증(US-1-10)되지 않았거나 검증한 번호와 다르면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `422` + `error.code=AUTH_PHONE_NOT_VERIFIED`를 반환하고 상태를 전이하지 않는다.
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
+- **경계·동시성 — 중복 온보딩**
+  Given 이미 온보딩을 완료(`ACTIVE`)한 사용자이거나, 동일 사용자가 온보딩 요청을 동시에 두 번 보내면
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then 한 요청만 성공하고 나머지는 `409` + `error.code=AUTH_ONBOARDING_ALREADY_COMPLETED`를 반환한다(서버는 사용자 단위 멱등 처리).
+
+---
+
+### US-1-10 — 온보딩 중 연락처(휴대폰) 인증하기 (임대인 전용)
+
+**As a** 약관 동의를 마쳤으나 온보딩 미완료(TERMS_AGREED) 임대인 가입자
+**I want** 온보딩에서 입력한 연락처(휴대폰)로 SMS 인증번호를 받아 확인하기를
+**So that** 본인 소유 휴대폰임을 증명하고(US-1-9 임대인 온보딩 제출의 선행 조건) 임대인 가입을 완료할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(휴대폰 소유 인증·인증번호 해시 보관·재발송/시도 레이트리밋), 보안(연락처·인증번호 로그 마스킹)
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)가 완료되어야 한다. 이 단계는 **임대인 트랙 전용**으로, 세입자 이메일 인증(US-1-6)을 임대인 트랙에서 대체한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)).
+- 백엔드 관점: `auth`가 인증번호를 생성해 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS API — 구체 provider는 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md))로 **동기 발송**하고, **발송에 성공한 뒤에만** 인증번호를 **해시로 보관**(Redis, TTL 자동 소멸)한다. 인증번호 생성·해시·검증은 서버가 보유하고 어댑터는 발송만 담당한다(이메일 인증 US-1-6과 대칭). provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답한다. 검증 성공 시 해당 사용자의 연락처를 `VERIFIED`로 마킹하고, 임대인 온보딩 제출(US-1-9)에서 제출 `phoneNumber`와 대조한다.
+- **인증번호 정책은 이메일 인증(US-1-6)과 동일하게 적용한다** — 인증번호 6자리·코드 TTL 5분·검증 마커(VERIFIED) TTL 30분(온보딩 토큰 만료)·검증 시도 상한 5회·재발송 간격 60초([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)).
+- 이 발송·확인(`POST /auth/phone/verification-code`·`/auth/phone/verify`)은 **프로필에서 임대인 연락처를 변경할 때(US-1-5)도 재사용**해 새 번호를 재인증한다(정식 토큰(`ACTIVE`) 컨텍스트 허용). 변경은 새 번호가 VERIFIED된 뒤에만 반영하며 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 인증번호 발송**
+  Given 약관 동의를 마친(`TERMS_AGREED`) 사용자가 연락처(휴대폰)를 입력하고
+  When `POST /api/v1/auth/phone/verification-code`에 `{ phoneNumber }`를 담아 호출하면
+  Then `200 OK` + `data.expiresIn`(만료 초)을 반환하고 해당 번호로 SMS 인증번호를 발송한다. SMS 발송에 성공한 뒤에만 인증번호 챌린지를 저장하며(인증번호 원문은 저장·로그하지 않고 해시로만 보관), `phoneNumber`는 마스킹해 반환한다.
+- **비즈니스 규칙 — 약관 미동의(선행 게이트)**
+  Given 약관 동의를 아직 마치지 않은(`PENDING`) 사용자가
+  When `POST /api/v1/auth/phone/verification-code`를 호출하면
+  Then `422` + `error.code=AUTH_TERMS_AGREEMENT_REQUIRED`를 반환하고 인증번호를 발송하지 않는다(약관 동의 US-1-7 선행 필요). (`/phone/verify`는 약관 게이트를 두지 않으며, PENDING은 챌린지 부재로 `AUTH_PHONE_VERIFICATION_FAILED`가 난다 — 아래 "인증번호 불일치/만료" 참조)
+- **장애 — SMS 발송 실패**
+  Given SMS provider 장애·타임아웃 등으로 인증번호 발송이 실패하면
+  When `POST /api/v1/auth/phone/verification-code`를 호출하면
+  Then `502` + `error.code=UPSTREAM_ERROR`를 반환하고, 인증번호 챌린지를 저장하지 않아 클라이언트가 재시도하도록 유도한다(동기 발송 정책).
+- **정상 — 인증번호 확인**
+  Given 발송된 인증번호가 유효(미만료·시도 미초과)하고
+  When `POST /api/v1/auth/phone/verify`에 `{ phoneNumber, code }`를 담아 호출하면
+  Then `200 OK` + `data.verified=true`를 반환하고 해당 연락처를 `VERIFIED`로 마킹해 임대인 온보딩 제출(US-1-9)에 사용할 수 있게 한다.
+- **입력 검증 실패**
+  Given `phoneNumber`가 누락·형식 위반이거나 확인 요청에 `code`가 빈 문자열이면
+  When 연락처 인증 API를 호출하면
+  Then `400` + `error.code=INVALID_INPUT`을 반환한다.
+- **비즈니스 규칙 — 인증번호 불일치/만료**
+  Given 잘못된 인증번호이거나 만료(미발송 포함)된 인증번호로
+  When `POST /api/v1/auth/phone/verify`를 호출하면
+  Then `422` + `error.code=AUTH_PHONE_VERIFICATION_FAILED`를 반환하고 연락처를 검증 완료로 표시하지 않는다.
+- **경계·동시성 — 재발송/시도 레이트리밋**
+  Given 짧은 시간에 인증번호 재발송을 반복하거나 검증 시도 상한을 초과하면
+  When 연락처 인증 API를 호출하면
+  Then `429` + `error.code=TOO_MANY_REQUESTS`를 반환한다(이메일 인증 US-1-6과 동일 임계값 — 재발송 간격 60초·검증 시도 5회).
+- **인증·권한 — 잘못된/누락 토큰**
+  Given `Authorization` 헤더가 없거나 토큰이 위조/만료되었으면
+  When 연락처 인증 API를 호출하면
+  Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
+
 ## 2. 맞춤 진단 & 매물 추천
 
 > 관련 API 스펙: [02-diagnosis-recommendation](../api/specs/02-diagnosis-recommendation.md)
 
-외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학·지역 선택 / ④ 주거 환경 조건 / ⑤ 월 예산 / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자의 등록 국가에 따라 번역되어 내려간다(US-2-5·US-2-6). 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
+외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학 그룹·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소-최대) / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자의 등록 국가에 따라 번역되어 내려간다(US-2-5·US-2-6). 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
 
-- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학·지역 선택**(두 필드로 분리한다 — `university`(enum `University`: `SNU`·`CAU`·`SOONGSIL`·`HUFS`·`KHU`·`KOREA`·`SKKU`·`SUNGSHIN`·`KONKUK`·`SEJONG`·`HYU`·`HONGIK`·`YONSEI`·`EWHA`·`ETC`), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현), `conditions`(enum `ConditionTag`: `IMMEDIATE_MOVE_IN`·`FEMALE_ONLY`·`PRIVATE_TOILET`·`PRIVATE_BATH`·`ENGLISH_AVAILABLE`·`RESIDENT_REGISTRATION`·`NO_MAINTENANCE_FEE`·`MEALS_PROVIDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyBudgetMax`는 0 이상 정수.
+- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(빈 집합, 대학 필터 미적용·지역 기반 매칭으로 폴백). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `ConditionTag`: `IMMEDIATE_MOVE_IN`·`FEMALE_ONLY`·`PRIVATE_TOILET`·`PRIVATE_BATH`·`ENGLISH_AVAILABLE`·`RESIDENT_REGISTRATION`·`NO_MAINTENANCE_FEE`·`MEALS_PROVIDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`).
 - MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 선택지로 허용하되, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
 - 추천 결과의 매물 요약은 매물 탐색 도메인의 요약 DTO(`ListingSummaryResponse`)를 재사용한다(확인 필요 — 01 매물 탐색 스펙 확정 시 필드 동기화).
 - 진단·결과는 본인만 접근 가능하다(소유권 검증). 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
-- 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·예산 음수·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
+- 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 음수 또는 `monthlyRentMin` > `monthlyRentMax`·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
 
 ### US-2-1 — 진단 제출(진행 중 진단 확정 및 저장)
 
@@ -305,13 +465,13 @@
 
 - **우선순위**: High
 - **관련 NFR**: 입력 검증·보안(민감하지 않은 진단 입력이나 본인 소유로 격리), 진단 제출 p95 응답시간 목표(확인 필요 — NFR 문서 미확정)
-- **백엔드 관점**: 진단 진행은 서버가 단계별로 저장한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`, in-progress draft)을 두고 단계마다 받은 답을 채워 간다(US-2-5). 제출은 별도 단계다 — `POST /api/v1/diagnoses`는 6필드 누적 답을 다시 보내는 요청이 아니라, **서버에 이미 저장된 진행 중 진단을 확정하는 요청**이다. 서버는 저장된 답을 재검증(정규화·중복 제거·enum 검증·조건부 필수)한 뒤 진단 상태를 `IN_PROGRESS` → `COMPLETED`로 전이하고 생성 리소스 식별자(`diagnosisId`)·`submittedAt`을 반환한다. 진단 생성(`COMPLETED`)은 이 제출 시점이며, 이력·목록 조회는 `COMPLETED`만 노출한다(`IN_PROGRESS` 제외). 재진단은 새 진행 중 진단을 시작한다. 입국 목적에 따른 대학·지역 선택은 두 필드(`university`(enum `University`)·`district`(enum `District`))로 분리해 저장한다 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음(조건부 필수, 위반은 공통 `INVALID_INPUT`(400)+`errors[]`).
+- **백엔드 관점**: 진단 진행은 서버가 단계별로 저장한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`, in-progress draft)을 두고 단계마다 받은 답을 채워 간다(US-2-5). 제출은 별도 단계다 — `POST /api/v1/diagnoses`는 6필드 누적 답을 다시 보내는 요청이 아니라, **서버에 이미 저장된 진행 중 진단을 확정하는 요청**이다. 서버는 저장된 답을 재검증(정규화·중복 제거·enum 검증·조건부 필수)한 뒤 진단 상태를 `IN_PROGRESS` → `COMPLETED`로 전이하고 생성 리소스 식별자(`diagnosisId`)·`submittedAt`을 반환한다. 진단 생성(`COMPLETED`)은 이 제출 시점이며, 이력·목록 조회는 `COMPLETED`만 노출한다(`IN_PROGRESS` 제외). 재진단은 새 진행 중 진단을 시작한다. 입국 목적에 따른 대학 그룹·지역 선택은 두 필드(`university`(필드 키 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`, 단일 선택)·`district`(enum `District`))로 분리해 저장한다 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음(조건부 필수, 위반은 공통 `INVALID_INPUT`(400)+`errors[]`).
 
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 제출 — 진행 중 진단 확정
 
-  - **Given** 로그인한 사용자가 유효한 access token을 보유하고, 단계별 응답(US-2-5)으로 진행 중 진단(`IN_PROGRESS`)에 `region=SEOUL`, `purpose=STUDY`, `university=SNU`(③ 대학 — 유학(`STUDY`) 시 `university` 필수·`district` 없음), `conditions=[FEMALE_ONLY,PRIVATE_BATH]`(3개 이하), `monthlyBudgetMax=600000`, `arcStatus=ARC_ISSUED`가 모두 저장되어 있다
+  - **Given** 로그인한 사용자가 유효한 access token을 보유하고, 단계별 응답(US-2-5)으로 진행 중 진단(`IN_PROGRESS`)에 `region=SEOUL`, `purpose=STUDY`, `university=SNU_CAU_SOONGSIL`(③ 대학 그룹 — 유학(`STUDY`) 시 `university` 필수·`district` 없음), `conditions=[FEMALE_ONLY,PRIVATE_BATH]`(3개 이하), `monthlyRentMin=300000`·`monthlyRentMax=600000`, `arcStatus=ARC_ISSUED`가 모두 저장되어 있다
   - **When** `POST /api/v1/diagnoses`(진행 중 진단 확정 요청)를 호출한다
   - **Then** 서버가 저장된 답을 재검증한 뒤 진단을 `IN_PROGRESS` → `COMPLETED`로 확정하고, `201 Created`와 함께 `data.diagnosisId`·`data.status=COMPLETED`·`data.submittedAt`(UTC ISO-8601)을 반환하고, `Location: /api/v1/diagnoses/{diagnosisId}` 헤더를 포함한다
 - 시나리오: 검증 실패 — 저장된 답이 조건 4개 이상 / 필수 단계 미완료
@@ -329,11 +489,11 @@
   - **Given** `Authorization` 헤더가 없거나 만료된 token을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** 토큰 부재/위조는 `401`+`error.code=UNAUTHENTICATED`, 만료는 `401`+`error.code=TOKEN_EXPIRED`(재발급 유도)를 반환한다
-- 시나리오: 경계 — 저장된 예산 0 / 음수
+- 시나리오: 경계 — 저장된 월세 범위(각 0 이상, `min` ≤ `max`)
 
-  - **Given** 진행 중 진단에 저장된 `monthlyBudgetMax`가 `0`(허용)이거나 `-1`(불허)이다
+  - **Given** 진행 중 진단에 저장된 `monthlyRentMin`/`monthlyRentMax`가 `0`/`0`(허용)이거나, `monthlyRentMin`이 `-1`(불허)이거나, `monthlyRentMin`이 `monthlyRentMax`보다 큰(예 `600000`/`300000`, 불허) 값이다
   - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** 0은 `201 Created`로 정상 확정, 음수는 `400`+`error.code=INVALID_INPUT`(`errors[]`의 `monthlyBudgetMax` reason "0 이상이어야 합니다.")을 반환한다
+  - **Then** `0`/`0`은 `201 Created`로 정상 확정, 음수는 `400`+`error.code=INVALID_INPUT`(`errors[]`의 `monthlyRentMin` reason "0 이상이어야 합니다."), `min` > `max`는 `400`+`error.code=INVALID_INPUT`(`errors[]`의 `monthlyRentMin` reason "monthlyRentMin은 monthlyRentMax 이하여야 합니다.")을 반환한다
 
 ### US-2-2 — 진단 결과(추천 매물 + 지도 좌표) 조회
 
@@ -399,7 +559,7 @@
 
   - **Given** 본인이 소유한 최근 진단 `diagnosisId`가 있다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
-  - **Then** `200 OK`와 진단 입력 전체(`region`/`purpose`/대학·지역 선택/`conditions`/`monthlyBudgetMax`/`arcStatus`/`submittedAt`)를 반환한다
+  - **Then** `200 OK`와 진단 입력 전체(`region`/`purpose`/대학 그룹·지역 선택(`university`(`UniversityGroup`)/`district`)/`conditions`/`monthlyRentMin`/`monthlyRentMax`/`arcStatus`/`submittedAt`)를 반환한다
 - 시나리오: 인증 실패
 
   - **Given** 토큰 없이 요청한다
@@ -452,7 +612,7 @@
 
 - **우선순위**: High (진단 제출 플로우의 선행 단계)
 - **관련 NFR**: 일관성(문항 카탈로그의 선택지 코드가 진단 제출 검증 enum과 1:1 일치), 단계별 분기를 서버가 결정(클라이언트 로컬 분기 아님)
-- **백엔드 관점**: 진단 문항을 단계별로 내려주는 server-stateful 흐름을 두 엔드포인트로 제공한다(둘 다 인증 필수, 02 스펙 상세 §1에 반영) — 질문 조회 `GET /api/v1/diagnoses/questions/{step}`와 답 저장 `POST /api/v1/diagnoses/answers`. 진행 답은 **서버가 저장**한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`)을 in-progress draft로 두고 채워 간다. 클라이언트는 받을 `step`(1~6)을 **path로 지정**해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개와 선택지를 조회하고, 화면에서 받은 **현재 단계의 답 1개**(그 단계의 `field`+`code`; `conditions`처럼 다중 선택은 `codes` 배열)만 `POST /api/v1/diagnoses/answers` 본문에 담아 보내며, 서버가 그 답을 진행 중 진단에 저장한다 — 6단계(① 지역 / ② 입국 목적 / ③ 대학·지역 / ④ 주거 조건 / ⑤ 월 예산 / ⑥ ARC)를 한 번에 주지 않고 한 단계씩 내려간다. 다음 `step` 번호는 클라이언트가 정해 다시 `GET`을 호출한다. 요청 본문에 누적 답(`answers` 묶음)을 담지 않는다. 질문 조회 응답은 `{ "step", "field", "question"(번역된 표시 라벨), "select"(단일/다중·최대), "options": [ { "code", "label" } ] }`이며, 6단계 답이 모두 저장되면 클라이언트는 이후 `POST /api/v1/diagnoses`로 진행 중 진단을 확정 제출한다(US-2-1). ③ 단계 분기는 **서버가 저장된 `purpose`로 결정**하는 비즈니스 로직이다(`STUDY`면 `university` 질문, `NON_STUDY`면 `district` 질문 — 알맞은 한 질문만 내려준다). 분기 메타는 `diagnosisQuestions`에 두지 않으며(데이터만), 대학 질문·지역 질문은 각각 카탈로그 데이터로 존재하고 어느 것을 낼지는 서비스가 결정한다. 선택지 코드는 제출 시 검증하는 enum과 동일 출처여야 한다. 잘못된 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현한다. MVP 데이터는 서울 기준.
+- **백엔드 관점**: 진단 문항을 단계별로 내려주는 server-stateful 흐름을 두 엔드포인트로 제공한다(둘 다 인증 필수, 02 스펙 상세 §1에 반영) — 질문 조회 `GET /api/v1/diagnoses/questions/{step}`와 답 저장 `POST /api/v1/diagnoses/answers`. 진행 답은 **서버가 저장**한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`)을 in-progress draft로 두고 채워 간다. 클라이언트는 받을 `step`(1~6)을 **path로 지정**해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개와 선택지를 조회하고, 화면에서 받은 **현재 단계의 답 1개**(그 단계의 `field`+`code`; `conditions`처럼 다중 선택은 `codes` 배열; ⑤ 월세 범위는 코드가 아닌 두 숫자 필드 `field=monthlyRent`+`min`/`max`, 예 `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` — 순서 없는 `codes[]` 배열을 재사용하지 않는다)만 `POST /api/v1/diagnoses/answers` 본문에 담아 보내며, 서버가 그 답을 진행 중 진단에 저장한다 — 6단계(① 지역 / ② 입국 목적 / ③ 대학 그룹·지역 / ④ 주거 조건 / ⑤ 월세 범위(min/max) / ⑥ ARC)를 한 번에 주지 않고 한 단계씩 내려간다. 다음 `step` 번호는 클라이언트가 정해 다시 `GET`을 호출한다. 요청 본문에 누적 답(`answers` 묶음)을 담지 않는다. 질문 조회 응답은 `{ "step", "field", "question"(번역된 표시 라벨), "select"(단일/다중·최대; ⑤ 월세 범위 단계는 고정 선택지 목록이 아닌 두 숫자 입력 `NUMBER_RANGE`·`options` 비움 — "모든 단계가 enum과 1:1인 고정 선택지 목록"이라는 가정에서 의도적으로 분리된 예외), "options": [ { "code", "label" } ] }`이며, 6단계 답이 모두 저장되면 클라이언트는 이후 `POST /api/v1/diagnoses`로 진행 중 진단을 확정 제출한다(US-2-1). ③ 단계 분기는 **서버가 저장된 `purpose`로 결정**하는 비즈니스 로직이다(`STUDY`면 6개 대학 그룹(`UniversityGroup`) `options`를 담은 `university` 질문, `NON_STUDY`면 `district` 질문 — 알맞은 한 질문만 내려주며, 유학 시 답은 단일 그룹 코드 1개(`field=university`, `code=<그룹코드>`)다). 분기 메타는 `diagnosisQuestions`에 두지 않으며(데이터만), 대학 질문·지역 질문은 각각 카탈로그 데이터로 존재하고 어느 것을 낼지는 서비스가 결정한다. 선택지 코드는 제출 시 검증하는 enum과 동일 출처여야 한다. 잘못된 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현한다. MVP 데이터는 서울 기준.
 
 **AC (Given / When / Then)**
 
@@ -471,11 +631,11 @@
   - **Given** 응답으로 받은 선택지 코드(예: `conditions`의 `FEMALE_ONLY`)로 단계 답을 구성해 단계별로 저장한다
   - **When** 모든 단계 저장 후 `POST /api/v1/diagnoses`로 확정 제출한다
   - **Then** 문항 카탈로그와 제출 검증이 동일 enum을 쓰므로 `INVALID_INPUT` 없이 수용된다
-- 시나리오: 입국 목적 분기 — 서버가 ③ 대학/지역 질문을 결정
+- 시나리오: 입국 목적 분기 — 서버가 ③ 대학 그룹/지역 질문을 결정
 
   - **Given** ②까지 저장된 진행 중 진단의 `purpose`가 `STUDY`(또는 `NON_STUDY`)이다
   - **When** `GET /api/v1/diagnoses/questions/3`을 호출한다
-  - **Then** 서버가 저장된 `purpose`로 ③ 질문을 결정해, 유학이면 `field=university` 목록(`SNU`·`CAU`·`SOONGSIL`·`HUFS`·`KHU`·`KOREA`·`SKKU`·`SUNGSHIN`·`KONKUK`·`SEJONG`·`HYU`·`HONGIK`·`YONSEI`·`EWHA`·`ETC`)을, 비유학이면 `field=district`(구) 목록(`GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`)을 — 알맞은 한 질문만 `options`에 담아 내려준다(클라이언트 로컬 분기 아님, 분기는 서버 비즈니스 로직)
+  - **Then** 서버가 저장된 `purpose`로 ③ 질문을 결정해, 유학이면 `field=university`로 6개 대학 그룹(`UniversityGroup`) 옵션 — `HUFS_KHU_KOREA`("한국외대·경희대·고려대" / "HUFS · Kyung Hee · Korea Univ."), `SKKU_SUNGSHIN`("성균관대·성신여대" / "Sungkyunkwan · Sungshin Women's"), `SNU_CAU_SOONGSIL`("서울대·중앙대·숭실대" / "Seoul National · Chung-Ang · Soongsil"), `HONGIK_YONSEI_EWHA`("홍익대·연세대·이화여대" / "Hongik · Yonsei · Ewha Womans"), `KONKUK_SEJONG_HYU`("건국대·세종대·한양대" / "Konkuk · Sejong · Hanyang"), `ETC`("기타" / "Other") — 을 `options: [ { "code", "label" } ]`로(단일 선택), 비유학이면 `field=district`(구) 목록(`GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`)을 — 알맞은 한 질문만 `options`에 담아 내려준다(클라이언트 로컬 분기 아님, 분기는 서버 비즈니스 로직)
 - 시나리오: 완료 — 모든 단계 저장 후 제출로 이어짐
 
   - **Given** ① ~ ⑥ 단계 답이 모두 `POST /api/v1/diagnoses/answers`로 진행 중 진단에 저장되었다
@@ -483,9 +643,9 @@
   - **Then** 별도의 추가 질문 조회 없이 클라이언트는 이후 `POST /api/v1/diagnoses`로 진행 중 진단을 확정 제출한다
 - 시나리오: 잘못된 답 — 검증 실패
 
-  - **Given** 미정의 enum 또는 그 단계의 목적-대학/지역이 불일치하는 답 1개를 구성한다
+  - **Given** 미정의 enum(예: `university`에 6 그룹(`UniversityGroup`)에 없는 코드) 또는 그 단계의 목적-대학 그룹/지역이 불일치하는 답 1개를 구성한다(필드명은 `university` 유지, 타입은 `UniversityGroup`)
   - **When** `POST /api/v1/diagnoses/answers`를 호출한다
-  - **Then** `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하며 `error.errors[]`에 위반 필드를 담는다
+  - **Then** 미정의 그룹 코드를 무시하지 않고 명시적으로 거부해 `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하며 `error.errors[]`에 위반 필드(`university`)를 담는다
 
 ### US-2-6 — 사용자 국가 기반 진단 문항·선택지 번역 제공
 
@@ -495,7 +655,7 @@
 
 - **우선순위**: High (외국인 대상 서비스의 핵심 접근성)
 - **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 폴백), 보안(본인 국가 정보 기반 — 온보딩 수집값)
-- **백엔드 관점**: 번역 기준은 **사용자의 등록 국가**(온보딩 수집값)다 — 클라이언트가 언어를 지정하지 않고, 서버가 등록 국가→언어 매핑으로 정한 언어의 문항·선택지 **표시 라벨**을 채워 반환한다(`Accept-Language` 헤더에 의존하지 않음; 가입 시 확보한 국가가 기기 설정보다 안정적). 표시 언어는 `diagnosis`가 **`user` 모듈 공개 query(`getLanguage`)를 동기 호출**해 취득한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기는 사용하지 않음; ADR-0002 Decision 5 — 모듈 의존 `diagnosis→user` 추가). 번역은 별도 컬렉션·키 없이 **`diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": ..., "ja": ..., "ko": ... }`, 선택지는 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버는 사용자 언어 키(예 `ja`)로 message·label을 고르고, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다. `country→language` 매핑은 `user`의 `countries.lang`이 보유한다. 선택지 **코드는 언어와 무관하게 동일·불변**(UPPER_SNAKE)하며 언어-키 맵의 값(표시 문자열)만 언어별이다(제출은 코드로 검증). US-2-5와 동일 엔드포인트에서 처리한다.
+- **백엔드 관점**: 번역 기준은 **사용자의 등록 국가**(온보딩 수집값)다 — 클라이언트가 언어를 지정하지 않고, 서버가 등록 국가→언어 매핑으로 정한 언어의 문항·선택지 **표시 라벨**을 채워 반환한다(`Accept-Language` 헤더에 의존하지 않음; 가입 시 확보한 국가가 기기 설정보다 안정적). 표시 언어는 `diagnosis`가 **`user` 모듈 공개 query(`getLanguage`)를 동기 호출**해 취득한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기는 사용하지 않음; ADR-0002 Decision 5 — 모듈 의존 `diagnosis→user` 추가). 번역은 별도 컬렉션·키 없이 **`diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": ..., "ja": ..., "ko": ... }`, 선택지는 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버는 사용자 언어 키(예 `ja`)로 message·label을 고르고, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다. `country→language` 매핑은 `user`의 `countries.lang`이 보유한다. 선택지 **코드는 언어와 무관하게 동일·불변**(UPPER_SNAKE)하며 언어-키 맵의 값(표시 문자열)만 언어별이다(제출은 코드로 검증). 신규 6개 대학 그룹(`UniversityGroup`) 코드(`HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`)도 동일하게 UPPER_SNAKE 불변 코드이며 코드로 검증하고, 그룹의 표시 라벨(예 "서울대·중앙대·숭실대" / "Seoul National · Chung-Ang · Soongsil")은 다른 선택지와 똑같이 언어-키 맵으로 번역 대상이 된다. US-2-5와 동일 엔드포인트에서 처리한다.
 
 **AC (Given / When / Then)**
 
@@ -553,33 +713,33 @@
   When 비로그인 사용자가 호출하면 각 항목 `favorited=false`로, 로그인 사용자가 호출하면 본인의 찜 여부가 `favorited`에 반영되어 반환된다
   Then 두 경우 모두 `200 OK`이며 공개 데이터는 동일하다
 
-### US-3-2 — 지도(bbox/반경) 검색과 클러스터 집계
+### US-3-2 — 지도 bbox 마커 조회
 
 **As a** 특정 지역·학교 주변에서 집을 찾는 외국인 사용자
-**I want** 지도 화면에 보이는 영역(bounding box) 또는 중심점+반경 내 매물을 줌 레벨에 따라 클러스터로 집계해 받기
+**I want** 지도 화면에 보이는 영역(bounding box) 내 매물의 개별 좌표를 받기
 **So that** 지도를 이동/확대하며 매물 분포를 빠르게 파악할 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 지도 패닝 시 잦은 호출을 견디는 응답시간/캐시 전략(NFR 미정)
-- 데이터 관점: bbox는 4좌표가 모두 있어야 유효, 반경 모드는 `centerLat/centerLng/radius`가 모두 있어야 유효하며 두 모드는 상호 배타, `cluster=true`면 좌표 그리드/지오해시로 서버 집계해 마커 수를 줄임, 비클러스터 모드는 상한(서버 설정값, 예: 최대 500건)으로 초과 시 에러 처리
+- 데이터 관점: bbox는 4좌표가 모두 있어야 유효, 서버는 요청 bbox를 20% 확장해 조회, 응답은 프론트 지도 SDK가 클러스터링할 개별 매물 좌표(`listingId`, `lat`, `lng`) 중심, 결과 수는 서버 설정값(예: 최대 500건)으로 초과 시 에러 처리
 
 **AC (Given / When / Then)**
 
-- 시나리오: 정상 bbox 클러스터 조회
+- 시나리오: 정상 bbox 마커 조회
   Given 지도 영역이 유효 좌표로 주어지고
-  When `GET /api/v1/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05&zoom=13&cluster=true`를 호출하면
-  Then `200 OK`로 `data.clusters[]`(각 항목 `lat/lng/count` 및 `count==1`일 때 `listingId`)를 반환한다
-- 시나리오: 입력 검증 실패(좌표 불완전/모순/모드 혼용)
+  When `GET /api/v1/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05`를 호출하면
+  Then `200 OK`로 `data.markers[]`(각 항목 `listingId/lat/lng`)를 반환한다
+- 시나리오: 입력 검증 실패(좌표 불완전/모순)
   Given 클라이언트가
-  When bbox 4좌표 중 일부만 보내거나 `swLat > neLat`처럼 모순된 좌표, 또는 bbox와 반경(`centerLat/centerLng/radius`)을 동시에 보내면
+  When bbox 4좌표 중 일부만 보내거나 `swLat > neLat`처럼 모순된 좌표를 보내면
   Then `400 Bad Request`, `error.code=LISTING_INVALID_BBOX`를 반환한다
 - 시나리오: 인증 선택(비로그인 허용)
   Given 토큰 없는 사용자가
   When 지도 검색을 호출하면
-  Then `200 OK`로 정상 조회된다(클러스터 응답에는 사용자 맞춤 필드 `favorited`가 포함되지 않으며, 비클러스터 항목의 `favorited`는 `false`로 처리)
-- 시나리오: 경계(과도한 영역/반경)
-  Given 한 번에 너무 넓은 bbox 또는 과대 `radius`가 주어지면
+  Then `200 OK`로 정상 조회된다(마커 응답에는 사용자 맞춤 필드 `favorited`가 포함되지 않는다)
+- 시나리오: 경계(과도한 영역)
+  Given 한 번에 너무 넓은 bbox가 주어지면
   When 검색을 호출하면
-  Then `cluster=true`면 집계 결과를 반환하고, 비클러스터인데 결과 수가 상한을 초과하면 `400 Bad Request`, `error.code=LISTING_AREA_TOO_LARGE`로 클러스터 사용을 유도한다
+  Then 결과 수가 상한을 초과하는 경우 `400 Bad Request`, `error.code=LISTING_AREA_TOO_LARGE`로 범위 축소를 유도한다
 
 ### US-3-3 — 키워드 검색(학교명·지역명·지하철역명)
 

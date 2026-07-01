@@ -1,16 +1,23 @@
 package com.kohere.auth.presentation;
 
 import com.kohere.auth.application.AuthService;
+import com.kohere.auth.application.dto.BusinessVerifyResponse;
 import com.kohere.auth.application.dto.EmailVerificationCodeResponse;
 import com.kohere.auth.application.dto.EmailVerifyResponse;
 import com.kohere.auth.application.dto.OnboardingResponse;
+import com.kohere.auth.application.dto.PhoneVerificationCodeResponse;
+import com.kohere.auth.application.dto.PhoneVerifyResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.presentation.dto.BusinessVerifyRequest;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
+import com.kohere.auth.presentation.dto.LandlordOnboardingRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
+import com.kohere.auth.presentation.dto.PhoneVerificationCodeRequest;
+import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
@@ -68,6 +75,34 @@ public class AuthController {
       @AuthenticationPrincipal AuthPrincipal principal,
       @Valid @RequestBody OnboardingRequest request) {
     return authService.onboarding(principal.userId(), request);
+  }
+
+  @PostMapping("/phone/verification-code")
+  public PhoneVerificationCodeResponse sendPhoneVerificationCode(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @Valid @RequestBody PhoneVerificationCodeRequest request) {
+    return authService.sendPhoneVerificationCode(principal.userId(), request);
+  }
+
+  @PostMapping("/phone/verify")
+  public PhoneVerifyResponse verifyPhone(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @Valid @RequestBody PhoneVerifyRequest request) {
+    return authService.verifyPhone(principal.userId(), request);
+  }
+
+  @PostMapping("/business/verify")
+  public BusinessVerifyResponse verifyBusiness(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @Valid @RequestBody BusinessVerifyRequest request) {
+    return authService.verifyBusiness(principal.userId(), request);
+  }
+
+  @PostMapping("/landlord/onboarding")
+  public OnboardingResponse landlordOnboarding(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @Valid @RequestBody LandlordOnboardingRequest request) {
+    return authService.landlordOnboarding(principal.userId(), request);
   }
 
   @PostMapping("/reissue")

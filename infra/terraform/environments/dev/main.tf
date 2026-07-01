@@ -81,11 +81,17 @@ module "secrets" {
   tags                = local.common_tags
   google_client_id    = var.google_client_id
   apple_client_id     = var.apple_client_id
+  apple_team_id       = var.apple_team_id
+  apple_key_id        = var.apple_key_id
+  apple_private_key   = var.apple_private_key
   smtp_username       = var.smtp_username
   smtp_password       = var.smtp_password
   mysql_password      = var.mysql_password
   mysql_root_password = var.mysql_root_password
   mongo_password      = var.mongo_password
+  solapi_api_key      = var.solapi_api_key
+  solapi_api_secret   = var.solapi_api_secret
+  bizno_api_key       = var.bizno_api_key
 }
 
 # ===== 데이터 EBS (mysql/mongo 영속) =====
@@ -121,6 +127,12 @@ module "host" {
   mongo_username        = var.mongo_username
   images_bucket         = module.s3_cloudfront.bucket_name
   images_cdn_domain     = module.s3_cloudfront.cdn_domain
+
+  # 연락처 SMS(SOLAPI, ADR-0034) — 비밀 아닌 설정(enabled·from)을 compose env로 주입(API 키는 .env/SSM).
+  solapi_enabled = var.solapi_enabled
+  solapi_from    = var.solapi_from
+  # 사업자번호 검증(비즈노, ADR-0033) — enabled를 compose env로 주입(API 키는 .env/SSM).
+  bizno_enabled = var.bizno_enabled
 
   # 시크릿 파라미터가 먼저 존재해야 부팅 시 refresh-env가 .env로 주입할 수 있다.
   depends_on = [module.secrets]

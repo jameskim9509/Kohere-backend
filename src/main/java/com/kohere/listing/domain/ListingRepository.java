@@ -1,14 +1,51 @@
 package com.kohere.listing.domain;
 
+import com.kohere.common.response.PageResponse;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 매물 영속 포트. 구현은 infrastructure 계층에 두어 의존성을 역전한다(docs/convention/code-style.md §3-3). 도메인은 영속 기술을
  * 모른다.
  *
- * <p>TODO: 필터·정렬, 지도(bbox/반경), 키워드 검색 쿼리 메서드를 추가한다.
+ * <p>목록 조회는 {@link ListingSearchCondition}으로 지도 범위·가격·옵션 조건을 한 번에 전달한다.
  */
 public interface ListingRepository {
 
-  Optional<Listing> findById(Long listingId);
+  /** ObjectId 문자열로 매물 한 건을 조회한다. */
+  Optional<Listing> findById(String listingId);
+
+  /** 공개 중이고 활성 방 상품이 있는 매물만 페이지로 조회한다. */
+  PageResponse<Listing> findPublished(int page, int size);
+
+  /**
+   * 지도 범위와 필터 조건을 적용해 목록 카드 후보를 조회한다.
+   *
+   * <p>목록 화면은 건물 하나가 아니라 방 상품 하나를 카드 1개로 보여준다. 그래서 반환값도 {@link Listing}만 단독으로 넘기지 않고, 카드에 필요한 건물
+   * 정보와 방 상품 정보를 함께 담은 {@link ListingSearchResult}를 페이지 단위로 반환한다.
+   */
+  PageResponse<ListingSearchResult> search(ListingSearchCondition condition);
+
+  /** 지도 SDK에 전달할 마커 후보를 조회한다. 전체 건수와 지정 상한 내 매물만 반환한다. */
+  ListingMapSearchResult searchForMap(ListingSearchCondition condition, int limit);
+
+  /** 진단 결과 조건을 MongoDB 필터로 적용해 추천 매물 페이지를 조회한다. */
+  PageResponse<Listing> recommend(
+      String region,
+      int monthlyBudgetMax,
+      Set<ConditionTag> conditions,
+      String university,
+      String district,
+      int page,
+      int size,
+      String sort);
+
+  /** 매물 도메인 객체를 저장하고 저장된 결과를 반환한다. */
+  Listing save(Listing listing);
+
+  /** 매물 찜 수를 원자적으로 1 증가시키고 변경 후 값을 반환한다. */
+  int increaseFavoriteCount(String listingId);
+
+  /** 매물 찜 수를 원자적으로 1 감소시키되 0 미만으로 내리지 않고 변경 후 값을 반환한다. */
+  int decreaseFavoriteCount(String listingId);
 }

@@ -29,11 +29,29 @@ public interface UserAccountService {
   UserProfileView completeOnboarding(long userId, OnboardingProfile profile);
 
   /**
+   * 임대인 온보딩 완료 — TERMS_AGREED→ACTIVE 전이 + 임대인 프로필 확정(name·연락처) + userType=LANDLORD 확정 + 닉네임 자동 배정.
+   * 연락처 SMS 인증 완료 확인은 호출자(auth)가 선행한다. 사업자등록번호는 온보딩에서 수집하지 않는다 — 온보딩 후 별도 검증 API로
+   * 검증한다(ADR-0033·0034).
+   *
+   * @throws com.kohere.user.domain.TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(422)
+   * @throws com.kohere.user.domain.OnboardingAlreadyCompletedException 이미 ACTIVE인 경우(409)
+   */
+  UserProfileView completeLandlordOnboarding(long userId, LandlordOnboardingProfile profile);
+
+  /**
    * 계정 식별·상태 조회(소셜 로그인 분기 판정용).
    *
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
    */
   UserAccountView getAccount(long userId);
+
+  /**
+   * 회원 역할(userType — 예 {@code TENANT}·{@code LANDLORD}) 조회. auth가 임대인 전용 자원(사업자번호 검증) 접근 판정에 동기
+   * 호출한다.
+   *
+   * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
+   */
+  String getUserType(long userId);
 
   /**
    * 표시 언어(ISO 639-1) 조회. diagnosis 등 다국어 표시 모듈이 사용자 언어를 결정하기 위해 동기 호출한다(ADR-0002 Decision 5 — 즉시

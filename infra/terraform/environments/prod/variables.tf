@@ -327,6 +327,28 @@ variable "apple_client_id" {
   sensitive   = true
 }
 
+# Apple 인가코드 흐름(ADR-0031) — 탈퇴 시 /auth/revoke용 client_secret(ES256) 재료. 운영 전 채워야 동작.
+variable "apple_team_id" {
+  description = "Apple Team ID(client_secret JWT iss)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_key_id" {
+  description = "Apple Key ID(.p8 kid)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_private_key" {
+  description = "Apple .p8 개인키(PKCS#8 PEM) — ES256 client_secret 서명"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "smtp_host" {
   description = "운영 SMTP 호스트(예: email-smtp.ap-northeast-2.amazonaws.com)"
   type        = string
@@ -357,4 +379,45 @@ variable "mail_from" {
   description = "발신 이메일 주소"
   type        = string
   default     = "noreply@kohere.app"
+}
+
+# ----- 연락처 SMS (SOLAPI 국내 SMS API — 임대인 인증, ADR-0034) -----
+variable "solapi_enabled" {
+  description = "SOLAPI 실 발송 활성화(앱 app.solapi.enabled). false면 로깅 폴백"
+  type        = bool
+  default     = false
+}
+
+variable "solapi_from" {
+  description = "SOLAPI 발신번호(사전 등록). 비밀 아님 — 평문 env"
+  type        = string
+  default     = ""
+}
+
+variable "solapi_api_key" {
+  description = "SOLAPI API Key — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "solapi_api_secret" {
+  description = "SOLAPI API Secret — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# ----- 사업자번호 검증 (비즈노 — 임대인 인증, ADR-0033) -----
+variable "bizno_enabled" {
+  description = "비즈노 실 검증 활성화(앱 app.bizno.enabled). false면 StubBusinessRegistryVerifier 폴백"
+  type        = bool
+  default     = false
+}
+
+variable "bizno_api_key" {
+  description = "비즈노 API Key — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
 }

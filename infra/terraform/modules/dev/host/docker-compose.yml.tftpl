@@ -73,6 +73,11 @@ services:
       MAIL_FROM: ${mail_from}
       APP_IMAGES_BUCKET: ${images_bucket}
       APP_IMAGES_CDN_DOMAIN: ${images_cdn_domain}
+      # 연락처 SMS(SOLAPI, ADR-0034) — enabled·from은 평문, API 키/시크릿은 .env(SSM)에서 env_file로 주입.
+      SOLAPI_ENABLED: "${solapi_enabled}"
+      SOLAPI_FROM: "${solapi_from}"
+      # 사업자번호 검증(비즈노, ADR-0033) — enabled는 평문, API 키는 .env(SSM).
+      BIZNO_ENABLED: "${bizno_enabled}"
 volumes:
   caddy_data:
   caddy_config:

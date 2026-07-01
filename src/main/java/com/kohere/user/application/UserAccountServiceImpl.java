@@ -1,6 +1,7 @@
 package com.kohere.user.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.TermsAgreementView;
 import com.kohere.user.api.UserAccountService;
@@ -94,10 +95,32 @@ public class UserAccountServiceImpl implements UserAccountService {
   }
 
   @Override
+  @Transactional
+  public UserProfileView completeLandlordOnboarding(
+      long userId, LandlordOnboardingProfile profile) {
+    User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
+    String nickname = nicknameGenerator.generateUnique();
+    User active =
+        user.completeLandlordOnboarding(
+            profile.name(), profile.phoneNumber(), nickname, Instant.now());
+    return toProfileView(userRepository.save(active));
+  }
+
+  @Override
   @Transactional(readOnly = true)
   public UserAccountView getAccount(long userId) {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
     return new UserAccountView(user.getId(), user.getStatus().name());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public String getUserType(long userId) {
+    return userRepository
+        .findById(userId)
+        .orElseThrow(UserNotFoundException::new)
+        .getUserType()
+        .name();
   }
 
   @Override
@@ -116,20 +139,24 @@ public class UserAccountServiceImpl implements UserAccountService {
   }
 
   private UserProfileView toProfileView(User u) {
-    Country country = countryRepository.findByCode(u.getCountry()).orElse(null);
+    // 임대인은 country·gender·occupation·visaType 미수집(null) — 세입자/임대인 공용이라 null 가드한다.
+    Country country =
+        u.getCountry() == null ? null : countryRepository.findByCode(u.getCountry()).orElse(null);
     return new UserProfileView(
         u.getId(),
         u.getFirstName(),
         u.getLastName(),
         u.getNickname(),
-        u.getGender().name(),
+        u.getGender() == null ? null : u.getGender().name(),
         u.getBirthDate(),
         u.getCountry(),
         country == null ? null : country.name(),
         country == null ? null : country.flag(),
-        u.getOccupation().name(),
+        u.getOccupation() == null ? null : u.getOccupation().name(),
         u.getEmail(),
-        u.getVisaType().name(),
+        u.getVisaType() == null ? null : u.getVisaType().name(),
+        u.getUserType() == null ? null : u.getUserType().name(),
+        u.getPhoneNumber(),
         u.getStatus().name(),
         u.isMarketingAgreed(),
         u.getCreatedAt());

@@ -7,6 +7,9 @@ public interface SocialAccountRepository {
 
   Optional<SocialAccount> findByProviderAndProviderUserId(Provider provider, String providerUserId);
 
+  /** userId로 매핑을 조회한다. 탈퇴 시 매핑 삭제 전에 {@code appleRefreshToken}을 읽어 폐기하기 위해 쓴다(ADR-0031 #5). */
+  Optional<SocialAccount> findByUserId(Long userId);
+
   SocialAccount save(SocialAccount socialAccount);
 
   void deleteByUserId(Long userId);

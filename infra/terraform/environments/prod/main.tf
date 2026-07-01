@@ -124,12 +124,18 @@ module "elasticache" {
 module "secrets" {
   source = "../../modules/prod/secrets"
 
-  name_prefix      = local.name_prefix
-  tags             = local.common_tags
-  google_client_id = var.google_client_id
-  apple_client_id  = var.apple_client_id
-  smtp_username    = var.smtp_username
-  smtp_password    = var.smtp_password
+  name_prefix       = local.name_prefix
+  tags              = local.common_tags
+  google_client_id  = var.google_client_id
+  apple_client_id   = var.apple_client_id
+  apple_team_id     = var.apple_team_id
+  apple_key_id      = var.apple_key_id
+  apple_private_key = var.apple_private_key
+  smtp_username     = var.smtp_username
+  smtp_password     = var.smtp_password
+  solapi_api_key    = var.solapi_api_key
+  solapi_api_secret = var.solapi_api_secret
+  bizno_api_key     = var.bizno_api_key
 }
 
 # ===== IAM (ECS 역할 + GitHub OIDC) =====
@@ -179,6 +185,11 @@ locals {
     # APP_IMAGES_CDN_DOMAIN은 커스텀 별칭(cdn_domain_name)으로 고정 — 필수·강제(폴백 없음).
     { name = "APP_IMAGES_BUCKET", value = module.s3_cloudfront.bucket_name },
     { name = "APP_IMAGES_CDN_DOMAIN", value = module.s3_cloudfront.cdn_domain },
+    # 연락처 SMS(SOLAPI, ADR-0034) — enabled/from은 비밀 아님(평문 env). api-key/secret은 container_secrets(SSM).
+    { name = "SOLAPI_ENABLED", value = tostring(var.solapi_enabled) },
+    { name = "SOLAPI_FROM", value = var.solapi_from },
+    # 사업자번호 검증(비즈노, ADR-0033) — enabled는 비밀 아님(평문 env). api-key는 container_secrets(SSM).
+    { name = "BIZNO_ENABLED", value = tostring(var.bizno_enabled) },
   ]
 
   # valueFrom = SSM 파라미터 ARN (Parameter Store SecureString — ADR-0023). 값 전체가 곧 시크릿.
@@ -190,8 +201,14 @@ locals {
     { name = "EMAIL_PEPPER", valueFrom = module.secrets.param_arns["EMAIL_PEPPER"] },
     { name = "GOOGLE_CLIENT_ID", valueFrom = module.secrets.param_arns["GOOGLE_CLIENT_ID"] },
     { name = "APPLE_CLIENT_ID", valueFrom = module.secrets.param_arns["APPLE_CLIENT_ID"] },
+    { name = "APPLE_TEAM_ID", valueFrom = module.secrets.param_arns["APPLE_TEAM_ID"] },
+    { name = "APPLE_KEY_ID", valueFrom = module.secrets.param_arns["APPLE_KEY_ID"] },
+    { name = "APPLE_PRIVATE_KEY", valueFrom = module.secrets.param_arns["APPLE_PRIVATE_KEY"] },
     { name = "SPRING_MAIL_USERNAME", valueFrom = module.secrets.param_arns["SPRING_MAIL_USERNAME"] },
     { name = "SPRING_MAIL_PASSWORD", valueFrom = module.secrets.param_arns["SPRING_MAIL_PASSWORD"] },
+    { name = "SOLAPI_API_KEY", valueFrom = module.secrets.param_arns["SOLAPI_API_KEY"] },
+    { name = "SOLAPI_API_SECRET", valueFrom = module.secrets.param_arns["SOLAPI_API_SECRET"] },
+    { name = "BIZNO_API_KEY", valueFrom = module.secrets.param_arns["BIZNO_API_KEY"] },
   ]
 }
 

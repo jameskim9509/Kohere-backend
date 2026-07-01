@@ -24,6 +24,27 @@ variable "apple_client_id" {
   sensitive   = true
 }
 
+variable "apple_team_id" {
+  description = "Apple Team ID(client_secret JWT iss, ADR-0031)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_key_id" {
+  description = "Apple Key ID(.p8 kid)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "apple_private_key" {
+  description = "Apple .p8 개인키(PKCS#8 PEM) — ES256 client_secret 서명"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "smtp_username" {
   description = "운영 SMTP 사용자명(SES 등)"
   type        = string
@@ -33,6 +54,27 @@ variable "smtp_username" {
 
 variable "smtp_password" {
   description = "운영 SMTP 비밀번호"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "solapi_api_key" {
+  description = "SOLAPI API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "solapi_api_secret" {
+  description = "SOLAPI API Secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "bizno_api_key" {
+  description = "비즈노 API Key"
   type        = string
   default     = ""
   sensitive   = true

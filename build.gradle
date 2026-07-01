@@ -42,8 +42,16 @@ dependencies {
   //영속 - listing·diagnosis=MongoDB(지오)
   implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
+  // MongoDB 1회성 마이그레이션 — Mongock(@ChangeUnit). Flyway의 MongoDB 대응(ADR-0032).
+  // Boot 3.5(Framework 6.2)·Spring Data MongoDB 4.x 호환: springboot-v3 + springdata-v4 driver.
+  implementation 'io.mongock:mongock-springboot-v3'
+  implementation 'io.mongock:mongodb-springdata-v4-driver'
+
   // 메일 — 온보딩 이메일 인증번호 SMTP 발송(VerificationEmailSender). provider/secrets는 환경변수로 주입
   implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+  // 연락처 SMS 발송 — SOLAPI 국내 SMS API SDK(VerificationSmsSender, ADR-0034). 크리덴셜은 SSM 주입.
+  implementation 'com.solapi:sdk:1.1.0'
 
   // MySQL 스키마 마이그레이션 — Flyway가 DDL 소유, Hibernate는 validate (ADR-0008)
   implementation 'org.flywaydb:flyway-core'
@@ -86,6 +94,8 @@ dependencyManagement {
     mavenBom "org.springframework.modulith:spring-modulith-bom:${springModulithVersion}"
     // 신버전 Docker 데몬(29.x) 호환 docker-java가 포함된 Testcontainers로 고정(Boot 관리 버전 오버라이드)
     mavenBom "org.testcontainers:testcontainers-bom:1.21.4"
+    // MongoDB 마이그레이션 Mongock 버전 일괄 관리 (ADR-0032)
+    mavenBom "io.mongock:mongock-bom:5.5.0"
   }
 }
 

@@ -48,6 +48,15 @@ app:
     max-attempts: 5 # 검증 시도 상한(초과 시 429)
     resend-interval-seconds: 60 # 재발송 최소 간격(미달 시 429)
     from: ${MAIL_FROM:noreply@kohere.app} # 발신 이메일 주소
+  phone:
+    # 임대인 연락처 SMS 인증 정책값(비밀 아님). 세입자 이메일 인증과 통일(ADR-0034, 문서 §6).
+    code-length: 6 # 인증번호 자릿수
+    code-ttl-seconds: 300 # 인증번호 만료(5분)
+    verified-ttl-seconds: 1800 # 검증 완료 마커 보존(30분)
+    max-attempts: 5 # 검증 시도 상한(초과 시 429)
+    resend-interval-seconds: 60 # 재발송 최소 간격(미달 시 429)
+  business:
+    verified-ttl-seconds: 1800 # 사업자번호 검증 마커 보존(30분). provider 설정은 app.bizno(프로파일별)
   oidc:
     # 소셜 OIDC 검증(JWKS). audience(우리 client ID)는 환경 의존값이라 프로파일별로 주입.
     google:
@@ -56,3 +65,19 @@ app:
     apple:
       issuer: https://appleid.apple.com
       jwk-set-uri: https://appleid.apple.com/auth/keys
+  apple:
+    # Apple 인가코드 교환·폐기 + client_secret(ES256 JWT) 설정 (ADR-0031). 비밀(team-id·key-id·client-id·private-key=.p8)은
+    # 프로파일별로 주입한다. client-id는 app.oidc.apple.audience와 동일한 번들 ID여야 한다(Services ID 아님).
+    token-url: https://appleid.apple.com/auth/token
+    revoke-url: https://appleid.apple.com/auth/revoke
+    audience: https://appleid.apple.com # client_secret JWT의 aud(Apple 토큰 엔드포인트, 상수)
+    client-secret-ttl-seconds: 1800 # client_secret 캐시 만료(≤6개월, 만료 전 재서명)
+    connect-timeout-millis: 3000 # Apple 외부 호출 connect 타임아웃(탈퇴·로그인 비차단용 짧은 값)
+    read-timeout-millis: 5000 # Apple 외부 호출 read 타임아웃
+
+# MongoDB 1회성 마이그레이션(Mongock @ChangeUnit) — Flyway의 MongoDB 대응(ADR-0032).
+# @ChangeUnit은 컬렉션 소유 모듈의 infrastructure에 두고 com.kohere 하위를 스캔한다. test는 비활성(application-test.yml).
+mongock:
+  migration-scan-package:
+    - com.kohere
+  transaction-enabled: false # 단일 노드 Mongo·DocumentDB는 멀티도큐먼트 트랜잭션 미지원

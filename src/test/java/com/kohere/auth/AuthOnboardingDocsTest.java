@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
@@ -24,6 +25,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.auth.application.EmailVerificationProperties;
+import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.EmailDispatchException;
 import com.kohere.auth.domain.InvalidSocialTokenException;
 import com.kohere.auth.domain.OidcTokenVerifier;
@@ -113,6 +115,7 @@ class AuthOnboardingDocsTest {
   @Autowired private JwtProperties jwtProperties;
   @Autowired private EmailVerificationProperties emailProperties;
   @MockitoBean private VerificationEmailSender emailSender;
+  @MockitoBean private AppleAuthClient appleAuthClient; // 실제 Apple HTTP 대체
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final Map<String, String> sentCodes = new ConcurrentHashMap<>();
   private MockMvc mockMvc;
@@ -137,6 +140,8 @@ class AuthOnboardingDocsTest {
   @Test
   void generatesAuthOnboardingSnippets() throws Exception {
     String email = emailFor("docs-sub-1");
+    when(appleAuthClient.exchangeAuthorizationCode("docs-apple-code"))
+        .thenReturn(new AppleAuthClient.AppleTokens("docs-apple-sub", "docs-apple-rt"));
 
     // 소셜 로그인(신규) → 온보딩 임시 토큰
     String login =
@@ -149,13 +154,29 @@ class AuthOnboardingDocsTest {
             .andDo(
                 document(
                     "auth-social-login",
-                    resourceDetails().summary("소셜 로그인 — idToken 검증 후 서버 토큰 발급(status로 재개 지점 분기)"),
+                    resourceDetails().summary("소셜 로그인 — 자격 검증 후 서버 토큰 발급(status로 재개 지점 분기)"),
                     requestFields(socialLoginRequestFields()),
                     responseFields(socialLoginResponseFields())))
             .andReturn()
             .getResponse()
             .getContentAsString();
     String onboardingToken = read(login, "data", "accessToken");
+
+    // 소셜 로그인(Apple, 신규) — authorizationCode 교환 후 동일 응답 형태(요청 바디만 provider별 분기)
+    mockMvc
+        .perform(
+            post("/api/v1/auth/social-login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"provider\":\"APPLE\",\"authorizationCode\":\"docs-apple-code\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PENDING"))
+        .andDo(
+            document(
+                "auth-social-login-apple",
+                resourceDetails()
+                    .summary("소셜 로그인(Apple) — authorizationCode 교환·id_token 검증 후 토큰 발급"),
+                requestFields(socialLoginRequestFields()),
+                responseFields(socialLoginResponseFields())));
 
     // 약관 동의 → TERMS_AGREED
     mockMvc
@@ -325,11 +346,20 @@ class AuthOnboardingDocsTest {
     perform(
         post("/api/v1/auth/social-login")
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"provider\":\"GOOGLE\",\"idToken\":\"\"}"),
+            .content("{\"idToken\":\"docs-sub-1\"}"),
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-social-login-invalid-input",
-        "소셜 로그인 — 입력 검증 실패 (400 INVALID_INPUT): idToken 누락/빈값");
+        "소셜 로그인 — 입력 검증 실패 (400 INVALID_INPUT): provider 누락(@NotNull)");
+
+    perform(
+        post("/api/v1/auth/social-login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"provider\":\"GOOGLE\",\"idToken\":\"\"}"),
+        status().isBadRequest(),
+        "AUTH_MISSING_CREDENTIAL",
+        "auth-social-login-missing-credential",
+        "소셜 로그인 — 자격 누락 (400 AUTH_MISSING_CREDENTIAL): provider별 자격(Google idToken / Apple authorizationCode) 누락/빈값");
 
     perform(
         post("/api/v1/auth/social-login")
@@ -946,7 +976,11 @@ class AuthOnboardingDocsTest {
   private static List<FieldDescriptor> socialLoginRequestFields() {
     return List.of(
         field("provider", JsonFieldType.STRING, "소셜 제공자: APPLE | GOOGLE"),
-        field("idToken", JsonFieldType.STRING, "provider 발급 OIDC ID 토큰(빈 문자열 불가)"));
+        optField("idToken", JsonFieldType.STRING, "Google OIDC ID 토큰(GOOGLE 필수, APPLE 미사용)"),
+        optField(
+            "authorizationCode",
+            JsonFieldType.STRING,
+            "Apple 1회용 인가코드(APPLE 필수, GOOGLE 미사용, 약 5분 만료)"));
   }
 
   private static List<FieldDescriptor> socialLoginResponseFields() {
@@ -1098,6 +1132,10 @@ class AuthOnboardingDocsTest {
     java.util.ArrayList<FieldDescriptor> fields = new java.util.ArrayList<>();
     fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     fields.addAll(profileFields("data.user."));
+    fields.add(field("data.user.userType", JsonFieldType.STRING, "회원 역할(TENANT|LANDLORD)"));
+    fields.add(
+        optField(
+            "data.user.phoneNumber", JsonFieldType.STRING, "연락처 — 세입자는 미수집(null), 임대인은 인증된 연락처"));
     fields.add(field("data.user.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"));
     fields.add(field("data.user.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"));
     fields.add(field("data.user.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"));

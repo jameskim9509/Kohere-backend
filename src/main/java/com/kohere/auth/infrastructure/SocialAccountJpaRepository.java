@@ -10,5 +10,7 @@ interface SocialAccountJpaRepository extends JpaRepository<SocialAccountJpaEntit
   Optional<SocialAccountJpaEntity> findByProviderAndProviderUserId(
       Provider provider, String providerUserId);
 
+  Optional<SocialAccountJpaEntity> findByUserId(Long userId);
+
   void deleteByUserId(Long userId);
 }

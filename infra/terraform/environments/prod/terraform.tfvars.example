@@ -22,6 +22,16 @@ github_deploy_branch = "main"
 # OIDC audience (우리 앱의 client ID)
 google_client_id = ""  # sensitive
 apple_client_id  = ""  # sensitive (MVP는 Google 우선, Apple은 여유 시)
+# Apple 인가코드 흐름(ADR-0031) — 탈퇴 시 /auth/revoke. ECS는 SSM 값을 그대로 주입(멀티라인 PEM 보존).
+apple_team_id = ""  # sensitive — Apple Developer Team ID
+apple_key_id  = ""  # sensitive — Sign in with Apple .p8 Key ID
+# .p8 개인키 전체(PKCS#8 PEM). heredoc로 실제 개행 그대로 붙여넣는다:
+# apple_private_key = <<-EOT
+# -----BEGIN PRIVATE KEY-----
+# MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHB...
+# -----END PRIVATE KEY-----
+# EOT
+apple_private_key = ""  # sensitive
 
 # 운영 SMTP (예: Amazon SES SMTP 자격증명). MVP 온보딩 이메일 인증에 필요.
 smtp_host     = "email-smtp.ap-northeast-2.amazonaws.com"
@@ -29,6 +39,18 @@ smtp_port     = 587
 smtp_username = ""  # sensitive
 smtp_password = ""  # sensitive
 mail_from     = "noreply@kohere.app"
+
+# ----- 연락처 SMS (SOLAPI 국내 SMS API — 임대인 인증, ADR-0034) -----
+# 기본 비활성(로깅 폴백). 켜려면 SOLAPI 콘솔에서 발신번호 등록·API 키 발급 후 채우고 solapi_enabled=true.
+# solapi_enabled    = true
+# solapi_from       = "01012345678"   # 사전 등록 발신번호(평문)
+# solapi_api_key    = ""  # sensitive — SSM SecureString
+# solapi_api_secret = ""  # sensitive — SSM SecureString
+
+# ----- 사업자번호 검증 (비즈노 — 임대인 인증, ADR-0033) -----
+# 기본 비활성(StubBusinessRegistryVerifier 폴백). 켜려면 비즈노 API 키 발급 후 채우고 bizno_enabled=true.
+# bizno_enabled = true
+# bizno_api_key = ""  # sensitive — SSM SecureString
 
 # ----- 알람 (이메일·Discord 병행 가능 — 둘 다 채우면 양쪽으로 통보) -----
 # alarm_email         = "ops@kohere.app"

@@ -1,10 +1,29 @@
 package com.kohere.listing.application;
 
+import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageResponse;
+import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
+import com.kohere.listing.application.dto.FavoriteToggleResult;
+import com.kohere.listing.application.dto.ListingDetailResponse;
+import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.domain.Favorite;
+import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.FavoriteRepository;
+import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingAreaTooLargeException;
+import com.kohere.listing.domain.ListingInvalidBboxException;
+import com.kohere.listing.domain.ListingInvalidSortParamException;
+import com.kohere.listing.domain.ListingMapSearchResult;
+import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.ListingSearchCondition;
+import com.kohere.listing.domain.ListingSearchResult;
+import com.kohere.listing.domain.ListingSort;
+import com.kohere.listing.presentation.dto.ListingMapRequest;
+import com.kohere.listing.presentation.dto.ListingSearchRequest;
+import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,30 +41,273 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ListingService {
 
+  private static final double BOUNDS_EXPANSION_RATIO = 0.2;
+
+  /** 지도 SDK에 한 번에 넘기는 마커가 너무 많아지지 않도록 둔 서버 방어 상한이다. */
+  private static final int MAX_MAP_MARKERS = 500;
+
+  private static final int MAX_PAGE_SIZE = 100;
+  private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+
   private final ListingRepository listingRepository;
   private final FavoriteRepository favoriteRepository;
 
-  public PageResponse<ListingSummaryResponse> getListings(int page, int size) {
-    throw new UnsupportedOperationException("TODO: 매물 리스트 조회(필터·정렬·페이지)");
+  /**
+   * 지도 범위와 필터 조건을 적용해 목록 카드 페이지를 반환한다.
+   *
+   * <p>목록 카드 1개는 건물 Listing 하나가 아니라 "Listing + roomOffer" 조합이다. 같은 고시원 안에 조건에 맞는 방 상품이 여러 개 있으면 같은
+   * listingId를 가진 카드가 여러 개 내려갈 수 있다.
+   */
+  public PageResponse<ListingSummaryResponse> getListings(ListingSearchRequest request) {
+    ListingSearchCondition condition = buildSearchCondition(request);
+
+    PageResponse<ListingSearchResult> listings = listingRepository.search(condition);
+    return PageResponse.of(
+        listings.content().stream()
+            .map(
+                result ->
+                    ListingResponseMapper.toSummary(
+                        result, distanceMeters(result.listing(), condition)))
+            .toList(),
+        listings.page());
   }
 
-  public ListingSummaryResponse getListing(Long listingId) {
-    throw new UnsupportedOperationException("TODO: 매물 상세 조회");
+  /** 지도 SDK 클러스터링에 사용할 개별 매물 마커 좌표를 반환한다. */
+  public ListingMapResponse getListingMap(ListingMapRequest request) {
+    ListingSearchCondition condition = buildMapSearchCondition(request);
+    ListingMapSearchResult result = listingRepository.searchForMap(condition, MAX_MAP_MARKERS);
+    if (result.total() > MAX_MAP_MARKERS) {
+      throw new ListingAreaTooLargeException();
+    }
+    return new ListingMapResponse(
+        result.listings().stream().map(ListingResponseMapper::toMapMarker).toList(),
+        result.total());
   }
 
-  public PageResponse<ListingSummaryResponse> getMyFavorites(int page, int size) {
-    throw new UnsupportedOperationException("TODO: 내 찜 목록 조회");
+  /** 단일 매물 상세 정보를 조회하고 상세 화면 섹션별 응답으로 변환한다. */
+  public ListingDetailResponse getListing(String listingId) {
+    return ListingResponseMapper.toDetail(requirePublishedListing(listingId));
   }
 
+  /**
+   * 내가 찜한 공개 매물 목록을 최근 찜한 순으로 반환한다.
+   *
+   * <p>프론트가 별도 정렬 파라미터를 보내지 않아도 항상 {@code favoritedAt desc} 기준이다. {@code DRAFT}, {@code PAUSED},
+   * {@code DELETED} 같은 비공개 매물은 목록과 총 개수에서 제외하므로, 화면의 페이지 정보는 실제 표시 가능한 카드 수와 일치한다.
+   */
+  public PageResponse<FavoriteListingResponse> getMyFavorites(Long userId, int page, int size) {
+    validatePage(page, size);
+    PageResponse<FavoriteListing> favorites =
+        favoriteRepository.findPublishedByUserIdOrderByFavoritedAtDesc(userId, page, size);
+    return PageResponse.of(
+        favorites.content().stream().map(ListingResponseMapper::toFavoriteListing).toList(),
+        favorites.page());
+  }
+
+  /** 최근 본 매물 조회 예정 지점이다. */
   public List<ListingSummaryResponse> getRecentListings() {
     throw new UnsupportedOperationException("TODO: 최근 본 매물(7일·최대 5건)");
   }
 
-  public FavoriteToggleResponse addFavorite(Long listingId) {
-    throw new UnsupportedOperationException("TODO: 찜 등록(토글, 멱등)");
+  /**
+   * 매물을 찜한다.
+   *
+   * <p>대상 매물은 반드시 {@code PUBLISHED} 상태여야 한다. 처음 찜하면 {@code created=true}와 증가한 {@code
+   * favoriteCount}를 반환하고, 이미 찜한 상태라면 저장·카운트 증감 없이 {@code created=false}와 현재 {@code favoriteCount}를
+   * 반환한다.
+   */
+  public FavoriteToggleResult addFavorite(Long userId, String listingId) {
+    Listing listing = requirePublishedListing(listingId);
+    if (favoriteRepository.findByUserIdAndListingId(userId, listingId).isPresent()) {
+      return new FavoriteToggleResult(
+          false, new FavoriteToggleResponse(true, listing.getFavoriteCount()));
+    }
+
+    boolean created =
+        favoriteRepository.saveIfAbsent(
+            Favorite.builder()
+                .userId(userId)
+                .listingId(listing.getId())
+                .favoritedAt(Instant.now())
+                .build());
+    int favoriteCount =
+        created
+            ? listingRepository.increaseFavoriteCount(listingId)
+            : requirePublishedListing(listingId).getFavoriteCount();
+    return new FavoriteToggleResult(created, new FavoriteToggleResponse(true, favoriteCount));
   }
 
-  public FavoriteToggleResponse removeFavorite(Long listingId) {
-    throw new UnsupportedOperationException("TODO: 찜 해제(토글, 멱등)");
+  /**
+   * 매물 찜을 해제한다.
+   *
+   * <p>찜 기록이 있으면 {@code favorites} 문서를 삭제하고 {@code favoriteCount}를 1 감소시킨다. 원래 찜하지 않은 매물이어도 에러가 아니라
+   * 현재 상태({@code favorited=false})를 반환한다. 단, 대상 매물 자체가 없거나 공개 상태가 아니면 스펙대로 {@code
+   * LISTING_NOT_FOUND}가 된다.
+   */
+  public FavoriteToggleResponse removeFavorite(Long userId, String listingId) {
+    Listing listing = requirePublishedListing(listingId);
+    boolean deleted = favoriteRepository.deleteByUserIdAndListingId(userId, listingId);
+    int favoriteCount =
+        deleted ? listingRepository.decreaseFavoriteCount(listingId) : listing.getFavoriteCount();
+    return new FavoriteToggleResponse(false, favoriteCount);
+  }
+
+  /**
+   * 공개 중인 매물만 사용자 액션 대상으로 취급한다.
+   *
+   * <p>존재하지 않는 매물, 잘못된 ObjectId, {@code DRAFT}/{@code PAUSED}/{@code DELETED} 매물은 모두 사용자에게 구분하지 않고
+   * {@code LISTING_NOT_FOUND}로 응답한다. 비공개 리소스의 존재 여부를 노출하지 않기 위한 정책이다.
+   */
+  private Listing requirePublishedListing(String listingId) {
+    return listingRepository
+        .findById(listingId)
+        .filter(listing -> listing.getStatus() == Listing.ListingStatus.PUBLISHED)
+        .orElseThrow(ListingNotFoundException::new);
+  }
+
+  /** 컨트롤러에서 받은 값을 검증하고 저장소가 이해하기 쉬운 검색 조건으로 묶는다. */
+  private static ListingSearchCondition buildSearchCondition(ListingSearchRequest request) {
+    validateMoneyRange("monthlyRent", request.getMinBudget(), request.getMaxBudget());
+    validateMoneyRange("deposit", request.getMinDeposit(), request.getMaxDeposit());
+    validatePage(request.getPage(), request.getSize());
+
+    ListingSearchCondition.BoundingBox viewportBounds =
+        buildBounds(request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
+    validateDistanceSort(request.getSort(), viewportBounds);
+
+    return new ListingSearchCondition(
+        expandedBounds(viewportBounds),
+        request.getMinBudget(),
+        request.getMaxBudget(),
+        request.getMinDeposit(),
+        request.getMaxDeposit(),
+        request.getType(),
+        request.getConditions(),
+        request.getArcRequired(),
+        request.getSort(),
+        centerLat(viewportBounds),
+        centerLng(viewportBounds),
+        request.getPage(),
+        request.getSize());
+  }
+
+  /** 지도 마커 조회는 bbox가 필수이며, 목록과 같은 필터를 적용한다. */
+  private static ListingSearchCondition buildMapSearchCondition(ListingMapRequest request) {
+    validateMoneyRange("monthlyRent", request.getMinBudget(), request.getMaxBudget());
+    validateMoneyRange("deposit", request.getMinDeposit(), request.getMaxDeposit());
+
+    ListingSearchCondition.BoundingBox viewportBounds =
+        buildBounds(request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
+    if (viewportBounds == null) {
+      throw new ListingInvalidBboxException();
+    }
+    return new ListingSearchCondition(
+        expandedBounds(viewportBounds),
+        request.getMinBudget(),
+        request.getMaxBudget(),
+        request.getMinDeposit(),
+        request.getMaxDeposit(),
+        request.getType(),
+        request.getConditions(),
+        request.getArcRequired(),
+        ListingSort.RECOMMENDED,
+        null,
+        null,
+        0,
+        MAX_MAP_MARKERS);
+  }
+
+  /** 지도 좌표가 모두 있으면 유효성을 검사한 뒤 원본 지도 화면 bbox로 묶는다. */
+  private static ListingSearchCondition.BoundingBox buildBounds(
+      Double swLat, Double swLng, Double neLat, Double neLng) {
+    boolean hasAny = swLat != null || swLng != null || neLat != null || neLng != null;
+    if (!hasAny) {
+      return null;
+    }
+    if (swLat == null || swLng == null || neLat == null || neLng == null) {
+      throw new ListingInvalidBboxException();
+    }
+    if (!isLatitude(swLat)
+        || !isLatitude(neLat)
+        || !isLongitude(swLng)
+        || !isLongitude(neLng)
+        || swLat >= neLat
+        || swLng >= neLng) {
+      throw new ListingInvalidBboxException();
+    }
+    return new ListingSearchCondition.BoundingBox(swLat, swLng, neLat, neLng);
+  }
+
+  /** UX상 화면 가장자리에 걸친 매물도 보이도록 MongoDB 조회 bbox만 20% 넓힌다. */
+  private static ListingSearchCondition.BoundingBox expandedBounds(
+      ListingSearchCondition.BoundingBox bounds) {
+    return bounds == null ? null : bounds.expandedBy(BOUNDS_EXPANSION_RATIO);
+  }
+
+  /** bbox가 있으면 원본 지도 화면 중심 위도를 반환한다. */
+  private static Double centerLat(ListingSearchCondition.BoundingBox bounds) {
+    return bounds == null ? null : bounds.centerLat();
+  }
+
+  /** bbox가 있으면 원본 지도 화면 중심 경도를 반환한다. */
+  private static Double centerLng(ListingSearchCondition.BoundingBox bounds) {
+    return bounds == null ? null : bounds.centerLng();
+  }
+
+  /** 돈 필터는 음수가 아니어야 하고, 최소값이 최대값보다 클 수 없다. */
+  private static void validateMoneyRange(String field, Integer min, Integer max) {
+    if (min != null && min < 0) {
+      throw new InvalidInputException(field + " 최소값은 0 이상이어야 합니다.");
+    }
+    if (max != null && max < 0) {
+      throw new InvalidInputException(field + " 최대값은 0 이상이어야 합니다.");
+    }
+    if (min != null && max != null && min > max) {
+      throw new InvalidInputException(field + " 최소값은 최대값보다 클 수 없습니다.");
+    }
+  }
+
+  /** 페이지 번호와 크기가 API 약속 범위 안에 있는지 확인한다. */
+  private static void validatePage(int page, int size) {
+    if (page < 0) {
+      throw new InvalidInputException("page는 0 이상이어야 합니다.");
+    }
+    if (size < 1 || size > MAX_PAGE_SIZE) {
+      throw new InvalidInputException("size는 1 이상 100 이하이어야 합니다.");
+    }
+  }
+
+  /** 거리순 정렬은 요청 bbox의 중심 좌표를 기준으로 하므로 bbox 네 값이 모두 필요하다. */
+  private static void validateDistanceSort(
+      ListingSort sort, ListingSearchCondition.BoundingBox bounds) {
+    if (sort == ListingSort.DISTANCE && bounds == null) {
+      throw new ListingInvalidSortParamException();
+    }
+  }
+
+  /** 위도 값이 지구 좌표 범위 안에 있는지 확인한다. */
+  private static boolean isLatitude(double value) {
+    return value >= -90.0 && value <= 90.0;
+  }
+
+  /** 경도 값이 지구 좌표 범위 안에 있는지 확인한다. */
+  private static boolean isLongitude(double value) {
+    return value >= -180.0 && value <= 180.0;
+  }
+
+  /** 기준 좌표가 있으면 매물까지의 직선 거리를 미터 단위로 계산한다. */
+  private static Integer distanceMeters(Listing listing, ListingSearchCondition condition) {
+    if (!condition.hasCenter()) {
+      return null;
+    }
+    double lat1 = Math.toRadians(condition.centerLat());
+    double lat2 = Math.toRadians(listing.getLocation().latitude());
+    double latDelta = lat2 - lat1;
+    double lngDelta = Math.toRadians(listing.getLocation().longitude() - condition.centerLng());
+    double a =
+        Math.sin(latDelta / 2.0) * Math.sin(latDelta / 2.0)
+            + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lngDelta / 2.0) * Math.sin(lngDelta / 2.0);
+    double c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a));
+    return (int) Math.round(EARTH_RADIUS_METERS * c);
   }
 }

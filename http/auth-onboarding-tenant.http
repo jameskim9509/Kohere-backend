@@ -1,4 +1,5 @@
-# Kohere — auth-onboarding 로컬 수동 테스트 (소셜로그인 → 약관 → 이메일 인증 → 온보딩 → 프로필 → 재발급 → 로그아웃 → 탈퇴)
+# Kohere — auth-onboarding (세입자/TENANT 트랙) 로컬 수동 테스트 (소셜로그인 → 약관 → 이메일 인증 → 온보딩 → 프로필 → 재발급 → 로그아웃 → 탈퇴)
+# (임대인/LANDLORD 트랙은 auth-onboarding-landlord.http — 연락처 SMS 인증·사업자번호 검증)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis mailhog

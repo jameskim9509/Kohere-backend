@@ -19,7 +19,7 @@ Accepted
 - 모듈별 데이터 특성이 두 부류로 갈린다.
   - **문서·지오성 (MongoDB가 유리)**
     - **매물(`listing` + `favorite` + `recent-listing`)**: 핵심 질의가 **위치 기반**이다 — 지도 bbox(`$geoWithin`), 거리순(`$near`), 반경([listings spec](../api/specs/03-listings-favorites.md)). 매물 유형(고시원/코리빙/셰어하우스/기타)마다 속성 집합이 다르고 외부 수급으로 채워 스키마가 변동될 수 있다. **읽기 위주, 대량.**
-    - **진단(`diagnosis`)**: 6단계 답(지역 `region` / 입국 목적(유학 여부) `purposes[]` / 대학·지역구 선택(`university`/`district`) / 주거 환경 조건 `conditions[]` / 월 예산 `monthlyBudgetMax` / ARC `arcStatus` 같은 **배열·스칼라 혼합**) + 결과를 **통째로 읽고 쓰는 self-contained 애그리거트**다. 모듈 경계상 다른 모듈과 **조인이 없고**(추천은 값 객체 전달, 아래 Decision 2), 한 진단 = 한 도큐먼트라 **단일 도큐먼트 원자적 쓰기**로 충분하다. 유저당 소수 레코드로 규모 압력이 없다.
+    - **진단(`diagnosis`)**: 6단계 답(지역 `region` / 입국 목적(유학 여부) `purposes[]` / 대학 그룹·지역구 선택(`university`(그룹)/`district`) / 주거 환경 조건 `conditions[]` / 월세 범위 `monthlyRentMin`·`monthlyRentMax` / ARC `arcStatus` 같은 **배열·스칼라 혼합**) + 결과를 **통째로 읽고 쓰는 self-contained 애그리거트**다. 모듈 경계상 다른 모듈과 **조인이 없고**(추천은 값 객체 전달, 아래 Decision 2), 한 진단 = 한 도큐먼트라 **단일 도큐먼트 원자적 쓰기**로 충분하다. 유저당 소수 레코드로 규모 압력이 없다.
       - 핵심 질의도 `userId` 기준 **필터·정렬·소유권 검증**(이력 조회 / 최신 진단 / 본인 소유 확인)뿐이라 **JOIN·FK·다엔티티 트랜잭션 같은 관계형의 강점을 하나도 쓰지 않는다.** 관계형 DB는 "관계"가 있을 때 본전을 뽑는데 진단엔 관계가 없다 — 단순 질의 자체는 두 DB가 동등하므로 판별이 안 되고, 남는 기준인 **데이터 형태(배열·문서·원자적 쓰기)가 문서 모델을 가리킨다.** (반례로 `community`는 좋아요 유니크 제약·카운트 정합이라는 관계/정합이 실재해 MySQL에 둔다.)
   - **관계·트랜잭션성 (MySQL이 유리)**
     - **인증·회원(`auth` · `user`)**: 계정 lifecycle·리프레시 토큰 회전/무효화 등 **유니크 제약·트랜잭션 일관성**이 의미 있다.
@@ -74,7 +74,7 @@ Accepted
 - **후속 작업**
   - [build.gradle](../../build.gradle)에 `spring-boot-starter-data-jpa` + MySQL 드라이버, `spring-boot-starter-data-mongodb` 추가.
   - `@EnableJpaRepositories`/`@EnableMongoRepositories` 패키지 분리 + 데이터소스/트랜잭션 매니저 구성.
-  - 추천 공개 쿼리 계약(`RecommendationCriteria`) 정의([ADR-0002](./0002-inter-module-communication-via-events.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md)).
+  - 추천 공개 쿼리 계약(`RecommendationCriteria`) 정의([ADR-0002](./0002-inter-module-communication-via-events.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md)). ③ 대학을 그룹으로 묶으면서 `university`가 단일 `String`이 아니라 그룹 멤버 코드 `Set<String>`(`ETC`는 빈 집합→대학 필터 생략)이 되고, 월 예산이 `monthlyRentMin`/`monthlyRentMax`(nullable, 각 경계 별도 기준)로 바뀐다([ADR-0028](./0028-diagnosis-questions-catalog-store.md)) — `listing`은 `nearbyUniversityCodes`를 멤버 코드 `$in`(ANY)으로, `pricing.monthlyRent`를 `>= min` AND `<= max`로 매칭한다(매물 저장 모델 무변경).
   - MySQL 마이그레이션 도구: **Flyway 확정([ADR-0008](./0008-mysql-migration-flyway.md))** · [migration-policy](../database/migration-policy.md) 작성 완료.
   - 매물 `2dsphere` 인덱스 정의 + 더미 매물 seed.
   - [database-design](../database/database-design.md)을 두 저장소 기준으로 갱신.

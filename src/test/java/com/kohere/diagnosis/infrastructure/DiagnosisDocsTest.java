@@ -186,7 +186,7 @@ class DiagnosisDocsTest {
                 pathParameters(parameterWithName("step").description("조회할 단계(1~6)")),
                 responseFields(questionResponseFields())));
 
-    saveAnswer(token, answerJson("university", "SNU"));
+    saveAnswer(token, answerJson("university", "SNU_CAU_SOONGSIL"));
 
     // 답 저장(다중 선택) — conditions 는 codes 배열로 전송
     mockMvc
@@ -204,7 +204,7 @@ class DiagnosisDocsTest {
                 requestFields(answerCodesRequestFields()),
                 responseFields(answerSavedResponseFields())));
 
-    saveAnswer(token, answerJson("monthlyBudgetMax", "600000"));
+    saveAnswer(token, answerRentJson(300000, 600000));
     saveAnswer(token, answerJson("arcStatus", "ARC_ISSUED"));
 
     // ③ 진행 중 진단 확정 → 201 Created (Location 헤더 포함)
@@ -274,7 +274,7 @@ class DiagnosisDocsTest {
         .willReturn(
             pageOf(
                 new RecommendedListingView(
-                    5001L,
+                    "6858e2000000000000000001",
                     "Sinchon Co-living House A",
                     "CO_LIVING",
                     550000,
@@ -291,7 +291,7 @@ class DiagnosisDocsTest {
                 .param("size", "20")
                 .param("sort", "recommended,desc"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.content[0].listingId").value(5001))
+        .andExpect(jsonPath("$.data.content[0].listingId").value("6858e2000000000000000001"))
         .andDo(
             document(
                 "diagnosis-recommendations",
@@ -563,9 +563,9 @@ class DiagnosisDocsTest {
   private long createCompletedDiagnosis(String token) throws Exception {
     saveAnswer(token, answerJson("region", "SEOUL"));
     saveAnswer(token, answerJson("purpose", "STUDY"));
-    saveAnswer(token, answerJson("university", "SNU"));
+    saveAnswer(token, answerJson("university", "SNU_CAU_SOONGSIL"));
     saveAnswer(token, "{\"field\":\"conditions\",\"codes\":[\"FEMALE_ONLY\"]}");
-    saveAnswer(token, answerJson("monthlyBudgetMax", "500000"));
+    saveAnswer(token, answerRentJson(200000, 500000));
     saveAnswer(token, answerJson("arcStatus", "ARC_ISSUED"));
     String created =
         mockMvc
@@ -657,7 +657,7 @@ class DiagnosisDocsTest {
             JsonFieldType.STRING,
             "제출 필드명(region·purpose·university·district·conditions 등)"),
         field("data.question", JsonFieldType.STRING, "등록 국가 언어로 번역된 질문 라벨"),
-        field("data.select.type", JsonFieldType.STRING, "선택 방식(SINGLE|MULTI|NUMBER)"),
+        field("data.select.type", JsonFieldType.STRING, "선택 방식(SINGLE|MULTI|NUMBER|NUMBER_RANGE)"),
         field("data.select.max", JsonFieldType.NUMBER, "최대 선택 개수(MULTI는 3)"),
         field("data.options[].code", JsonFieldType.STRING, "선택지 코드(enum, 언어 무관 동일)"),
         field("data.options[].label", JsonFieldType.STRING, "번역된 표시 라벨"),
@@ -697,10 +697,11 @@ class DiagnosisDocsTest {
         field(prefix + "diagnosisId", JsonFieldType.NUMBER, "진단 식별자"),
         field(prefix + "region", JsonFieldType.STRING, "지역(SEOUL|BUSAN|GYEONGGI)"),
         field(prefix + "purpose", JsonFieldType.STRING, "입국 목적(STUDY|NON_STUDY)"),
-        optField(prefix + "university", JsonFieldType.STRING, "대학(STUDY일 때만, NON_STUDY면 null)"),
+        optField(prefix + "university", JsonFieldType.STRING, "대학 그룹(STUDY일 때만, NON_STUDY면 null)"),
         optField(prefix + "district", JsonFieldType.STRING, "지역구(NON_STUDY일 때만, STUDY면 null)"),
         field(prefix + "conditions", JsonFieldType.ARRAY, "주거 조건 코드 목록(0~3개)"),
-        field(prefix + "monthlyBudgetMax", JsonFieldType.NUMBER, "월 예산 상한(KRW)"),
+        field(prefix + "monthlyRentMin", JsonFieldType.NUMBER, "월세 하한(KRW)"),
+        field(prefix + "monthlyRentMax", JsonFieldType.NUMBER, "월세 상한(KRW)"),
         field(prefix + "arcStatus", JsonFieldType.STRING, "ARC 발급 상태(ARC_ISSUED|ARC_PENDING)"));
   }
 
@@ -742,7 +743,7 @@ class DiagnosisDocsTest {
   private static List<FieldDescriptor> recommendationWithContentFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.content[].listingId", JsonFieldType.NUMBER, "매물 식별자"),
+        field("data.content[].listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
         field("data.content[].title", JsonFieldType.STRING, "매물 제목"),
         field("data.content[].type", JsonFieldType.STRING, "주거 유형(원시 문자열)"),
         field("data.content[].monthlyRent", JsonFieldType.NUMBER, "월세(KRW)"),
@@ -751,7 +752,7 @@ class DiagnosisDocsTest {
         field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
         field("data.content[].conditions", JsonFieldType.ARRAY, "매물 조건 코드 목록(원시 문자열)"),
-        field("data.markers[].listingId", JsonFieldType.NUMBER, "마커 매물 식별자"),
+        field("data.markers[].listingId", JsonFieldType.STRING, "마커 매물 식별자(ObjectId hex 문자열)"),
         field("data.markers[].lat", JsonFieldType.NUMBER, "마커 위도"),
         field("data.markers[].lng", JsonFieldType.NUMBER, "마커 경도"),
         field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호(0-base)"),
@@ -825,8 +826,8 @@ class DiagnosisDocsTest {
             1,
             Map.of("en", "Which university do you attend?", "ko", "어느 대학교에 다니나요?"),
             List.of(
-                option("SNU", "Seoul National University", "서울대학교"),
-                option("CAU", "Chung-Ang University", "중앙대학교"))));
+                option("SNU_CAU_SOONGSIL", "Seoul National · Chung-Ang · Soongsil", "서울대·중앙대·숭실대"),
+                option("HUFS_KHU_KOREA", "HUFS · Kyung Hee · Korea Univ.", "한국외대·경희대·고려대"))));
     questionMongoRepository.save(
         question(
             3,
@@ -918,5 +919,9 @@ class DiagnosisDocsTest {
 
   private static String answerJson(String field, String code) {
     return "{\"field\":\"" + field + "\",\"code\":\"" + code + "\"}";
+  }
+
+  private static String answerRentJson(int min, int max) {
+    return "{\"field\":\"monthlyRent\",\"min\":" + min + ",\"max\":" + max + "}";
   }
 }
