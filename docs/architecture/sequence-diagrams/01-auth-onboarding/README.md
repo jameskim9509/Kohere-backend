@@ -11,6 +11,6 @@
 | US-1-5 | 내 프로필 조회·수정하기 | [us-1-5-profile-view-update](us-1-5-profile-view-update.md) |
 | US-1-6 | 온보딩 중 이메일 인증하기(세입자 전용) | [us-1-6-email-verification](us-1-6-email-verification.md) |
 | US-1-7 | 약관 동의 화면에서 약관 동의하기 | [us-1-7-terms-agreement](us-1-7-terms-agreement.md) |
-| US-1-8 | 임대인 사업자등록번호 검증하기 | [us-1-8-business-verification](us-1-8-business-verification.md) |
-| US-1-9 | 임대인 온보딩 정보 제출하기 | [us-1-9-landlord-onboarding](us-1-9-landlord-onboarding.md) |
+| US-1-8 | 임대인 사업자등록번호 검증하기(온보딩 후 분리된 무상태 검증) | [us-1-8-business-verification](us-1-8-business-verification.md) |
+| US-1-9 | 임대인 온보딩 정보 제출하기(약관+연락처 인증만으로 완료) | [us-1-9-landlord-onboarding](us-1-9-landlord-onboarding.md) |
 | US-1-10 | 온보딩 중 연락처(휴대폰) 인증하기(임대인 전용) | [us-1-10-phone-verification](us-1-10-phone-verification.md) |

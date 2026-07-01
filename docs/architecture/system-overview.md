@@ -56,7 +56,7 @@ flowchart LR
     APP -. "로그인 1회: Apple authorization code" .-> APPLE
     SRV -- "Google idToken 검증(서명·iss·aud·exp)" --> OIDC
     SRV -- "Apple code 교환(/auth/token)·탈퇴 폐기(/auth/revoke)" --> APPLE
-    SRV -- "사업자번호 검증(임대인 온보딩 선행)" --> BIZNO
+    SRV -- "사업자번호 검증(임대인 전용·온보딩 후 무상태)" --> BIZNO
     SRV -- "임대인 연락처 SMS 인증번호 발송" --> SOLAPI
     SRV -- "세입자 이메일 인증번호 발송(SMTP)" --> MAIL
     SRV --> MYSQL
@@ -383,7 +383,7 @@ flowchart TB
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                                                                                                                                  | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `diagnosis`→`listing` `RecommendationCriteria` 공개 쿼리. **번역용 표시 언어**는 `diagnosis`→`user` **공개 query(`getLanguage`) 동기 호출**(user가 `countries.lang`으로 도출; ADR-0002 Decision 5; 토큰 클레임 분기 제거)            |
 | 소셜 로그인 OIDC             | **Google**(idToken JWKS 검증) · **Apple**(authorization code 교환 `/auth/token`, 탈퇴 시 `/auth/revoke`) — 포트 `OidcTokenVerifier`/`AppleAuthClient`(인프라 어댑터) | 도입   | [ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md)·[ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md). Apple은 code 플로우(idToken 미수신), 탈퇴 시 앱↔Apple 연동 폐기(best-effort)                                                                                                                                     |
-| 사업자등록번호 검증          | **비즈노(Bizno) API**(국세청 사업자등록정보 진위·상태 기반), 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터)                                                            | 도입   | **임대인 온보딩 선행**(연락처·이메일 인증과 대칭, `POST /api/v1/auth/business/verify`). 정상(계속) 사업자만 VERIFIED 마킹. 미등록/휴폐업/진위실패 **422**(`AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`), 외부 장애 **502**(공통 `UPSTREAM_ERROR` 재사용). 타임아웃·재시도·rate-limit 정책은 ADR-0033(확인 필요) |
+| 사업자등록번호 검증          | **비즈노(Bizno) API**(국세청 사업자등록정보 진위·상태 기반), 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터)                                                            | 도입   | **임대인 전용·온보딩 후 무상태 검증**(`POST /api/v1/auth/business/verify`, 정식 토큰 `ROLE_USER`·`ACTIVE`). 정상(계속) 사업자면 `verified:true` 응답(결과 미저장). 미등록/휴폐업/진위실패 **422**(`AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`), 외부 장애 **502**(공통 `UPSTREAM_ERROR` 재사용). 타임아웃·재시도 정책은 ADR-0033 |
 | 연락처 SMS 인증(임대인)      | **SOLAPI**(국내 SMS API SDK), 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터)                                                                                                | 도입   | 임대인 온보딩·프로필 연락처 변경 선행(`POST /api/v1/auth/phone/verification-code`·`/verify`). 인증번호 6자리·5분·재발송 60초(이메일과 통일), 발송 실패 **502**(`UPSTREAM_ERROR`). [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)                                                                              |
 | 이메일 인증(세입자)          | **Gmail SMTP**(dev/prod 실 SMTP · 로컬은 MailHog), 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터)                                                                       | 도입   | 세입자 온보딩 선행(`POST /api/v1/auth/email/verification-code`·`/verify`). 발송 실패 **502**(`UPSTREAM_ERROR`)                                                                                                                                                                                                              |
 | 임대인 연락                  | **F-03 신청하기 → 인앱 채팅방 기록**(booking→chat, `BookingCreatedEvent`)                                                                                                        | 도입   | 실시간 WebSocket·푸시는 추후. booking·chat 저장소 추후 결정                                                                                                                                                                                                                                                                            |
@@ -406,7 +406,7 @@ flowchart TB
 
 ### 3-6. 결정 필요 항목(ADR/문서 갱신)
 
-- **신규/갱신 ADR(미결)**: 추천 랭킹 알고리즘, **booking·chat 저장소(F-03)**, **비즈노 외부연동 정책(ADR-0033, Proposed)** — 사업자번호 검증 어댑터·타임아웃·재시도·rate-limit·원문 비저장(SHA-256 해시·마스킹) 골격(확인 필요).
+- **신규/갱신 ADR(미결)**: 추천 랭킹 알고리즘, **booking·chat 저장소(F-03)**, **비즈노 외부연동 정책(ADR-0033, Amended — 온보딩 분리·무상태)** — 사업자번호 검증 어댑터·타임아웃·재시도·무상태(결과 미저장·응답 반환) 골격.
 - **brief §7 결정(7/10 사수)**: 커뮤니티 사진 업로드 in/out.
 
 ### 3-7. 폴리글랏 영속 — 주의 / 위험

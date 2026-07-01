@@ -1,4 +1,4 @@
-# Kohere — auth-onboarding (임대인/LANDLORD 트랙) 로컬 수동 테스트 (소셜로그인 → 약관 → 연락처 SMS 인증 → 사업자번호 검증 → 임대인 온보딩 → 프로필)
+# Kohere — auth-onboarding (임대인/LANDLORD 트랙) 로컬 수동 테스트 (소셜로그인 → 약관 → 연락처 SMS 발송·확인 → 임대인 온보딩 → (온보딩 후)사업자번호 검증 → 프로필)
 # (세입자/TENANT 트랙은 auth-onboarding-tenant.http — 이메일 인증)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
@@ -36,7 +36,7 @@ GET {{baseUrl}}/actuator/health
 
 ### 1. 소셜 로그인 (공개 엔드포인트) — 임대인도 소셜 로그인·약관까지는 세입자와 공통
 #    신규/미완료 회원: onboardingRequired=true, status=PENDING, refreshToken=null, accessToken=온보딩 임시 토큰
-#    기존 ACTIVE 회원: 정식 토큰 발급 → 임대인 온보딩(6단계)은 409(이미 완료). 신규 계정/DB 초기화 후 재시도.
+#    기존 ACTIVE 회원: 정식 토큰 발급 → 임대인 온보딩(5단계)은 409(이미 완료). 신규 계정/DB 초기화 후 재시도.
 # @name socialLogin
 POST {{baseUrl}}/api/v1/auth/social-login
 Content-Type: application/json
@@ -80,19 +80,10 @@ Content-Type: application/json
   "code": "{{code}}"
 }
 
-### 5. 사업자등록번호 검증 (임대인 전용) — 숫자 10자리(하이픈 없이). 로컬 스텁은 10자리면 통과
-#    형식 위반(10자리 아님) → 400 INVALID_INPUT / 약관 미동의 → 422 / 미등록·휴폐업(실연동 시) → 422 / 외부 장애 → 502
-POST {{baseUrl}}/api/v1/auth/business/verify
-Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
-Content-Type: application/json
-
-{
-  "businessRegistrationNumber": "{{bizNumber}}"
-}
-
-### 6. 임대인 온보딩 제출 — 성공 시 user 프로필(userType=LANDLORD) + 정식 access/refresh 발급
-#    게이트 우선순위: 약관 미동의 422 → 연락처 미인증 422(AUTH_PHONE_NOT_VERIFIED) → 사업자번호 미검증 422(AUTH_BUSINESS_NUMBER_NOT_VERIFIED)
-#    phoneNumber·businessRegistrationNumber 는 3~5단계에서 인증/검증한 값과 일치해야 한다. 임대인은 이메일 미수집·name(단일 이름)만.
+### 5. 임대인 온보딩 제출 — 성공 시 user 프로필(userType=LANDLORD) + 정식 access/refresh 발급
+#    게이트 우선순위: 약관 미동의 422(AUTH_TERMS_AGREEMENT_REQUIRED, 이미 ACTIVE 면 409 AUTH_ONBOARDING_ALREADY_COMPLETED)
+#                    → 연락처 미인증 422(AUTH_PHONE_NOT_VERIFIED). (사업자번호 게이트 없음 — 온보딩은 약관+연락처만)
+#    phoneNumber 는 3~4단계에서 인증한 값과 일치해야 한다. 임대인은 이메일·사업자번호 미수집, name(단일 이름)만.
 # @name landlordOnboarding
 POST {{baseUrl}}/api/v1/auth/landlord/onboarding
 Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
@@ -100,11 +91,23 @@ Content-Type: application/json
 
 {
   "name": "{{landlordName}}",
-  "phoneNumber": "{{phone}}",
+  "phoneNumber": "{{phone}}"
+}
+
+### 6. 사업자등록번호 검증 (온보딩 완료(ACTIVE) 임대인 전용) — 숫자 10자리(하이픈 없이). 로컬 스텁은 10자리면 통과
+#    온보딩과 분리된 무상태(stateless) 검증 API. 온보딩 응답으로 받은 "정식 access 토큰"(ROLE_USER)으로 호출한다.
+#    형식 위반(10자리 아님) → 400 INVALID_INPUT / 온보딩 토큰(ROLE_ONBOARDING)으로 호출 → 403 AUTH_ONBOARDING_REQUIRED
+#    임대인 아님(TENANT) → 403 FORBIDDEN / 미등록·휴폐업·진위 실패(실연동 시) → 422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED / 외부 장애·타임아웃 → 502 UPSTREAM_ERROR
+#    응답 { businessRegistrationNumber(마스킹), verified:true } — 결과는 서버에 저장하지 않는다(HTTP body 로만 반환).
+POST {{baseUrl}}/api/v1/auth/business/verify
+Authorization: Bearer {{landlordOnboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
   "businessRegistrationNumber": "{{bizNumber}}"
 }
 
-### 7. 내 프로필 조회 (6단계의 정식 access 토큰 필요) — userType=LANDLORD, 연락처 노출, 세입자 전용 필드(gender·country 등)는 null
+### 7. 내 프로필 조회 (5단계의 정식 access 토큰 필요) — userType=LANDLORD, 연락처 노출, 세입자 전용 필드(gender·country 등)는 null
 GET {{baseUrl}}/api/v1/users/me
 Authorization: Bearer {{landlordOnboarding.response.body.$.data.accessToken}}
 

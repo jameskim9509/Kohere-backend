@@ -11,7 +11,7 @@
 
 ### 임대인 트랙
 
-사용자는 **세입자(`TENANT`, 외국인)** 와 **임대인(`LANDLORD`)** 두 역할로 나뉜다. **소셜 로그인·약관 동의까지는 두 역할이 공통 흐름**이고, **이후 본인 확인·온보딩 단계에서 분기**한다 — 세입자는 이메일 인증(§3·§4) 후 `POST /auth/onboarding`(§5), 임대인은 연락처 SMS 인증(§4-1·§4-2)·사업자등록번호 검증(§5-1) 후 `POST /auth/landlord/onboarding`(§5-2)으로 제출한다. **`userType`은 온보딩 제출 엔드포인트로 확정되고 이후 불변**이다(소셜 로그인·약관 단계에서는 미확정). **임대인은 이메일을 수집하지 않고 본인 확인을 연락처(휴대폰) SMS 인증으로 한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). 관련 유저 스토리: US-1-8(사업자번호 검증)·US-1-9(임대인 온보딩)·US-1-10(임대인 연락처 인증).
+사용자는 **세입자(`TENANT`, 외국인)** 와 **임대인(`LANDLORD`)** 두 역할로 나뉜다. **소셜 로그인·약관 동의까지는 두 역할이 공통 흐름**이고, **이후 본인 확인·온보딩 단계에서 분기**한다 — 세입자는 이메일 인증(§3·§4) 후 `POST /auth/onboarding`(§5), 임대인은 연락처 SMS 인증(§4-1·§4-2) 후 `POST /auth/landlord/onboarding`(§5-2)으로 제출한다. **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 온보딩 제출에 포함하지 않는다 — 온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 별도 검증 API(§5-1)로 검증한다. **`userType`은 온보딩 제출 엔드포인트로 확정되고 이후 불변**이다(소셜 로그인·약관 단계에서는 미확정). **임대인은 이메일을 수집하지 않고 본인 확인을 연락처(휴대폰) SMS 인증으로 한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). 관련 유저 스토리: US-1-8(사업자번호 검증)·US-1-9(임대인 온보딩)·US-1-10(임대인 연락처 인증).
 
 ### 핵심 개념·enum
 
@@ -28,7 +28,7 @@
 | 사용자 역할 `userType` | `TENANT`(세입자·외국인), `LANDLORD`(임대인) | 온보딩 제출 엔드포인트(세입자 `/auth/onboarding` · 임대인 `/auth/landlord/onboarding`)로 확정·이후 불변. 소셜·약관 단계에서는 미확정 |
 | 이름 `name` | 문자열 | **임대인 온보딩 필수** · 성·이름을 합친 단일 이름(세입자의 `firstName`/`lastName`과 구분). 빈 문자열 불가. API 필드명은 `name`을 유지하되 **저장은 세입자와 동일한 `FullName` VO에 보관**(`FullName.firstName`에 전체 이름, `lastName`은 미사용·null)해 **별도 `name` 컬럼 없이 `first_name`을 재사용**한다(서버가 `name`↔`FullName.firstName` 매핑) |
 | 연락처 `phoneNumber` | 전화번호 문자열 | **임대인 온보딩 필수** · SMS 인증번호로 사전 검증(§4-1·§4-2) 필요. 응답·로그 마스킹(예 `010-****-5678`) |
-| 사업자등록번호 `businessRegistrationNumber` | 숫자 10자리 문자열 | **임대인 전용** · 사업자등록정보 검증 API로 사전 검증(§5-1) 후 온보딩 제출 시 대조. 응답·로그 마스킹, 원문 비저장(해시 보관 — 확인 필요) |
+| 사업자등록번호 `businessRegistrationNumber` | 숫자 10자리 문자열 | **임대인 전용** · **온보딩 제출에는 미포함**(온보딩은 약관·연락처 인증만으로 완료). 온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 무상태 검증한다. 응답·로그 마스킹 |
 
 - 날짜만 표기는 `YYYY-MM-DD`(예: `birthDate`), 시각은 ISO-8601 UTC(예: `2026-06-15T08:30:00Z`).
 - enum은 모두 UPPER_SNAKE_CASE 문자열로 노출한다.
@@ -48,8 +48,8 @@
 | POST | `/api/v1/auth/phone/verification-code` | 연락처로 SMS 인증번호 발송(임대인 전용) — 온보딩(US-1-10)·프로필 변경(US-1-5) 공용 | 필수(온보딩 토큰/정식 토큰) | 200 |
 | POST | `/api/v1/auth/phone/verify` | 인증번호 확인 → 연락처 검증 완료 처리(임대인 전용) — 온보딩·프로필 변경 공용 | 필수(온보딩 토큰/정식 토큰) | 200 |
 | POST | `/api/v1/auth/onboarding` | 세입자 온보딩 필수정보 제출(약관 동의·이메일 검증 선행), 가입 완료(ACTIVE 전이) | 필수(온보딩 토큰, TERMS_AGREED) | 200 |
-| POST | `/api/v1/auth/business/verify` | 사업자등록번호 외부 검증(임대인 전용, 약관 동의 선행), 정상 사업자만 VERIFIED 마킹 | 필수(온보딩 토큰) | 200 |
-| POST | `/api/v1/auth/landlord/onboarding` | 임대인 온보딩 제출(약관·연락처·사업자번호 검증 선행), 가입 완료(ACTIVE 전이 + userType=LANDLORD 확정) | 필수(온보딩 토큰, TERMS_AGREED) | 200 |
+| POST | `/api/v1/auth/business/verify` | 사업자등록번호 외부 검증(임대인 전용·온보딩 완료 후 무상태 검증), 결과 미저장·응답 body에만 반환 | 필수(정식 토큰(ACTIVE, ROLE_USER)) | 200 |
+| POST | `/api/v1/auth/landlord/onboarding` | 임대인 온보딩 제출(약관·연락처 인증 선행), 가입 완료(ACTIVE 전이 + userType=LANDLORD 확정) | 필수(온보딩 토큰, TERMS_AGREED) | 200 |
 | POST | `/api/v1/auth/reissue` | refresh 토큰으로 access 토큰 재발급 | 불필요(본문 refresh) | 200 |
 | POST | `/api/v1/auth/logout` | 현재 세션 refresh 토큰 무효화 | 필수 | 204 |
 | GET | `/api/v1/users/me` | 내 프로필 조회 | 필수 | 200 |
@@ -57,7 +57,7 @@
 | DELETE | `/api/v1/users/me` | 회원 탈퇴(WITHDRAWN 전이, 토큰 일괄 무효화) | 필수 | 204 |
 
 > `auth/onboarding`은 신규 리소스 생성이 아니라 약관 동의를 마친 `TERMS_AGREED` 사용자를 `ACTIVE`로 전이하는 상태 액션이므로 `200`을 쓴다(api-design-guide §1 — "생성 아닌 액션").
-> 인증 "필수" 엔드포인트는 access 토큰 만료 시 `401 TOKEN_EXPIRED`로 재발급을 유도한다. **온보딩 토큰**(`ROLE_ONBOARDING` — `onboardingCompleted=false`, 상태 `PENDING`/`TERMS_AGREED` 공통)으로 `GET`/`PATCH /users/me`·`POST /auth/logout`(모두 `ROLE_USER` 필요) 보호 API에 접근하면 `403 AUTH_ONBOARDING_REQUIRED`를 반환한다(단, `DELETE /users/me`(탈퇴)·`POST /auth/terms`(약관 동의)·`POST /auth/email/verification-code`·`POST /auth/email/verify`(세입자 이메일 인증)·`POST /auth/phone/verification-code`·`POST /auth/phone/verify`(임대인 연락처 인증)·`POST /auth/onboarding`·`POST /auth/business/verify`(사업자번호 검증)·`POST /auth/landlord/onboarding`(임대인 온보딩)은 온보딩 흐름이라 온보딩 토큰도 허용). 단 `/auth/phone/**`(연락처 인증)는 프로필 연락처 변경(US-1-5)을 위해 **정식 토큰(`ROLE_USER`)도 함께 허용**한다(온보딩 토큰·정식 토큰 양쪽 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) §6·§8). 상태 전이 순서는 `POST /auth/terms`(PENDING→TERMS_AGREED) → `POST /auth/onboarding`(TERMS_AGREED→ACTIVE)이며, 약관 미동의 상태(`PENDING`)에서 온보딩을 제출하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`다.
+> 인증 "필수" 엔드포인트는 access 토큰 만료 시 `401 TOKEN_EXPIRED`로 재발급을 유도한다. **온보딩 토큰**(`ROLE_ONBOARDING` — `onboardingCompleted=false`, 상태 `PENDING`/`TERMS_AGREED` 공통)으로 `GET`/`PATCH /users/me`·`POST /auth/logout`(모두 `ROLE_USER` 필요) 보호 API에 접근하면 `403 AUTH_ONBOARDING_REQUIRED`를 반환한다(단, `DELETE /users/me`(탈퇴)·`POST /auth/terms`(약관 동의)·`POST /auth/email/verification-code`·`POST /auth/email/verify`(세입자 이메일 인증)·`POST /auth/phone/verification-code`·`POST /auth/phone/verify`(임대인 연락처 인증)·`POST /auth/onboarding`·`POST /auth/landlord/onboarding`(임대인 온보딩)은 온보딩 흐름이라 온보딩 토큰도 허용). 단 `/auth/phone/**`(연락처 인증)는 프로필 연락처 변경(US-1-5)을 위해 **정식 토큰(`ROLE_USER`)도 함께 허용**한다(온보딩 토큰·정식 토큰 양쪽 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) §6·§8). 반대로 `POST /auth/business/verify`(사업자번호 검증)는 온보딩 흐름이 아니라 **온보딩을 완료한(ACTIVE) 임대인이 정식 토큰(`ROLE_USER`)으로만 호출**하는 무상태 검증 API로, 온보딩 토큰으로 접근하면 `403 AUTH_ONBOARDING_REQUIRED`다(§5-1). 상태 전이 순서는 `POST /auth/terms`(PENDING→TERMS_AGREED) → `POST /auth/onboarding`(TERMS_AGREED→ACTIVE)이며, 약관 미동의 상태(`PENDING`)에서 온보딩을 제출하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`다.
 
 ---
 
@@ -142,7 +142,7 @@ provider별로 **자격 필드 하나**를 채운다 — Google은 `idToken`, Ap
 | `status` | string(enum) | 사용자 현재 상태 `PENDING` \| `TERMS_AGREED` \| `ACTIVE`. 클라이언트는 이 값으로 다음 화면을 분기(PENDING→약관 동의 §2, TERMS_AGREED→온보딩 §5, ACTIVE→홈) |
 | `refreshToken` | string \| null | `ACTIVE` 로그인에서만 발급, 미완료(`PENDING`/`TERMS_AGREED`)는 `null` |
 
-> `expiresIn`은 access 토큰 만료까지의 초(seconds). 미완료 회원에게 주는 access 토큰은 온보딩 흐름(약관 동의·본인 확인(세입자 이메일 인증·임대인 연락처/사업자번호 검증)·온보딩) API만 통과시킨다(클레임 `onboardingCompleted=false`, refresh 미발급). 온보딩 전용 임시 토큰 만료 1800초(30분), 정식 access 3600초(1시간) — [ADR-0011](../../adr/0011-token-lifetime-and-secret-policy.md)에서 확정.
+> `expiresIn`은 access 토큰 만료까지의 초(seconds). 미완료 회원에게 주는 access 토큰은 온보딩 흐름(약관 동의·본인 확인(세입자 이메일 인증·임대인 연락처 인증)·온보딩) API만 통과시킨다(클레임 `onboardingCompleted=false`, refresh 미발급). 온보딩 전용 임시 토큰 만료 1800초(30분), 정식 access 3600초(1시간) — [ADR-0011](../../adr/0011-token-lifetime-and-secret-policy.md)에서 확정.
 
 #### 발생 가능한 에러
 
@@ -492,11 +492,11 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 ### 5-1. POST `/api/v1/auth/business/verify` — 사업자등록번호 검증(임대인 전용)
 
-임대인 온보딩 중인 사용자가 입력한 사업자등록번호를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../../adr/0033-business-registry-verification.md))로 진위·영업 상태까지 확인한다. **약관 동의(§2, `TERMS_AGREED`)가 선행**되어야 한다 — 약관 미동의(`PENDING`)면 외부 검증을 수행하지 않고 `422 AUTH_TERMS_AGREEMENT_REQUIRED`로 거절한다(약관 게이트 우선 판정). 형식(숫자 10자리) 위반은 외부 호출 전에 `400 INVALID_INPUT`으로 거른다. **정상(계속) 사업자일 때만** 해당 사용자의 사업자등록번호를 `VERIFIED`로 마킹해 임대인 온보딩 제출(§5-2)에서 제출 번호와 대조하고, 미등록·휴업·폐업 번호는 마킹하지 않고 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`로 거절한다. 임대인 연락처 인증(§4-1·§4-2)·세입자 이메일 인증(§3·§4)의 동기 호출·실패 정책과 **대칭**이다.
+온보딩을 마친(`ACTIVE`) **임대인 전용**으로, 입력한 사업자등록번호를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../../adr/0033-business-registry-verification.md))로 진위·영업 상태까지 확인하는 **무상태(stateless) 검증 API**다. 온보딩(§5-2)과 분리되어 있으며, 정식 access 토큰(`ROLE_USER`)을 가진 임대인이 나중에(매물 등록 시점) 호출한다. 형식(숫자 10자리) 위반은 외부 호출 전에 `400 INVALID_INPUT`으로 거른다. **정상(계속) 사업자면** `verified:true`를 응답 body로 돌려주고, 미등록·휴업·폐업 번호는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`로 거절한다.
 
-검증은 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터: 사업자등록정보 검증 API — 국세청 사업자등록정보 진위·상태 기반)로 **동기 호출**한다. 검증 API 장애·타임아웃·5xx 등 연동 실패는 검증 결과를 만들지 않고 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(공통 코드 — [error-response-guide](../error-response-guide.md) §3). 사업자등록번호 원문은 응답·로그에 노출하지 않고 마스킹한다.
+**무상태**: 검증 결과를 서버에 저장하지 않는다 — Redis 마커·`user.businessRegistrationNumberHash` 컬럼 어느 쪽에도 쓰지 않으며, 결과는 응답(HTTP body)에만 담긴다. 온보딩 제출에서 이 결과를 대조하는 게이트도 없다. 검증은 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터: 사업자등록정보 검증 API — 국세청 사업자등록정보 진위·상태 기반)로 **동기 호출**한다. 검증 API 장애·타임아웃·5xx 등 연동 실패는 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(공통 코드 — [error-response-guide](../error-response-guide.md) §3). 사업자등록번호 원문은 응답·로그에 노출하지 않고 마스킹한다.
 
-- **인증**: 필수 — 소셜 로그인 단계에서 받은 온보딩 토큰(`onboardingCompleted=false`). 상태는 `TERMS_AGREED`여야 한다(약관 동의 선행).
+- **인증**: 필수 — **정식 access 토큰(`ACTIVE`, `ROLE_USER`)**. 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출하면 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) ACTIVE 사용자면 `403 FORBIDDEN`이다.
 - Path/Query 파라미터: 없음.
 
 #### Request Body
@@ -524,7 +524,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> `businessRegistrationNumber`는 마스킹해 반환한다(예: `****567890` — 마스킹 형식 확인 필요). 검증 성공 시 해당 번호를 `VERIFIED`로 마킹(Redis 마커, TTL=온보딩 토큰 만료 — 확인 필요)해 온보딩 제출(§5-2)에서 대조한다. 검증 서비스가 회신한 상호·대표자 등 표시용 정보의 응답 노출 여부는 확인 필요.
+> `businessRegistrationNumber`는 마스킹해 반환한다(예: `****567890` — 마스킹 형식 확인 필요). **검증 결과는 서버에 저장하지 않는다**(무상태) — Redis 마커·`user.businessRegistrationNumberHash` 어느 쪽에도 쓰지 않으며 응답 body(`verified:true`)로만 회신한다. 검증 서비스가 회신한 상호·대표자 등 표시용 정보의 응답 노출 여부는 확인 필요.
 
 #### 발생 가능한 에러
 
@@ -532,19 +532,20 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `businessRegistrationNumber` 누락/빈값/형식(숫자 10자리) 위반 — 외부 호출 전 거름 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
-| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 온보딩 토큰 누락/위조 / 만료 |
-| 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태의 요청(약관 동의 §2 선행 — 외부 검증 미수행, 우선 판정) |
-| 422 | `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED` | 검증 서비스 조회 결과 미등록이거나 휴업·폐업 상태(진위·상태 검증 실패). 번호를 검증 완료로 표시하지 않음 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 정식 토큰 누락/위조 / 만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출(정식 토큰 필요 — 온보딩 완료 후 호출하는 API) |
+| 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) ACTIVE 사용자의 요청(임대인 전용) |
+| 422 | `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED` | 검증 서비스 조회 결과 미등록이거나 휴업·폐업 상태(진위·상태 검증 실패) |
 | 429 | `TOO_MANY_REQUESTS` | 검증 시도 레이트리밋 초과(확인 필요: 시도 상한·간격 임계값) |
-| 502 | `UPSTREAM_ERROR` | 사업자등록정보 검증 API 장애·타임아웃·5xx. 검증 결과 미저장, 클라이언트 재시도 유도(공통 코드 — [error-response-guide](../error-response-guide.md) §3) |
+| 502 | `UPSTREAM_ERROR` | 사업자등록정보 검증 API 장애·타임아웃·5xx. 클라이언트 재시도 유도(공통 코드 — [error-response-guide](../error-response-guide.md) §3) |
 
 ---
 
 ### 5-2. POST `/api/v1/auth/landlord/onboarding` — 임대인 온보딩 제출(임대인 전용·가입 완료)
 
-`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)·사업자등록번호 검증(§5-1)이 선행**되어야 한다. 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며**, 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다.
+`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행**되어야 한다 — **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 수집·검증하지 않는다(온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 검증). 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며**, 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다.
 
-> **검증 게이트 우선순위**: 약관 미동의(`PENDING`) → `422 AUTH_TERMS_AGREEMENT_REQUIRED` → 제출 `phoneNumber` 미검증·불일치 → `422 AUTH_PHONE_NOT_VERIFIED` → 제출 `businessRegistrationNumber` 미검증·불일치 → `422 AUTH_BUSINESS_NUMBER_NOT_VERIFIED` 순으로 판정한다(약관 → 연락처 → 사업자번호). 약관 동의·`termsVersion`은 §2에서 이미 기록되므로 이 요청 본문에 약관 필드를 담지 않는다. `phoneNumber`는 §4-1·§4-2로, `businessRegistrationNumber`는 §5-1로 검증 완료된 값과 일치해야 한다. `nickname`은 서버가 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가).
+> **검증 게이트 우선순위**: 약관 미동의(`PENDING`) → `422 AUTH_TERMS_AGREEMENT_REQUIRED`(이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`) → 제출 `phoneNumber` 미검증·불일치 → `422 AUTH_PHONE_NOT_VERIFIED` 순으로 판정한다(약관 → 연락처, 사업자번호 게이트 없음). 약관 동의·`termsVersion`은 §2에서 이미 기록되므로 이 요청 본문에 약관 필드를 담지 않는다. `phoneNumber`는 §4-1·§4-2로 검증 완료된 값과 일치해야 한다. `nickname`은 서버가 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가).
 
 - **인증**: 필수 — 소셜 로그인 단계에서 받은 온보딩 토큰(`onboardingCompleted=false`). 상태는 `TERMS_AGREED`여야 한다.
 - Path/Query 파라미터: 없음.
@@ -554,8 +555,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```json
 {
   "name": "Kim Minsu",
-  "phoneNumber": "010-1234-5678",
-  "businessRegistrationNumber": "1234567890"
+  "phoneNumber": "010-1234-5678"
 }
 ```
 
@@ -563,7 +563,6 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | --- | --- | --- | --- |
 | `name` | string | 필수 | 성·이름을 합친 단일 이름. 빈 문자열 불가 |
 | `phoneNumber` | string | 필수 | 전화번호 형식. **§4-1·§4-2로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_PHONE_NOT_VERIFIED` 422) |
-| `businessRegistrationNumber` | string | 필수 | 숫자 10자리. **§5-1로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_BUSINESS_NUMBER_NOT_VERIFIED` 422) |
 
 #### 성공 Response — 200 OK
 
@@ -589,19 +588,18 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`birthDate`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). `phoneNumber`·`businessRegistrationNumber`는 마스킹 대상이다(마스킹 형식 확인 필요). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
+> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`birthDate`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). `phoneNumber`는 마스킹 대상이다(마스킹 형식 확인 필요). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
 
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `name`/`phoneNumber`/`businessRegistrationNumber` 누락·빈값·형식(전화번호·사업자번호 10자리) 위반(`errors[]`로 위반 필드 반환) |
+| 400 | `INVALID_INPUT` | `name`/`phoneNumber` 누락·빈값·형식(전화번호) 위반(`errors[]`로 위반 필드 반환) |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 `ACTIVE`인 사용자의 온보딩 재요청(동시 요청 포함 — 한 요청만 성공) |
 | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 온보딩 제출(약관 동의 §2 선행 — 우선 판정) |
 | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`가 미검증이거나 검증한 번호와 불일치(연락처 인증 §4-1·§4-2 선행) |
-| 422 | `AUTH_BUSINESS_NUMBER_NOT_VERIFIED` | 제출 `businessRegistrationNumber`가 미검증이거나 검증한 번호와 불일치(사업자번호 검증 §5-1 선행) |
 
 ---
 
@@ -743,7 +741,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```
 
 > 본인 프로필이므로 `phoneNumber`는 평문으로 반환한다(로그·타 사용자 노출 시에만 마스킹). 임대인 응답의 `name`은 저장된 `FullName.firstName`(전체 이름)을 매핑한 값이다.
-> 임대인 응답은 세입자 전용 필드(`gender`·`country`·`countryName`·`countryFlag`·`occupation`·`visaType`·`birthDate`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않는다.**
+> 임대인 응답은 세입자 전용 필드(`gender`·`country`·`countryName`·`countryFlag`·`occupation`·`visaType`·`birthDate`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
 
 #### 발생 가능한 에러
 
@@ -802,7 +800,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 > 필수 약관 동의(`termsOfServiceAgreed`/`privacyPolicyAgreed`)는 이 엔드포인트로 철회할 수 없다(탈퇴 경로로만 처리). (확인 필요: 동의 철회 정책)
 > `nickname`은 시스템 배정값이라 수정 대상이 아니다(세입자·임대인 공통 불변). **세입자** `email` 변경은 재인증(§3·§4)이 필요하므로 이 엔드포인트로는 수정하지 않는다(임대인은 `email` 미보유 — 별도 흐름, 확인 필요).
-> **임대인 전용**: `userType`은 온보딩으로 확정된 뒤 불변이다. `businessRegistrationNumber`는 변경 시 외부 사업자등록정보 재검증(§5-1)이 필요하므로 이 경로로 수정하지 않는다(불변). **`phoneNumber` 변경은 SMS 재인증(§4-1·§4-2)이 필요하다** — 새 번호를 재인증(VERIFIED)한 뒤에만 반영하며, 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **클라이언트 계약**: 앱은 연락처 변경 시 **PATCH 이전에 새 번호 인증(§4-1·§4-2)을 먼저 수행**한다(정상 흐름). `422 AUTH_PHONE_NOT_VERIFIED`는 happy path가 아니라 **미인증·마커 TTL 만료·불일치 제출에 대한 서버 가드**다.
+> **임대인 전용**: `userType`은 온보딩으로 확정된 뒤 불변이다. `businessRegistrationNumber`는 온보딩·프로필에서 수집·저장하지 않으므로 이 경로의 수정 대상이 아니다(필요 시 별도 검증 API §5-1로 무상태 검증). **`phoneNumber` 변경은 SMS 재인증(§4-1·§4-2)이 필요하다** — 새 번호를 재인증(VERIFIED)한 뒤에만 반영하며, 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **클라이언트 계약**: 앱은 연락처 변경 시 **PATCH 이전에 새 번호 인증(§4-1·§4-2)을 먼저 수행**한다(정상 흐름). `422 AUTH_PHONE_NOT_VERIFIED`는 happy path가 아니라 **미인증·마커 TTL 만료·불일치 제출에 대한 서버 가드**다.
 
 #### 성공 Response — 200 OK
 
@@ -831,7 +829,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 개인정보(세입자: 이름·생년월일·국적·직업·이메일·비자·닉네임 / 임대인: 이름·연락처·사업자번호 해시·닉네임)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
+본문 없음. 개인정보(세입자: 이름·생년월일·국적·직업·이메일·비자·닉네임 / 임대인: 이름·연락처·닉네임, 사업자번호 해시가 저장돼 있으면 함께)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 #### 발생 가능한 에러
 
@@ -856,9 +854,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `AUTH_PHONE_VERIFICATION_FAILED` | 422 | 연락처(SMS) 인증번호 불일치 또는 만료(미발송·만료·오입력) — 임대인 |
 | `AUTH_PHONE_NOT_VERIFIED` | 422 | 임대인 온보딩 제출 또는 프로필 연락처 변경 시 `phoneNumber`가 미검증이거나 검증한 번호와 불일치 |
 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 422 | 필수 약관(이용약관/개인정보처리방침) 미동의(약관 동의 `POST /auth/terms`) |
-| `AUTH_TERMS_AGREEMENT_REQUIRED` | 422 | 약관 미동의(`PENDING`) 상태로 온보딩 제출 또는 연락처 인증·사업자번호 검증(약관 동의 선행 필요) |
+| `AUTH_TERMS_AGREEMENT_REQUIRED` | 422 | 약관 미동의(`PENDING`) 상태로 온보딩 제출 또는 연락처 인증(약관 동의 선행 필요) |
 | `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED` | 422 | 사업자번호 검증(`POST /auth/business/verify`) 시 검증 서비스 조회 결과 미등록·휴업·폐업(진위·상태 검증 실패) |
-| `AUTH_BUSINESS_NUMBER_NOT_VERIFIED` | 422 | 임대인 온보딩 제출 `businessRegistrationNumber`가 미검증이거나 검증한 번호와 불일치 |
 | `AUTH_ONBOARDING_REQUIRED` | 403 | 온보딩 미완료(`PENDING`/`TERMS_AGREED`) 상태로 보호 API 접근 |
 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 409 | 이미 온보딩 완료(ACTIVE)된 사용자가 온보딩 재요청 |
 | `AUTH_INVALID_REFRESH_TOKEN` | 401 | refresh 토큰 만료/위조/무효화/재사용 탐지 |

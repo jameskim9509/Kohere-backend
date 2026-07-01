@@ -13,7 +13,7 @@
 
 | 모듈 | 스토어 | 테이블/컬렉션(키스페이스) | MVP |
 | --- | --- | --- | --- |
-| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}`·`business-verify:verified:{userId}` / `social_accounts` | ✅ |
+| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}` / `social_accounts` | ✅ |
 | [`user`](#4-2-user) | **MySQL** | `users`·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안) — 인라인 언어-키 맵 번역, US-2-5·US-2-6 | ✅ |
@@ -136,19 +136,14 @@
 - **임대인 온보딩 제출**: `auth`가 `phone-verify:verified:{userId}`의 연락처와 제출 `phoneNumber`를 대조 → 일치해야 `user` 온보딩 완료 명령 진행. 확정 `phoneNumber`는 `users.phone_number`로 영속(아래 §4-2), 인증 흔적은 TTL로 소멸한다(영속 안 함).
 - **민감정보**: `phoneNumber`는 응답·로그 마스킹(예 `010-****-5678`), 인증번호 원문은 보관·로그하지 않는다(해시만).
 
-#### (A-4) Redis — 사업자번호 검증(`BusinessRegistrationVerification`)
+#### (A-4) 사업자번호 검증(`POST /api/v1/auth/business/verify`) — 무상태, Redis 마커 없음
 
-임대인 온보딩 중 사업자등록번호 소유·유효 확인(임대인 전용, 연락처 인증 A-3와 대칭). 사업자번호는 **SHA-256 해시로만** 보관(원문 미보관)하고, TTL로 자동 소멸한다. 외부 사업자등록정보 검증 API(국세청 사업자등록정보 진위·상태 기반)로 동기 검증해 정상(계속) 사업자만 마킹한다. 아웃바운드 포트는 `BusinessRegistryVerifier`(인프라 어댑터=사업자등록정보 검증 API, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md)). 정책 골격은 ADR-0033(Proposed — 확인 필요).
+임대인 사업자등록번호 유효 확인은 **온보딩과 분리된 무상태(stateless) 검증 API**다. 온보딩을 마친(`ACTIVE`) 임대인이 나중에(매물 등록 시점) 정식 access 토큰(`ROLE_USER`)으로 `POST /api/v1/auth/business/verify`를 호출한다. 외부 사업자등록정보 검증 API(국세청 사업자등록정보 진위·상태 기반)로 동기 검증해 정상(계속) 사업자면 `verified:true`를 응답한다. 아웃바운드 포트는 `BusinessRegistryVerifier`(인프라 어댑터=사업자등록정보 검증 API, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md)). 정책 골격은 ADR-0033(Proposed — 확인 필요).
 
-**키스페이스** (Redis · AWS ElastiCache)
-
-| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
-| --- | --- | --- | --- | --- |
-| `business-verify:verified:{userId}` | String | 검증 완료 사업자번호 **SHA-256 해시**(원문 비저장) | 온보딩 토큰 만료(예: 30분 — 확인 필요) | 검증 성공 시에만 설정. 임대인 온보딩 제출 시 제출 사업자번호 해시와 대조해 미검증/불일치 거름(`AUTH_BUSINESS_NUMBER_NOT_VERIFIED`) |
-
-- **검증**: `POST /api/v1/auth/business/verify`(임대인 전용)가 `BusinessRegistryVerifier`로 동기 검증해 **정상(계속) 사업자일 때만** `business-verify:verified:{userId}`에 사업자번호 해시를 기록한다. 미등록·휴폐업·진위 실패는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애는 공통 `502 UPSTREAM_ERROR`(재시도 유도). 검증 서비스 회신 상호·대표자는 검증 응답 표시용으로만 쓰며 저장 여부는 확인 필요. 레이트리밋 임계값 미정(확인 필요).
-- **임대인 온보딩 제출**: `auth`가 `business-verify:verified:{userId}` 해시와 제출 사업자번호 해시를 대조 → 일치해야 진행. 임대인 검증 게이트 우선순위는 **약관 미동의 → 연락처 미인증 → 사업자번호 미검증**(세입자는 약관 미동의 → 이메일 미인증). 확정 시 사업자번호 해시는 `users.business_registration_number_hash`로 영속(위 §4-2)하고, 검증 마커는 TTL로 소멸한다.
-- **민감정보**: 사업자번호 원문은 보관·로그하지 않고(해시만), 응답엔 마스킹값(예 `****567890`)만 노출한다.
+- **무상태(저장 없음)**: 검증 결과를 서버에 저장하지 않는다 — **Redis 마커(`business-verify:verified:{userId}`)는 존재하지 않고**, `users.business_registration_number_hash` 컬럼에도 이 경로에서 쓰지 않는다. 검증 결과는 응답(HTTP body)에만 담긴다. 따라서 이 절엔 Redis 키스페이스가 없다.
+- **검증**: `POST /api/v1/auth/business/verify`가 `BusinessRegistryVerifier`로 동기 검증한다. 정상(계속) 사업자면 `verified:true`. 미등록·휴폐업·진위 실패는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애·타임아웃은 공통 `502 UPSTREAM_ERROR`(재시도 유도). 검증 서비스 회신 상호·대표자는 검증 응답 표시용으로만 쓰며 저장하지 않는다. 레이트리밋 임계값 미정(확인 필요).
+- **인가**: 정식 토큰(`ACTIVE`, `ROLE_USER`) 필수. 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출 시 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) `ACTIVE` 사용자면 `403 FORBIDDEN`. 온보딩 제출과는 무관하다(온보딩 게이트에 사업자번호 항목 없음 — §4-2·§4-1 A-3).
+- **민감정보**: 사업자번호 원문은 보관·로그하지 않고, 응답엔 마스킹값(예 `****567890`)만 노출한다.
 
 #### (B) MySQL — 소셜 연동(`social_accounts`)
 
@@ -185,7 +180,7 @@
 | `first_name` | VARCHAR(100) | NULL · VO `FullName.firstName` · **세입자**는 이름(given name) 저장, **임대인**은 단일 `name`(성·이름 합친 전체 이름)을 여기에 저장(PII — 아래 註) · 별도 `name` 컬럼 없음 |
 | `last_name` | VARCHAR(100) | NULL · VO `FullName.lastName` · **세입자**의 성(family name)(PII). 임대인은 NULL(미사용) |
 | `phone_number` | VARCHAR(20) | NULL · **임대인**(PII — 로그·타 사용자 노출 시 마스킹, 예 `010-****-5678`). 온보딩 전 `auth` SMS 인증(§4-1 A-3 `VERIFIED`)을 거친 값. 세입자는 NULL · 길이/형식 확인 필요 |
-| `business_registration_number_hash` | VARCHAR(64) | NULL · **임대인** 사업자등록번호 SHA-256 해시(원문 비저장·로그 비저장·마스킹, 예 `****567890`) · 세입자는 NULL · 컬럼명·유니크 제약·저장 방식 확인 필요 |
+| `business_registration_number_hash` | VARCHAR(64) | NULL · **임대인** 사업자등록번호 SHA-256 해시(원문 비저장·로그 비저장·마스킹, 예 `****567890`) · 세입자는 NULL · **온보딩에서는 수집·저장하지 않아 온보딩 완료 후에도 NULL 유지**, 추후 매물 등록(listing) 시점에 검증 후 채운다(현재 이 컬럼을 채우는 코드 경로 없음) · 컬럼명·유니크 제약·저장 방식 확인 필요 |
 | `nickname` | VARCHAR(50) | NULL · **UNIQUE** · 시스템 배정(`형용사 + 사물`) · 탈퇴 시 익명화 |
 | `gender` | VARCHAR(16) (enum `Gender`) | NULL(PII) |
 | `birth_date` | DATE | NULL · 과거만(앱 검증)(PII) |
@@ -207,10 +202,10 @@
 
 - **이메일 두 종류**: 소셜 제공자 이메일은 **auth `social_accounts.email`** 소관(역할 무관·소셜 연동 메타데이터)이고, `users.email`은 **세입자 온보딩 중 사용자가 입력·인증한 연락 이메일**이다(둘은 별개, 같을 수도 다를 수도 있음). 임대인은 `users.email`을 수집하지 않는다(NULL). 이메일 *인증 흔적*은 Redis(§4-1 A-2)에만 단명 보관하고 users엔 확정 이메일만 영속한다.
 - **닉네임**: 시스템이 `형용사 + 사물`로 무작위 배정하며 `UNIQUE`로 중복을 막는다(충돌 시 재시도). 사용자 입력·수정 대상이 아니다.
-- **상태 흐름·컬럼 채움 시점**: `status`는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`. **동의 컬럼**(`terms_of_service_agreed`·`privacy_policy_agreed`·`marketing_agreed`·`agreed_at`·`terms_version`)은 **약관 동의 단계**(`PENDING`→`TERMS_AGREED`)에 채워지고, **프로필 컬럼**(세입자: 이름·`nickname`·성별·생년월일·`country`·`occupation`·`email`·`visa_type` / 임대인: 이름(단일 name)·`nickname`·`phone_number`·`business_registration_number_hash`)은 **온보딩 단계**(`TERMS_AGREED`→`ACTIVE`)에 채워진다(enum 값 정본은 [domain-model](../architecture/domain-model.md)).
+- **상태 흐름·컬럼 채움 시점**: `status`는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`. **동의 컬럼**(`terms_of_service_agreed`·`privacy_policy_agreed`·`marketing_agreed`·`agreed_at`·`terms_version`)은 **약관 동의 단계**(`PENDING`→`TERMS_AGREED`)에 채워지고, **프로필 컬럼**(세입자: 이름·`nickname`·성별·생년월일·`country`·`occupation`·`email`·`visa_type` / 임대인: 이름(단일 name)·`nickname`·`phone_number`)은 **온보딩 단계**(`TERMS_AGREED`→`ACTIVE`)에 채워진다(임대인 `business_registration_number_hash`는 온보딩에서 수집하지 않아 이 단계엔 채우지 않는다 — 추후 매물 등록 시점에 채움; enum 값 정본은 [domain-model](../architecture/domain-model.md)).
 - **역할(`user_type`) 분기**: `user_type`은 **온보딩 제출 엔드포인트**(세입자 `POST /api/v1/auth/onboarding` / 임대인 `POST /api/v1/auth/landlord/onboarding`)로 확정되며 **이후 불변**이다. 소셜 로그인·약관 동의까지 두 역할 공통이고 이후 본인 확인(세입자 이메일 인증 / 임대인 연락처 인증)·온보딩에서 분기한다. 임대인은 user 별도 모듈이 아니라 **같은 `users` 애그리거트**다 — 본인 프로필 조회·수정(`GET`/`PATCH /users/me`)은 세입자와 동일 경로로 제공하되 `user_type`에 따라 응답·수정 가능 컬럼이 갈린다(임대인 응답은 `first_name`(=name)·`nickname`·`phone_number`·`status`·동의 컬럼·`created_at`만 — `email` 미보유, 세입자 전용 컬럼 `gender`·`country`·`occupation`·`visa_type`·`birth_date`는 제외; 수정은 `first_name`(name)·`phone_number`·`marketing_agreed`만, `business_registration_number_hash`·`user_type`·`nickname`은 불변).
 - **이름 저장(역할별)**: 세입자는 `first_name`(이름)+`last_name`(성)을 분리 저장하고, **임대인은 `first_name`을 재사용**해 단일 `name`(성·이름 합친 전체 이름)을 `first_name`에 저장하며 `last_name`은 NULL(미사용)이다 — **별도 `name` 컬럼을 두지 않고** `FullName.firstName`에 보관한다(API 요청·응답은 단일 `name` 필드를 쓰고 서버가 `name`↔`first_name`을 매핑). 임대인은 추가로 `phone_number`를 채우고, 세입자는 `gender`·`country`·`occupation`·`visa_type`·`birth_date`를 채우며 임대인은 이를 수집하지 않는다(NULL). NOT NULL 제약이 아니라 역할별 채움은 **상태·역할 불변식**(앱·서버 검증)이다.
-- **사업자번호 해시만 영속**: `business_registration_number_hash`는 사업자등록번호 원문이 아니라 **SHA-256 해시만** 보관한다(원문·로그 비저장, 응답 마스킹). 임대인 온보딩 제출 시 Redis 검증 마커(§4-1 A-4)의 해시와 대조해 미검증/불일치를 거른다. 유니크 제약은 앱 레벨(컬럼 유니크 미적용 — 확인 필요).
+- **사업자번호 해시(온보딩 미수집)**: `business_registration_number_hash`는 임대인 **온보딩에서 수집·저장하지 않는다** — 온보딩(약관 동의 + 연락처 SMS 인증)은 사업자번호 게이트가 없어 온보딩 완료(`ACTIVE`) 후에도 이 컬럼은 **NULL로 남는다**. 사업자번호 검증(`POST /api/v1/auth/business/verify`, §4-1 A-4)은 무상태라 결과를 이 컬럼에 쓰지 않는다. 추후 **매물 등록(listing, 별도 도메인·미구현) 시점**에 검증 후 이 컬럼을 채우며(현재 채우는 코드 경로 없음), 채울 때는 원문이 아니라 **SHA-256 해시만** 보관한다(원문·로그 비저장, 응답 마스킹). 유니크 제약은 앱 레벨(컬럼 유니크 미적용 — 확인 필요).
 - **연락처 인증값 영속**: `phone_number`(임대인)는 온보딩 제출 시 Redis 연락처 인증 마커(§4-1 A-3 `phone-verify:verified:{userId}`)의 번호와 대조해 일치할 때만 확정·영속한다(미인증/불일치 `AUTH_PHONE_NOT_VERIFIED`). 인증 흔적은 TTL로 소멸하고 확정 번호만 `users.phone_number`로 남는다.
 - **교차 모듈 no-FK**: auth(소셜연동·refresh·이메일인증·연락처인증·사업자번호 검증)와 `userId` 값만 공유.
 - **소프트삭제 대신 상태**: 탈퇴=`status=WITHDRAWN`+`withdrawn_at` 기록, PII 즉시 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md))(+토큰 일괄 무효화). 탈퇴 시 `nickname`도 익명화(NULL)해 유니크 슬롯을 회수하며, 임대인 PII(`first_name`(단일 name 재사용)·`phone_number`·`business_registration_number_hash`)도 함께 익명화(NULL)한다. WITHDRAWN/없음 조회는 `USER_NOT_FOUND`(404).
