@@ -9,10 +9,10 @@ spring:
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST}
-      port: ${SPRING_DATA_REDIS_PORT:6379}
+      port: ${SPRING_DATA_REDIS_PORT}
   mail:
-    host: ${SPRING_MAIL_HOST} # 폴백 없음 — 미설정 시 기동 실패
-    port: ${SPRING_MAIL_PORT:587}
+    host: ${SPRING_MAIL_HOST}
+    port: ${SPRING_MAIL_PORT}
     username: ${SPRING_MAIL_USERNAME}
     password: ${SPRING_MAIL_PASSWORD}
     properties:
@@ -24,30 +24,29 @@ spring:
 
 app:
   jwt:
-    secret: ${JWT_SECRET} # 폴백 없음 — 미설정 시 기동 실패 (ADR-0011 D5)
+    secret: ${JWT_SECRET} # 미설정 시 기동 실패 (ADR-0011 D5)
   auth:
-    refresh-pepper: ${REFRESH_PEPPER} # 폴백 없음 (ADR-0006)
-    email-pepper: ${EMAIL_PEPPER} # 폴백 없음 — 이메일 인증번호 해시 pepper
-    phone-pepper: ${PHONE_PEPPER} # 폴백 없음 — 연락처 인증번호 해시 pepper(SSM, ADR-0023)
+    refresh-pepper: ${REFRESH_PEPPER} # ADR-0006
+    email-pepper: ${EMAIL_PEPPER} # 이메일 인증번호 해시 pepper
+    phone-pepper: ${PHONE_PEPPER} # 연락처 인증번호 해시 pepper(SSM, ADR-0023)
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID}
     apple:
       audience: ${APPLE_CLIENT_ID}
   apple:
-    # Apple 인가코드 흐름 시크릿 — 폴백 없음(fail-fast). client-id는 oidc.apple.audience와 같은 번들 ID(같은 env 재사용).
+    # Apple 인가코드 흐름 시크릿. client-id는 oidc.apple.audience와 같은 번들 ID(같은 env 재사용).
     client-id: ${APPLE_CLIENT_ID}
     team-id: ${APPLE_TEAM_ID}
     key-id: ${APPLE_KEY_ID}
     private-key: ${APPLE_PRIVATE_KEY} # .p8 PKCS#8 PEM — 절대 로깅 금지
   solapi:
-    # 연락처 SMS(SOLAPI 국내 SMS API, ADR-0034). enabled=true 시 실 발송 — 크리덴셜·발신번호 확정 전 false면 폴백(운영 부적합, 활성화 전 확정 필요).
-    # API KEY·SECRET은 SSM Parameter Store에서 env로 주입(ADR-0023).
-    enabled: ${SOLAPI_ENABLED:false}
-    api-key: ${SOLAPI_API_KEY:}
-    api-secret: ${SOLAPI_API_SECRET:} # 1급 시크릿(SSM)
-    from: ${SOLAPI_FROM:} # 사전 등록 발신번호
+    # 연락처 SMS(SOLAPI, ADR-0034). enabled·from·API 키 모두 env(평문)/SSM(시크릿)로 주입(폴백 없음 — 미설정 시 기동 실패).
+    enabled: ${SOLAPI_ENABLED}
+    api-key: ${SOLAPI_API_KEY}
+    api-secret: ${SOLAPI_API_SECRET} # 1급 시크릿(SSM)
+    from: ${SOLAPI_FROM} # 사전 등록 발신번호
   bizno:
-    # 사업자번호 검증(비즈노, ADR-0033). enabled=true 시 실 검증 — API 계약 확정 전 false면 스텁(운영 부적합).
-    enabled: ${BIZNO_ENABLED:false}
-    api-key: ${BIZNO_API_KEY:} # 시크릿(SSM)
+    # 사업자번호 검증(비즈노, ADR-0033). enabled·API 키 모두 env/SSM로 주입(폴백 없음).
+    enabled: ${BIZNO_ENABLED}
+    api-key: ${BIZNO_API_KEY} # 시크릿(SSM)
