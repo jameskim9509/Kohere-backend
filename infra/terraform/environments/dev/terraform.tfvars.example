@@ -38,6 +38,18 @@ smtp_username = ""  # sensitive
 smtp_password = ""  # sensitive
 mail_from     = "noreply@kohere.app"
 
+# ----- 연락처 SMS (SOLAPI 국내 SMS API — 임대인 인증, ADR-0034) -----
+# 기본 비활성(로깅 폴백 — dev 콘솔 로그에 인증번호 출력). 켜려면 SOLAPI 발신번호 등록·API 키 발급 후:
+# solapi_enabled    = true
+# solapi_from       = "01012345678"   # 사전 등록 발신번호
+# solapi_api_key    = ""  # sensitive — SSM SecureString
+# solapi_api_secret = ""  # sensitive — SSM SecureString
+
+# ----- 사업자번호 검증 (비즈노 — 임대인 인증, ADR-0033) -----
+# 기본 비활성(StubBusinessRegistryVerifier 폴백). 켜려면 비즈노 API 키 발급 후 채우고 bizno_enabled=true.
+# bizno_enabled = true
+# bizno_api_key = ""  # sensitive — SSM SecureString
+
 # ----- DB 자격증명 (SSM SecureString) + 외부 접속 (dev 한정) -----
 # 비우면 기본 "kohere". 외부 노출(db_ingress_cidrs) 시 반드시 강한 값으로 바꾼다.
 # 변경 반영: 최초 init 후의 username·비번 변경은 배포 시 reconcile-db.sh가 live DB에 회전 적용한다(데이터 보존, ADR-0025).

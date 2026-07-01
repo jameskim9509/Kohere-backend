@@ -3,6 +3,7 @@ package com.kohere.user.infrastructure;
 import com.kohere.user.domain.Gender;
 import com.kohere.user.domain.Occupation;
 import com.kohere.user.domain.UserStatus;
+import com.kohere.user.domain.UserType;
 import com.kohere.user.domain.VisaType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -53,6 +54,12 @@ public class UserJpaEntity {
 
   @Enumerated(EnumType.STRING)
   private VisaType visaType;
+
+  @Enumerated(EnumType.STRING)
+  private UserType userType;
+
+  private String phoneNumber;
+  private String businessRegistrationNumberHash;
 
   @Enumerated(EnumType.STRING)
   private UserStatus status;

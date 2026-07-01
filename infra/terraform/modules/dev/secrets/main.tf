@@ -36,6 +36,9 @@ locals {
     MYSQL_PASSWORD      = var.mysql_password
     MYSQL_ROOT_PASSWORD = var.mysql_root_password
     MONGO_PASSWORD      = var.mongo_password
+    SOLAPI_API_KEY      = var.solapi_api_key
+    SOLAPI_API_SECRET   = var.solapi_api_secret
+    BIZNO_API_KEY       = var.bizno_api_key
   }
 
   # nonsensitive: 빈 값 여부만 for_each 키 결정에 쓴다(값 자체는 노출 안 함). vars라 plan 시점 known.

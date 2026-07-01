@@ -15,7 +15,8 @@ app:
     secret: test-only-hs256-secret-please-override-32bytes-minimum!!
   auth:
     refresh-pepper: test-refresh-pepper
-    email-pepper: test-email-pepper # 인증번호 해시(테스트 고정). 메일 발송은 VerificationEmailSender를 @MockBean으로 대체
+    email-pepper: test-email-pepper # 이메일 인증번호 해시(테스트 고정). 메일 발송은 VerificationEmailSender를 @MockBean으로 대체
+    phone-pepper: test-phone-pepper # 연락처 인증번호 해시(테스트 고정). SMS 발송은 SOLAPI 비활성 → LoggingVerificationSmsSender 폴백
   oidc:
     google:
       audience: test-google-client-id

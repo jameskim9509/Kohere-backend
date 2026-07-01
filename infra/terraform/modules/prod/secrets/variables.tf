@@ -59,6 +59,27 @@ variable "smtp_password" {
   sensitive   = true
 }
 
+variable "solapi_api_key" {
+  description = "SOLAPI API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "solapi_api_secret" {
+  description = "SOLAPI API Secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "bizno_api_key" {
+  description = "비즈노 API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "recovery_window_days" {
   description = "Secrets Manager 삭제 복구 대기일"
   type        = number

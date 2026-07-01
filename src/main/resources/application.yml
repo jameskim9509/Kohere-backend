@@ -48,6 +48,15 @@ app:
     max-attempts: 5 # 검증 시도 상한(초과 시 429)
     resend-interval-seconds: 60 # 재발송 최소 간격(미달 시 429)
     from: ${MAIL_FROM:noreply@kohere.app} # 발신 이메일 주소
+  phone:
+    # 임대인 연락처 SMS 인증 정책값(비밀 아님). 세입자 이메일 인증과 통일(ADR-0034, 문서 §6).
+    code-length: 6 # 인증번호 자릿수
+    code-ttl-seconds: 300 # 인증번호 만료(5분)
+    verified-ttl-seconds: 1800 # 검증 완료 마커 보존(30분)
+    max-attempts: 5 # 검증 시도 상한(초과 시 429)
+    resend-interval-seconds: 60 # 재발송 최소 간격(미달 시 429)
+  business:
+    verified-ttl-seconds: 1800 # 사업자번호 검증 마커 보존(30분). provider 설정은 app.bizno(프로파일별)
   oidc:
     # 소셜 OIDC 검증(JWKS). audience(우리 client ID)는 환경 의존값이라 프로파일별로 주입.
     google:

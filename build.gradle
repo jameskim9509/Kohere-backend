@@ -50,6 +50,9 @@ dependencies {
   // 메일 — 온보딩 이메일 인증번호 SMTP 발송(VerificationEmailSender). provider/secrets는 환경변수로 주입
   implementation 'org.springframework.boot:spring-boot-starter-mail'
 
+  // 연락처 SMS 발송 — SOLAPI 국내 SMS API SDK(VerificationSmsSender, ADR-0034). 크리덴셜은 SSM 주입.
+  implementation 'com.solapi:sdk:1.1.0'
+
   // MySQL 스키마 마이그레이션 — Flyway가 DDL 소유, Hibernate는 validate (ADR-0008)
   implementation 'org.flywaydb:flyway-core'
   implementation 'org.flywaydb:flyway-mysql'

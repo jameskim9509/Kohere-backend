@@ -1,13 +1,17 @@
 package com.kohere.auth.application;
 
+import com.kohere.auth.application.dto.BusinessVerifyResponse;
 import com.kohere.auth.application.dto.EmailVerificationCodeResponse;
 import com.kohere.auth.application.dto.EmailVerifyResponse;
 import com.kohere.auth.application.dto.OnboardingResponse;
+import com.kohere.auth.application.dto.PhoneVerificationCodeResponse;
+import com.kohere.auth.application.dto.PhoneVerifyResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
+import com.kohere.auth.domain.LandlordOnlyException;
 import com.kohere.auth.domain.MissingCredentialException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
@@ -21,14 +25,19 @@ import com.kohere.auth.domain.RequiredAgreementMissingException;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
 import com.kohere.auth.domain.TermsAgreementRequiredException;
+import com.kohere.auth.presentation.dto.BusinessVerifyRequest;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
+import com.kohere.auth.presentation.dto.LandlordOnboardingRequest;
 import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
+import com.kohere.auth.presentation.dto.PhoneVerificationCodeRequest;
+import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.TermsAgreementView;
 import com.kohere.user.api.UserAccountService;
@@ -57,6 +66,7 @@ public class AuthService {
   private static final String TOKEN_TYPE = "Bearer";
   private static final String STATUS_ACTIVE = "ACTIVE";
   private static final String STATUS_PENDING = "PENDING";
+  private static final String USER_TYPE_LANDLORD = "LANDLORD";
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final OidcTokenVerifier oidcTokenVerifier;
@@ -66,6 +76,8 @@ public class AuthService {
   private final JwtTokenService jwtTokenService;
   private final UserAccountService userAccountService;
   private final EmailVerificationService emailVerificationService;
+  private final PhoneVerificationService phoneVerificationService;
+  private final BusinessVerificationService businessVerificationService;
   private final AuthProperties authProperties;
   private final AppleAuthClient appleAuthClient;
 
@@ -222,6 +234,59 @@ public class AuthService {
   }
 
   /**
+   * 임대인 연락처 인증번호 발송. 약관 동의(TERMS_AGREED)가 선행되어야 하므로 미동의(PENDING)는 422
+   * AUTH_TERMS_AGREEMENT_REQUIRED로, 이미 완료(ACTIVE)된 사용자의 요청은 409로 거절한다(이메일 인증 §3과 대칭, 시퀀스 US-1-10).
+   * 동기 발송 성공 시에만 챌린지를 저장한다(발송 실패 502).
+   */
+  @Transactional(readOnly = true)
+  public PhoneVerificationCodeResponse sendPhoneVerificationCode(
+      long userId, PhoneVerificationCodeRequest request) {
+    assertTermsAgreed(userId);
+    long expiresIn = phoneVerificationService.sendCode(userId, request.phoneNumber());
+    return new PhoneVerificationCodeResponse(maskPhone(request.phoneNumber()), expiresIn);
+  }
+
+  /** 임대인 연락처 인증번호 확인. 성공 시 연락처를 검증 완료로 마킹한다. */
+  @Transactional(readOnly = true)
+  public PhoneVerifyResponse verifyPhone(long userId, PhoneVerifyRequest request) {
+    phoneVerificationService.verify(userId, request.phoneNumber(), request.code());
+    return new PhoneVerifyResponse(maskPhone(request.phoneNumber()), true);
+  }
+
+  /**
+   * 임대인 사업자등록번호 검증(무상태). 온보딩과 분리된 임대인 전용 API로, 온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 호출한다 — 정식
+   * 토큰(ACTIVE, ROLE_USER)은 보안 필터가, 임대인(userType=LANDLORD) 여부는 {@link #assertLandlord}가 확인한다(임대인 아님
+   * 403 FORBIDDEN). 외부 검증 서비스로 동기 검증해 정상(계속) 사업자면 verified=true를 응답하고(미등록·휴폐업·진위실패 422, 외부 장애 502),
+   * 결과는 영속하지 않는다. 시퀀스 US-1-8.
+   */
+  @Transactional(readOnly = true)
+  public BusinessVerifyResponse verifyBusiness(long userId, BusinessVerifyRequest request) {
+    assertLandlord(userId);
+    businessVerificationService.verify(request.businessRegistrationNumber());
+    return new BusinessVerifyResponse(
+        maskBusinessNumber(request.businessRegistrationNumber()), true);
+  }
+
+  /**
+   * 임대인 온보딩 완료. 검증 게이트를 약관 미동의 → 연락처 미인증 우선순위로 통과시킨다 — 약관 미동의(PENDING) 422
+   * AUTH_TERMS_AGREEMENT_REQUIRED(이미 ACTIVE면 409), 제출 phoneNumber 미인증·불일치 422
+   * AUTH_PHONE_NOT_VERIFIED. 통과 시 user에 TERMS_AGREED→ACTIVE 전이(userType=LANDLORD 확정)를 위임하고 정식 토큰을
+   * 발급한다. 사업자등록번호는 온보딩에서 수집하지 않으며, 온보딩 후 별도 검증 API(POST /auth/business/verify)로 검증한다(ADR-0033, 시퀀스
+   * US-1-9).
+   */
+  @Transactional
+  public OnboardingResponse landlordOnboarding(long userId, LandlordOnboardingRequest request) {
+    assertTermsAgreed(userId);
+    phoneVerificationService.assertVerified(userId, request.phoneNumber());
+    UserProfileView user =
+        userAccountService.completeLandlordOnboarding(
+            userId, new LandlordOnboardingProfile(request.name(), request.phoneNumber()));
+    TokenResponse tokens = issueFullTokens(userId);
+    return new OnboardingResponse(
+        user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
+  }
+
+  /**
    * 재발급. 항상 회전 — 제출 토큰을 ROTATED로 폐기한다. <b>ROTATED 재제출(재사용 탐지)</b>은 탈취 정황이므로 사용자 전 토큰을 일괄 무효화하고,
    * <b>REVOKED(로그아웃·탈퇴)·만료</b>는 권한이 이미 0이라 해당 요청만 거부해 다른 기기 세션을 보존한다(OAuth 2.0 reuse detection).
    */
@@ -270,6 +335,17 @@ public class AuthService {
     }
   }
 
+  /**
+   * 사업자번호 검증 선행 게이트 — 임대인 전용. 정식 토큰(ACTIVE, ROLE_USER)은 보안 필터({@link
+   * com.kohere.common.security.SecurityConfig})가 보장하므로, 여기서는 userType이 LANDLORD인지만 확인한다(임대인 아님 403
+   * FORBIDDEN). 상태 소유자는 user이므로 공개 API로 조회만 한다(판정 책임은 흐름을 조율하는 auth).
+   */
+  private void assertLandlord(long userId) {
+    if (!USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
+      throw new LandlordOnlyException();
+    }
+  }
+
   private SocialLoginResponse onboardingResponse(long userId, String status) {
     return new SocialLoginResponse(
         true,
@@ -313,5 +389,31 @@ public class AuthService {
     String domain = email.substring(at);
     String visible = local.length() <= 2 ? local.substring(0, 1) : local.substring(0, 2);
     return visible + "***" + domain;
+  }
+
+  /** 응답·로그용 연락처 마스킹(예: {@code 01012345678} → {@code 010-****-5678}). */
+  private static String maskPhone(String phone) {
+    if (phone == null) {
+      return null;
+    }
+    String digits = phone.replaceAll("\\D", "");
+    if (digits.length() < 4) {
+      return "***";
+    }
+    String prefix = digits.substring(0, Math.min(3, digits.length() - 4));
+    String suffix = digits.substring(digits.length() - 4);
+    return prefix + "-****-" + suffix;
+  }
+
+  /** 응답·로그용 사업자등록번호 마스킹(예: {@code 1234567890} → {@code ****567890}). */
+  private static String maskBusinessNumber(String number) {
+    if (number == null) {
+      return null;
+    }
+    String digits = number.replaceAll("\\D", "");
+    if (digits.length() <= 6) {
+      return "****" + digits;
+    }
+    return "****" + digits.substring(digits.length() - 6);
   }
 }

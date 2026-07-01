@@ -30,6 +30,10 @@ public enum ErrorCode {
   AUTH_TERMS_AGREEMENT_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "약관 동의가 선행되어야 합니다."),
   AUTH_EMAIL_VERIFICATION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증번호가 올바르지 않거나 만료되었습니다."),
   AUTH_EMAIL_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증이 필요합니다."),
+  AUTH_PHONE_VERIFICATION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "연락처 인증번호가 올바르지 않거나 만료되었습니다."),
+  AUTH_PHONE_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "연락처 인증이 필요합니다."),
+  AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED(
+      HttpStatus.UNPROCESSABLE_ENTITY, "사업자등록번호가 미등록·휴폐업이거나 검증에 실패했습니다."),
   AUTH_ONBOARDING_REQUIRED(HttpStatus.FORBIDDEN, "온보딩을 완료해야 합니다."),
   AUTH_ONBOARDING_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 온보딩을 완료했습니다."),
   AUTH_INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."),

@@ -3,6 +3,11 @@
 # 주의: 이전에 ddl-auto=update로 만든 로컬 DB가 있으면 Flyway 도입 후 충돌할 수 있다 →
 #       `docker compose down -v`로 초기화 후 재기동(Flyway가 V1부터 생성).
 spring:
+  # 로컬 실행(bootRun) 시 프로젝트 루트 .env(KEY=VALUE·gitignore)를 선택적으로 로드해 ${ENV} 치환에 반영한다.
+  # optional: 파일이 없어도 무시, [.properties]: 확장자 없는 .env를 properties 포맷으로 파싱. 워킹디렉터리(루트)에서 실행할 것.
+  # docker compose는 .env를 자동 인식하므로 이 설정은 호스트 JVM(bootRun) 전용이다. local 프로파일에만 두어 test/prod엔 영향 없음.
+  config:
+    import: "optional:file:.env[.properties]"
   datasource:
     url: jdbc:mysql://localhost:3306/kohere?serverTimezone=UTC
     username: kohere
@@ -36,7 +41,8 @@ app:
     secret: ${JWT_SECRET:local-dev-only-hs256-secret-please-override-32bytes-min!!}
   auth:
     refresh-pepper: ${REFRESH_PEPPER:local-dev-refresh-pepper} # SHA-256(token+pepper) (ADR-0006)
-    email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 인증번호 해시 pepper
+    email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 이메일 인증번호 해시 pepper
+    phone-pepper: ${PHONE_PEPPER:local-dev-phone-pepper} # 연락처 인증번호 해시 pepper
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID:}
@@ -48,4 +54,16 @@ app:
     team-id: ${APPLE_TEAM_ID:}
     key-id: ${APPLE_KEY_ID:}
     private-key: ${APPLE_PRIVATE_KEY:}
+  solapi:
+    # 연락처 SMS(SOLAPI, ADR-0034). 로컬은 enabled=false → LoggingVerificationSmsSender 폴백(실발송 안 함, 콘솔 로그).
+    # API KEY·SECRET은 환경변수 관리 — 로컬은 폴백값(운영 미사용). 실연동 테스트 시 env로 실제 값 주입.
+    enabled: ${SOLAPI_ENABLED:false}
+    api-key: ${SOLAPI_API_KEY:local-dev-solapi-key}
+    api-secret: ${SOLAPI_API_SECRET:local-dev-solapi-secret}
+    from: ${SOLAPI_FROM:01000000000}
+  bizno:
+    # 사업자번호 검증(비즈노, ADR-0033). 로컬은 enabled=false → StubBusinessRegistryVerifier 폴백(숫자 10자리면 통과).
+    # API KEY는 환경변수 관리 — 로컬은 폴백값(운영 미사용). 실검증 테스트 시 env로 실제 값 주입.
+    enabled: ${BIZNO_ENABLED:false}
+    api-key: ${BIZNO_API_KEY:local-dev-bizno-key}
 
