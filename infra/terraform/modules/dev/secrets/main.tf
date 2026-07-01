@@ -1,5 +1,5 @@
 # dev 앱 시크릿 — SSM Parameter Store SecureString (SM 미사용·무료, ADR-0023).
-# 자동 생성(앱 부팅 필수): JWT_SECRET·REFRESH_PEPPER·EMAIL_PEPPER. 나머지는 외부 발급 + DB 자격증명.
+# 자동 생성(앱 부팅 필수): JWT_SECRET·REFRESH_PEPPER·EMAIL_PEPPER·PHONE_PEPPER. 나머지는 외부 발급 + DB 자격증명.
 # 호스트가 인스턴스 프로파일로 부팅 시 .env에 주입. 변경 반영은 배포(refresh-env + reconcile-db, ADR-0024/0025).
 resource "random_password" "jwt_secret" {
   length  = 48
@@ -13,6 +13,10 @@ resource "random_password" "email_pepper" {
   length  = 32
   special = false
 }
+resource "random_password" "phone_pepper" {
+  length  = 32
+  special = false
+}
 
 locals {
   ssm_prefix = "/${var.name_prefix}"
@@ -22,6 +26,7 @@ locals {
     JWT_SECRET     = random_password.jwt_secret.result
     REFRESH_PEPPER = random_password.refresh_pepper.result
     EMAIL_PEPPER   = random_password.email_pepper.result
+    PHONE_PEPPER   = random_password.phone_pepper.result
   }
 
   # 외부 발급(OIDC·SMTP) + DB 자격증명 — vars라 plan 시점 known. 빈 값은 SSM이 거부(길이 ≥ 1)하므로 생성 제외.
@@ -46,12 +51,31 @@ locals {
     local.generated_params,
     { for k, v in local.provided_params : k => v if nonsensitive(v) != "" },
   )
+
+  # 앱 런타임 토글·설정(비밀 아님). refresh-env가 .env로 회수해 컨테이너에 주입 — SOLAPI_ENABLED/FROM·BIZNO_ENABLED를
+  # compose(부팅 1회 렌더)가 아닌 SSM 경유로 옮겨 재배포(refresh-env 재실행)만으로 반영되게 한다(ADR-0024). 빈 값은 SSM이 거부하므로 제외.
+  config_params = {
+    for k, v in {
+      SOLAPI_ENABLED = tostring(var.solapi_enabled)
+      SOLAPI_FROM    = var.solapi_from
+      BIZNO_ENABLED  = tostring(var.bizno_enabled)
+    } : k => v if v != ""
+  }
 }
 
 resource "aws_ssm_parameter" "secure" {
   for_each = local.secure_params
   name     = "${local.ssm_prefix}/${each.key}"
   type     = "SecureString"
+  value    = each.value
+  tags     = merge(var.tags, { Name = "${var.name_prefix}-${lower(each.key)}" })
+}
+
+# 비밀 아닌 앱 설정(enabled·from) — String(평문). refresh-env의 get_opt가 SecureString과 동일하게 읽는다(--with-decryption은 String에 무해).
+resource "aws_ssm_parameter" "config" {
+  for_each = local.config_params
+  name     = "${local.ssm_prefix}/${each.key}"
+  type     = "String"
   value    = each.value
   tags     = merge(var.tags, { Name = "${var.name_prefix}-${lower(each.key)}" })
 }

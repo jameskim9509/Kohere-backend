@@ -25,6 +25,10 @@ repositories {
 ext {
   set('springModulithVersion', '1.4.1')
   set('swaggerUiVersion', '5.18.2')
+  // SOLAPI SDK 1.1.0은 Kotlin 2.3.0으로 빌드됨(SDK build.gradle.kts: kotlin("jvm") 2.3.0). Boot 3.5.8 관리
+  // kotlin 1.9.25로는 런타임 NoSuchMethodError(kotlin.time.Clock.getSystemClock)로 SMS 발송이 500 실패(ADR-0034).
+  // stdlib/reflect만 우리 classpath를 쓰고(kotlinx-serialization은 SDK가 shadowJar로 relocate 번들) → 버전만 맞추면 된다.
+  set('kotlin.version', '2.3.0')
 }
 
 dependencies {
