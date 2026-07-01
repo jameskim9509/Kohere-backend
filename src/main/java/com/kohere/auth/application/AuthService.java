@@ -11,6 +11,7 @@ import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
+import com.kohere.auth.domain.LandlordOnlyException;
 import com.kohere.auth.domain.MissingCredentialException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
@@ -65,6 +66,7 @@ public class AuthService {
   private static final String TOKEN_TYPE = "Bearer";
   private static final String STATUS_ACTIVE = "ACTIVE";
   private static final String STATUS_PENDING = "PENDING";
+  private static final String USER_TYPE_LANDLORD = "LANDLORD";
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final OidcTokenVerifier oidcTokenVerifier;
@@ -252,34 +254,33 @@ public class AuthService {
   }
 
   /**
-   * 임대인 사업자등록번호 검증. 약관 동의(TERMS_AGREED)가 선행되어야 한다(PENDING 422, ACTIVE 409). 외부 검증 서비스로 동기 검증해
-   * 정상(계속) 사업자만 VERIFIED로 마킹한다(미등록·휴폐업·진위실패 422, 외부 장애 502). 시퀀스 US-1-8.
+   * 임대인 사업자등록번호 검증(무상태). 온보딩과 분리된 임대인 전용 API로, 온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 호출한다 — 정식
+   * 토큰(ACTIVE, ROLE_USER)은 보안 필터가, 임대인(userType=LANDLORD) 여부는 {@link #assertLandlord}가 확인한다(임대인 아님
+   * 403 FORBIDDEN). 외부 검증 서비스로 동기 검증해 정상(계속) 사업자면 verified=true를 응답하고(미등록·휴폐업·진위실패 422, 외부 장애 502),
+   * 결과는 영속하지 않는다. 시퀀스 US-1-8.
    */
   @Transactional(readOnly = true)
   public BusinessVerifyResponse verifyBusiness(long userId, BusinessVerifyRequest request) {
-    assertTermsAgreed(userId);
-    businessVerificationService.verify(userId, request.businessRegistrationNumber());
+    assertLandlord(userId);
+    businessVerificationService.verify(request.businessRegistrationNumber());
     return new BusinessVerifyResponse(
         maskBusinessNumber(request.businessRegistrationNumber()), true);
   }
 
   /**
-   * 임대인 온보딩 완료. 검증 게이트를 약관 미동의 → 연락처 미인증 → 사업자번호 미검증 우선순위로 통과시킨다 — 약관 미동의(PENDING) 422
+   * 임대인 온보딩 완료. 검증 게이트를 약관 미동의 → 연락처 미인증 우선순위로 통과시킨다 — 약관 미동의(PENDING) 422
    * AUTH_TERMS_AGREEMENT_REQUIRED(이미 ACTIVE면 409), 제출 phoneNumber 미인증·불일치 422
-   * AUTH_PHONE_NOT_VERIFIED, 제출 businessRegistrationNumber 미검증·불일치 422
-   * AUTH_BUSINESS_NUMBER_NOT_VERIFIED. 통과 시 user에 TERMS_AGREED→ACTIVE 전이(userType=LANDLORD 확정)를
-   * 위임하고 정식 토큰을 발급한다. 사업자번호는 해시로만 영속한다(ADR-0034, 시퀀스 US-1-9).
+   * AUTH_PHONE_NOT_VERIFIED. 통과 시 user에 TERMS_AGREED→ACTIVE 전이(userType=LANDLORD 확정)를 위임하고 정식 토큰을
+   * 발급한다. 사업자등록번호는 온보딩에서 수집하지 않으며, 온보딩 후 별도 검증 API(POST /auth/business/verify)로 검증한다(ADR-0033, 시퀀스
+   * US-1-9).
    */
   @Transactional
   public OnboardingResponse landlordOnboarding(long userId, LandlordOnboardingRequest request) {
     assertTermsAgreed(userId);
     phoneVerificationService.assertVerified(userId, request.phoneNumber());
-    businessVerificationService.assertVerified(userId, request.businessRegistrationNumber());
-    String businessHash = businessVerificationService.hashOf(request.businessRegistrationNumber());
     UserProfileView user =
         userAccountService.completeLandlordOnboarding(
-            userId,
-            new LandlordOnboardingProfile(request.name(), request.phoneNumber(), businessHash));
+            userId, new LandlordOnboardingProfile(request.name(), request.phoneNumber()));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
@@ -331,6 +332,17 @@ public class AuthService {
     }
     if (STATUS_PENDING.equals(status)) {
       throw new TermsAgreementRequiredException();
+    }
+  }
+
+  /**
+   * 사업자번호 검증 선행 게이트 — 임대인 전용. 정식 토큰(ACTIVE, ROLE_USER)은 보안 필터({@link
+   * com.kohere.common.security.SecurityConfig})가 보장하므로, 여기서는 userType이 LANDLORD인지만 확인한다(임대인 아님 403
+   * FORBIDDEN). 상태 소유자는 user이므로 공개 API로 조회만 한다(판정 책임은 흐름을 조율하는 auth).
+   */
+  private void assertLandlord(long userId) {
+    if (!USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
+      throw new LandlordOnlyException();
     }
   }
 

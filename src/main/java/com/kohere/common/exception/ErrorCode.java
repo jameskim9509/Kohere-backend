@@ -34,7 +34,6 @@ public enum ErrorCode {
   AUTH_PHONE_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "연락처 인증이 필요합니다."),
   AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED(
       HttpStatus.UNPROCESSABLE_ENTITY, "사업자등록번호가 미등록·휴폐업이거나 검증에 실패했습니다."),
-  AUTH_BUSINESS_NUMBER_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "사업자등록번호 검증이 필요합니다."),
   AUTH_ONBOARDING_REQUIRED(HttpStatus.FORBIDDEN, "온보딩을 완료해야 합니다."),
   AUTH_ONBOARDING_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 온보딩을 완료했습니다."),
   AUTH_INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."),

@@ -65,13 +65,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
- * 임대인 트랙(ADR-0034) Spring REST Docs 스니펫 생성 테스트 — 연락처 SMS 인증(발송·확인)·사업자등록번호 검증·임대인 온보딩의 성공 응답과,
- * 스펙(01-auth-onboarding.md §4-1·§4-2·§5-1·§5-2)에 정의된 주요 에러 응답을 {@code build/generated-snippets}에
- * 생성한다. 소셜 OIDC는 가짜 주입, SMS 발송({@link VerificationSmsSender})·사업자번호 외부 검증({@link
- * BusinessRegistryVerifier})은 모킹하고 Security·JPA·Redis·JWT는 실제 구동한다.
+ * 임대인 트랙(ADR-0034) Spring REST Docs 스니펫 생성 테스트 — 연락처 SMS 인증(발송·확인)·임대인 온보딩의 성공 응답과, 온보딩과 분리된
+ * 사업자등록번호 검증(온보딩 완료 임대인 전용, 무상태)의 성공·에러 응답을 스펙(01-auth-onboarding.md §4-1·§4-2·§5-1·§5-2)대로 {@code
+ * build/generated-snippets}에 생성한다. 소셜 OIDC는 가짜 주입, SMS 발송({@link VerificationSmsSender})·사업자번호 외부
+ * 검증({@link BusinessRegistryVerifier})은 모킹하고 Security·JPA·Redis·JWT는 실제 구동한다.
  *
- * <p>임대인 흐름: 소셜로그인(PENDING) → 약관 동의(TERMS_AGREED) → 연락처 인증(코드 발송·확인) → 사업자번호 검증 → 임대인
- * 온보딩(ACTIVE·userType=LANDLORD). SMS 발송 모킹으로 인증번호를 캡처한다.
+ * <p>임대인 흐름: 소셜로그인(PENDING) → 약관 동의(TERMS_AGREED) → 연락처 인증(코드 발송·확인) → 임대인
+ * 온보딩(ACTIVE·userType=LANDLORD). 사업자등록번호 검증은 온보딩에서 분리되어, 온보딩을 마친(ACTIVE) 임대인이 정식 토큰(ROLE_USER)으로 별도
+ * 호출한다(§5-1). SMS 발송 모킹으로 인증번호를 캡처한다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -183,37 +184,45 @@ class LandlordOnboardingDocsTest {
                 requestFields(phoneVerifyRequestFields()),
                 responseFields(phoneVerifyResponseFields())));
 
-    // 사업자등록번호 검증
+    // 임대인 온보딩 제출 → 정식 토큰(사업자번호는 온보딩에서 수집하지 않음)
+    String onboardingBody =
+        mockMvc
+            .perform(
+                post("/api/v1/auth/landlord/onboarding")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(landlordJson("Kim Imdae", PHONE)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.user.userType").value("LANDLORD"))
+            .andDo(
+                document(
+                    "auth-landlord-onboarding",
+                    resourceDetails()
+                        .summary(
+                            "임대인 온보딩 제출 — 약관·연락처 인증만으로 TERMS_AGREED→ACTIVE 전이, userType=LANDLORD 확정·정식 토큰 발급"),
+                    requestFields(landlordOnboardingRequestFields()),
+                    responseFields(landlordOnboardingResponseFields())))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String accessToken = read(onboardingBody, "data", "accessToken");
+
+    // 사업자등록번호 검증 — 온보딩 완료(ACTIVE) 임대인이 정식 토큰으로 호출하는 무상태 검증
     mockMvc
         .perform(
             post("/api/v1/auth/business/verify")
-                .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"businessRegistrationNumber\":\"" + BIZ_NUMBER + "\"}"))
         .andExpect(status().isOk())
         .andDo(
             document(
                 "auth-business-verify",
-                resourceDetails().summary("사업자등록번호 검증(임대인) — 정상 사업자만 VERIFIED 마킹(번호 마스킹 반환)"),
+                resourceDetails()
+                    .summary(
+                        "사업자등록번호 검증(임대인 전용, 온보딩 후) — 정식 토큰(ACTIVE)으로 정상 사업자 무상태 검증(번호 마스킹 반환)"),
                 requestFields(businessVerifyRequestFields()),
                 responseFields(businessVerifyResponseFields())));
-
-    // 임대인 온보딩 제출 → 정식 토큰
-    mockMvc
-        .perform(
-            post("/api/v1/auth/landlord/onboarding")
-                .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.user.userType").value("LANDLORD"))
-        .andDo(
-            document(
-                "auth-landlord-onboarding",
-                resourceDetails()
-                    .summary("임대인 온보딩 제출 — TERMS_AGREED→ACTIVE 전이, userType=LANDLORD 확정·정식 토큰 발급"),
-                requestFields(landlordOnboardingRequestFields()),
-                responseFields(landlordOnboardingResponseFields())));
   }
 
   /** 스펙의 "발생 가능한 에러"를 엔드포인트별로 실제 트리거해 스니펫으로 생성하고 status·error.code를 단정한다. */
@@ -221,8 +230,8 @@ class LandlordOnboardingDocsTest {
   void generatesLandlordOnboardingErrorSnippets() throws Exception {
     String pendingToken = read(socialLogin("err-l-pending"), "data", "accessToken"); // PENDING
     String termsToken = read(socialLogin("err-l-terms"), "data", "accessToken");
-    agreeTerms(termsToken); // TERMS_AGREED(연락처·사업자번호 미검증)
-    String activeAccess = onboardLandlordCompletely("err-l-active"); // 정식 ACTIVE access
+    agreeTerms(termsToken); // TERMS_AGREED(연락처 미검증, 온보딩 토큰)
+    String activeAccess = onboardLandlordCompletely("err-l-active"); // 정식 ACTIVE 임대인 access
 
     String expiredToken = expiredAccessToken();
 
@@ -405,10 +414,11 @@ class LandlordOnboardingDocsTest {
         "auth-phone-verify-rate-limited",
         "연락처 인증 확인 — 코드 불일치 누적·시도 상한 초과 (429 TOO_MANY_REQUESTS)");
 
-    // ===== business/verify =====
+    // ===== business/verify (온보딩 후 ACTIVE 임대인 전용) =====
+    // 형식 위반 — 정식 토큰(ACTIVE 임대인) 인가 통과 후 입력 검증 실패
     perform(
         post("/api/v1/auth/business/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"businessRegistrationNumber\":\"123\"}"),
         status().isBadRequest(),
@@ -418,7 +428,7 @@ class LandlordOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/business/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
@@ -446,23 +456,23 @@ class LandlordOnboardingDocsTest {
         "auth-business-verify-token-expired",
         "사업자번호 검증 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
 
-    // 약관 미동의(PENDING) 상태 검증 → 약관 동의 선행 안내 422(외부 호출 안 함)
+    // 온보딩 미완료(온보딩 토큰, ROLE_ONBOARDING) 호출 → 정식 토큰 필요 403
     perform(
         post("/api/v1/auth/business/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"businessRegistrationNumber\":\"" + BIZ_NUMBER + "\"}"),
-        status().isUnprocessableEntity(),
-        "AUTH_TERMS_AGREEMENT_REQUIRED",
-        "auth-business-verify-terms-required",
-        "사업자번호 검증 — 약관 미동의(PENDING) 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "auth-business-verify-onboarding-required",
+        "사업자번호 검증 — 온보딩 미완료(온보딩 토큰) 호출 (403 AUTH_ONBOARDING_REQUIRED): 온보딩 완료 후 호출");
 
     // 미등록·휴폐업·진위 실패 → 422 (외부 검증 결과 false)
     String failNumber = "9999999999";
     when(businessVerifier.verify(failNumber)).thenReturn(false);
     perform(
         post("/api/v1/auth/business/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"businessRegistrationNumber\":\"" + failNumber + "\"}"),
         status().isUnprocessableEntity(),
@@ -476,7 +486,7 @@ class LandlordOnboardingDocsTest {
         .thenThrow(new BusinessVerificationUpstreamException(new RuntimeException("bizno down")));
     perform(
         post("/api/v1/auth/business/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"businessRegistrationNumber\":\"" + upstreamNumber + "\"}"),
         status().isBadGateway(),
@@ -484,26 +494,16 @@ class LandlordOnboardingDocsTest {
         "auth-business-verify-upstream-error",
         "사업자번호 검증 — 외부 검증 API 장애·타임아웃 (502 UPSTREAM_ERROR): 검증 결과 미저장");
 
-    perform(
-        post("/api/v1/auth/business/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"businessRegistrationNumber\":\"" + BIZ_NUMBER + "\"}"),
-        status().isConflict(),
-        "AUTH_ONBOARDING_ALREADY_COMPLETED",
-        "auth-business-verify-already-completed",
-        "사업자번호 검증 — 이미 온보딩 완료(ACTIVE) 사용자의 요청 (409 AUTH_ONBOARDING_ALREADY_COMPLETED)");
-
     // ===== landlord/onboarding =====
     perform(
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("", PHONE, BIZ_NUMBER)),
+            .content(landlordJson("", PHONE)),
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-landlord-onboarding-invalid-input",
-        "임대인 온보딩 — 입력 검증 실패 (400 INVALID_INPUT): name/phoneNumber/사업자번호 누락·형식 위반");
+        "임대인 온보딩 — 입력 검증 실패 (400 INVALID_INPUT): name/phoneNumber 누락·형식 위반");
 
     perform(
         post("/api/v1/auth/landlord/onboarding")
@@ -519,7 +519,7 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)),
+            .content(landlordJson("Kim Imdae", PHONE)),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-landlord-onboarding-unauthenticated",
@@ -529,18 +529,18 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)),
+            .content(landlordJson("Kim Imdae", PHONE)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-landlord-onboarding-token-expired",
         "임대인 온보딩 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
 
-    // 약관 미동의(PENDING) 상태 제출 → 약관 동의 선행 안내 422(연락처·사업자번호 검사보다 먼저)
+    // 약관 미동의(PENDING) 상태 제출 → 약관 동의 선행 안내 422(연락처 검사보다 먼저)
     perform(
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)),
+            .content(landlordJson("Kim Imdae", PHONE)),
         status().isUnprocessableEntity(),
         "AUTH_TERMS_AGREEMENT_REQUIRED",
         "auth-landlord-onboarding-terms-required",
@@ -553,31 +553,17 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(phoneNeedToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)),
+            .content(landlordJson("Kim Imdae", PHONE)),
         status().isUnprocessableEntity(),
         "AUTH_PHONE_NOT_VERIFIED",
         "auth-landlord-onboarding-phone-not-verified",
         "임대인 온보딩 — 연락처 미인증·불일치 (422 AUTH_PHONE_NOT_VERIFIED)");
 
-    // 연락처는 인증했으나 사업자번호 미검증 → 422 AUTH_BUSINESS_NUMBER_NOT_VERIFIED
-    String bizNeedToken = read(socialLogin("err-l-bizneed"), "data", "accessToken");
-    agreeTerms(bizNeedToken);
-    sendAndVerifyPhone(bizNeedToken, PHONE);
-    perform(
-        post("/api/v1/auth/landlord/onboarding")
-            .header(HttpHeaders.AUTHORIZATION, bearer(bizNeedToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)),
-        status().isUnprocessableEntity(),
-        "AUTH_BUSINESS_NUMBER_NOT_VERIFIED",
-        "auth-landlord-onboarding-business-not-verified",
-        "임대인 온보딩 — 사업자번호 미검증·불일치 (422 AUTH_BUSINESS_NUMBER_NOT_VERIFIED)");
-
     perform(
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)),
+            .content(landlordJson("Kim Imdae", PHONE)),
         status().isConflict(),
         "AUTH_ONBOARDING_ALREADY_COMPLETED",
         "auth-landlord-onboarding-already-completed",
@@ -700,9 +686,7 @@ class LandlordOnboardingDocsTest {
   private static List<FieldDescriptor> landlordOnboardingRequestFields() {
     return List.of(
         field("name", JsonFieldType.STRING, "임대인 이름(성·이름 합친 단일 이름, 필수·빈값 불가)"),
-        field("phoneNumber", JsonFieldType.STRING, "사전 SMS 인증된 연락처와 일치(필수)"),
-        field(
-            "businessRegistrationNumber", JsonFieldType.STRING, "사전 검증된 사업자등록번호와 일치(숫자 10자리, 필수)"));
+        field("phoneNumber", JsonFieldType.STRING, "사전 SMS 인증된 연락처와 일치(필수)"));
   }
 
   private static List<FieldDescriptor> landlordOnboardingResponseFields() {
@@ -780,29 +764,18 @@ class LandlordOnboardingDocsTest {
         .andExpect(status().isOk());
   }
 
-  private void verifyBusinessNumber(String token, String number) throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/auth/business/verify")
-                .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"businessRegistrationNumber\":\"" + number + "\"}"))
-        .andExpect(status().isOk());
-  }
-
-  /** 신규 소셜 로그인 → 약관 동의 → 연락처 인증 → 사업자번호 검증 → 임대인 온보딩까지 수행하고 정식 access 토큰을 돌려준다. */
+  /** 신규 소셜 로그인 → 약관 동의 → 연락처 인증 → 임대인 온보딩까지 수행하고 정식 access 토큰을 돌려준다(사업자번호는 온보딩과 무관). */
   private String onboardLandlordCompletely(String subject) throws Exception {
     String token = read(socialLogin(subject), "data", "accessToken");
     agreeTerms(token);
     sendAndVerifyPhone(token, PHONE);
-    verifyBusinessNumber(token, BIZ_NUMBER);
     String body =
         mockMvc
             .perform(
                 post("/api/v1/auth/landlord/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(token))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(landlordJson("Kim Imdae", PHONE, BIZ_NUMBER)))
+                    .content(landlordJson("Kim Imdae", PHONE)))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -835,13 +808,7 @@ class LandlordOnboardingDocsTest {
     return "Bearer " + token;
   }
 
-  private static String landlordJson(String name, String phone, String businessNumber) {
-    return "{\"name\":\""
-        + name
-        + "\",\"phoneNumber\":\""
-        + phone
-        + "\",\"businessRegistrationNumber\":\""
-        + businessNumber
-        + "\"}";
+  private static String landlordJson(String name, String phone) {
+    return "{\"name\":\"" + name + "\",\"phoneNumber\":\"" + phone + "\"}";
   }
 }

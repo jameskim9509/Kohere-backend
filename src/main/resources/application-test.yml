@@ -17,7 +17,6 @@ app:
     refresh-pepper: test-refresh-pepper
     email-pepper: test-email-pepper # 이메일 인증번호 해시(테스트 고정). 메일 발송은 VerificationEmailSender를 @MockBean으로 대체
     phone-pepper: test-phone-pepper # 연락처 인증번호 해시(테스트 고정). SMS 발송은 SOLAPI 비활성 → LoggingVerificationSmsSender 폴백
-    business-pepper: test-business-pepper # 사업자번호 해시(테스트 고정). 검증은 Bizno 비활성 → StubBusinessRegistryVerifier 폴백
   oidc:
     google:
       audience: test-google-client-id

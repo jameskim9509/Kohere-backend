@@ -33,7 +33,6 @@ app:
     refresh-pepper: ${REFRESH_PEPPER} # 폴백 없음 (ADR-0006)
     email-pepper: ${EMAIL_PEPPER} # 폴백 없음 — 이메일 인증번호 해시 pepper
     phone-pepper: ${PHONE_PEPPER} # 폴백 없음 — 연락처 인증번호 해시 pepper(Terraform 자동생성·SSM, ADR-0023)
-    business-pepper: ${BUSINESS_PEPPER} # 폴백 없음 — 사업자번호 해시 pepper(Terraform 자동생성·SSM)
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID:} # dev 옵션 — 미설정 시 Google 로그인만 미동작

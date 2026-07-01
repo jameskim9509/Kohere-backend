@@ -118,18 +118,15 @@ public class User {
 
   /**
    * 임대인 온보딩 완료(TERMS_AGREED→ACTIVE). 단일 {@code name}(성·이름 합친 전체 이름 — {@code firstName}에 보관, {@code
-   * lastName} 미사용)·연락처·사업자번호 해시와 시스템 배정 닉네임을 확정하고 {@code userType}을 LANDLORD로 확정한다. 연락처는 auth가 SMS
-   * 인증을, 사업자번호는 auth가 외부 검증을 선행 확인한다. 임대인은 성별·국적·직업·비자정보·생년월일·이메일을 수집하지 않는다(ADR-0034).
+   * lastName} 미사용)·연락처와 시스템 배정 닉네임을 확정하고 {@code userType}을 LANDLORD로 확정한다. 연락처는 auth가 SMS 인증을 선행
+   * 확인한다. 사업자등록번호 해시는 온보딩에서 확정하지 않는다({@code null} 유지) — 온보딩 후 별도 검증 흐름(매물 등록 시점)에서 채운다(ADR-0033).
+   * 임대인은 성별·국적·직업·비자정보·생년월일·이메일을 수집하지 않는다(ADR-0034).
    *
    * @throws TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(422)
    * @throws OnboardingAlreadyCompletedException 이미 ACTIVE(또는 WITHDRAWN)인 경우(409)
    */
   public User completeLandlordOnboarding(
-      String name,
-      String phoneNumber,
-      String businessRegistrationNumberHash,
-      String nickname,
-      Instant now) {
+      String name, String phoneNumber, String nickname, Instant now) {
     if (status == UserStatus.PENDING) {
       throw new TermsAgreementRequiredException();
     }
@@ -141,7 +138,7 @@ public class User {
         .lastName(null)
         .nickname(nickname)
         .phoneNumber(phoneNumber)
-        .businessRegistrationNumberHash(businessRegistrationNumberHash)
+        .businessRegistrationNumberHash(null)
         .userType(UserType.LANDLORD)
         .status(UserStatus.ACTIVE)
         .updatedAt(now)

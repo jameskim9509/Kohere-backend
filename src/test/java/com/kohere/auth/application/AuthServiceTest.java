@@ -20,9 +20,9 @@ import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.AppleAuthClient;
-import com.kohere.auth.domain.BusinessNumberNotVerifiedException;
 import com.kohere.auth.domain.EmailNotVerifiedException;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
+import com.kohere.auth.domain.LandlordOnlyException;
 import com.kohere.auth.domain.MissingCredentialException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
@@ -517,43 +517,31 @@ class AuthServiceTest {
   }
 
   @Test
-  void verifyBusiness_delegatesAndMasksNumber() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+  void verifyBusiness_landlord_delegatesAndMasksNumber() {
+    when(userAccountService.getUserType(40L)).thenReturn("LANDLORD");
 
     BusinessVerifyResponse response =
         authService.verifyBusiness(40L, new BusinessVerifyRequest("1234567890"));
 
     assertThat(response.verified()).isTrue();
     assertThat(response.businessRegistrationNumber()).isEqualTo("****567890");
-    verify(businessVerificationService).verify(40L, "1234567890");
+    verify(businessVerificationService).verify("1234567890");
   }
 
   @Test
-  void verifyBusiness_termsNotAgreed_throwsTermsRequiredAndDoesNotVerify() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+  void verifyBusiness_notLandlord_throwsForbiddenAndDoesNotVerify() {
+    when(userAccountService.getUserType(40L)).thenReturn("TENANT");
 
     assertThatThrownBy(
             () -> authService.verifyBusiness(40L, new BusinessVerifyRequest("1234567890")))
-        .isInstanceOf(TermsAgreementRequiredException.class);
+        .isInstanceOf(LandlordOnlyException.class);
 
-    verify(businessVerificationService, never()).verify(anyLong(), any());
-  }
-
-  @Test
-  void verifyBusiness_activeUser_throwsAlreadyCompletedAndDoesNotVerify() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "ACTIVE"));
-
-    assertThatThrownBy(
-            () -> authService.verifyBusiness(40L, new BusinessVerifyRequest("1234567890")))
-        .isInstanceOf(OnboardingAlreadyCompletedException.class);
-
-    verify(businessVerificationService, never()).verify(anyLong(), any());
+    verify(businessVerificationService, never()).verify(any());
   }
 
   @Test
   void landlordOnboarding_completesAndIssuesFullTokensWithLandlordProfile() {
     when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
-    when(businessVerificationService.hashOf("1234567890")).thenReturn("biz-hash");
     when(userAccountService.completeLandlordOnboarding(
             eq(40L), any(LandlordOnboardingProfile.class)))
         .thenReturn(landlordProfileView(40L));
@@ -569,14 +557,13 @@ class AuthServiceTest {
     assertThat(response.user().userType()).isEqualTo("LANDLORD");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
-    // 게이트 통과 순서: 약관 → 연락처 → 사업자번호
+    // 게이트 통과 순서: 약관 → 연락처(사업자번호는 온보딩에서 수집하지 않음)
     verify(phoneVerificationService).assertVerified(40L, "01012345678");
-    verify(businessVerificationService).assertVerified(40L, "1234567890");
     ArgumentCaptor<LandlordOnboardingProfile> captor =
         ArgumentCaptor.forClass(LandlordOnboardingProfile.class);
     verify(userAccountService).completeLandlordOnboarding(eq(40L), captor.capture());
     assertThat(captor.getValue().name()).isEqualTo("Kim Imdae");
-    assertThat(captor.getValue().businessRegistrationNumberHash()).isEqualTo("biz-hash");
+    assertThat(captor.getValue().phoneNumber()).isEqualTo("01012345678");
     verify(refreshTokenRepository).save(any(RefreshToken.class));
   }
 
@@ -590,22 +577,7 @@ class AuthServiceTest {
     assertThatThrownBy(() -> authService.landlordOnboarding(40L, landlordOnboardingRequest()))
         .isInstanceOf(PhoneNotVerifiedException.class);
 
-    // 연락처 미인증이면 사업자번호 검사·온보딩 완료 전에 차단
-    verify(businessVerificationService, never()).assertVerified(anyLong(), any());
-    verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
-    verify(refreshTokenRepository, never()).save(any());
-  }
-
-  @Test
-  void landlordOnboarding_businessNotVerified_throwsAndDoesNotComplete() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
-    doThrow(new BusinessNumberNotVerifiedException())
-        .when(businessVerificationService)
-        .assertVerified(40L, "1234567890");
-
-    assertThatThrownBy(() -> authService.landlordOnboarding(40L, landlordOnboardingRequest()))
-        .isInstanceOf(BusinessNumberNotVerifiedException.class);
-
+    // 연락처 미인증이면 온보딩 완료 전에 차단
     verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
     verify(refreshTokenRepository, never()).save(any());
   }
@@ -617,9 +589,8 @@ class AuthServiceTest {
     assertThatThrownBy(() -> authService.landlordOnboarding(40L, landlordOnboardingRequest()))
         .isInstanceOf(TermsAgreementRequiredException.class);
 
-    // 약관 미동의면 연락처·사업자번호 검사보다 약관 동의 안내가 먼저
+    // 약관 미동의면 연락처 검사보다 약관 동의 안내가 먼저
     verify(phoneVerificationService, never()).assertVerified(anyLong(), any());
-    verify(businessVerificationService, never()).assertVerified(anyLong(), any());
     verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
     verify(refreshTokenRepository, never()).save(any());
   }
@@ -703,6 +674,6 @@ class AuthServiceTest {
   }
 
   private static LandlordOnboardingRequest landlordOnboardingRequest() {
-    return new LandlordOnboardingRequest("Kim Imdae", "01012345678", "1234567890");
+    return new LandlordOnboardingRequest("Kim Imdae", "01012345678");
   }
 }

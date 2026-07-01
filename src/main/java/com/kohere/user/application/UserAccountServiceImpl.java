@@ -102,11 +102,7 @@ public class UserAccountServiceImpl implements UserAccountService {
     String nickname = nicknameGenerator.generateUnique();
     User active =
         user.completeLandlordOnboarding(
-            profile.name(),
-            profile.phoneNumber(),
-            profile.businessRegistrationNumberHash(),
-            nickname,
-            Instant.now());
+            profile.name(), profile.phoneNumber(), nickname, Instant.now());
     return toProfileView(userRepository.save(active));
   }
 
@@ -115,6 +111,16 @@ public class UserAccountServiceImpl implements UserAccountService {
   public UserAccountView getAccount(long userId) {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
     return new UserAccountView(user.getId(), user.getStatus().name());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public String getUserType(long userId) {
+    return userRepository
+        .findById(userId)
+        .orElseThrow(UserNotFoundException::new)
+        .getUserType()
+        .name();
   }
 
   @Override

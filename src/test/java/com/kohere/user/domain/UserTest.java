@@ -155,8 +155,7 @@ class UserTest {
     User termsAgreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
 
     User active =
-        termsAgreed.completeLandlordOnboarding(
-            "Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW);
+        termsAgreed.completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW);
 
     assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
     assertThat(active.getUserType()).isEqualTo(UserType.LANDLORD);
@@ -164,7 +163,8 @@ class UserTest {
     assertThat(active.getFirstName()).isEqualTo("Kim Imdae");
     assertThat(active.getLastName()).isNull();
     assertThat(active.getPhoneNumber()).isEqualTo("01012345678");
-    assertThat(active.getBusinessRegistrationNumberHash()).isEqualTo("biz-hash");
+    // 사업자번호 해시는 온보딩에서 확정하지 않는다(온보딩 후 매물 등록 시점에 채움, ADR-0033)
+    assertThat(active.getBusinessRegistrationNumberHash()).isNull();
     assertThat(active.getNickname()).isEqualTo("CalmFox");
     // 임대인은 성별·국적·직업·비자·생년월일·이메일을 수집하지 않는다
     assertThat(active.getGender()).isNull();
@@ -180,9 +180,7 @@ class UserTest {
     User pending = User.createPending(NOW);
 
     assertThatThrownBy(
-            () ->
-                pending.completeLandlordOnboarding(
-                    "Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW))
+            () -> pending.completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW))
         .isInstanceOf(TermsAgreementRequiredException.class);
   }
 
@@ -191,9 +189,7 @@ class UserTest {
     User active = activeUser();
 
     assertThatThrownBy(
-            () ->
-                active.completeLandlordOnboarding(
-                    "Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW))
+            () -> active.completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW))
         .isInstanceOf(OnboardingAlreadyCompletedException.class);
   }
 
@@ -202,7 +198,7 @@ class UserTest {
     User landlord =
         User.createPending(NOW)
             .agreeToTerms(true, "v1.0", NOW)
-            .completeLandlordOnboarding("Kim Imdae", "01012345678", "biz-hash", "CalmFox", NOW);
+            .completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW);
 
     User withdrawn = landlord.withdraw(NOW);
 
