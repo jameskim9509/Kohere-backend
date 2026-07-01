@@ -199,6 +199,7 @@ locals {
     { name = "JWT_SECRET", valueFrom = module.secrets.param_arns["JWT_SECRET"] },
     { name = "REFRESH_PEPPER", valueFrom = module.secrets.param_arns["REFRESH_PEPPER"] },
     { name = "EMAIL_PEPPER", valueFrom = module.secrets.param_arns["EMAIL_PEPPER"] },
+    { name = "PHONE_PEPPER", valueFrom = module.secrets.param_arns["PHONE_PEPPER"] },
     { name = "GOOGLE_CLIENT_ID", valueFrom = module.secrets.param_arns["GOOGLE_CLIENT_ID"] },
     { name = "APPLE_CLIENT_ID", valueFrom = module.secrets.param_arns["APPLE_CLIENT_ID"] },
     { name = "APPLE_TEAM_ID", valueFrom = module.secrets.param_arns["APPLE_TEAM_ID"] },
