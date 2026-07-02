@@ -4,7 +4,7 @@
 
     # User Stories & Acceptance Criteria
 
-> Kohere 핵심 기능(7종)의 **백엔드 유저 스토리**와 인수 조건(AC, Given/When/Then)이다.
+> Kohere 핵심 기능(8종)의 **백엔드 유저 스토리**와 인수 조건(AC, Given/When/Then)이다.
 > 작성 형식: [user-story-template](user-story-template.md). 각 기능의 API는 [api 스펙](../api/specs/)으로 연결된다.
 > 에러 코드/형식은 [error-response-guide](../api/error-response-guide.md), 설계 규약은 [api-design-guide](../api/api-design-guide.md)를 따른다.
 
@@ -15,8 +15,9 @@
 - 3. 매물 탐색 · 찜 — [API 스펙](../api/specs/03-listings-favorites.md)
 - 4. 매물 예약(신청) · (후속) 문의·인앱 채팅 — [API 스펙](../api/specs/04-booking-inquiry-chat.md)
 - 5. 커뮤니티 (게시판 · 동네친구) — [API 스펙](../api/specs/05-community.md)
-- 6. 게이미피케이션 (퀴즈 · 포인트) — [API 스펙](../api/specs/06-gamification.md)
+- 6. 게이미피케이션 (퀴즈) — [API 스펙](../api/specs/06-gamification.md)
 - 7. 신고 처리 — [API 스펙](../api/specs/07-reports.md)
+- 8. 생활 팁 (주제별 생활 정보) — [API 스펙](../api/specs/08-life-tips.md) *(스펙 작성 예정 · 이슈 #79)*
 
 ---
 
@@ -1171,129 +1172,133 @@
   - When `POST /api/v1/community/posts/{postId}/chat`이 다시 호출되어도
   - Then 새 방을 만들지 않고 기존 `chatRoomId`를 `200 OK`로 반환한다(멱등). A가 B를 차단했거나 B가 A를 차단한 관계면 `403 POST_CHAT_BLOCKED`로 거부한다(차단 모델은 report 모듈에 의존 — 확정 필요).
 
-## 6. 게이미피케이션 (퀴즈 · 포인트)
+## 6. 게이미피케이션 (퀴즈)
 
 > 관련 API 스펙: [06-gamification](../api/specs/06-gamification.md)
 
-외국인 사용자가 한국 주거 관련 지식을 매일 1문제씩 학습하고, 정답 시 포인트를 적립받아 재방문 동기를 얻는 기능이다. 정답 판정은 전적으로 서버가 수행하며(클라이언트 응답값 신뢰 금지), 하루 1회 제출 제한과 동시 중복 제출 방지(멱등/유니크 제약)를 핵심 불변식으로 둔다. 포인트는 이번 범위에서 **적립(`QUIZ_CORRECT`) 로그와 합계 조회**까지만 다루고, 사용처·차감 정책은 MVP 범위 밖이다.
+외국인 세입자(임차인)가 한국 주거 관련 지식을 **요청할 때마다 무작위로 제공되는 4지선다 퀴즈**로 반복 학습하는 기능이다. 사용자는 문항·보기를 조회하고, 고른 보기를 제출하면 서버가 저장된 정답과 대조해 **정답 여부**를 즉시 돌려준다 — 정답이면 정답 안내만, 오답이면 **정답 보기와 해설(오답 사유)** 을 함께 반환한다. 정답 판정은 전적으로 서버가 수행하며(클라이언트 응답값 신뢰 금지), 채점은 **무상태(stateless)** 다 — 제출 기록·포인트 적립·하루 1회 제한·`(userId, quizDate)` 유니크 제약이 없고, 사용자는 횟수 제한 없이 반복해 풀 수 있다.
 
-> 인증 표기 기준: 오늘의 퀴즈/제출/포인트는 모두 **인증 주체별 상태(제출 여부·적립 내역)** 에 종속되므로 전부 **인증 필수**다. 모든 조회는 인증 주체로만 필터링되어 타인의 데이터를 반환하지 않으므로 별도의 타인 리소스 403 시나리오는 발생하지 않는다(존재 시 인증 단계에서 차단).
+> **범위 변경(이전 모델 대체)**: 이전 범위의 "오늘의 퀴즈(하루 1개)"·포인트 적립(`QUIZ_CORRECT`)·`/points` 합계·내역 조회 모델은 본 범위에서 **랜덤·무상태·다국어 학습 퀴즈로 대체**된다. 따라서 포인트 관련 스토리·엔드포인트는 제외되고, `QUIZ_NOT_TODAY`·`QUIZ_ALREADY_SUBMITTED` 도메인 에러는 발생하지 않는다. 이 대체 모델은 API 스펙([06-gamification](../api/specs/06-gamification.md))·시퀀스 다이어그램(`sequence-diagrams/06-gamification/`)·도메인 모델·DB 설계·[ADR-0035](../adr/0035-gamification-quiz-random-stateless-catalog.md)에 반영 완료됐다("한 도메인 = 네 곳" 정합, [CLAUDE.md](../../CLAUDE.md)). 남은 후속은 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`) 재구현이다.
+>
+> **다국어 번역이 기반**이다. 퀴즈 문항·보기·해설의 **표시 텍스트**는 사용자의 **등록 국가에 대응하는 언어**로 번역해 반환한다 — 표시 언어는 `gamification`이 `user` 모듈 공개 query(`getLanguage`)를 호출해 취득하고(등록 국가 `countries.lang`으로 도출; `Accept-Language`·토큰 클레임에 의존하지 않음), 해당 언어 번역이 없으면 **영어(`en`)로 폴백**한다(에러 아님). 보기 **키(A~D)는 언어와 무관하게 불변**이며 표시 텍스트만 언어별이다(채점은 키로 검증). 번역 저장은 `diagnosis`와 동일하게 문항 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하는 방식을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6와 동일 패턴).
+>
+> 인증 표기 기준: 본 기능은 **외국인 세입자(`userType=TENANT`)** 대상이다 — 조회·채점 모두 **온보딩을 완료한(`ACTIVE`) 세입자** 전용이다(정식 access 토큰 = `ROLE_USER`). 다국어 번역 기준인 등록 국가(언어)도 세입자 온보딩 수집값이라 임대인에게는 적용되지 않는다. 상태를 저장하지 않으므로 타인 리소스 접근 개념이 없고 인증만 강제한다. `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅하고 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
 
-### US-6-1 — 오늘의 퀴즈 조회
+### US-6-1 — 랜덤 퀴즈 조회
 
-**As a** 로그인한 외국인 사용자
-**I want** 오늘 풀 수 있는 4지선다 퀴즈 1개를 보기(정답·해설은 가려진 상태로) 조회하고, 내가 이미 제출했는지 여부를 함께 받기
-**So that** 매일 새로운 문제를 풀며 학습하고, 이미 푼 날에는 결과 화면으로 자연스럽게 이어갈 수 있다 (서버는 사용자별 제출 상태를 응답에 실어 클라가 화면을 분기하게 한다)
+**As a** 로그인한 외국인 세입자(온보딩 완료, `ACTIVE`·`userType=TENANT`)
+**I want** 요청할 때마다 서버가 무작위로 고른 4지선다 퀴즈 1개를 내 언어로 번역된 문항·보기와 함께 받기
+**So that** 매번 새로운 문제로 횟수 제한 없이 반복 학습할 수 있다 (정답·해설은 조회 응답에 싣지 않고 채점 요청에서만 공개한다)
 
 - 우선순위: High
-- 관련 NFR: 성능(자주 호출되는 조회, p95 응답시간 목표 — 확인 필요), 보안(정답/해설은 미제출 사용자에게 노출 금지)
+- 관련 NFR: 국제화(문항·보기 표시 언어는 등록 국가 기준, 영어 폴백), 성능(자주 호출되는 조회, p95 응답시간 목표 — 확인 필요), 보안(정답/해설은 조회 응답에 미포함)
 
 **AC (Given/When/Then)**
 
-- 시나리오: 오늘의 퀴즈 정상 조회 (미제출)
+- 시나리오: 정상 — 랜덤 퀴즈 조회
 
-  - Given 인증된 사용자가 오늘 퀴즈를 아직 제출하지 않았고, 오늘 날짜(서버 기준 UTC date)에 해당하는 퀴즈가 1개 존재한다
-  - When `GET /api/v1/quizzes/today`를 호출한다
-  - Then `200 OK` 와 함께 `quizId`, `question`, `choices`(`key` A~D + `text`, 4개), `quizDate`, `submitted=false`를 받고, 응답에 `correctChoice`/`explanation`은 포함되지 않는다
-- 시나리오: 오늘의 퀴즈 조회 (이미 제출함)
+  - Given `ACTIVE` 세입자(`userType=TENANT`)가 있고, 퀴즈 콘텐츠 풀에 사용 가능한 퀴즈가 1개 이상 있다
+  - When `GET /api/v1/quizzes/random`을 호출한다
+  - Then `200 OK` 와 함께 `quizId`, `question`, `choices`(`key` A~D + `text`, 4개)를 사용자 언어로 번역해 받고, 응답에 `correctChoice`/`explanation`은 포함되지 않는다
+- 시나리오: 반복 조회 — 매 호출 무작위 제공
 
-  - Given 인증된 사용자가 오늘 퀴즈를 이미 제출했다
-  - When `GET /api/v1/quizzes/today`를 호출한다
-  - Then `200 OK` 와 함께 `submitted=true` 및 직전 제출 결과(`result.selectedChoice`, `result.correct`, `result.correctChoice`, `result.explanation`, `result.earnedPoint`, `result.submittedAt`)를 받는다 (제출을 마친 사용자에게만 정답·해설 공개)
+  - Given 동일 세입자가 방금 한 문제를 조회·채점했다
+  - When `GET /api/v1/quizzes/random`을 다시 호출한다
+  - Then `200 OK` 와 함께 새 퀴즈를 받는다(제출 상태를 저장하지 않으므로 횟수 제한·`409` 차단이 없다)
 - 시나리오: 인증 누락
 
   - Given Authorization 헤더가 없거나 토큰이 위조/만료되었다
-  - When `GET /api/v1/quizzes/today`를 호출한다
+  - When `GET /api/v1/quizzes/random`을 호출한다
   - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
-- 시나리오: 경계 — 오늘 등록된 퀴즈가 없음
+- 시나리오: 권한 — 온보딩 미완료(비-`ACTIVE`) 접근
 
-  - Given 인증은 정상이나 오늘 날짜에 매칭되는 퀴즈가 콘텐츠 풀에 없다
-  - When `GET /api/v1/quizzes/today`를 호출한다
+  - Given 온보딩을 마치지 않은(`PENDING`/`TERMS_AGREED`) 토큰으로 접근한다
+  - When `GET /api/v1/quizzes/random`을 호출한다
+  - Then `403 Forbidden` 와 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다(정식 인증=`ROLE_USER` 필요)
+- 시나리오: 경계 — 사용 가능한 퀴즈가 없음
+
+  - Given 인증은 정상이나 퀴즈 콘텐츠 풀이 비어 있다
+  - When `GET /api/v1/quizzes/random`을 호출한다
   - Then `404 Not Found` 와 `error.code=QUIZ_NOT_FOUND`를 받는다
 
 ### US-6-2 — 퀴즈 정답 제출 및 즉시 피드백
 
-**As a** 로그인한 외국인 사용자
-**I want** 내가 고른 보기(A~D)를 제출하고 정답 여부와 해설을 즉시 받기
-**So that** 바로 학습 피드백을 얻고, 정답이면 포인트가 적립된다 (정답 판정은 서버가 저장된 정답과 대조해 수행하며 클라가 보낸 정답 여부는 신뢰하지 않는다)
+**As a** 로그인한 외국인 세입자(온보딩 완료, `ACTIVE`·`userType=TENANT`)
+**I want** 내가 고른 보기(A~D)를 제출해 서버가 채점한 정답 여부를 즉시 받고, 오답이면 정답 보기와 해설(오답 사유)을 함께 받기
+**So that** 바로 학습 피드백을 얻는다 (정답 판정은 서버가 저장된 정답과 대조해 수행하며 클라가 보낸 정답 여부는 신뢰하지 않는다; 제출 기록·포인트 적립을 남기지 않는 무상태 채점이다)
 
 - 우선순위: High
-- 관련 NFR: 신뢰성/무결성(하루 1회 제출 불변식, 동시 요청 멱등 처리), 보안(정답 서버 판정), 관측성(적립 로그 기록)
+- 관련 NFR: 보안(정답 서버 판정, 정답·해설은 채점 응답에서만 공개), 국제화(정답 해설도 사용자 언어로 번역, 영어 폴백), 신뢰성(무상태 채점 — 반복 호출에도 부작용 없음)
 
 **AC (Given/When/Then)**
 
-- 시나리오: 정상 제출 — 정답
+- 시나리오: 정상 채점 — 정답
 
-  - Given 인증된 사용자가 오늘 퀴즈를 아직 제출하지 않았고, 선택한 보기가 정답이다
-  - When `POST /api/v1/quizzes/{quizId}/submission`에 `{ "selectedChoice": "B" }`를 보낸다
-  - Then `201 Created` 와 함께 `correct=true`, `correctChoice`, `explanation`, `earnedPoint=10`, `totalPoint`(적립 후 합계)를 받고, `Location` 헤더에 생성된 제출 리소스 URI가 포함되며, 서버에 `QUIZ_CORRECT` 사유의 포인트 적립 로그 1건과 제출 기록 1건이 생성된다
-- 시나리오: 정상 제출 — 오답
+  - Given `ACTIVE` 세입자(`userType=TENANT`)가 조회한 퀴즈에서 정답 보기를 골랐다
+  - When `POST /api/v1/quizzes/{quizId}/answer`에 `{ "selectedChoice": "B" }`를 보낸다
+  - Then `200 OK` 와 함께 `correct=true`(정답 안내)를 받고, 적립·기록 등 부작용이 없다 (정답 시 해설 동반 여부는 정책 — 현재 미노출, 확인 필요)
+- 시나리오: 정상 채점 — 오답 (정답 보기·해설 반환)
 
-  - Given 인증된 사용자가 오늘 퀴즈를 아직 제출하지 않았고, 선택한 보기가 오답이다
-  - When `POST /api/v1/quizzes/{quizId}/submission`에 `{ "selectedChoice": "A" }`를 보낸다
-  - Then `201 Created` 와 함께 `correct=false`, `correctChoice`, `explanation`, `earnedPoint=0`을 받고, 제출 기록만 생성되며 포인트 적립 로그는 생성되지 않는다
+  - Given `ACTIVE` 세입자(`userType=TENANT`)가 오답 보기를 골랐다
+  - When `POST /api/v1/quizzes/{quizId}/answer`에 `{ "selectedChoice": "A" }`를 보낸다
+  - Then `200 OK` 와 함께 `correct=false`, `correctChoice`(정답 보기 키), `explanation`(오답 사유·해설, 사용자 언어로 번역)을 받고, 부작용이 없다
 - 시나리오: 입력 검증 실패 — 허용되지 않은 보기 값
 
-  - Given 인증된 사용자가 `selectedChoice`에 `E`(또는 빈 값/누락)를 보낸다
-  - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
+  - Given 세입자가 `selectedChoice`에 `E`(또는 빈 값/누락)를 보낸다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
   - Then `400 Bad Request` 와 `error.code=INVALID_INPUT`, `errors[]`에 `selectedChoice` 필드 사유를 받는다
 - 시나리오: 입력 검증 실패 — JSON 파싱 불가
 
-  - Given 인증된 사용자가 본문을 깨진 JSON으로 보낸다
-  - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
+  - Given 세입자가 본문을 깨진 JSON으로 보낸다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
   - Then `400 Bad Request` 와 `error.code=MALFORMED_REQUEST`를 받는다
-- 시나리오: 인증·권한 — 인증 누락
+- 시나리오: 인증 누락
 
   - Given Authorization 헤더가 없거나 토큰이 만료/위조되었다
-  - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
   - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
-- 시나리오: 경계·동시성 — 하루 1회 초과 / 중복 제출
-
-  - Given 인증된 사용자가 오늘 퀴즈를 이미 제출했거나, 동일 요청이 거의 동시에 2건 도착한다
-  - When `POST /api/v1/quizzes/{quizId}/submission`를 다시(또는 동시에) 호출한다
-  - Then `409 Conflict` 와 `error.code=QUIZ_ALREADY_SUBMITTED`를 받고(유니크 제약 `(userId, quizDate)`로 두 번째 쓰기는 거부), 포인트는 단 1회만 적립된다
-- 시나리오: 경계 — 존재하지 않는 퀴즈 제출
+- 시나리오: 경계 — 존재하지 않는 퀴즈 채점
 
   - Given 경로의 `{quizId}`가 존재하지 않는다
-  - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
   - Then `404 Not Found` 와 `error.code=QUIZ_NOT_FOUND`를 받는다
-- 시나리오: 경계 — 오늘 것이 아닌 퀴즈 제출
+- 시나리오: 반복 채점 — 부작용 없음(무상태)
 
-  - Given 경로의 `{quizId}`는 존재하나 오늘의 퀴즈가 아니다(과거/미래 분)
-  - When `POST /api/v1/quizzes/{quizId}/submission`를 호출한다
-  - Then `422 Unprocessable Entity` 와 `error.code=QUIZ_NOT_TODAY`를 받는다
+  - Given 세입자가 같은 퀴즈를 여러 번 채점 요청한다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 반복 호출한다
+  - Then 매번 채점 결과만 반환하고 제출 기록·포인트 적립 등 상태 변경이 없다(하루 1회 제한·`409 QUIZ_ALREADY_SUBMITTED` 없음)
 
-### US-6-3 — 내 포인트 합계 및 적립 내역 조회
+### US-6-3 — 사용자 국가 기반 퀴즈 문항·해설 번역 제공
 
-**As a** 로그인한 외국인 사용자
-**I want** 내 현재 포인트 합계와, 시간순 적립 내역을 페이지 단위로 조회하기
-**So that** 내가 얼마나 적립했고 어떤 활동으로 받았는지 확인할 수 있다 (서버는 적립 로그를 집계해 합계를 제공하고, 내역은 본인 것만 노출한다)
+**As a** 한국어가 익숙하지 않은 외국인 세입자(`ACTIVE`·`userType=TENANT`)
+**I want** 퀴즈 문항·보기·해설(오답 사유)을 내 국가(언어)에 맞게 번역된 텍스트로 받기
+**So that** 모국어 또는 영어로 문제를 이해하고 정확히 답할 수 있다 (번역 기준은 등록 국가→언어이며 `user` 공개 query `getLanguage`로 취득, 미지원 언어는 영어로 폴백, 보기 키 A~D는 언어와 무관하게 불변)
 
-- 우선순위: Mid
-- 관련 NFR: 성능(오프셋 페이지네이션, 합계 집계 쿼리 — 확인 필요), 보안(타인 내역 접근 차단)
+- 우선순위: High
+- 관련 NFR: 국제화(i18n), 일관성(번역 누락 시 영어 폴백), 보안(본인 국가 정보 기반 — 온보딩 수집값)
 
 **AC (Given/When/Then)**
 
-- 시나리오: 정상 — 합계 조회
+- 시나리오: 정상 — 국가에 맞는 번역 제공
 
-  - Given 인증된 사용자가 누적 적립 로그를 가진다
-  - When `GET /api/v1/points/summary`를 호출한다
-  - Then `200 OK` 와 `totalPoint`(KRW 금액이 아닌 포인트 정수)를 받는다
-- 시나리오: 정상 — 적립 내역 오프셋 페이지 조회
+  - Given 등록 국가가 일본(언어 `ja`)인 세입자가 퀴즈를 조회한다
+  - When `GET /api/v1/quizzes/random`을 호출한다
+  - Then 문항·보기 표시 텍스트가 해당 언어로 번역되어 반환되고, 보기 키(A~D)는 언어와 무관하게 동일하다
+- 시나리오: 폴백 — 미지원 언어
 
-  - Given 인증된 사용자가 다수의 적립 로그를 가진다
-  - When `GET /api/v1/points/histories?page=0&size=20&sort=createdAt,desc`를 호출한다
-  - Then `200 OK` 와 `content[]`(각 `historyId`, `amount`, `reason`, `createdAt`) + `page`(`number`/`size`/`totalElements`/`totalPages`/`hasNext`)를 받는다
-- 시나리오: 입력 검증 실패 — 잘못된 페이지 파라미터
+  - Given 번역이 준비되지 않은 국가/언어의 세입자다
+  - When 퀴즈를 조회하거나 채점을 요청한다
+  - Then 기본 언어(영어)로 폴백해 반환한다(에러 아님)
+- 시나리오: 오답 해설도 번역 제공
 
-  - Given `size`에 음수/0 또는 최대(100) 초과 값을 보낸다
-  - When `GET /api/v1/points/histories?size=0` (또는 `size=500`)를 호출한다
-  - Then `400 Bad Request` 와 `error.code=INVALID_INPUT`을 받는다
-- 시나리오: 인증·권한 — 인증 누락
+  - Given 등록 국가 언어가 `ja`인 세입자가 오답을 제출한다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
+  - Then `correctChoice`와 함께 `explanation`(오답 사유·해설)이 사용자 언어로 번역되어 반환된다
+- 시나리오: 키 불변 — 번역과 무관한 채점
 
-  - Given Authorization 헤더가 없거나 토큰이 만료/위조되었다
-  - When `GET /api/v1/points/summary` 또는 `GET /api/v1/points/histories`를 호출한다
-  - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받고, 어떤 경우에도 타인의 내역은 반환되지 않는다(내역은 인증 주체로만 필터링)
+  - Given 번역된 라벨로 표시된 보기를 골라 그 키(A~D)로 제출한다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
+  - Then 언어와 무관하게 동일 키로 정상 채점된다
 
 ## 7. 신고 처리
 
@@ -1450,3 +1455,119 @@ Given 클라이언트가
 When  /api/v1/reports/reasons 에 POST 등 미허용 메서드로 요청하면
 Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 ```
+
+## 8. 생활 팁 (주제별 생활 정보)
+
+> 관련 API 스펙: [08-life-tips](../api/specs/08-life-tips.md) *(작성 예정 · 이슈 #79)*
+
+온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 읽기 전용 큐레이션 기능이다. 홈 화면 진입점([project-brief §4](../project/project-brief.md))에서 시작하며, 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(5절)와 구분된다).
+
+**번역이 이 기능의 바탕이다** — 주제명·제목·내용 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 사진 `imageUrl`은 언어 무관 불변이고, 표시 텍스트만 언어별이다.
+
+> **인증·상태 게이트 기준**: 표시 언어를 **등록 국가에서 도출**하려면 온보딩으로 국가·언어가 확정된 사용자여야 한다. 따라서 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자**이고, 모든 조회는 **정식 인증(ROLE_USER)** 을 요구한다(임대인·온보딩 미완료 사용자는 등록 국가가 없어 대상이 아니다) — 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트). 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
+
+> **저장소**: 문서형·가변 스키마·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏, [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). 모듈 경계(`lifetip` 신설 여부)·저장소·MVP 편입 시점 확정은 이슈 #79에서 다룬다.
+
+### US-8-1 — 생활 팁 주제 목록 조회
+
+**As a** 온보딩을 마친(ACTIVE) 세입자(외국인) 사용자
+**I want** 생활 팁이 어떤 주제로 나뉘어 있는지 주제 목록을 내 언어로 조회하고
+**So that** 관심 있는 주제를 골라 관련 생활 정보를 찾아 들어갈 수 있다
+
+- **우선순위**: Mid (홈 진입 콘텐츠, 보호 핵심(진단·추천) 아님)
+- **관련 NFR**: 국제화(i18n — 등록 국가 기반 번역·`en` 폴백), 성능(소규모 고정 카탈로그 조회), 유지보수성(주제 카탈로그 단일 출처)
+- **백엔드 관점**: 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그다. 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며, 표시명(`name`)은 언어-키 맵으로 임베드된다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`을 채워 노출 순서대로 반환한다. 주제 수는 고정·소규모라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 메타 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). `code`는 US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다.
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — 주제 목록을 내 언어로 조회
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 유효한 access token(ROLE_USER)을 보유한다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `200 OK`와 함께 `topics[]`(각 `code`(UPPER_SNAKE), 노출 순서대로의 `name` — 일본어로 번역된 표시명)를 공통 래퍼로 반환하며, 페이지 객체 없이 전체 배열을 한 번에 준다
+- 시나리오: 폴백 — 미지원 언어
+
+  - **Given** 번역이 준비되지 않은 국가/언어의 ACTIVE 세입자다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** 주제 표시명이 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님), `code`는 언어와 무관하게 동일하다
+- 시나리오: 상태 게이트 — 온보딩 미완료
+
+  - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `403 Forbidden`과 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다(정식 인증 ROLE_USER=ACTIVE만 허용)
+- 시나리오: 인증 누락
+
+  - **Given** Authorization 헤더가 없거나 토큰이 만료/위조되었다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `401 Unauthorized`와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
+
+### US-8-2 — 특정 주제의 생활 팁(제목·내용·사진) 목록 조회
+
+**As a** 특정 주제의 생활 정보를 보려는 ACTIVE 세입자(외국인) 사용자
+**I want** 고른 주제에 속한 생활 팁(제목·내용·사진) 전체를 내 언어로 한 번에 받고
+**So that** 그 주제의 정보를 앱을 새로 배포하지 않고도 최신 큐레이션으로 읽을 수 있다
+
+- **우선순위**: Mid
+- **관련 NFR**: 국제화(i18n — 제목·내용 번역·`en` 폴백), 일관성(주제-팁 참조 무결성), 성능(주제당 팁 수가 제한적이라 전체 반환)
+- **백엔드 관점**: 생활 팁(`LifeTip`)은 하나의 주제(`topicCode`)에 속하며(주제 : 팁 = 1 : N), `title`·`content`는 언어-키 맵으로 임베드되고 `imageUrl`은 언어 무관(사진)이다. 클라이언트가 주제 `code`를 path로 지정해 `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출하면, 서버가 그 주제의 팁 전체를 노출 순서(`order`)대로 조립해 반환한다 — 각 팁의 `title`·`content`는 `getLanguage(userId)`로 정한 언어 키(없으면 `en`)로 채우고 `imageUrl`은 그대로 싣는다. 주제당 팁 수가 제한적이므로 페이지네이션 없이 전체 리스트를 한 번에 반환한다("해당 주제에 맞는 제목-내용-사진의 모든 리스트"). 존재하지 않는 주제 `code`는 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약). 사진이 없는 팁은 `imageUrl`을 `null`(또는 생략)로 둔다.
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — 주제별 팁 전체 조회
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자와, 팁 3건이 속한 주제(`code=MOVING_IN`)가 있다
+  - **When** `GET /api/v1/life-tips/topics/MOVING_IN/tips`를 호출한다
+  - **Then** `200 OK`와 함께 `tips[]`(각 `id`, 일본어로 번역된 `title`·`content`, `imageUrl`)가 노출 순서대로 3건 모두 반환되며, 페이지 객체 없이 전체 배열을 한 번에 준다
+- 시나리오: 폴백 — 미지원 언어
+
+  - **Given** 번역이 준비되지 않은 국가/언어의 ACTIVE 세입자가 위 주제를 조회한다
+  - **When** `GET /api/v1/life-tips/topics/MOVING_IN/tips`를 호출한다
+  - **Then** 각 팁의 `title`·`content`가 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님), `imageUrl`은 언어와 무관하게 동일하다
+- 시나리오: 경계 — 사진 없는 팁
+
+  - **Given** 조회한 주제에 사진이 없는 팁이 포함되어 있다
+  - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** 해당 팁의 `imageUrl`이 `null`(또는 생략)로 반환되고 나머지 필드(`title`·`content`)는 정상 노출된다
+- 시나리오: 경계 — 존재하지 않는 주제
+
+  - **Given** 경로의 `{topicCode}`가 카탈로그에 없다
+  - **When** `GET /api/v1/life-tips/topics/UNKNOWN_TOPIC/tips`를 호출한다
+  - **Then** `404 Not Found`와 `error.code=LIFE_TIP_TOPIC_NOT_FOUND`를 받는다
+- 시나리오: 상태 게이트 — 온보딩 미완료
+
+  - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다
+  - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** `403 Forbidden`과 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다
+- 시나리오: 인증 누락
+
+  - **Given** Authorization 헤더가 없거나 토큰이 만료/위조되었다
+  - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** `401 Unauthorized`와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
+
+### US-8-3 — 사용자 국가 기반 생활 팁 번역 제공
+
+**As a** 한국어가 익숙하지 않은 ACTIVE 세입자(외국인) 사용자
+**I want** 주제명·제목·내용을 내 국가(언어)에 맞게 번역된 텍스트로 받고
+**So that** 모국어 또는 영어로 생활 정보를 이해할 수 있다
+
+- **우선순위**: High (외국인 대상 서비스의 핵심 접근성 — 이 기능의 바탕)
+- **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 `en` 폴백), 보안(본인 등록 국가 기반 — 온보딩 수집값)
+- **백엔드 관점**: 번역 전략은 진단 i18n([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6)과 **동일**하며 별도 메커니즘을 만들지 않는다. 번역 기준은 **사용자 등록 국가**(온보딩 수집값)이고, 표시 언어는 `user` 모듈 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(`user`가 `countries.lang`으로 도출; `Accept-Language`·토큰 클레임 미사용; [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가). 번역 텍스트는 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드한다 — 주제는 `name: { "en": …, "ja": …, "ko": … }`, 팁은 `title`/`content` 각각 언어-키 맵. 서버는 사용자 언어 키로 문자열을 고르고 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 주제·팁 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. US-8-1·US-8-2와 동일 엔드포인트에서 처리하며 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — 국가에 맞는 번역 제공
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 주제 목록 또는 주제별 팁을 조회한다
+  - **When** 생활 팁 조회 엔드포인트를 호출한다
+  - **Then** 주제명·제목·내용 표시 텍스트가 일본어로 번역되어 반환되고, `code`/`id`·`imageUrl`은 언어와 무관하게 동일하다
+- 시나리오: 폴백 — 미지원 언어
+
+  - **Given** 번역이 준비되지 않은 국가/언어의 사용자다(또는 국가→언어 매핑 미정의)
+  - **When** 생활 팁 조회 엔드포인트를 호출한다
+  - **Then** 기본 언어(영어 `en`)로 폴백해 `200 OK`로 반환한다(에러 아님)
+- 시나리오: 언어 결정 출처 — 헤더 무관
+
+  - **Given** 사용자가 `Accept-Language`를 다른 값으로 보내도 등록 국가는 일본이다
+  - **When** 생활 팁 조회 엔드포인트를 호출한다
+  - **Then** 응답 언어는 헤더와 무관하게 등록 국가(일본어)로 결정된다(번역 언어 출처는 `user`의 `countries.lang`)

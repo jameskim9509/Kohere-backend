@@ -28,8 +28,9 @@
 | [`booking`](#5-booking--매물-신청예약) | `Booking` | — (`GreetingMessage`는 후속·이연) | ✅ |
 | [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | 후속·이연 |
 | [`community`](#7-community--커뮤니티) | `Post`(+`Comment`·`PostLike`) | `Hashtag` | 이후 |
-| [`gamification`](#8-gamification--퀴즈포인트) | `Quiz`, `QuizSubmission`, `PointHistory` | `QuizChoice` | 이후 |
+| [`gamification`](#8-gamification--퀴즈) | `Quiz` | `QuizChoice` | 이후 |
 | [`report`](#9-report--신고-처리) | `Report` | `ReportTarget`, `ReportDetail` | 이후 |
+| [`lifetip`](#10-lifetip--생활-팁주제별-생활-정보) | `LifeTipTopic`, `LifeTip` | — | 이후 |
 
 > `common`은 공유 커널(애그리거트 없음): 응답 래퍼·예외 표준만 제공.
 
@@ -751,76 +752,46 @@
 
 ---
 
-## 8. `gamification` — 퀴즈·포인트
+## 8. `gamification` — 퀴즈
 
-> [API 스펙](../api/specs/06-gamification.md) · [시퀀스](sequence-diagrams/06-gamification/README.md) · `allowedDependencies = {common}` · **1차 MVP 이후**
+> [API 스펙](../api/specs/06-gamification.md) · [시퀀스](sequence-diagrams/06-gamification/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`) · **1차 MVP 이후**
 
-오늘의 퀴즈(하루 1문제, 4지선다)를 제공하고, 제출을 서버가 채점해 정답이면 포인트를 적립하며, 사용자별 포인트 합계·적립 내역을 제공한다.
+외국인 임차인(`userType=TENANT`·`status=ACTIVE`) 대상 학습형 퀴즈를 제공한다 — 요청마다 활성 풀에서 4지선다 퀴즈 1개를 **랜덤 선정**해 사용자 언어로 번역해 내려주고, 사용자가 보기를 선택해 답하면 서버가 저장된 정답과 대조해 채점한다. **무제한 재응시·무상태**로, 제출·적립·이력·이벤트를 남기지 않으며(멱등·재응시 가능), 하루 1회 제한이나 오늘의 퀴즈·포인트 개념은 없다.
 
-**`Quiz`** — 특정 날짜에 노출되는 4지선다 오늘의 퀴즈(애그리거트 루트). 식별자 `id`, 비즈니스 키 `quizDate`. [값 객체: `QuizChoice`]
-
-**속성:**
-
-| 속성 | 타입 | 설명 |
-| --- | --- | --- |
-| `id` | 식별자 | 애그리거트 식별자 |
-| `quizDate` | LocalDate | 퀴즈가 노출되는 날짜(날짜당 1개) |
-| `question` | String | 문제 본문 |
-| `choices` | `List<QuizChoice>` | 4지선다 보기(키 A~D, 보기 텍스트) |
-| `correctChoice` | enum `ChoiceKey` | 정답 보기 키(제출을 마친 사용자에게만 공개) |
-| `explanation` | String | 정답 해설(제출을 마친 사용자에게만 공개) |
-
-**불변식:** `quizDate`는 전 퀴즈에 걸쳐 유일(날짜당 정확히 1개); `choices`는 정확히 4개·키 `A`·`B`·`C`·`D` 각 1개(중복·누락 없음); `correctChoice`는 `choices` 키 집합에 포함; `correctChoice`·`explanation`은 제출을 마친 주체에게만 노출(미제출자에겐 가림); 서버 기준 오늘 퀴즈가 없으면 조회·제출 실패(`404 QUIZ_NOT_FOUND`); 제출은 `quizDate`가 오늘인 퀴즈에만(`422 QUIZ_NOT_TODAY`).
-
-**`QuizSubmission`** — 한 사용자의 하루 1회 제출 결과 스냅샷(채점·적립 확정값) 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(userId, quizDate)`.
+**`Quiz`** — 활성 풀에서 랜덤 노출되는 4지선다 퀴즈 콘텐츠(콘텐츠 카탈로그 애그리거트 루트). 식별자 `id`만 가지며(날짜·비즈니스 키 없음). [값 객체: `QuizChoice`]
 
 **속성:**
 
 | 속성 | 타입 | 설명 |
 | --- | --- | --- |
-| `id` | 식별자 | 애그리거트 식별자 |
-| `userId` | 식별자 | 제출 주체 → `User` 식별자 참조 |
-| `quizId` | 식별자 | 제출 대상 → `Quiz` 식별자 참조 |
-| `quizDate` | LocalDate | 제출 대상 퀴즈의 날짜(하루 1회 판정 기준값) |
-| `selectedChoice` | enum `ChoiceKey` | 사용자가 선택한 보기 키 |
-| `correct` | boolean | 서버 채점 결과(정답 여부) |
-| `earnedPoint` | int | 이 제출로 적립된 포인트(오답이면 0) |
-| `submittedAt` | Instant | 제출·채점 확정 시각(UTC) |
+| `id` | 식별자 | 애그리거트 식별자(`quizId`) |
+| `question` | 인라인 언어-키 맵 | 문제 본문 — `{ "en": .., "ja": .., "ko": .. }` 언어 코드를 키로 하는 맵. 서버가 `getLanguage`로 얻은 표시 언어 키로 선택(부재 시 영어(`en`) 폴백) |
+| `choices` | `List<QuizChoice>` | 4지선다 보기(키 A~D, 보기 텍스트). 키 A~D는 언어 무관 |
+| `correctChoice` | enum `ChoiceKey` | 정답 보기 키. `GET random`에는 절대 포함하지 않고 **오답 응답에만** 반환 |
+| `explanation` | 인라인 언어-키 맵 | 오답 사유(해설) — `{ "en": .., "ja": .. }` 언어-키 맵. 서버가 표시 언어 키로 선택(부재 시 `en` 폴백), **오답 응답에만** 반환 |
+| `active` | boolean | 랜덤 풀 게이팅(`true`인 퀴즈만 랜덤 선정 대상) |
 
-**불변식:** `(userId, quizDate)`는 유일 → 사용자당 같은 날 제출 1건만(동시·재시도 `409 QUIZ_ALREADY_SUBMITTED`, 멱등); `selectedChoice`는 A~D 중 하나(그 외 `400 INVALID_INPUT`); `correct`는 클라이언트 입력이 아니라 `Quiz.correctChoice`와 대조한 서버 판정; `correct=true`면 `earnedPoint`는 정답 적립 단위, `false`면 0; 채점·제출 기록·정답 적립은 하나의 원자적 단위로 처리(정답은 정확히 1건 적립, 중복 없음); 제출은 오늘 퀴즈에만(`422 QUIZ_NOT_TODAY`); 결과는 제출을 마친 본인에게만 노출.
-
-**`PointHistory`** — 포인트 적립 1건을 기록하는 추가 전용(append-only) 애그리거트 루트. 식별자 `id`.
-
-**속성:**
-
-| 속성 | 타입 | 설명 |
-| --- | --- | --- |
-| `id` | 식별자 | 애그리거트 식별자 |
-| `userId` | 식별자 | 적립 귀속 주체 → `User` 식별자 참조 |
-| `amount` | int | 적립 포인트(양수, **포인트 정수이며 KRW 금액 아님**) |
-| `reason` | enum `PointReason` | 적립 사유 |
-| `createdAt` | Instant | 적립 시각(UTC) |
-
-**불변식:** 추가 전용(기록 후 수정·삭제 없음); `amount`는 양수(현재 범위에 차감·음수 없음); 정답 제출당 정확히 1건의 `PointHistory`(`QUIZ_CORRECT` 사유), 오답은 미생성; 사용자 포인트 합계는 별도 잔액이 아니라 해당 `userId`의 `amount` 합으로 도출(집계가 유일한 진실 원천); 조회는 인증 주체 `userId`로만 필터링.
+**불변식:** `choices`는 정확히 4개·키 `A`·`B`·`C`·`D` 각 1개(중복·누락 없음); `correctChoice`는 `choices` 키 집합에 포함; 보기 키 A~D는 **언어 무관**(채점은 키로 판정); `question`·`choices[].text`·`explanation`은 **인라인 언어-키 맵**으로 저장하고 서버가 `getLanguage` 표시 언어 키로 골라 응답(해당 언어 키 부재 시 영어(`en`) 폴백; diagnosis와 동일 i18n 경로); **채점은 무상태** — 서버가 `selectedChoice`를 `Quiz.correctChoice`와 대조해 정답이면 `{ quizId, selectedChoice, correct:true }`, 오답이면 `{ quizId, selectedChoice, correct:false, correctChoice, explanation }`을 반환하며 제출·적립·이력·이벤트를 남기지 않는다(멱등·재응시 가능); `selectedChoice`는 A~D 중 하나(그 외 `400 INVALID_INPUT`); `GET random`에는 `correctChoice`·`explanation`을 포함하지 않는다(정답 응답에도 미포함 — 정답 시 `explanation` 동봉 여부는 **(확인 필요)**); `quizId`가 없거나 활성 풀이 공백이면 `404 QUIZ_NOT_FOUND`; **접근은 외국인 임차인 활성 사용자(`userType=TENANT`·`status=ACTIVE`)로 제한** — 비-`ACTIVE`는 `403 AUTH_ONBOARDING_REQUIRED`(01-auth-onboarding 교차 참조). 현재 `SecurityConfig`는 `/api/v1/quizzes/**`를 `authenticated()`로만 열어 두어 `TENANT`·`ACTIVE` 강제는 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검사가 필요하며 아직 **미구현·(확인 필요)**. "랜덤"은 활성 풀에서의 **랜덤 선정**을 뜻하고 동적 생성이 아니다 **(확인 필요)**.
 
 **값 객체(VO):**
 
 | 이름 | 속성 | 타입 | 설명 |
 | --- | --- | --- | --- |
-| `QuizChoice` | `key` | enum `ChoiceKey` | 4지선다 보기 키(A~D). 동일 `Quiz` 내 유일 |
-| | `text` | String | 보기 텍스트(비어 있지 않음) |
+| `QuizChoice` | `key` | enum `ChoiceKey` | 4지선다 보기 키(A~D). 동일 `Quiz` 내 유일, **언어 무관**(채점 기준) |
+| | `text` | 인라인 언어-키 맵 | 보기 텍스트 — `{ "en": .., "ja": .. }` 언어-키 맵(각 언어 값 비어 있지 않음). 서버가 `getLanguage` 표시 언어 키로 선택(부재 시 `en` 폴백) |
 
 **상태(enum):**
 
 | enum | 값 | 의미 |
 | --- | --- | --- |
-| `ChoiceKey` | `A` | 4지선다 첫 번째 보기 |
+| `ChoiceKey` | `A` | 4지선다 첫 번째 보기(코드는 언어 무관) |
 | | `B` | 두 번째 보기 |
 | | `C` | 세 번째 보기 |
 | | `D` | 네 번째 보기 |
-| `PointReason` | `QUIZ_CORRECT` | 퀴즈 정답 적립(현재 범위의 유일 사유) |
 
-**협력 / 이벤트:** 제출·적립 귀속 주체는 `user`를 식별자(`userId`)로만 참조한다(ADR-0002). 포인트 합계·내역은 인증 주체 `userId`로 필터링한 본 모듈 내부 집계로 제공한다. 외부 모듈이 포인트 적립을 알아야 하면 공개 쿼리 또는 적립 도메인 이벤트로 협력한다.
+> 퀴즈 콘텐츠는 `Quiz` 애그리거트를 **MongoDB `quizzes` 컬렉션**(`diagnosisQuestions`와 동종의 문서 카탈로그, ADR-0005 폴리글랏 — 퀴즈=콘텐츠/문서 → MongoDB)에 보유한다. 표시 문자열(`question`·`choices[].text`·`explanation`)은 분리 컬렉션 없이 **같은 도큐먼트 안에 인라인 언어-키 맵으로 임베드**하고(언어 코드 키), 보기 키 `A`~`D`(`ChoiceKey`)는 언어 무관 불변으로 채점 기준이다. `active` 불리언이 랜덤 풀을 게이트하며, 시드는 Mongock `@ChangeUnit`으로 적재한다. 제출 테이블·포인트 테이블은 없다(무상태 채점).
+
+**협력 / 이벤트:** 채점 귀속 주체는 `user`를 식별자(`userId`)로만 참조한다(ADR-0002). 번역에 쓸 **표시 언어는 `user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출, 부재 시 영어(`en`) 폴백) — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(ADR-0002 Decision 5). 이로써 **모듈 의존 `gamification → user`를 추가**한다(위 `allowedDependencies` 항목). 퀴즈 콘텐츠는 **MongoDB 문서 카탈로그**(`diagnosisQuestions`와 동종, ADR-0005)로 제공하며, 채점은 **무상태**라 제출·적립·이벤트를 남기지 않는다.
 
 ---
 
@@ -870,6 +841,49 @@
 | `ReportStatus` | `RECEIVED` | 접수됨(단일 값, 상태 전이 없음) |
 
 **협력 / 이벤트:** 타 애그리거트는 식별자(`reporterId`·`targetId`)로만 참조한다(ADR-0002). 대상 존재 검증·작성자 동일성(자기 신고 판별)·채팅방 참여 권한 평가는 대상 보유 모듈의 공개 쿼리에 위임한다 — `POST`/`COMMENT`는 `community`, `MESSAGE`는 `chat`. 신고 사유 카탈로그(`ReportReason`)는 고정·소규모 정적 메타로 외부에 노출되어 클라이언트가 사유 선택지를 서버와 동일하게 구성하는 단일 출처가 된다.
+
+---
+
+## 10. `lifetip` — 생활 팁(주제별 생활 정보)
+
+> [API 스펙](../api/specs/08-life-tips.md) · [시퀀스](sequence-diagrams/08-life-tips/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`) · **1차 MVP 이후**
+
+온보딩을 마친(ACTIVE) 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용** 큐레이션 컨텍스트다(홈 부가 기능). 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 `community`(7절)와 구분). 주제·팁의 표시 텍스트(주제명·제목·내용)는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6) — 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며 해당 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. 문서형·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏; 진단 카탈로그 저장 방식([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))과 정합).
+
+**`LifeTipTopic`** — 생활 팁을 묶는 주제(애그리거트 루트). 운영이 적재한 큐레이션 카탈로그로, 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며 표시명(`name`)은 언어-키 맵으로 임베드된다. 식별자 `code`(주제 코드, 언어 무관 불변).
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `code` | 식별자(String) | 주제 코드(UPPER_SNAKE, 언어 무관 불변 식별자). 예: `MOVING_IN`·`ADMINISTRATION`·`TRANSPORT`·`FINANCE`·`HOUSING`. US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다 |
+| `name` | 언어-키 맵 | 표시명(번역 대상). `{ "en": …, "ja": …, "ko": … }` 인라인 언어-키 맵 — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백) |
+| `order` | int | 노출 순서(오름차순) |
+
+**불변식:** `code`는 전 주제에 걸쳐 유일(UPPER_SNAKE, 언어 무관 불변); 목록은 `order` 오름차순으로 노출하고 고정·소규모 카탈로그라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3 신고 사유 카탈로그와 동일 성격); `name`은 표시 문자열만 언어별이고 `code`·`order`는 언어 무관; 존재하지 않는 주제 `code`로 팁을 조회하면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약).
+
+**`LifeTip`** — 하나의 주제에 속한 생활 팁 항목(애그리거트 루트). 주제 : 팁 = **1 : N**. `title`·`content`는 언어-키 맵으로 임베드되고 `imageUrl`은 언어 무관(사진)이다. 식별자 `id`, 소속 주제 참조 `topicCode`(→ `LifeTipTopic.code`, 애플리케이션 레벨 조인·DB 조인 없음).
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | 식별자 | 팁 식별자(언어 무관 불변) |
+| `topicCode` | String | 소속 주제 코드 → `LifeTipTopic` 식별자(`code`) 참조(애플리케이션 레벨 조인, DB 조인 없음) |
+| `order` | int | 주제 내 노출 순서(오름차순) |
+| `title` | 언어-키 맵 | 제목(번역 대상). `{ "en": …, "ja": …, "ko": … }` — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백) |
+| `content` | 언어-키 맵 | 내용(번역 대상). 인라인 언어-키 맵(서버가 사용자 언어 키로 선택, 부재 시 `en` 폴백) |
+| `imageUrl` | String, nullable | 사진 URL(언어 무관). 사진이 없으면 `null`(또는 응답에서 생략) |
+
+**불변식:** `topicCode`는 실재하는 `LifeTipTopic.code`를 가리켜야 한다(참조 무결성 — 없는 주제 코드로 조회 시 `404 LIFE_TIP_TOPIC_NOT_FOUND`); 한 주제의 팁 목록은 `(topicCode, order)`로 노출 순서를 정하며, 주제당 팁 수가 제한적이라 페이지네이션 없이 전체 리스트를 한 번에 반환한다(비페이지 — "해당 주제에 맞는 제목-내용-사진의 모든 리스트"); `title`·`content`는 표시 문자열만 언어별이고 `id`·`imageUrl`은 언어 무관 불변; `imageUrl`이 없는 팁은 `null`로 두되 나머지 필드(`title`·`content`)는 정상 노출한다; 응답 스키마는 언어와 무관하게 동일하고 서버가 언어 문자열만 채운다.
+
+> `LifeTipTopic`·`LifeTip` 모두 운영이 시드로 적재하는 큐레이션 카탈로그다(사용자 생성 콘텐츠 아님). 시드는 진단 카탈로그와 동일하게 Mongock `@ChangeUnit`(모듈별)로 `lifeTipTopics`/`lifeTips` 컬렉션에 적재한다([ADR-0032](../adr/0032-mongodb-migration-runner.md)). 컬렉션·인덱스 등 영속 매핑(`lifeTipTopics { order: 1 }`, `lifeTips { topicCode: 1, order: 1 }` 복합)은 [database-design](../database/database-design.md) 소관이라 여기서 다루지 않는다.
+
+**i18n(진단과 동일 전략):** 번역 기준은 **사용자 등록 국가**(온보딩 수집값)이고, 표시 언어는 `user` 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(`user`가 `countries.lang`으로 도출; `Accept-Language`·토큰 클레임 미사용; [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6 일관). 표시 문자열(`name`/`title`/`content`)은 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하고, 서버가 사용자 언어 키로 문자열을 고르되 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)·`imageUrl`은 언어 무관 불변이라 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다). 진단 문항 라벨(`diagnosisQuestions`의 인라인 언어-키 맵)과 같은 부류로, 새 i18n 메커니즘을 만들지 않는다.
+
+**협력 / 이벤트:** 타 애그리거트·타 모듈은 식별자/원시 값으로만 참조한다(엔티티 비공유, ADR-0002) — 표시 언어 결정에 쓸 `user` 공개 쿼리(`getLanguage`)를 **동기 취득**하고(`user`가 등록 국가 `countries.lang`으로 도출), `user`를 식별자/원시 값으로만 참조한다. 주제-팁 참조는 `LifeTip.topicCode → LifeTipTopic.code`의 **애플리케이션 레벨 조인**(DB 조인 없음)으로 처리한다. **읽기 전용 컨텍스트**라 상태 전이·불변식 위반 외 부작용이 없고, 발행하거나 구독하는 도메인 이벤트가 없다. 대상 액터는 **ACTIVE 세입자(`userType=TENANT`)**로, 모든 조회는 정식 인증(ROLE_USER)을 요구한다 — 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트).
+
+- **`allowedDependencies`** — 표시 텍스트 번역이 표시 언어를 `user` 공개 쿼리(`getLanguage`)로 동기 취득하므로 `lifetip`의 `allowedDependencies`는 **`user`를 포함**한다(즉 `{common, user}` — 진단과 동일 근거: [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md)). 이는 `package-info.java`/`@ApplicationModule`에 반영된다. **1차 MVP 이후**(홈 부가 기능)이며 읽기 전용이라 발행·구독 도메인 이벤트는 없다.
 
 ---
 
