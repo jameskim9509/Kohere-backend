@@ -20,7 +20,7 @@
 | 4 | 매물 탐색·찜(지도 탭 검색·조건 필터·매물 상세, 찜·최근 본) | `listing`(+`favorite`·`recent-listing`) | MongoDB                         |
 | 5 | F-03 임대인에게 신청하기→인앱 채팅 기록                       | `booking`·`chat`                          | (저장소 추후 결정)              |
 
-★ = 보호 핵심. **1차 MVP 범위 밖(코드 골격만 존재, MVP 이후로 이연):** `community`(커뮤니티)·`gamification`(퀴즈·포인트)·`report`(신고). 저장소 미정(추후 ADR). **홈 부가 기능(1차 MVP 이후):** `lifetip`(생활 팁 — 주제별 생활 정보, 읽기 전용 큐레이션). 저장소 **MongoDB**(진단 카탈로그와 동일 패턴, [ADR-0005](../adr/0005-polyglot-persistence.md)/[ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)).
+★ = 보호 핵심. **1차 MVP 범위 밖(코드 골격만 존재, MVP 이후로 이연):** `community`(커뮤니티)·`report`(신고). 저장소 미정(추후 ADR). **홈 부가 기능(1차 MVP 이후):**
 
 ## 1. 시스템 컨텍스트 다이어그램
 
@@ -112,7 +112,7 @@ flowchart TB
     LIFETIP -. "표시 언어(번역) getLanguage<br/>(user 공개 query 동기 호출·ADR-0002 D5)" .-> USER
     LIFETIP -- "주제·팁 카탈로그(읽기)" --> MONGO
 
-    DEFER["community · gamification · report<br/>(1차 MVP 범위 밖)"]
+    DEFER["community · gamification(퀴즈→MongoDB) · report<br/>(1차 MVP 범위 밖)"]
 ```
 
 > 추천 흐름(ADR-0005 Decision 2): `diagnosis`가 진단 조건을 값 객체 `RecommendationCriteria`로 만들어 넘기면 `listing`이 `recommendByCriteria(...)`로 **자기 Mongo 컬렉션만** 질의한다. 둘 다 Mongo지만 **cross-collection 조인은 하지 않는다**(co-location은 부수적).
