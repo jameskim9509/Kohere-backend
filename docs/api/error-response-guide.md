@@ -98,6 +98,15 @@
 
 각 API 스펙 문서는 자신이 쓰는 도메인 코드를 표로 정의하고, 이 카탈로그와 충돌하지 않게 한다.
 
+#### booking 도메인 코드
+
+| code | status | 의미 |
+| --- | --- | --- |
+| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거이거나 매물의 입주 가능일 이전 |
+| `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 본인 예약이 아님(404로 통일) |
+
+> `CHAT_*` 코드(`CHAT_ROOM_NOT_FOUND`·`CHAT_SELF_INQUIRY_NOT_ALLOWED` 등)는 **후속·이연**된 매물 문의·채팅 기능용이며 1차 MVP 예약 범위 밖이다. 상세는 [04-booking-inquiry-chat](./specs/04-booking-inquiry-chat.md) 참조.
+
 ## 5. 예외 계층 / 전역 핸들러
 
 ```text

@@ -125,6 +125,15 @@ public class UserAccountServiceImpl implements UserAccountService {
 
   @Override
   @Transactional(readOnly = true)
+  public String getUserName(long userId) {
+    User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
+    String first = user.getFirstName() == null ? "" : user.getFirstName();
+    String last = user.getLastName() == null ? "" : user.getLastName();
+    return (first + " " + last).trim();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public String getLanguage(long userId) {
     String country =
         userRepository.findById(userId).orElseThrow(UserNotFoundException::new).getCountry();
