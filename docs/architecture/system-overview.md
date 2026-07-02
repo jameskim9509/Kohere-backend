@@ -3,7 +3,7 @@
 > Kohere 백엔드의 시스템 큰 그림(컨텍스트·컴포넌트·기술 스택·NFR 요약). **1차 MVP(2026-07-10)** 범위를 기준으로 작성한다. 영속 배치의 정본은 **[ADR-0005](../adr/0005-polyglot-persistence.md)**, 모듈 경계는 [ADR-0001](../adr/0001-bounded-context-module-decomposition.md), 통신은 [ADR-0002](../adr/0002-inter-module-communication-via-events.md), 마일스톤·트랙 분담은 [project-brief §7](../project/project-brief.md#7-마일스톤-milestones).
 >
 > **영속(ADR-0005, 데이터 특성 기준):** `listing`(+`favorite`·`recent-listing`)·`diagnosis` → **MongoDB**, `auth`·`user` → **MySQL**.
-> **본 문서의 추가 결정(팀 확정):** ① **refresh 토큰 → Redis** — **[ADR-0006](../adr/0006-refresh-token-store-redis.md)** 으로 확정(ADR-0005 `RefreshToken` 배치 보완, ADR-0003 후속 닫힘). ② **임대인 연락 = F-03 신청하기 → 인앱 채팅방 기록**(booking→chat 이벤트). 실시간 WebSocket·푸시는 추후, booking·chat 저장소 추후 결정.
+> **본 문서의 추가 결정(팀 확정):** ① **refresh 토큰 → Redis** — **[ADR-0006](../adr/0006-refresh-token-store-redis.md)** 으로 확정(ADR-0005 `RefreshToken` 배치 보완, ADR-0003 후속 닫힘). ② **매물 예약(신청) = 독립 기능**(예약 저장 + 내 예약 목록·상세 조회)으로 1차 MVP 편입. `booking`이 조회 시점에 `listing`·`user` 공개 쿼리를 동기 참조해 매물 요약·가격·예약자 성명을 조합한다(이벤트 결합 아님). **인앱 채팅 기록**(예약 시 채팅방 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent`)·문의·실시간 WebSocket·푸시는 **후속·이연**. booking 저장소는 (확인 필요, ADR-0005 표 미확정), chat 저장소는 후속 결정.
 > **스택 상태:** 현재 배선된 의존성 정본은 [build.gradle](../../build.gradle)(`web`·`validation`·`data-jpa`·`data-redis`·`security`·`oauth2-jose`·`jjwt`·`spring-modulith-starter-core` + 테스트 `test`·`modulith-starter-test`·Testcontainers·REST Docs/restdocs-api-spec). `추후`=1차 MVP 이후.
 
 ## 목적
@@ -18,7 +18,7 @@
 | 2 | ★ F-01 큐레이션 챗봇(6단계 진단: 지역·입국목적(유학여부)·대학(그룹)/지역선택·주거조건·월세 범위·ARC) | `diagnosis`                                  | MongoDB                         |
 | 3 | ★ F-02 맞춤 매물 추천(리스트+지도, 거리·예산 필터)           | `listing`(+`favorite`·`recent-listing`) | MongoDB                         |
 | 4 | 매물 탐색·찜(지도 탭 검색·조건 필터·매물 상세, 찜·최근 본) | `listing`(+`favorite`·`recent-listing`) | MongoDB                         |
-| 5 | F-03 임대인에게 신청하기→인앱 채팅 기록                       | `booking`·`chat`                          | (저장소 추후 결정)              |
+| 5 | 매물 예약(신청) — 예약 저장 + 내 예약 목록·상세 조회(독립 기능) | `booking`(→ `listing`·`user` 공개 쿼리 참조) | (저장소 확인 필요) |
 
 ★ = 보호 핵심. **1차 MVP 범위 밖(코드 골격만 존재, MVP 이후로 이연):** `community`(커뮤니티)·`gamification`(퀴즈·포인트)·`report`(신고). 저장소 미정(추후 ADR).
 
@@ -62,7 +62,7 @@ flowchart LR
     SRV --> MYSQL
     SRV --> MONGO
     SRV --> REDIS
-    APP -- "F-03 신청·인앱 채팅(REST)" --> ALB
+    APP -- "매물 예약 생성·내 예약 조회(REST)" --> ALB
     APP -- "이미지 로드(URL · CloudFront 직접)" --> CDN
     SRV -- "이미지 업로드(S3)·URL 제공" --> CDN
     SRV -- "DB·JWT·provider 시크릿" --> SECRET
@@ -84,8 +84,7 @@ flowchart TB
       USER["user"]
       DIAG["diagnosis"]
       LIST["listing<br/>(+favorite·recent)"]
-      BOOKING["booking<br/>(F-03 신청)<br/>(저장소 추후 결정)"]
-      CHAT["chat<br/>(F-03 채팅 기록)<br/>(저장소 추후 결정)"]
+      BOOKING["booking<br/>(매물 예약·내 예약 조회)<br/>(저장소 확인 필요)"]
       CMN["common (공유 커널)"]
     end
 
@@ -97,7 +96,9 @@ flowchart TB
 
     DIAG -. "RecommendationCriteria<br/>(공개 쿼리, 조인 아님)" .-> LIST
     DIAG -. "표시 언어(번역) getLanguage<br/>(user 공개 query 동기 호출·ADR-0002 D5)" .-> USER
-    BOOKING -. "BookingCreatedEvent" .-> CHAT
+    BOOKING -. "매물요약·가격 조회(공개 쿼리, 조인 아님)" .-> LIST
+    BOOKING -. "예약자 성명 getUserName(공개 쿼리)" .-> USER
+    %% BookingCreatedEvent → chat(인앱 채팅 기록)은 후속·이연(1차 MVP 제외)
 
     AUTH --> MYSQL
     AUTH -- "refresh 토큰(TTL)" --> REDIS
@@ -330,11 +331,11 @@ flowchart TB
 | infrastructure      | **Repository 구현**, 외부 어댑터(OIDC)                                                              | 모듈별 저장소                   | Spring Data JPA / Data MongoDB / Data Redis            |
 | listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본,**지도 bbox 마커 + 거리순** | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회                          |
 | diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학(그룹, 6개)/지역선택·주거조건·월세 범위(min/max)·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 국가 기반 번역; ③ 대학은 6개 그룹 단일선택, ⑤ 월세는 NUMBER_RANGE 자유입력), 결과 생성, 추천 criteria 발행(③ 그룹→멤버 대학코드 집합, ⑤ monthlyRentMin/Max) — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
-| booking(신청)       | F-03 임대인에게 신청하기,`BookingCreatedEvent` 발행                                                     | (저장소 추후 결정)              | Modulith Application Events                            |
-| chat(채팅)          | F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                                                | (저장소 추후 결정)              | 이벤트 리스너                                          |
+| booking(매물 예약)  | 매물 예약(신청) 저장 + 내 예약 목록·상세 조회(독립). 조회 시 `listing`·`user` 공개 쿼리 실시간 조인. `BookingCreatedEvent` 발행은 (후속·이연) | (저장소 추후 결정)              | REST 조회 조인 / Application Events(후속)              |
+| chat(채팅)          | (후속·이연, 1차 MVP 제외) F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                      | (저장소 추후 결정)              | 이벤트 리스너                                          |
 | community(커뮤니티) | 게시글·댓글·좋아요, 키워드·해시태그 검색 (**MVP 이후로 이연**, 코드 골격만)                      | MySQL                           | FULLTEXT +**ngram**(한국어), 유니크·카운트 정합 |
 | auth·user          | 소셜 로그인→JWT,**세입자/임대인 온보딩 분기**(공통 약관 동의 후 세입자 이메일 인증·임대인 연락처 SMS 인증으로 본인 확인 분기, `userType` TENANT/LANDLORD 확정·이후 불변), 임대인 연락처 인증(`VerificationSmsSender`→SOLAPI)·사업자번호 검증(`BusinessRegistryVerifier`→비즈노, 온보딩과 분리·무상태), 프로필 | MySQL +**Redis**(refresh·인증 마커) | JPA + Nimbus(JWKS) + jjwt +**SOLAPI·비즈노 API 어댑터** |
-| 이벤트 버스         | 모듈 간 비동기 통신(**F-03: booking→chat(BookingCreatedEvent) MVP 편입**)                          | (도입 시)                       | Modulith Application Events                            |
+| 이벤트 버스         | 모듈 간 비동기 통신(**F-03 booking→chat(BookingCreatedEvent)는 후속·이연·1차 MVP 제외**)           | (도입 시)                       | Modulith Application Events                            |
 
 ## 3. 기술 스택
 
@@ -356,7 +357,7 @@ flowchart TB
 | `listing`(+`favorite`·`recent-listing`), `diagnosis` | **MongoDB** + Spring Data MongoDB                                                   | 도입               | 지오·가변 스키마·대량 읽기 / 문서형 애그리거트·배열·단일 도큐먼트 원자 쓰기                                                                             |
 | `auth`, `user`                                            | **MySQL 8**(RDS) + Spring Data JPA + `mysql-connector-j`                          | 도입               | 계정·토큰 트랜잭션 / 유니크 제약·카운트 정합. HikariCP(기본)                                                                                              |
 | **refresh 토큰**                                        | **Redis**(ElastiCache)                                                              | 도입               | **[ADR-0006](../adr/0006-refresh-token-store-redis.md) 확정**(TTL·회전·재사용탐지). 해시 **SHA-256(+pepper)**. ADR-0005 보완·ADR-0003 후속 닫힘 |
-| `booking`, `chat`(F-03)                                   | 추후 결정(추후 ADR)                                                                       | 도입               | 신청→인앱 채팅 기록. 저장소 임의 확정 금지                                                                                                                 |
+| `booking`(매물 예약), `chat`(후속·이연)                | 추후 결정(추후 ADR)                                                                       | 도입(booking)      | booking=예약 저장+내 예약 조회(MySQL 유력, ADR-0005 확인 필요). 신청→인앱 채팅 기록(chat·`BookingCreatedEvent`)은 후속·이연. 저장소 임의 확정 금지 |
 | 리포지토리 스택 분리                                          | `@EnableMongoRepositories`(listing·diagnosis) / `@EnableJpaRepositories`(auth·user) | 도입               | 두 스택 스캔 분리(ADR-0005 Decision 1)                                                                                                                      |
 | 지도 검색                                                     | MongoDB**2dsphere**($geoWithin/$near/$geoNear) + 개별 마커 좌표 조회               | 도입               | 마커 결과 상한(`LISTING_AREA_TOO_LARGE`), 클러스터링은 프론트 지도 SDK 담당                                                                                                            |
 | 텍스트 검색(커뮤니티)                                         | MySQL**FULLTEXT + ngram parser**                                                    | **MVP 이후** | 한국어 토큰화. 규모 확장 시 Elasticsearch → 추후                                                                                                           |
@@ -386,7 +387,7 @@ flowchart TB
 | 사업자등록번호 검증          | **비즈노(Bizno) API**(국세청 사업자등록정보 진위·상태 기반), 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터)                                                            | 도입   | **임대인 전용·온보딩 후 무상태 검증**(`POST /api/v1/auth/business/verify`, 정식 토큰 `ROLE_USER`·`ACTIVE`). 정상(계속) 사업자면 `verified:true` 응답(결과 미저장). 미등록/휴폐업/진위실패 **422**(`AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`), 외부 장애 **502**(공통 `UPSTREAM_ERROR` 재사용). 타임아웃·재시도 정책은 ADR-0033 |
 | 연락처 SMS 인증(임대인)      | **SOLAPI**(국내 SMS API SDK), 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터)                                                                                                | 도입   | 임대인 온보딩·프로필 연락처 변경 선행(`POST /api/v1/auth/phone/verification-code`·`/verify`). 인증번호 6자리·5분·재발송 60초(이메일과 통일), 발송 실패 **502**(`UPSTREAM_ERROR`). [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)                                                                              |
 | 이메일 인증(세입자)          | **Gmail SMTP**(dev/prod 실 SMTP · 로컬은 MailHog), 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터)                                                                       | 도입   | 세입자 온보딩 선행(`POST /api/v1/auth/email/verification-code`·`/verify`). 발송 실패 **502**(`UPSTREAM_ERROR`)                                                                                                                                                                                                              |
-| 임대인 연락                  | **F-03 신청하기 → 인앱 채팅방 기록**(booking→chat, `BookingCreatedEvent`)                                                                                                        | 도입   | 실시간 WebSocket·푸시는 추후. booking·chat 저장소 추후 결정                                                                                                                                                                                                                                                                            |
+| 임대인 연락                  | **F-03 매물 예약(신청) 저장 + 내 예약 조회**(booking 독립; 조회 시 `listing`·`user` 공개 쿼리 실시간 조인). 신청→인앱 채팅방 기록(booking→chat, `BookingCreatedEvent`)은 **후속·이연**                                                        | 도입(예약)   | 인앱 채팅 기록·실시간 WebSocket·푸시는 추후. booking 저장소 추후 결정                                                                                                                                                                                                                                                                            |
 | 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                                                                                                                              | 도입   | 매물 사진 호스팅 — 클라이언트는`cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖                                                                                                                                                                    |
 | 푸시 알림(FCM/APNs)          | —                                                                                                                                                                                         | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                                                                                                                                                                                                                                |
 | 채팅 실시간(WebSocket/STOMP) | —                                                                                                                                                                                         | 추후   | F-03은 REST 채팅 기록만. 실시간 전송은 추후                                                                                                                                                                                                                                                                                              |
@@ -451,4 +452,4 @@ ADR-0005가 **cross-store 조인·트랜잭션을 금지**하므로 단일 엔�
 - [ ] refresh→Redis 결정이 ADR-0005/0003에 반영(갱신)됐다
 - [ ] §3-7 폴리글랏 위험 완화(공개 쿼리·단일 store 쓰기·Redis AOF·스택 분리)가 구현에 반영됐다
 - [ ] 스택 표의 상태(배선됨/도입/추후)가 build.gradle 현황과 동기화됐다
-- [ ] 임대인 연락이 F-03(신청→인앱 채팅 기록, booking→chat)으로 구현되고 실시간 WebSocket·푸시는 추후로 구분됐다
+- [ ] 임대인 연락 F-03이 매물 예약(신청) 저장 + 내 예약 조회(booking 독립)로 구현되고, 신청→인앱 채팅 기록(booking→chat)·실시간 WebSocket·푸시는 후속·이연으로 구분됐다

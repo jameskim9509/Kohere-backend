@@ -25,8 +25,8 @@
 | [`user`](#2-user--회원-프로필계정-lifecycle) | `User` | `FullName`, `Consent` | ✅ |
 | [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `Location`, `Address`, `RoomOffer`, `MatchedPlace` | ✅ |
 | [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis` | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
-| [`booking`](#5-booking--매물-신청예약) | `Booking` | `GreetingMessage` | ✅ |
-| [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | ✅ |
+| [`booking`](#5-booking--매물-신청예약) | `Booking` | — (`GreetingMessage`는 후속·이연) | ✅ |
+| [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | 후속·이연 |
 | [`community`](#7-community--커뮤니티) | `Post`(+`Comment`·`PostLike`) | `Hashtag` | 이후 |
 | [`gamification`](#8-gamification--퀴즈포인트) | `Quiz`, `QuizSubmission`, `PointHistory` | `QuizChoice` | 이후 |
 | [`report`](#9-report--신고-처리) | `Report` | `ReportTarget`, `ReportDetail` | 이후 |
@@ -530,54 +530,57 @@
 
 ## 5. `booking` — 매물 신청(예약)
 
-> [API 스펙](../api/specs/04-booking-inquiry-chat.md) · [시퀀스](sequence-diagrams/04-booking-inquiry-chat/README.md) · `allowedDependencies = {common}`
+> [API 스펙](../api/specs/04-booking-inquiry-chat.md) · [시퀀스](sequence-diagrams/04-booking-inquiry-chat/README.md) · `allowedDependencies = {common, listing, user}`(조회 시점 매물 요약·가격 조회 `listing::api`, 예약자 성명 조회 `user::api`)
 
-세입자가 매물에 입주를 신청(예약)하는 컨텍스트다. 신청 성공 시 도메인 이벤트를 발행해 임대인과의 채팅·예약 카드 고정을 `chat`에 위임한다.
+세입자가 매물에 입주를 신청(예약)하는 컨텍스트다. **1차 MVP에서 매물 예약은 인앱 채팅과 분리된 독립 기능**으로, 예약을 저장(생성)하고 내 예약 목록·단건 상세를 조회한다. 조회는 **스냅샷 없이 조회 시점 실시간 조인**으로 매물 요약·가격은 `listing` 공개 쿼리(`listing::api`)로, 예약자 성명은 `user` 공개 쿼리(`user::api`)로 조합한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md) → 애플리케이션 레벨 조합). **후속·이연**: 신청 성공 시 도메인 이벤트(`BookingCreatedEvent`)를 발행해 임대인과의 채팅·예약 카드(`BOOKING_CARD`) 고정을 `chat`에 위임하는 설계는 1차 MVP 범위 밖으로 이연한다(설계 보존, 아래 협력/이벤트 참조).
 
-**`Booking`** — 세입자가 특정 매물에 제출한 신청(예약) 애그리거트 루트. 식별자 `id`, 활성 예약 비즈니스 키 `(tenantId, listingId)`.
+**`Booking`** — 세입자가 특정 매물(방 상품)에 제출한 신청(예약) 애그리거트 루트. 식별자 `id`(API에서 `bookingId`로 노출), 활성 예약 비즈니스 키 `(tenantId, roomOfferId)`.
 
 **속성:**
 
 | 속성 | 타입 | 설명 |
 | --- | --- | --- |
-| `id` | 식별자 | 애그리거트 식별자 |
-| `tenantId` | 식별자 | 신청한 세입자 → `User` 식별자 참조(소유권) |
-| `listingId` | 식별자 | 신청 대상 매물 → `Listing` 식별자 참조 |
-| `landlordId` | 식별자 | 매물 소유자(임대인) → `User` 식별자 참조(본인 매물 차단·이벤트 페이로드용) |
-| `moveInDate` | LocalDate | 입주 희망일(날짜만) |
-| `contractPeriod` | enum `ContractPeriod` | 신청 시 선택한 계약 기간 |
-| `greetingMessage` | VO `GreetingMessage` | 첫 인사 메시지(선택). 존재 시 이벤트 페이로드로 `chat`에 전달 |
-| `status` | enum `BookingStatus` | 예약 상태(신청 직후 `REQUESTED`) |
-| `createdAt` | Instant | 신청 시각(UTC) |
+| `id` | 식별자 | 애그리거트 식별자(숫자 PK, API에서 `bookingId`로 노출) |
+| `tenantId` | 식별자 | 신청한 세입자 → `User` 식별자 참조(소유권·조회 스코프) |
+| `listingId` | 식별자 | 신청 대상 매물 → `Listing` 식별자 참조(문자열 ObjectId hex) |
+| `roomOfferId` | 식별자 | 신청 대상 방 상품 → `Listing` 내부 `RoomOffer` 식별자 참조(문자열 ObjectId hex) |
+| `moveInDate` | LocalDate | 타겟 입주일(날짜만) |
+| `contractPeriod` | int | 신청 시 입력한 계약 기간(개월수, 양의 정수) |
+| `status` | enum `BookingStatus` | 예약 상태(신청 직후 `REQUESTED` 고정) |
+| `createdAt` | Instant | 신청 시각(UTC, 목록 정렬 기준) |
 
-**불변식:** 동일 `tenantId`–`listingId`의 활성 예약(`REQUESTED`/`ACCEPTED`)은 1건만(`409 BOOKING_ALREADY_EXISTS`); 본인 소유 매물 신청 금지 — `tenantId == landlordId`면 거부(`422 BOOKING_SELF_NOT_ALLOWED`); `moveInDate`는 과거 불가·매물 입주 가능일 이전 불가(`422 BOOKING_INVALID_MOVE_IN_DATE`); `contractPeriod`는 정의된 값(`400 INVALID_INPUT`); 신청 생성 시 `status`는 항상 `REQUESTED`; 동시 도착에도 정확히 1건만 성립(활성 비즈니스 키 유일성으로 멱등).
+> **저장하지 않는 값(조회 시점 계산·조인):** 예약자 성명(`tenantName`)·매물 요약(`title`·`thumbnailUrl`·주소·`RoomOffer` name)·가격(`deposit`·`monthlyRent`)·총 금액(`totalAmount`)은 **애그리거트에 스냅샷으로 저장하지 않는다** — 상세/목록 조회 시점에 `listing`(`listingId`·`roomOfferId`로)·`user`(`tenantId`로) 공개 쿼리로 실시간 조인해 조립한다(가격 변경 시 현재가 기준). 총 금액 `totalAmount = deposit + monthlyRent × contractPeriod`(계약 개월수 정수)이며 **관리비(`maintenanceFee`)는 총액에서 제외**한다 — 저장 필드가 아니라 조회 계산값이다.
+>
+> **후속·이연(1차 MVP 제외):** 매물 소유자 식별자(`landlordId`)와 첫 인사 메시지(`GreetingMessage`)는 채팅 연동(예약 카드·첫 인사 전송) 설계에 속하므로 애그리거트 저장 필드에 두지 않는다. **예약은 세입자 전용**이라 세입자가 자기 소유 매물을 예약할 수 없어, 본인 매물 차단(임대인 식별자 조회·대조)은 두지 않는다.
 
-**값 객체(VO):**
+**불변식:** 예약은 `ACTIVE` 세입자(`userType=TENANT`) 전용 — 임대인/비세입자는 거부(`403 FORBIDDEN`); **MVP의 예약은 "신청" 성격이라 중복 제한이 없다** — 활성 유니크 제약을 두지 않고 같은 방 상품에도 여러 신청을 허용한다(`BOOKING_ALREADY_EXISTS` 없음); 예약은 세입자 전용이라 자기 소유 매물 예약 상황이 성립하지 않아 본인 매물 차단(소유자 조회)도 없다; `moveInDate`는 과거 불가·매물 입주 가능일 이전 불가(`422 BOOKING_INVALID_MOVE_IN_DATE`); `contractPeriod`는 양의 정수 개월수(`400 INVALID_INPUT`); 대상 매물·방 상품이 없거나 비공개면 부재 처리(`404 LISTING_NOT_FOUND`); **신청 생성 시 `status`는 항상 `REQUESTED` 고정 — 수락/거절/취소 등 상태전이는 이 범위 밖**(1차 MVP 미구현); 목록·상세 조회는 요청자 본인(`tenantId`) 예약만 반환하며 없거나 타인 예약이면 `404 BOOKING_NOT_FOUND`.
 
-| 이름 | 속성 | 타입 | 설명 |
-| --- | --- | --- | --- |
-| `GreetingMessage` | `text` | String | 공백 제외 1~500자. 신청과 함께 보내는 첫 인사 — 미제공 시 부재, 길이 초과는 `400 INVALID_INPUT`, 존재할 때만 채팅 첫 텍스트 메시지로 전달 |
+**값 객체(VO):** 1차 MVP의 예약 애그리거트에는 값 객체가 없다.
+
+> **후속·이연(1차 MVP 제외) — `GreetingMessage`:** `text`(String, 공백 제외 1~500자). 신청과 함께 보내는 첫 인사로, 존재할 때만 채팅 첫 텍스트 메시지로 전달하는 설계다 — 채팅 연동과 함께 이연한다(설계 보존).
 
 **상태(enum):**
 
 | enum | 값 | 의미 |
 | --- | --- | --- |
-| `BookingStatus` | `REQUESTED` | 신청 직후 기본 상태 |
-| | `ACCEPTED` | 임대인 수락 |
-| | `REJECTED` | 임대인 거절 |
-| | `CANCELED` | 세입자 취소 |
-| `ContractPeriod` | `ONE_MONTH` | 1개월 |
-| | `THREE_MONTHS` | 3개월 |
-| | `SIX_MONTHS` | 6개월 |
-| | `TWELVE_MONTHS` | 12개월 |
+| `BookingStatus` | `REQUESTED` | 신청 직후 기본 상태(1차 MVP는 생성 시 항상 이 값) |
+| | `ACCEPTED` | 임대인 수락(**후속·이연** — 상태전이 미구현) |
+| | `REJECTED` | 임대인 거절(**후속·이연** — 상태전이 미구현) |
+| | `CANCELED` | 세입자 취소(**후속·이연** — 상태전이 미구현) |
 
-**협력 / 이벤트:** 세입자·임대인은 `user`, 매물은 `listing`을 식별자로만 참조한다(ADR-0002). 매물 존재·공개 검증, 임대인(`landlordId`) 식별, 입주 가능일 조회는 `listing` 공개 쿼리로 받는다(부재/비공개 `404 LISTING_NOT_FOUND`). 신청 성공 시 **`BookingCreatedEvent`** 발행 — 페이로드는 원시/공유 타입(`bookingId`·`listingId`·`tenantId`·`landlordId`·`moveInDate`·`contractPeriod`·첫 인사 메시지). `chat`이 구독해 임대인 채팅방 보장·예약 카드 고정·첫 인사 전송을 처리한다. `booking`은 `chat`을 알지 못한다(단방향).
+> `contractPeriod`는 enum이 아니라 **정수(개월수, 양의 정수)** 다 — `1`·`3`·`6`·`12`·`24` 등 자유 입력.
+
+**협력 / 이벤트:** 세입자는 `user`, 매물·방 상품은 `listing`을 식별자로만 참조한다(ADR-0002, 엔티티 비공유). **생성 시점**에는 매물 존재·공개 검증과 입주 가능일 조회를 `listing` 공개 쿼리(`listing::api`)로 받는다(부재/비공개 `404 LISTING_NOT_FOUND`; 예약은 세입자 전용이라 소유자 조회는 불요). **조회 시점**(목록·상세)에는 **스냅샷 없이 실시간 조인**한다 — 매물 요약·가격(`title`·`thumbnailUrl`·주소·`RoomOffer` name·`deposit`·`monthlyRent`)은 `listing::api`로 `(listingId, roomOfferId)`를 조회하고, 예약자 성명(`tenantName`)은 `user::api`(`getUserName(tenantId)`)로 조회해 애플리케이션 레벨에서 조합한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md); 가격 변경 시 상세는 현재가 기준). 총 금액은 조회 시점 계산값(`deposit + monthlyRent × contractPeriod`, 관리비 제외)이다. 두 조회 메서드(`listing::api`의 가격·매물요약 조회, `user::api`의 성명 조회)는 신규 공개 조회로 노출되며 이에 따라 `booking`의 `allowedDependencies`는 `{common, listing, user}`다.
+
+**후속·이연(1차 MVP 제외):** 신청 성공 시 **`BookingCreatedEvent`** 를 발행해(페이로드: `bookingId`·`listingId`·`tenantId`·`landlordId`·`moveInDate`·`contractPeriod`·첫 인사 메시지) `chat`이 구독하고 임대인 채팅방 보장·예약 카드(`BOOKING_CARD`) 고정·첫 인사 전송을 처리하는 채팅 연동 설계는 **1차 MVP 범위 밖으로 이연**한다(설계 보존, 삭제 아님). `booking`은 `chat`을 알지 못한다(단방향).
 
 ---
 
 ## 6. `chat` — 인앱 채팅
 
 > [API 스펙](../api/specs/04-booking-inquiry-chat.md) · [시퀀스](sequence-diagrams/04-booking-inquiry-chat/README.md) · `allowedDependencies = {common, booking}`(이벤트 구독 목적)
+>
+> **[후속·이연 · 1차 MVP 제외]** `chat`(문의·인앱 채팅: 채팅방·메시지·읽음·예약/매물 카드) 전체는 매물 예약(신청, US-4-1·US-4-2)과 분리되어 후속으로 이연된다(설계 보존, 삭제 아님). `booking`은 예약 저장·조회만 담당하며 `chat`을 알지 못한다(단방향).
 
 세입자(요청자)와 임대인/이웃 사이의 1:1 인앱 채팅을 소유한다. 신청·문의로 임대인 채팅방을 보장하고, 카드/시스템/텍스트 메시지와 참여자별 읽음 위치를 일관성 경계 안에서 관리한다.
 
@@ -637,7 +640,7 @@
 | 이름 | 속성 | 타입 | 설명 |
 | --- | --- | --- | --- |
 | `BookingCard` | `moveInDate` | LocalDate | 입주 희망일 |
-| | `contractPeriod` | enum `ContractPeriod` | 계약 기간 |
+| | `contractPeriod` | int | 계약 기간(개월수) |
 | | `monthlyRent` | int(KRW) | 월세 |
 | | `listingTitle` | String | 매물 제목 |
 | | `bookingId` | 식별자 | → `Booking` 식별자 참조(예약 생성 시점 정보를 굳혀 상단 고정하는 불변 카드) |
