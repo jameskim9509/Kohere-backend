@@ -63,6 +63,11 @@ public class SecurityConfig {
                     .requestMatchers(
                         HttpMethod.POST, "/api/v1/auth/business/verify", "/api/v1/auth/logout")
                     .hasRole("USER")
+                    // 매물 예약(신청) — ACTIVE(ROLE_USER) 세입자만. TENANT 여부는 서비스에서 재검사한다.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/bookings")
+                    .hasRole("USER")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/bookings", "/api/v1/bookings/*")
+                    .hasRole("USER")
                     .anyRequest()
                     .authenticated())
         .exceptionHandling(

@@ -61,4 +61,12 @@ public interface UserAccountService {
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
    */
   String getLanguage(long userId);
+
+  /**
+   * 회원 표시 이름 조회. booking 등 다른 모듈이 예약자 성명 표시를 위해 동기 호출한다(ADR-0002 공개 API 협력). 세입자는 {@code firstName
+   * + " " + lastName}, 임대인은 {@code firstName}(전체 이름)이며, 온보딩 전/탈퇴 등으로 이름이 없으면 빈 문자열을 반환한다.
+   *
+   * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
+   */
+  String getUserName(long userId);
 }
