@@ -55,12 +55,12 @@ Proposed (2026-07-02)
   - **무상태**라 사용자의 학습 이력·정답률·진척을 서버가 보유하지 않는다 — 훗날 게이미피케이션·통계를 붙이려면 제출/집계 저장을 별도로 재도입해야 한다.
   - 카탈로그 **시드/적재(Mongock)·번역 커버리지 관측**이 필요하고, MongoDB **도입 선행**이 필요하다.
 - **후속 작업**
-  - [specs/06-gamification.md](../api/specs/06-gamification.md)·[domain-model 8절](../architecture/domain-model.md)·[database-design 4-8절](../database/database-design.md)·[us-6-* 시퀀스 다이어그램](../architecture/sequence-diagrams/06-gamification/README.md)을 무상태 랜덤 학습 퀴즈로 갱신(진행 중).
-  - 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`)를 무상태 랜덤 채점·`quizzes` 카탈로그 조회로 **재구현**(오늘의 퀴즈·포인트·제출 코드 제거).
-  - `quizzes` 컬렉션 스키마 확정 + Mongock `@ChangeUnit` 시드(`question`·`choices[].text`·`explanation`을 언어-키 맵으로, `correctChoice`·`active` 포함).
-  - `user` 모듈 표시 언어 조회 공개 query(`getLanguage`, `@NamedInterface`) 재사용 + `gamification` `allowedDependencies`에 `user` 등록.
-  - 이슈 #78 본문을 무상태 랜덤 학습 퀴즈로 갱신.
-  - `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검증으로 게이팅.
+  - (완료) [specs/06-gamification.md](../api/specs/06-gamification.md)·[domain-model 8절](../architecture/domain-model.md)·[database-design 4-8절](../database/database-design.md)·[us-6-* 시퀀스 다이어그램](../architecture/sequence-diagrams/06-gamification/README.md)을 무상태 랜덤 학습 퀴즈로 갱신.
+  - (완료) 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`)를 무상태 랜덤 채점·`quizzes` 카탈로그 조회로 **재구현**(오늘의 퀴즈·포인트·제출 코드 제거).
+  - (완료) `quizzes` 컬렉션 스키마 확정 + Mongock `@ChangeUnit` 시드(`question`·`choices[].text`·`explanation`을 언어-키 맵으로, `correctChoice`·`active` 포함).
+  - (완료) `user` 모듈 표시 언어 조회 공개 query(`getLanguage`, `@NamedInterface`) 재사용 + `gamification` `allowedDependencies`에 `user :: api` 등록.
+  - (완료) `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅 + 응용 계층 `userType=TENANT` 검사(`TenantOnlyException` → `403 FORBIDDEN`).
+  - 이슈 #78 본문을 무상태 랜덤 학습 퀴즈로 갱신(미완).
 
 ## Validation
 
@@ -69,5 +69,6 @@ Proposed (2026-07-02)
 - **i18n·폴백·키 불변**: 지원 언어 사용자는 해당 언어를, 미지원·미매핑 사용자는 `en`을 받는지(에러 아님), 보기 키 `A`~`D`가 언어 무관 동일하고 채점이 키로 수행되는지 검증한다([ADR-0029](./0029-diagnosis-i18n-strategy.md) 정합).
 - **에러코드**: `selectedChoice`가 A~D가 아니면 `INVALID_INPUT(400)`, 본문 파손은 `MALFORMED_REQUEST(400)`, 미인증·만료는 `UNAUTHENTICATED`/`TOKEN_EXPIRED(401)`, 비활성(온보딩 미완)은 `AUTH_ONBOARDING_REQUIRED(403)`, `quizId` 부재는 `QUIZ_NOT_FOUND(404)`인지 검증하고, `QUIZ_NOT_TODAY`·`QUIZ_ALREADY_SUBMITTED`가 더는 반환되지 않는지 확인한다.
 - **모듈 경계**: `gamification → user` 동기 의존이 `allowedDependencies`에 등록돼 `ApplicationModules.verify()`([ModularityTest](../../src/test/java/com/kohere/ModularityTest.java)) green을 유지하는지 검증한다.
-- **(확인 필요)**: (1) 정답 시에도 `explanation`을 반환할지 여부 — **현재는 미반환**(오답에만 반환). (2) "random"의 정의 — **활성 풀에서의 무작위 SELECTION**이며 동적 생성이 아님. (3) `SecurityConfig`가 현재 `/api/v1/quizzes/**`를 `authenticated()`로만 열어둠 — ACTIVE-TENANT 강제를 위한 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검증은 **미구현**.
+- **게이트(구현됨)**: `SecurityConfig`가 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅하고, `GamificationService`가 `userType=TENANT`를 검사한다(비-세입자 `403 FORBIDDEN`). 비-ACTIVE(온보딩 미완)는 `403 AUTH_ONBOARDING_REQUIRED`.
+- **(확인 필요)**: (1) 정답 시에도 `explanation`을 반환할지 여부 — **현재는 미반환**(오답에만 반환). (2) "random"의 정의 — **활성 풀에서의 무작위 SELECTION**이며 동적 생성이 아님.
 - **재검토 시점**: 게이미피케이션(포인트·랭킹)을 1차 MVP 이후 도입할 때, 무상태 채점 위에 제출/집계 저장(대안 A의 관계형 제출·포인트)을 어떻게 얹을지 재검토한다. 학습 이력·정답률 요구가 커지면 무상태 전제를 재검토한다.

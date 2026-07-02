@@ -12,7 +12,7 @@
 - **다국어 번역 기반**: 퀴즈의 `question`·각 보기 `text`·`explanation`은 퀴즈 도큐먼트 내부의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)으로 저장한다. 표시 언어는 `user` 모듈의 공개 query(`getLanguage(userId)`)를 동기 호출해 취득하며, `user`가 등록 국가(`countries.lang`)로 도출한다. 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님). 보기 키 `A`~`D`는 **언어와 무관하게 동일**하며(채점은 키로 수행), 번역되지 않는다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)).
 - **대상/인증**: 외국인 세입자(`userType=TENANT`, `status=ACTIVE`, `ROLE_USER`) 전용이다. 모든 엔드포인트는 인증 필수다.
 
-> **(확인 필요)** 현재 `SecurityConfig`는 `/api/v1/quizzes/**`를 `authenticated()`로만 열어둔다 — ACTIVE 세입자 강제(`hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검증)는 **미구현**이다.
+> **인증·대상**: `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅되며, 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
 
 ### 핵심 개념·enum
 
@@ -45,7 +45,7 @@
 - Query 파라미터: 없음
 - Request Body: 없음
 
-> **(확인 필요)** 현재 `SecurityConfig`는 `/api/v1/quizzes/**`를 `authenticated()`로만 열어둔다 — ACTIVE 세입자 강제(`hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검증)는 **미구현**이다.
+> **인증·대상**: `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅되며, 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
 
 #### 성공 Response — 200 OK
 
@@ -73,7 +73,8 @@
 | status | code | 시점 |
 | --- | --- | --- |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료/위조 |
-| 403 | `AUTH_ONBOARDING_REQUIRED` | 인증 주체가 ACTIVE 세입자가 아님(비-ACTIVE) |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 비-ACTIVE(온보딩 미완료) 접근 |
+| 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아님(임대인 등) |
 | 404 | `QUIZ_NOT_FOUND` | 활성 퀴즈 풀이 비어 사용 가능한 퀴즈가 없음 |
 
 ---
@@ -147,14 +148,15 @@ Query 파라미터: 없음
 | 400 | `INVALID_INPUT` | `selectedChoice` 누락/빈값/허용 외 값 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료/위조 |
-| 403 | `AUTH_ONBOARDING_REQUIRED` | 인증 주체가 ACTIVE 세입자가 아님(비-ACTIVE) |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 비-ACTIVE(온보딩 미완료) 접근 |
+| 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아님(임대인 등) |
 | 404 | `QUIZ_NOT_FOUND` | 경로의 `quizId`가 존재하지 않음 |
 
 ---
 
 ## 도메인 에러 코드
 
-> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `INTERNAL_ERROR` 등)는 [error-response-guide](../error-response-guide.md) §4의 정의를 그대로 쓰며 여기서 재정의하지 않는다. 5xx(`INTERNAL_ERROR` 등)는 전 엔드포인트에 공통 적용되므로 개별 표에 반복 기재하지 않는다. `AUTH_ONBOARDING_REQUIRED`(403)는 auth 도메인 코드로 [01-auth-onboarding](01-auth-onboarding.md)에서 정의하며 여기서 재정의하지 않는다(교차 참조). 아래는 본 도메인 고유 코드만 정의한다(prefix `QUIZ`).
+> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `INTERNAL_ERROR` 등)는 [error-response-guide](../error-response-guide.md) §4의 정의를 그대로 쓰며 여기서 재정의하지 않는다. 5xx(`INTERNAL_ERROR` 등)는 전 엔드포인트에 공통 적용되므로 개별 표에 반복 기재하지 않는다. `AUTH_ONBOARDING_REQUIRED`(403, 비-ACTIVE)는 auth 도메인 코드([01-auth-onboarding](01-auth-onboarding.md)), `FORBIDDEN`(403, 세입자 아님)은 공통 코드로 각각 정의된 곳을 따르며 여기서 재정의하지 않는다(교차 참조). 아래는 본 도메인 고유 코드만 정의한다(prefix `QUIZ`).
 
 | code | status | 의미 |
 | --- | --- | --- |

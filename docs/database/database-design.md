@@ -540,8 +540,7 @@
 
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
-| `_id` | ObjectId | PK |
-| `schemaVersion` | int | NOT NULL · 애플리케이션 레벨 스키마 버전([ADR-0005](../adr/0005-polyglot-persistence.md) D7) |
+| `_id` | Long | PK · 명시 시드값(예: `4001`~) · `quizId`로 노출·채점 경로에 사용 |
 | `question` | object | NOT NULL · 문항 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 `getLanguage` 표시 언어 키 선택, 없으면 `en` 폴백 |
 | `choices` | object[] | NOT NULL · 선택지 배열 · 각 항목은 `key`(`A`\|`B`\|`C`\|`D`, 언어 불변·채점 키)와 `text`(표시 문자열의 **인라인 언어-키 맵**)를 보유 |
 | `correctChoice` | string | NOT NULL · enum `ChoiceKey`(`A`~`D`) · 서버 채점용 · `GET /quizzes/random` 비노출 |
@@ -552,7 +551,7 @@
 
 - **무상태 채점**: 제출·포인트를 영속하지 않는다(멱등·재플레이 가능). `GET /api/v1/quizzes/random`이 활성 문서 1개를 무작위로 골라 `{ quizId, question, choices:[{key,text}] }`(번역)로 내려주고(`correctChoice`·`explanation` 비노출), `POST /api/v1/quizzes/{quizId}/answer`가 `selectedChoice`를 저장된 `correctChoice`와 대조해 채점한다 — 정답 `{ correct:true }`, 오답 `{ correct:false, correctChoice, explanation }`(오답 사유 번역). 제출 기록·포인트·`201 Created`/`Location` 없음.
 - **교차 모듈 no-FK**: 표시 언어는 **user 모듈 공개 query(`getLanguage(userId)`)로 취득**하고 `user`가 등록 국가→언어(`countries.lang`)로 도출한다(값 참조, 없으면 `en` 폴백) → 모듈 의존 `gamification`→`user`.
-- **대상자 게이트**: 외국인 세입자(`TENANT`·`ACTIVE`) 전용. 단 `SecurityConfig`의 `/api/v1/quizzes/**`는 현재 `authenticated()`만 걸려 있고 `hasRole("USER")`+애플리케이션 레벨 `userType=TENANT` 검사는 **미구현(확인 필요)**.
+- **대상자 게이트**: 외국인 세입자(`TENANT`·`ACTIVE`) 전용. `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅하고, 응용 계층(`GamificationService`)에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`(`TenantOnlyException`).
 - **`QUIZ_NOT_FOUND`(404)**: `quizId`가 없거나(잘못된 식별자) 활성 풀이 공백일 때. (**확인 필요**) 정답 시 `explanation` 반환 여부(현재 미반환), `random`=활성 풀 무작위 **SELECTION**(동적 생성 아님).
 
 ### 4-9. `report`

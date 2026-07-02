@@ -51,4 +51,4 @@ sequenceDiagram
 - 오답 해설 번역을 위해 gamification 모듈은 `user`의 공개 query(`getLanguage`)를 동기 호출해 표시 언어(`lang`)를 취득하고(ADR-0002 Decision 5), `quizzes` 도큐먼트의 `explanation` 언어-키 맵에서 그 언어 값을 고른다. 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 선택지 키 `A~D`는 **언어 불변**이며 채점은 키 기준으로 한다.
 - 오류 경계: `selectedChoice`가 A~D가 아니면 `400 INVALID_INPUT`, JSON 파싱 실패 등은 `400 MALFORMED_REQUEST`, `quizId`에 해당하는 퀴즈가 없으면 `404 QUIZ_NOT_FOUND`로 반환한다(하루 1회 제한·중복 제출 개념이 없으므로 `409`/`422`는 없다).
 - (확인 필요) 정답일 때에도 `explanation`을 함께 반환할지 여부는 미확정이다 — 현재는 정답 응답에 `explanation`을 포함하지 않는다.
-- (확인 필요) `SecurityConfig`는 현재 `/api/v1/quizzes/**`를 `authenticated()`로만 열어 둔다 — ACTIVE-TENANT(외국인 세입자, `status=ACTIVE`) 강제에는 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 확인이 필요하다(미구현).
+- `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅하고 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.

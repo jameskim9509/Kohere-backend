@@ -44,4 +44,4 @@ sequenceDiagram
 - 응답은 `{ quizId, question(번역), choices[]{ key(A~D), text(번역) } }`이다. `question`·choices의 `text`는 `quizzes` 도큐먼트의 인라인 언어-키 맵(`{"en":..,"ja":..,"ko":..}`)에서 사용자 언어 값을 골라 채운 표시 문자열이고, 선택지 키 `A~D`는 **언어 불변**(채점은 키 기준)이다. **정답(`correctChoice`)·해설(`explanation`)은 이 조회 응답에 포함하지 않는다** — 정답 제출(US-6-2) 시점에만 노출된다.
 - 표시 언어는 `user`가 보유한다(`countries.lang`). gamification 모듈은 JWT 클레임에 의존하지 않고 **항상 `user`의 공개 query(`getLanguage`)를 동기 호출**해 표시 언어(`lang`)를 취득한다(즉시 결과가 필요한 조회 → ADR-0002 Decision 5). 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님; 기본 언어=영어).
 - (확인 필요) "무작위"는 활성 풀에서의 **랜덤 선택**을 뜻하며 동적 생성이 아니다.
-- (확인 필요) `SecurityConfig`는 현재 `/api/v1/quizzes/**`를 `authenticated()`로만 열어 둔다 — ACTIVE-TENANT(외국인 세입자, `status=ACTIVE`) 강제에는 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 확인이 필요하다(미구현).
+- `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅하고 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
