@@ -437,7 +437,7 @@
 | `listing_id` | VARCHAR(24) | NOT NULL · Mongo `listings._id` ObjectId hex 문자열 값 참조 |
 | `room_offer_id` | VARCHAR(24) | NOT NULL · Listing 내부 방 상품 식별자 ObjectId hex 문자열 값 참조 |
 | `move_in_date` | DATE | NOT NULL · 타겟 입주일(날짜만) |
-| `contract_period` | SMALLINT | NOT NULL · 계약 개월수(양의 정수, 예: 1·3·6·12·24) |
+| `contract_period` | INT | NOT NULL · 계약 개월수(양의 정수, 예: 1·3·6·12·24) |
 | `status` | VARCHAR(16) (enum `BookingStatus`) | NOT NULL · 생성 시 `REQUESTED` 고정 · `REQUESTED`/`ACCEPTED`/`REJECTED`/`CANCELED` |
 | `created_at` | DATETIME(6) | NOT NULL · 예약 일시(UTC) |
 
