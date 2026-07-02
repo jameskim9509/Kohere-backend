@@ -1,0 +1,165 @@
+# Kohere — 매물 예약(신청) 로컬 수동 테스트 (예약 생성 → 내 예약 목록 → 단건 상세 + 에러)
+# 스펙: docs/api/specs/04-booking-inquiry-chat.md §1~§3 · 유저스토리 US-4-1·US-4-2
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis mailhog
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#      └ local 프로파일이라 매물 더미 데이터(listing)가 시드된다.
+#   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
+#   4) "1. 소셜 로그인"부터 위에서 순서대로 "Send Request" 클릭 — 토큰은 이름붙은 응답으로 자동 전달된다.
+#
+# 사전 조건 — 예약은 **ACTIVE 세입자(userType=TENANT)** 전용이다.
+#   · 미온보딩(임시 ROLE_ONBOARDING) 토큰으로 호출하면 403 AUTH_ONBOARDING_REQUIRED.
+#   · 아래 2~5로 온보딩(TENANT)을 마쳐 정식 access 토큰을 얻는다. 이미 ACTIVE 회원이면 1번 응답의 accessToken 을
+#     그대로 쓰면 되고(2~5 생략), 예약 요청의 토큰 참조를 {{socialLogin...}} 으로 바꾼다.
+#
+# 참고:
+#   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
+#   - contractPeriod 는 개월수(양의 정수). moveInDate 는 미래 날짜(YYYY-MM-DD).
+#   - listingId·roomOfferId 는 5-b(매물 목록)에서 실제 값을 확인해 @listingId·@roomOfferId 에 넣는다.
+
+@baseUrl = http://localhost:8080
+@idToken = PASTE_GOOGLE_ID_TOKEN_HERE
+@email = tester@example.com
+
+# 5-b(매물 목록)에서 확인한 실제 값으로 교체 (아래는 형식 예시 — ObjectId 24자리 hex)
+@listingId = 6858e2000000000000000001
+@roomOfferId = 6858e2000000000000000abc
+
+### 0. 헬스 체크 (인증 불필요) — 200 UP 이면 앱 + 인프라(MySQL·Redis·Mongo) 정상
+GET {{baseUrl}}/actuator/health
+
+### 1. 소셜 로그인 → accessToken 획득 (공개 엔드포인트)
+#    기존 ACTIVE 회원: 정식 access/refresh 발급 → 2~5 건너뛰고 예약 요청 토큰을 {{socialLogin...}} 으로.
+# @name socialLogin
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "{{idToken}}"
+}
+
+### 2. 약관 동의 (온보딩 임시 토큰)
+POST {{baseUrl}}/api/v1/auth/terms
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### 3. 이메일 인증번호 발송 — http://localhost:8025 (MailHog)에서 6자리 코드 확인 → @code 에 입력
+POST {{baseUrl}}/api/v1/auth/email/verification-code
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+### --- MailHog(http://localhost:8025)에서 받은 인증번호로 교체 ---
+@code = 000000
+
+### 4. 이메일 인증번호 확인
+POST {{baseUrl}}/api/v1/auth/email/verify
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "code": "{{code}}"
+}
+
+### 5. 세입자 온보딩 제출 (→ userType=TENANT·ACTIVE, 정식 access 발급)
+# @name onboarding
+POST {{baseUrl}}/api/v1/auth/onboarding
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "firstName": "Minji",
+  "lastName": "Kim",
+  "gender": "FEMALE",
+  "birthDate": "1995-03-21",
+  "country": "VN",
+  "occupation": "STUDENT",
+  "email": "{{email}}",
+  "visaType": "VISA_STUDENT"
+}
+
+### 5-b. (참고) 매물 목록 — 예약할 listingId·roomOfferId 확보용
+#     각 카드의 data.content[].listingId·roomOfferId 를 위 @listingId·@roomOfferId 에 복사한다.
+GET {{baseUrl}}/api/v1/listings?page=0&size=5
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 6. 매물 예약(신청) 생성 — 201 Created + Location: /api/v1/bookings/{bookingId}
+# @name createBooking
+POST {{baseUrl}}/api/v1/listings/{{listingId}}/bookings
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "roomOfferId": "{{roomOfferId}}",
+  "moveInDate": "2030-01-01",
+  "contractPeriod": 6
+}
+
+### 7. 내 예약 목록 (본인 예약만, createdAt 내림차순, 오프셋 페이지네이션)
+GET {{baseUrl}}/api/v1/bookings?page=0&size=20
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 8. 내 예약 단건 상세 (매물 정보·예약자 성명·보증금·총 금액=보증금+월세×개월)
+GET {{baseUrl}}/api/v1/bookings/{{createBooking.response.body.$.data.bookingId}}
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+# ─────────────────────────── 에러 케이스 ───────────────────────────
+
+### 9. 401 UNAUTHENTICATED — 토큰 없이 예약 생성
+POST {{baseUrl}}/api/v1/listings/{{listingId}}/bookings
+Content-Type: application/json
+
+{
+  "roomOfferId": "{{roomOfferId}}",
+  "moveInDate": "2030-01-01",
+  "contractPeriod": 6
+}
+
+### 10. 400 INVALID_INPUT — roomOfferId 누락
+POST {{baseUrl}}/api/v1/listings/{{listingId}}/bookings
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "moveInDate": "2030-01-01",
+  "contractPeriod": 6
+}
+
+### 11. 422 BOOKING_INVALID_MOVE_IN_DATE — 과거 입주일
+POST {{baseUrl}}/api/v1/listings/{{listingId}}/bookings
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "roomOfferId": "{{roomOfferId}}",
+  "moveInDate": "2020-01-01",
+  "contractPeriod": 6
+}
+
+### 12. 404 BOOKING_NOT_FOUND — 없거나 타인 예약 상세 조회
+GET {{baseUrl}}/api/v1/bookings/999999
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 13. 403 FORBIDDEN — 임대인(LANDLORD) 토큰으로 예약 시도 (예약은 세입자 전용)
+#     임대인 ACTIVE 토큰은 auth-onboarding-landlord.http 로 발급해 아래 Authorization 에 넣는다.
+POST {{baseUrl}}/api/v1/listings/{{listingId}}/bookings
+Authorization: Bearer PASTE_LANDLORD_ACTIVE_ACCESS_TOKEN
+Content-Type: application/json
+
+{
+  "roomOfferId": "{{roomOfferId}}",
+  "moveInDate": "2030-01-01",
+  "contractPeriod": 6
+}

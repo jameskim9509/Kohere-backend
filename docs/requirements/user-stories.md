@@ -13,7 +13,7 @@
 - 1. 소셜 로그인 · 온보딩 — [API 스펙](../api/specs/01-auth-onboarding.md)
 - 2. 맞춤 진단 & 매물 추천 — [API 스펙](../api/specs/02-diagnosis-recommendation.md)
 - 3. 매물 탐색 · 찜 — [API 스펙](../api/specs/03-listings-favorites.md)
-- 4. 신청 · 문의 (인앱 채팅) — [API 스펙](../api/specs/04-booking-inquiry-chat.md)
+- 4. 매물 예약(신청) · (후속) 문의·인앱 채팅 — [API 스펙](../api/specs/04-booking-inquiry-chat.md)
 - 5. 커뮤니티 (게시판 · 동네친구) — [API 스펙](../api/specs/05-community.md)
 - 6. 게이미피케이션 (퀴즈) — [API 스펙](../api/specs/06-gamification.md)
 - 7. 신고 처리 — [API 스펙](../api/specs/07-reports.md)
@@ -834,48 +834,84 @@
   When `GET /api/v1/users/me/favorites?page=0&size=20`을 호출하면
   Then `200 OK`로 `data.content[]`(모두 `favorited=true`)와 `data.page`를 반환하며, 찜이 없으면 빈 배열을 반환한다
 
-## 4. 신청 · 문의 (인앱 채팅)
+## 4. 매물 예약(신청) · (후속) 문의·인앱 채팅
 
 > 관련 API 스펙: [04-booking-inquiry-chat](../api/specs/04-booking-inquiry-chat.md)
+>
+> **스코프(1차 MVP)**: **매물 예약(= 신청, Booking)** 은 인앱 채팅과 분리된 **독립 기능**으로 구현한다. (**본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**) `ACTIVE` 세입자가 방 상품(`roomOffer`)에 타겟 입주일·계약기간으로 예약을 신청해 내역을 저장하고(US-4-1), 내 예약을 목록·단건 상세로 조회한다(US-4-2). 예약 상세는 **매물 정보·예약 일시·타겟 입주일·계약기간·예약자 성명·보증금·총 금액**을 내려준다. 후속으로 분리·이연하는 것은 **예약(신청) 자체가 아니라 문의(inquiry)·인앱 채팅(US-4-3~US-4-5), 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 기존 F-03 chat 결합**이다 — 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 하지 않는다. 예약은 매물·회원과 cross-store 조인이 금지되므로([ADR-0005](../adr/0005-polyglot-persistence.md)) 가격·성명은 조회 시점에 애플리케이션 레벨로 조합한다(`listing :: api`·`user :: api` 공개 쿼리, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)).
 
-외국인 세입자가 매물에 신청(예약)하거나 임대인에게 문의하면, 해당 매물 임대인과의 1:1 채팅방을 통해 소통한다. 신청 시 예약 정보 카드가, 문의 시 매물 정보 카드가 채팅방 상단에 고정된다. 채팅은 텍스트 메시지만 허용하며, 본인이 참여하지 않은 방은 접근할 수 없다.
+외국인 세입자가 매물의 방 상품에 예약을 신청하면 예약 내역(대상 방 상품·타겟 입주일·계약기간·상태)이 저장되고, 세입자는 자신의 예약 목록과 상세(예상 비용 포함)를 다시 확인할 수 있다.
 
 공통 규약: 모든 응답은 공통 래퍼 `{ success, data, error }`, 인증은 `Authorization: Bearer <accessToken>`, 에러 형식·코드는 [error-response-guide](../api/error-response-guide.md)를 따른다.
 
-### US-4-1 — 매물 신청(예약 생성) 및 예약 카드 자동 전송
+### US-4-1 — 매물 예약 생성(신청 저장)
 
-**As a** 매물에 입주하려는 외국인 세입자
-**I want** 입주 희망일과 계약기간을 골라 매물에 신청하고, 그 내용이 임대인과의 채팅방에 예약 카드로 자동 전송·고정되기를
-**So that** 별도 입력 없이 신청 정보가 임대인에게 정확히 전달되고, 같은 매물에 중복 신청하는 실수를 막는다.
+**As a** 온보딩을 마친(`ACTIVE`) 외국인 세입자
+**I want** 원하는 방 상품(`roomOffer`)에 타겟 입주일과 계약기간을 골라 예약을 신청하고 그 내역이 저장되기를
+**So that** 나중에 내 예약 내역을 다시 확인하고, 같은 방에 중복 예약하는 실수를 막는다.
 
 - 우선순위: High
-- 관련 NFR: 신뢰성/멱등성(중복 신청 방지), 보안(소유자 본인 매물 신청 차단)
-- 백엔드 관점: `Booking`을 `REQUESTED` 상태로 생성하고, (매물, 세입자, 임대인) 채팅방을 보장한 뒤 `BOOKING_CARD` 시스템 메시지를 고정 전송한다. 동일 세입자–매물의 활성 예약(`REQUESTED`/`ACCEPTED`)은 DB 유니크 제약 + 트랜잭션으로 1건만 허용한다.
+- 관련 NFR: 보안(`ACTIVE`·`TENANT` 게이트), 입력 검증
+- 백엔드 관점: `Booking`을 `REQUESTED` 상태로 저장한다(필드: `tenantId`·`listingId`·`roomOfferId`·`moveInDate`·`contractPeriod`(정수 개월수)·`status`·`createdAt`). `tenantId`는 SecurityContext에서 얻고, 요청자가 `ACTIVE`이며 `userType=TENANT`인지 다른 보호 엔드포인트와 **동일한 게이트**로 검사한다(온보딩 미완료·비세입자 차단; 상태-게이트 1:1 일치). **예약은 세입자 전용이라 임대인은 예약을 수행할 수 없고, 세입자가 자기 소유 매물을 예약하는 상황 자체가 성립하지 않으므로 본인 매물 차단(소유자 조회)은 두지 않는다.** 매물·방 상품 존재·공개 여부는 `listing :: api`로 검증한다(cross-store 조인 금지, ADR-0005). **MVP의 예약은 "신청" 성격이라 동일 방 상품 중복 신청을 제한하지 않는다**(활성 유니크 제약 없음 — 같은 방에도 여러 번 신청 가능). **예약 카드 전송·`BookingCreatedEvent` 발행은 후속(문의·인앱 채팅)** — 본 스토리에서는 하지 않는다.
 
 **AC (Given/When/Then)**
 
 - 정상
-  - **Given** 인증된 세입자가 본인 소유가 아닌 공개 매물을 보고 있고 해당 매물에 활성 예약이 없을 때
-  - **When** `moveInDate`(미래 날짜)와 유효한 `contractPeriod`로 `POST /api/v1/listings/{listingId}/bookings`를 호출하면
-  - **Then** `201 Created` + `Location: /api/v1/chat-rooms/{roomId}`로 응답하고, `data`에 `bookingId`, `status: "REQUESTED"`, `chatRoomId`, `pinned: true`인 `bookingCard`가 포함되며, 임대인에게 푸시 알림 이벤트가 발행된다.
+  - **Given** `ACTIVE` 세입자(`userType=TENANT`)가 공개 매물의 방 상품을 보고 있을 때
+  - **When** `roomOfferId`·`moveInDate`(미래 날짜)·`contractPeriod`(양의 정수, 개월수)로 `POST /api/v1/listings/{listingId}/bookings`를 호출하면
+  - **Then** `201 Created` + `Location: /api/v1/bookings/{bookingId}`로 응답하고, `data`에 `bookingId`·`status: "REQUESTED"`·`listingId`·`roomOfferId`·`moveInDate`·`contractPeriod`·`createdAt`가 포함된다.
 - 입력 검증 실패
-  - **Given** 인증된 세입자가
-  - **When** `contractPeriod`를 누락하거나 enum에 없는 값(예: `TWO_YEARS`)으로 신청하면 → `400` + `error.code = INVALID_INPUT`, `errors[]`에 위반 필드 포함. **When** `moveInDate`를 날짜 형식이 아닌 값/타입으로 보내면 → `400` + `MALFORMED_REQUEST`(JSON 타입·파싱 오류).
-  - **Then** 어느 경우에도 예약과 메시지는 생성되지 않는다.
-- 비즈니스 규칙(과거일/본인 매물)
-  - **Given** 인증된 세입자가
-  - **When** `moveInDate`를 (형식은 유효하나) 과거 날짜로 보내면 → `422` + `BOOKING_INVALID_MOVE_IN_DATE`. **When** 본인이 소유한 매물에 신청하면 → `422` + `BOOKING_SELF_NOT_ALLOWED`.
-  - **Then** 어느 경우에도 예약·카드 메시지는 생성되지 않는다.
-- 인증·권한
-  - **Given** `Authorization` 헤더가 없거나 만료된 토큰일 때
-  - **When** 신청 API를 호출하면
-  - **Then** `401` + `UNAUTHENTICATED`(없음/위조) 또는 `TOKEN_EXPIRED`(만료)로 응답한다. **When** 존재하지 않거나 비공개/삭제된 매물 ID로 호출하면 → `404` + `LISTING_NOT_FOUND`.
-- 경계·동시성(중복 신청)
-  - **Given** 동일 세입자–동일 매물에 활성 예약이 이미 있거나, 같은 요청이 거의 동시에 2건 도착할 때
-  - **When** 두 번째(또는 동시) 신청이 처리되면
-  - **Then** 정확히 1건만 생성되고 나머지는 `409` + `BOOKING_ALREADY_EXISTS`로 거절되며, 카드 메시지 중복 전송도 발생하지 않는다.
+  - **When** `roomOfferId`나 `contractPeriod`를 누락하거나 `contractPeriod`가 양의 정수가 아니면(0·음수) → `400` + `INVALID_INPUT`(`errors[]`에 위반 필드). **When** `moveInDate`를 날짜 형식이 아닌 값/타입, 또는 `contractPeriod`를 숫자 아닌 타입으로 보내면 → `400` + `MALFORMED_REQUEST`.
+  - **Then** 어느 경우에도 예약은 생성되지 않는다.
+- 비즈니스 규칙(입주일)
+  - **When** `moveInDate`가 (형식은 유효하나) 과거이거나 매물 입주 가능일 이전이면 → `422` + `BOOKING_INVALID_MOVE_IN_DATE`.
+  - **Then** 이 경우 예약은 생성되지 않는다.
+- 인증·권한·상태 게이트
+  - **Given** `Authorization` 헤더가 없거나 만료된 토큰이면 → `401` + `UNAUTHENTICATED`/`TOKEN_EXPIRED`. **Given** 인증은 됐으나 온보딩 미완료(비`ACTIVE`) 사용자면 → 다른 보호 엔드포인트와 동일한 **온보딩 상태 게이트 에러**로 차단한다(코드 게이트와 1:1 일치). **Given** `userType`이 세입자가 아니면(임대인) → `403` + `FORBIDDEN`(예약은 세입자 전용).
+  - **When** 존재하지 않거나 비공개/삭제된 매물·방 상품 ID로 호출하면 → `404` + `LISTING_NOT_FOUND`.
+- 다건 신청 허용(중복 제한 없음)
+  - **Given** 세입자가 같은 방 상품에 이미 신청한 이력이 있을 때
+  - **When** 같은 방 상품에 다시 신청하면
+  - **Then** 별개의 예약(신청)으로 정상 저장된다(`201`) — MVP의 예약은 "신청" 성격이라 활성 예약 중복 제한이 없다.
 
-### US-4-2 — 매물 문의(채팅방 생성/조회) 및 매물 카드 고정
+> 예약 수락/거절·취소 등 상태 전이는 본 스토리 범위 밖(확장 시 정의). 신청 직후 상태는 `REQUESTED` 고정.
+
+### US-4-2 — 내 예약 조회(목록·단건 상세)
+
+**As a** 매물을 예약(신청)한 외국인 세입자
+**I want** 내 예약 목록과 각 예약의 상세(매물 정보·예약 일시·타겟 입주일·계약기간·예약자 성명·보증금·총 금액)를 조회하기를
+**So that** 어떤 방을 어떤 조건으로 예약했는지, 예상 비용이 얼마인지 다시 확인한다.
+
+- 우선순위: High
+- 관련 NFR: 보안(본인 예약만 조회), 성능(목록 페이지네이션), 정합성(가격·성명 조회 시점 조인)
+- 백엔드 관점: `GET /api/v1/bookings`는 요청자 본인 예약만 `createdAt` 내림차순 **오프셋 페이지네이션**(api-design-guide §4-1)으로 반환하고, `GET /api/v1/bookings/{bookingId}`는 단건 상세다. **가격·매물 정보·성명은 예약에 스냅샷 저장하지 않고 조회 시점에 실시간 조인**한다 — `listing :: api`로 `(listingId, roomOfferId)`의 매물 요약·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명을 가져온다(둘 다 신규 공개 조회 메서드 필요). **총 금액 = 보증금 + 월세 × `contractPeriod`**(`contractPeriod`는 계약 개월수 정수, **관리비 제외**). 타인 예약은 조회되지 않는다.
+
+**AC (Given/When/Then)**
+
+- 정상(목록)
+  - **Given** 인증된 세입자가 예약 2건을 보유할 때
+  - **When** `GET /api/v1/bookings?page=0&size=20`을 호출하면
+  - **Then** `200 OK` + `data.content`가 `createdAt` 내림차순으로 정렬되고, 각 항목에 `bookingId`·매물 요약(`listingId`·제목·썸네일)·`roomOfferId`·`moveInDate`·`contractPeriod`·`status`·`createdAt`가 포함되며 `data.page`에 오프셋 메타가 담긴다.
+- 정상(단건 상세)
+  - **Given** 인증된 세입자가 본인 예약 1건을 지목할 때
+  - **When** `GET /api/v1/bookings/{bookingId}`를 호출하면
+  - **Then** `200 OK` + `data`에 **매물 정보**(제목·썸네일·주소·방 상품명 등)·**예약 일시**(`createdAt`)·**타겟 입주일**(`moveInDate`)·**계약기간**(`contractPeriod`)·**예약자 성명**·**보증금**(`deposit`)·**총 금액**(`deposit + monthlyRent × 개월수`)이 포함된다.
+- 정합성(실시간 가격)
+  - **Given** 예약 이후 해당 방 상품의 가격(`pricing`)이 변경됐을 때
+  - **When** 세입자가 상세를 다시 조회하면
+  - **Then** 스냅샷이 아니라 **현재 가격 기준**으로 보증금·총 금액을 계산해 내려준다.
+- 인증·권한
+  - **Given** 토큰이 없거나 만료된 요청이면 → `401` + `UNAUTHENTICATED`/`TOKEN_EXPIRED`.
+  - **When** 존재하지 않는 예약이거나 **타인의 예약** ID로 상세를 조회하면 → `404` + `BOOKING_NOT_FOUND`(존재 여부를 노출하지 않도록 본인 예약이 아니면 404로 통일; 신규 에러코드 필요).
+- 경계(빈 목록/삭제된 매물)
+  - **Given** 예약이 하나도 없을 때 → `GET /api/v1/bookings`는 `200` + `content: []`, `page.totalElements: 0`.
+  - **Given** 예약한 방 상품이 이후 비공개/삭제됐을 때 → 상세 조회 시 예약 코어 내역(날짜·계약기간·상태)은 유지하되 매물 정보·가격 파트의 표기 정책은 **(확인 필요)** — 매물 필드 `null`/tombstone 반환 vs 별도 상태 코드.
+
+> 신설 의존: 신규 에러코드 `BOOKING_NOT_FOUND`(404), `listing :: api`(매물 요약·roomOffer 가격 조회)·`user :: api`(`getUserName`) 공개 메서드, 그리고 `booking → {listing::api, user::api}` 의존 화이트리스트(`booking/package-info.java`) 추가가 선행돼야 한다.
+
+### (후속·이연) US-4-3 — 매물 문의(채팅방 생성/조회) 및 매물 카드 고정
+
+> **아래 US-4-3~US-4-5(문의·채팅방·메시지)는 인앱 채팅(기존 F-03 chat 결합)으로, 1차 MVP에서는 후속으로 분리·이연한다.** 매물 예약(신청, US-4-1·US-4-2)과 달리 문의·채팅 기능, 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 결합은 재개 시 구현한다. 상세 설계·엔드포인트는 [spec-04](../api/specs/04-booking-inquiry-chat.md)·[시퀀스 다이어그램](../architecture/sequence-diagrams/04-booking-inquiry-chat/README.md)에 보존돼 있다(재개 시 번호·경로 재정합).
 
 **As a** 매물이 궁금한 외국인 세입자
 **I want** 임대인에게 문의를 시작하면 매물 정보 카드가 고정된 채팅방을 얻기를(없으면 생성, 있으면 기존 방 반환)
@@ -904,7 +940,7 @@
   - **When** 존재하지 않거나 비공개/삭제된 매물 ID로 문의하면
   - **Then** `404` + `LISTING_NOT_FOUND`로 응답하고 방을 만들지 않는다.
 
-### US-4-3 — 채팅방 리스트 조회
+### (후속·이연) US-4-4 — 채팅방 리스트 조회
 
 **As a** 여러 임대인과 대화 중인 세입자
 **I want** 내가 참여한 채팅방 목록을 매물 썸네일·상대·마지막 메시지·시간·안읽음 수와 함께 최신순으로 보기를
@@ -933,7 +969,7 @@
   - **When** 리스트 API를 호출하면
   - **Then** `200 OK` + 빈 `content: []`와 `page.totalElements: 0`, `page.hasNext: false`를 반환한다(에러 아님).
 
-### US-4-4 — 채팅 메시지 조회·전송·읽음 처리
+### (후속·이연) US-4-5 — 채팅 메시지 조회·전송·읽음 처리
 
 **As a** 채팅방에 참여한 세입자 또는 임대인
 **I want** 방의 메시지를 커서 페이지네이션으로 거슬러 보고, 텍스트 메시지를 보내고, 읽음 처리를 하기를

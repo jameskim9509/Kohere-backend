@@ -1,15 +1,14 @@
 /**
- * 매물 신청(예약) Bounded Context. 세입자가 매물에 입주 희망일·계약기간으로 신청(예약)을 생성하는 것을 담당한다. 동일 세입자–매물의 활성 예약은 1건만
- * 허용한다(중복 신청 방지).
+ * 매물 예약(신청) Bounded Context. {@code ACTIVE} 세입자가 방 상품(roomOffer)에 타겟 입주일·계약기간(개월수)으로 예약을 저장하고, 내
+ * 예약을 목록·단건 상세로 조회한다. MVP의 예약은 "신청" 성격이라 중복 제한이 없다(예약은 세입자 전용).
  *
- * <p>도메인 에러 코드 prefix: {@code BOOKING}. 스펙: docs/api/specs/04-booking-inquiry-chat.md (신청/예약 부분).
+ * <p>도메인 에러 코드 prefix: {@code BOOKING}. 스펙: docs/api/specs/04-booking-inquiry-chat.md.
  *
- * <p>모듈 경계·계층 규칙은 docs/convention/code-style.md §3을 따른다. 공유 커널 {@code common}에만 의존한다.
- *
- * <p>TODO: 예약 생성 시 임대인과의 채팅방·예약 카드(BOOKING_CARD) 생성·고정은 chat 모듈의 책임이다. 현재는 chat 모듈을 직접 의존하지 않으며, 추후
- * 공개 API 또는 도메인 이벤트(BookingCreated)로 연결한다(chat 타입 import 금지).
+ * <p>조회 시점에 매물 요약·가격은 {@code listing :: api}, 예약자 성명은 {@code user :: api}로 실시간 조인한다(스냅샷 없음,
+ * cross-store 조인 금지 · ADR-0002/0005). 예약 생성 시 채팅방·예약 카드(BOOKING_CARD)·{@code BookingCreatedEvent}
+ * 발행(chat 연동)은 후속·이연이다.
  */
 @org.springframework.modulith.ApplicationModule(
     displayName = "Booking",
-    allowedDependencies = {"common"})
+    allowedDependencies = {"common", "listing :: api", "user :: api"})
 package com.kohere.booking;

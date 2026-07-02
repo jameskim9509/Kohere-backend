@@ -1,6 +1,7 @@
 package com.kohere.listing.application;
 
 import com.kohere.listing.api.RecommendedListingView;
+import com.kohere.listing.api.RoomOfferBookingView;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
@@ -62,6 +63,24 @@ final class ListingResponseMapper {
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
         offer.filterTags().stream().map(Enum::name).toList());
+  }
+
+  /**
+   * booking 모듈에 전달할 예약용 방 상품 published view를 만든다.
+   *
+   * <p>이미 공개(PUBLISHED)·활성(ACTIVE)으로 선별된 매물·방 상품을 받아 요약·가격·입주 가능일을 원시 타입으로 조립한다(내부 도메인 타입 미공유).
+   */
+  static RoomOfferBookingView toBookingView(Listing listing, Listing.RoomOffer offer) {
+    return new RoomOfferBookingView(
+        listing.getId(),
+        offer.roomOfferId(),
+        listing.getTitle(),
+        thumbnailUrl(listing),
+        listing.getAddress().fullAddress(),
+        offer.name(),
+        offer.pricing().deposit(),
+        offer.pricing().monthlyRent(),
+        offer.inventory().nextAvailableFrom());
   }
 
   /** 지도 SDK가 개별 마커로 사용할 최소 좌표 DTO를 만든다. */
