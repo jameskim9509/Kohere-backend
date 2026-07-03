@@ -5,6 +5,8 @@ import com.kohere.user.domain.Occupation;
 import com.kohere.user.domain.UserStatus;
 import com.kohere.user.domain.UserType;
 import com.kohere.user.domain.VisaType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -52,7 +54,9 @@ public class UserJpaEntity {
 
   private String email;
 
-  @Enumerated(EnumType.STRING)
+  // 값에 하이픈이 있어(STUDY_D-2 …) 상수명 저장(@Enumerated)이 불가 — 컨버터로 value를 저장한다(#93).
+  @Convert(converter = VisaTypeConverter.class)
+  @Column(length = 80)
   private VisaType visaType;
 
   @Enumerated(EnumType.STRING)

@@ -629,9 +629,9 @@ class AuthServiceTest {
         "KR",
         "South Korea",
         "https://flagcdn.com/kr.svg",
-        "STUDENT",
+        "UNDERGRADUATE_STUDENT",
         "gil@example.com",
-        "VISA_WORK",
+        "SHORT_TERM_VISIT_C-2_C-3",
         "TENANT",
         null,
         "ACTIVE",
@@ -646,9 +646,9 @@ class AuthServiceTest {
         "MALE",
         LocalDate.of(1990, 1, 1),
         "KR",
-        "STUDENT",
+        "UNDERGRADUATE_STUDENT",
         "gil@example.com",
-        "VISA_WORK");
+        "SHORT_TERM_VISIT_C-2_C-3");
   }
 
   /** 임대인 온보딩 응답 프로필 — 성별·국적·직업·비자·생년월일·이메일 미수집(null), userType=LANDLORD. */

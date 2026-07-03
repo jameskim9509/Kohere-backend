@@ -1,13 +1,22 @@
 package com.kohere.user.domain;
 
 /**
- * 직업 유형(온보딩 필수). <b>임시 분류값</b> — 요구사항 정의서의 직업 드롭다운 항목이 미확정(잘림)이라 잠정 정의이며 실제 선택지 확정 시 갱신한다(확인 필요).
- * docs/architecture/domain-model.md §2 · database-design §6.
+ * 직업 유형(온보딩 필수). 요구사항 정의서의 직업 드롭다운 확정 항목(#93). docs/architecture/domain-model.md §2 ·
+ * database-design §6.
  */
 public enum Occupation {
-  STUDENT,
-  EMPLOYEE,
-  SELF_EMPLOYED,
-  JOB_SEEKER,
-  ETC
+  /** 학부생(undergraduate student). */
+  UNDERGRADUATE_STUDENT,
+  /** 대학원생(graduate student). */
+  GRADUATE_STUDENT,
+  /** 교환학생(exchange student). */
+  EXCHANGE_STUDENT,
+  /** 교육/학술 연구(education/academic research). */
+  EDUCATION_ACADEMIC_RESEARCH,
+  /** IT/소프트웨어 엔지니어링(it/software engineering). */
+  IT_SOFTWARE_ENGINEERING,
+  /** 개발자(developer). */
+  DEVELOPER,
+  /** 디자이너(designer). */
+  DESIGNER
 }
