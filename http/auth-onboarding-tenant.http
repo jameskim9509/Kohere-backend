@@ -68,8 +68,9 @@ Content-Type: application/json
 }
 
 ### 5. 온보딩 제출 — 성공 시 user 프로필 + 정식 access/refresh 발급
-#    enum 유효값: gender=MALE|FEMALE / occupation=STUDENT|EMPLOYEE|SELF_EMPLOYED|JOB_SEEKER|ETC
-#                 visaType=VISA_STUDENT|VISA_WORK|VISA_RESIDENCE|VISA_WORKING_HOLIDAY|VISA_TOURISM|VISA_ETC
+#    enum 유효값: gender=MALE|FEMALE
+#                 occupation=UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|EDUCATION_ACADEMIC_RESEARCH|IT_SOFTWARE_ENGINEERING|DEVELOPER|DESIGNER
+#                 visaType=DIPLOMATIC_OFFICIAL_A-1_A-2|VISA_EXEMPTED_B|JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6|SHORT_TERM_VISIT_C-2_C-3|STUDY_D-2|TRAINEE_D-3_D-4|INTRA_COMPANY_TRANSFER_D-7|PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7|NON_PROFESSIONAL_E-8_E-9_E-10|WORKING_HOLIDAY_H-1|WORK_AND_VISIT_H-2|FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3|OVERSEAS_KOREAN_F-4|PERMANENT_RESIDENCE_F-5|MARRIAGE_MIGRANT_F-6|OTHERS_G-1
 #    country=ISO 3166-1 alpha-2 (시드: KR,CN,VN,US,UZ,TH,PH,NP,MN,JP,ID,KH,RU,IN,MM) / email=4단계서 인증한 값
 # @name onboarding
 POST {{baseUrl}}/api/v1/auth/onboarding
@@ -82,9 +83,9 @@ Content-Type: application/json
   "gender": "FEMALE",
   "birthDate": "1995-03-21",
   "country": "VN",
-  "occupation": "STUDENT",
+  "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "VISA_STUDENT"
+  "visaType": "STUDY_D-2"
 }
 
 ### 6. 내 프로필 조회 (정식 access 토큰 필요)
@@ -101,8 +102,8 @@ Content-Type: application/json
 
 {
   "country": "JP",
-  "occupation": "EMPLOYEE",
-  "visaType": "VISA_WORK"
+  "occupation": "DEVELOPER",
+  "visaType": "SHORT_TERM_VISIT_C-2_C-3"
 }
 
 ### 8. 토큰 재발급 (공개 엔드포인트, 본문 refresh 토큰)
