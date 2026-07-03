@@ -84,9 +84,9 @@ Content-Type: application/json
   "gender": "FEMALE",
   "birthDate": "1995-03-21",
   "country": "KR",
-  "occupation": "STUDENT",
+  "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "VISA_STUDENT"
+  "visaType": "STUDY_D-2"
 }
 
 ### 6. 생활 팁 주제 목록 조회 — 노출 순서대로 전체(번역된 name, 비페이지)

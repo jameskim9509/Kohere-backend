@@ -57,16 +57,16 @@ class UserTest {
             Gender.MALE,
             LocalDate.of(1990, 1, 1),
             "KR",
-            Occupation.STUDENT,
+            Occupation.UNDERGRADUATE_STUDENT,
             "gil@example.com",
-            VisaType.VISA_WORK,
+            VisaType.SHORT_TERM_VISIT,
             NOW);
 
     assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
     assertThat(active.getFirstName()).isEqualTo("Gil");
     assertThat(active.getNickname()).isEqualTo("BraveOtter");
     assertThat(active.getCountry()).isEqualTo("KR");
-    assertThat(active.getOccupation()).isEqualTo(Occupation.STUDENT);
+    assertThat(active.getOccupation()).isEqualTo(Occupation.UNDERGRADUATE_STUDENT);
     assertThat(active.getEmail()).isEqualTo("gil@example.com");
     // 동의는 약관 동의 단계에서 이미 확정됨
     assertThat(active.isTermsOfServiceAgreed()).isTrue();
@@ -85,9 +85,9 @@ class UserTest {
                     Gender.MALE,
                     LocalDate.of(1990, 1, 1),
                     "KR",
-                    Occupation.STUDENT,
+                    Occupation.UNDERGRADUATE_STUDENT,
                     "gil@example.com",
-                    VisaType.VISA_WORK,
+                    VisaType.SHORT_TERM_VISIT,
                     NOW))
         .isInstanceOf(TermsAgreementRequiredException.class);
   }
@@ -105,9 +105,9 @@ class UserTest {
                     Gender.FEMALE,
                     LocalDate.of(1995, 5, 5),
                     "VN",
-                    Occupation.EMPLOYEE,
+                    Occupation.DEVELOPER,
                     "a@example.com",
-                    VisaType.VISA_STUDENT,
+                    VisaType.STUDY,
                     NOW))
         .isInstanceOf(OnboardingAlreadyCompletedException.class);
   }
@@ -217,9 +217,9 @@ class UserTest {
             Gender.MALE,
             LocalDate.of(1990, 1, 1),
             "KR",
-            Occupation.STUDENT,
+            Occupation.UNDERGRADUATE_STUDENT,
             "gil@example.com",
-            VisaType.VISA_WORK,
+            VisaType.SHORT_TERM_VISIT,
             NOW);
   }
 }
