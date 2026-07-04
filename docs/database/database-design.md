@@ -186,7 +186,7 @@
 | `gender` | VARCHAR(16) (enum `Gender`) | NULL(PII) |
 | `birth_date` | DATE | NULL · 과거만(앱 검증)(PII) |
 | `country` | CHAR(2) | NULL · 국적 ISO 3166-1 alpha-2 코드 · → `countries.code`(같은 모듈) · 표시명·국기는 `countries`에서 확보(PII) |
-| `occupation` | VARCHAR(32) (enum `Occupation`) | NULL · 임시 분류값(확인 필요)(PII) |
+| `occupation` | VARCHAR(32) (enum `Occupation`) | NULL · 확정 분류값 7종(#93): `UNDERGRADUATE_STUDENT`·`GRADUATE_STUDENT`·`EXCHANGE_STUDENT`·`EDUCATION_ACADEMIC_RESEARCH`·`IT_SOFTWARE_ENGINEERING`·`DEVELOPER`·`DESIGNER`(PII) |
 | `email` | VARCHAR(255) | NULL · 인증 완료 연락 이메일 · 민감정보(PII). **세입자 전용**(임대인은 NULL — 미수집, [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 소셜 제공자 이메일(`social_accounts.email`)과 별개 |
 | `visa_type` | VARCHAR(32) (enum `VisaType`) | NULL · 민감정보(PII) |
 | `status` | VARCHAR(16) (enum `UserStatus`) | NOT NULL · 신규 `PENDING` |
@@ -384,7 +384,7 @@
 | `purpose` | string (enum `Purpose`) | 필수 · ② 입국 목적·유학 여부 — 단일 enum `STUDY`\|`NON_STUDY`. ③ 대학/지역 조건부 필수의 분기 키(`STUDY`→`university` / `NON_STUDY`→`district`) |
 | `university` | string (enum `UniversityGroup`) | nullable · ③ 대학 그룹(입국 목적 `purpose=STUDY`일 때 **필수**·`NON_STUDY`이면 없음 — 앱 레벨 조건부 필수 불변식) · 단일 그룹 코드를 UPPER_SNAKE로 저장 · 값(6개 그룹): `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC` · 추천 시 그룹은 멤버 대학 코드 집합으로 전개(`SNU_CAU_SOONGSIL`→`{SNU,CAU,SOONGSIL}` 등, `ETC`→`{}` 빈 집합으로 대학 필터 없이 지역 기반 매칭만), 멤버 코드는 listing `nearbyUniversityCodes`(개별 코드 저장 불변)와 1:1 — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) |
 | `district` | string (enum `District`) | nullable · ③ 지역구(입국 목적 `purpose=NON_STUDY`일 때 **필수**·`STUDY`이면 없음 — 앱 레벨 조건부 필수 불변식) · UPPER_SNAKE 저장 · 값: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC` |
-| `conditions` | string[] (enum `ConditionTag`) | 선택, ≤3, 중복 제거 · ④ 주거 환경 조건 — listing `ConditionTag` 이름으로 통일. 값: `IMMEDIATE_MOVE_IN`·`FEMALE_ONLY`·`PRIVATE_TOILET`·`PRIVATE_BATH`·`ENGLISH_AVAILABLE`·`RESIDENT_REGISTRATION`·`NO_MAINTENANCE_FEE`·`MEALS_PROVIDED`·`DOUBLE_ROOM` |
+| `conditions` | string[] (enum `ConditionTag`) | 선택, ≤3, 중복 제거 · ④ 주거 환경 조건 — listing `ConditionTag` 이름으로 통일. 값: `IMMEDIATE_MOVE_IN`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_AVAILABLE`·`RESIDENT_REGISTRATION`·`NO_MAINTENANCE_FEE`·`MEALS_PROVIDED`·`DOUBLE_ROOM` |
 | `monthlyRentMin` | int(KRW) | 필수, ≥0 · ⑤ 월세 최소 · `monthlyRentMin ≤ monthlyRentMax`(앱 레벨 불변식) |
 | `monthlyRentMax` | int(KRW) | 필수, ≥0 · ⑤ 월세 최대 · `monthlyRentMin ≤ monthlyRentMax`(앱 레벨 불변식) |
 | `arcStatus` | string (enum `ArcStatus`) | 필수 · ⑥ ARC |
@@ -708,7 +708,7 @@
 5. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`nickname`·`email`·`country`·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
 6. **이메일 인증 정책(세입자)**: 인증번호 길이·만료(TTL)·검증 시도 상한·재발송 레이트리밋 미확정. 메일 발송은 **SMTP**(구체 relay/provider는 인프라 결정 — [ADR-0021](../adr/0021-cost-optimization-profile.md))(§4-1 A-2).
 7. **연락처 SMS 인증 정책(임대인)**: SMS provider 선정·인증번호 정책=**이메일과 통일**(6자리·코드 5분·마커 30분·시도 5회·재발송 60초)·**프로필 연락처 변경 시 SMS 재인증**은 확정(provider 상세는 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 남은 미확정: SMS provider 단가·국내외(한국) 번호 발신, 연락처 유니크 제약 채택 여부(§4-1 A-3).
-8. **직업(`Occupation`) 분류값**: 요구사항 정의서 드롭다운 항목 잘림 → 현재 임시값(`STUDENT`/`EMPLOYEE`/`SELF_EMPLOYED`/`JOB_SEEKER`/`ETC`), 실제 선택지 확정 필요.
+8. **직업(`Occupation`) 분류값**: ~~요구사항 정의서 드롭다운 항목 잘림 → 임시값, 실제 선택지 확정 필요~~ → **해결됨(#93)** — 확정 7종(`UNDERGRADUATE_STUDENT`/`GRADUATE_STUDENT`/`EXCHANGE_STUDENT`/`EDUCATION_ACADEMIC_RESEARCH`/`IT_SOFTWARE_ENGINEERING`/`DEVELOPER`/`DESIGNER`) 반영.
 9. **닉네임 풀**: `nickname_adjectives`·`nickname_nouns` 단어 시딩·로케일(언어)·조합 포맷(연결/구분자), 재조합 재시도 상한·fallback 규칙, 무작위 선택 전략(앱 로드 vs `RAND()`) 미확정.
 10. **국가(`countries`)**: 표시명 다국어(단일 vs `name_en`/`name_ko`), 시드 출처(ISO 3166-1·전체 국가 확장), `users.country`→`countries.code` FK 적용 여부. (`flag`는 국기 이미지 URL(flagcdn.com SVG)로 확정 — 외부 CDN 의존, 자체 호스팅 전환은 후속 검토.)
 

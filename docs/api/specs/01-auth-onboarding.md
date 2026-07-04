@@ -20,8 +20,8 @@
 | 사용자 상태 `status` | `PENDING`, `TERMS_AGREED`, `ACTIVE`, `WITHDRAWN` | 소셜 검증만 완료 → 약관 동의 완료 → 온보딩 완료 → 탈퇴 |
 | provider | `APPLE`, `GOOGLE` | 소셜 로그인 제공자 |
 | 성별 `gender` | `MALE`, `FEMALE` | 온보딩 필수 |
-| 직업 `occupation` | `STUDENT`(학생), `EMPLOYEE`(직장인), `SELF_EMPLOYED`(자영업), `JOB_SEEKER`(구직 중), `ETC`(기타) | 온보딩 필수 · **임시 분류값**(요구사항 드롭다운 항목 미확정 — 확인 필요) |
-| 비자정보 `visaType` | `VISA_STUDENT`(유학·연수), `VISA_WORK`(취업), `VISA_RESIDENCE`(거주·가족동반), `VISA_WORKING_HOLIDAY`(워킹홀리데이), `VISA_TOURISM`(관광), `VISA_ETC`(기타) | 온보딩 필수 |
+| 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `EDUCATION_ACADEMIC_RESEARCH`(교육/학술 연구), `IT_SOFTWARE_ENGINEERING`(IT/소프트웨어 엔지니어링), `DEVELOPER`(개발자), `DESIGNER`(디자이너) | 온보딩 필수 · 요구사항 확정값(#93) |
+| 비자정보 `visaType` | `DIPLOMATIC_OFFICIAL_A-1_A-2`(외교·공무), `VISA_EXEMPTED_B`(사증면제), `JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6`(취재·종교), `SHORT_TERM_VISIT_C-2_C-3`(단기방문), `STUDY_D-2`(유학), `TRAINEE_D-3_D-4`(연수), `INTRA_COMPANY_TRANSFER_D-7`(주재), `PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7`(전문인력), `NON_PROFESSIONAL_E-8_E-9_E-10`(비전문취업), `WORKING_HOLIDAY_H-1`(워킹홀리데이), `WORK_AND_VISIT_H-2`(방문취업), `FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3`(방문동거·거주·동반), `OVERSEAS_KOREAN_F-4`(재외동포), `PERMANENT_RESIDENCE_F-5`(영주), `MARRIAGE_MIGRANT_F-6`(결혼이민), `OTHERS_G-1`(기타) | 온보딩 필수 · 요구사항 확정값(#93). 값=상수명_체류자격코드(하이픈 포함) |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
 | 이메일 `email` | 이메일 문자열 | **세입자** 온보딩 필수 · 인증번호로 사전 검증(§3·§4). 임대인은 미수집([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)) |
 | 닉네임 `nickname` | `형용사 + 사물` 문자열 | 서버가 자동 배정(사용자 입력·수정 불가), 전역 유니크 |
@@ -312,7 +312,7 @@ provider별로 **자격 필드 하나**를 채운다 — Google은 `idToken`, Ap
 
 ### 4-1. POST `/api/v1/auth/phone/verification-code` — 연락처 인증번호 발송(임대인 전용)
 
-**임대인 온보딩** 중 입력한 연락처(휴대폰)로 SMS 인증번호를 발송한다(세입자 이메일 인증 §3과 대칭 — 임대인 트랙의 본인 확인, [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **약관 동의(§2, `TERMS_AGREED`)가 선행**되어야 한다 — 약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`로 거절하고 약관 동의(§2)를 먼저 유도한다. 같은 사용자에 미검증 인증 시도가 남아 있으면 새 인증번호로 대체한다. **인증번호 정책은 이메일 인증(§3·§4)과 동일하다** — 인증번호 6자리, 서버에 **해시로만 보관**하고 코드 TTL 5분 후 만료, 검증 마커(VERIFIED) TTL 30분(온보딩 토큰 만료), 검증 시도 상한 5회, 재발송 간격 60초로 보호한다.
+**임대인 온보딩(US-1-10)** 또는 **정식 회원의 프로필 연락처 변경(US-1-5)** 시 입력한 연락처(휴대폰)로 SMS 인증번호를 발송한다(세입자 이메일 인증 §3과 대칭 — 임대인 트랙의 본인 확인, [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **약관 동의(§2, `TERMS_AGREED`) 이상**이면 진행한다 — 온보딩(`TERMS_AGREED`)·프로필 변경(`ACTIVE`) 두 컨텍스트 모두 허용하고, 약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`로 거절하고 약관 동의(§2)를 먼저 유도한다. 같은 사용자에 미검증 인증 시도가 남아 있으면 새 인증번호로 대체한다. **인증번호 정책은 이메일 인증(§3·§4)과 동일하다** — 인증번호 6자리, 서버에 **해시로만 보관**하고 코드 TTL 5분 후 만료, 검증 마커(VERIFIED) TTL 30분(온보딩 토큰 만료), 검증 시도 상한 5회, 재발송 간격 60초로 보호한다.
 
 SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS API — 구체 provider는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))로 **동기 발송**하며, **발송에 성공한 뒤에만** 인증번호 챌린지를 저장한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(인증번호 생성·해시·검증은 서버가 보유해 이메일 인증과 대칭 — 어댑터는 발송만 담당. 동기/비동기 정책·문자 템플릿은 확인 필요).
 
@@ -352,9 +352,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `phoneNumber` 누락/빈값/형식 위반 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
-| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 온보딩 토큰 누락/위조 / 만료 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 온보딩/정식 토큰 누락/위조 / 만료 |
 | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태의 요청(약관 동의 §2 선행 필요) |
-| 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩 완료(ACTIVE)된 사용자의 요청(연락처 인증은 온보딩 단계 전용) |
 | 429 | `TOO_MANY_REQUESTS` | 재발송 레이트리밋 초과(이메일 인증과 동일 — 재발송 간격 60초) |
 | 502 | `UPSTREAM_ERROR` | SMS 발송 실패(provider 장애·타임아웃). 챌린지 미저장, 클라이언트 재시도 유도(공통 코드 — [error-response-guide](../error-response-guide.md) §3) |
 
@@ -426,9 +425,9 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
   "gender": "MALE",
   "birthDate": "1998-04-12",
   "country": "VN",
-  "occupation": "STUDENT",
+  "occupation": "UNDERGRADUATE_STUDENT",
   "email": "minh@example.com",
-  "visaType": "VISA_STUDENT"
+  "visaType": "STUDY_D-2"
 }
 ```
 
@@ -439,9 +438,9 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `gender` | string(enum) | 필수 | `MALE` \| `FEMALE` |
 | `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) |
 | `country` | string | 필수 | 국적 ISO 3166-1 alpha-2 코드(예: `VN`). `countries`에 존재해야 함(없으면 `INVALID_INPUT`) |
-| `occupation` | string(enum) | 필수 | `STUDENT` \| `EMPLOYEE` \| `SELF_EMPLOYED` \| `JOB_SEEKER` \| `ETC`(임시 분류값 — 확인 필요) |
+| `occupation` | string(enum) | 필수 | `UNDERGRADUATE_STUDENT` \| `GRADUATE_STUDENT` \| `EXCHANGE_STUDENT` \| `EDUCATION_ACADEMIC_RESEARCH` \| `IT_SOFTWARE_ENGINEERING` \| `DEVELOPER` \| `DESIGNER` |
 | `email` | string | 필수 | 이메일 형식. **§3·§4로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_EMAIL_NOT_VERIFIED` 422) |
-| `visaType` | string(enum) | 필수 | `VISA_STUDENT` \| `VISA_WORK` \| `VISA_RESIDENCE` \| `VISA_WORKING_HOLIDAY` \| `VISA_TOURISM` \| `VISA_ETC` |
+| `visaType` | string(enum) | 필수 | `DIPLOMATIC_OFFICIAL_A-1_A-2` \| `VISA_EXEMPTED_B` \| `JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6` \| `SHORT_TERM_VISIT_C-2_C-3` \| `STUDY_D-2` \| `TRAINEE_D-3_D-4` \| `INTRA_COMPANY_TRANSFER_D-7` \| `PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7` \| `NON_PROFESSIONAL_E-8_E-9_E-10` \| `WORKING_HOLIDAY_H-1` \| `WORK_AND_VISIT_H-2` \| `FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3` \| `OVERSEAS_KOREAN_F-4` \| `PERMANENT_RESIDENCE_F-5` \| `MARRIAGE_MIGRANT_F-6` \| `OTHERS_G-1` |
 
 > 약관 동의(`termsOfServiceAgreed`·`privacyPolicyAgreed`·`marketingAgreed`)는 이 요청에 포함하지 않는다 — 앞선 `POST /auth/terms`(§2)에서 처리·기록된다.
 
@@ -461,9 +460,10 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "country": "VN",
       "countryName": "Vietnam",
       "countryFlag": "https://flagcdn.com/vn.svg",
-      "occupation": "STUDENT",
+      "occupation": "UNDERGRADUATE_STUDENT",
       "email": "minh@example.com",
-      "visaType": "VISA_STUDENT",
+      "visaType": "STUDY_D-2",
+      "userType": "TENANT",
       "status": "ACTIVE",
       "marketingAgreed": false,
       "createdAt": "2026-06-15T08:30:00Z"
@@ -577,6 +577,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "phoneNumber": "010-****-5678",
       "userType": "LANDLORD",
       "status": "ACTIVE",
+      "marketingAgreed": false,
       "createdAt": "2026-06-15T08:30:00Z"
     },
     "tokenType": "Bearer",
@@ -588,7 +589,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`birthDate`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). `phoneNumber`는 마스킹 대상이다(마스킹 형식 확인 필요). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
+> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`birthDate`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
 
 #### 발생 가능한 에러
 
@@ -706,9 +707,9 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
     "country": "VN",
     "countryName": "Vietnam",
     "countryFlag": "https://flagcdn.com/vn.svg",
-    "occupation": "STUDENT",
+    "occupation": "UNDERGRADUATE_STUDENT",
     "email": "minh@example.com",
-    "visaType": "VISA_STUDENT",
+    "visaType": "STUDY_D-2",
     "status": "ACTIVE",
     "termsOfServiceAgreed": true,
     "privacyPolicyAgreed": true,
@@ -765,8 +766,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```json
 {
   "country": "KR",
-  "occupation": "EMPLOYEE",
-  "visaType": "VISA_WORK",
+  "occupation": "DEVELOPER",
+  "visaType": "SHORT_TERM_VISIT_C-2_C-3",
   "marketingAgreed": true
 }
 ```
@@ -778,7 +779,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `gender` | string(enum) | 선택 | `MALE` \| `FEMALE` |
 | `birthDate` | string(date) | 선택 | `YYYY-MM-DD`, 과거 날짜만 |
 | `country` | string | 선택 | 국적 ISO 코드(예: `KR`). `countries`에 존재해야 함 |
-| `occupation` | string(enum) | 선택 | 직업 enum(위 목록과 동일, 임시) |
+| `occupation` | string(enum) | 선택 | 직업 enum(위 목록과 동일) |
 | `visaType` | string(enum) | 선택 | 비자정보 enum(위 목록과 동일) |
 | `marketingAgreed` | boolean | 선택 | 마케팅 수신 동의 |
 

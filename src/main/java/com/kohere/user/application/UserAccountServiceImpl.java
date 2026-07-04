@@ -15,6 +15,7 @@ import com.kohere.user.domain.Occupation;
 import com.kohere.user.domain.User;
 import com.kohere.user.domain.UserNotFoundException;
 import com.kohere.user.domain.UserRepository;
+import com.kohere.user.domain.UserType;
 import com.kohere.user.domain.VisaType;
 import java.time.Instant;
 import org.springframework.beans.factory.annotation.Value;
@@ -74,7 +75,7 @@ public class UserAccountServiceImpl implements UserAccountService {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
     Gender gender = parseEnum(Gender.class, profile.gender());
     Occupation occupation = parseEnum(Occupation.class, profile.occupation());
-    VisaType visaType = parseEnum(VisaType.class, profile.visaType());
+    VisaType visaType = parseVisaType(profile.visaType());
     if (profile.country() == null || !countryRepository.existsByCode(profile.country())) {
       throw new InvalidInputException("country 값이 올바르지 않습니다: " + profile.country());
     }
@@ -147,14 +148,22 @@ public class UserAccountServiceImpl implements UserAccountService {
         .orElse(DEFAULT_LANGUAGE);
   }
 
+  /**
+   * 온보딩 완료 응답 뷰로 매핑한다. {@code userType}에 따라 세입자/임대인 필드를 분기한다 — 세입자는 {@code firstName}·{@code
+   * lastName}과 성별·국적·직업·비자정보를 채우고, 임대인은 전체 이름을 {@code name}에, 마스킹된 연락처를 {@code phoneNumber}에 채운다.
+   * 나머지는 {@code null}로 두어 응답에서 생략되게 한다(UserProfileView {@code @JsonInclude(NON_NULL)}). 임대인 온보딩 응답의
+   * 연락처는 마스킹한다(spec §5-2 — 프로필 조회 §8의 평문과 구분).
+   */
   private UserProfileView toProfileView(User u) {
-    // 임대인은 country·gender·occupation·visaType 미수집(null) — 세입자/임대인 공용이라 null 가드한다.
+    boolean landlord = u.getUserType() == UserType.LANDLORD;
+    // 임대인은 country·gender·occupation·visaType·email 미수집(null) — 세입자/임대인 공용이라 null 가드한다.
     Country country =
         u.getCountry() == null ? null : countryRepository.findByCode(u.getCountry()).orElse(null);
     return new UserProfileView(
         u.getId(),
-        u.getFirstName(),
-        u.getLastName(),
+        landlord ? null : u.getFirstName(),
+        landlord ? null : u.getLastName(),
+        landlord ? u.getFirstName() : null,
         u.getNickname(),
         u.getGender() == null ? null : u.getGender().name(),
         u.getBirthDate(),
@@ -163,12 +172,26 @@ public class UserAccountServiceImpl implements UserAccountService {
         country == null ? null : country.flag(),
         u.getOccupation() == null ? null : u.getOccupation().name(),
         u.getEmail(),
-        u.getVisaType() == null ? null : u.getVisaType().name(),
+        u.getVisaType() == null ? null : u.getVisaType().getValue(),
+        landlord ? maskPhone(u.getPhoneNumber()) : null,
         u.getUserType() == null ? null : u.getUserType().name(),
-        u.getPhoneNumber(),
         u.getStatus().name(),
         u.isMarketingAgreed(),
         u.getCreatedAt());
+  }
+
+  /** 응답용 연락처 마스킹(예: {@code 01012345678} → {@code 010-****-5678}). 임대인 온보딩 응답 전용. */
+  private static String maskPhone(String phone) {
+    if (phone == null) {
+      return null;
+    }
+    String digits = phone.replaceAll("\\D", "");
+    if (digits.length() < 4) {
+      return "***";
+    }
+    String prefix = digits.substring(0, Math.min(3, digits.length() - 4));
+    String suffix = digits.substring(digits.length() - 4);
+    return prefix + "-****-" + suffix;
   }
 
   private static <E extends Enum<E>> E parseEnum(Class<E> type, String value) {
@@ -176,6 +199,15 @@ public class UserAccountServiceImpl implements UserAccountService {
       return Enum.valueOf(type, value);
     } catch (IllegalArgumentException | NullPointerException e) {
       throw new InvalidInputException(type.getSimpleName() + " 값이 올바르지 않습니다: " + value);
+    }
+  }
+
+  // VisaType은 상수명이 아니라 value(STUDY_D-2 …)로 주고받으므로 name 기반 parseEnum과 분리한다(#93).
+  private static VisaType parseVisaType(String value) {
+    try {
+      return VisaType.fromValue(value);
+    } catch (IllegalArgumentException | NullPointerException e) {
+      throw new InvalidInputException("VisaType 값이 올바르지 않습니다: " + value);
     }
   }
 }

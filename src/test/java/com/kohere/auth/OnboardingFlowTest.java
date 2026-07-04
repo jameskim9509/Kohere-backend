@@ -230,9 +230,9 @@ class OnboardingFlowTest {
           "gender": "MALE",
           "birthDate": "1990-01-01",
           "country": "KR",
-          "occupation": "STUDENT",
+          "occupation": "UNDERGRADUATE_STUDENT",
           "email": "%s",
-          "visaType": "VISA_WORK"
+          "visaType": "SHORT_TERM_VISIT_C-2_C-3"
         }
         """
         .formatted(email);

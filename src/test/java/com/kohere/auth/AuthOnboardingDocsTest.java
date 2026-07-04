@@ -1055,12 +1055,12 @@ class AuthOnboardingDocsTest {
         field(
             "occupation",
             JsonFieldType.STRING,
-            "직업 enum(필수, 임시): STUDENT|EMPLOYEE|SELF_EMPLOYED|JOB_SEEKER|ETC"),
+            "직업 enum(필수): UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|EDUCATION_ACADEMIC_RESEARCH|IT_SOFTWARE_ENGINEERING|DEVELOPER|DESIGNER"),
         field("email", JsonFieldType.STRING, "사전 인증된 이메일과 일치(필수)"),
         field(
             "visaType",
             JsonFieldType.STRING,
-            "비자유형 enum(필수): VISA_STUDENT|VISA_WORK|VISA_RESIDENCE|VISA_WORKING_HOLIDAY|VISA_TOURISM|VISA_ETC"));
+            "비자유형 enum(필수): DIPLOMATIC_OFFICIAL_A-1_A-2|VISA_EXEMPTED_B|JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6|SHORT_TERM_VISIT_C-2_C-3|STUDY_D-2|TRAINEE_D-3_D-4|INTRA_COMPANY_TRANSFER_D-7|PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7|NON_PROFESSIONAL_E-8_E-9_E-10|WORKING_HOLIDAY_H-1|WORK_AND_VISIT_H-2|FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3|OVERSEAS_KOREAN_F-4|PERMANENT_RESIDENCE_F-5|MARRIAGE_MIGRANT_F-6|OTHERS_G-1"));
   }
 
   private static List<FieldDescriptor> refreshTokenRequestField(String description) {
@@ -1069,13 +1069,18 @@ class AuthOnboardingDocsTest {
 
   private static List<FieldDescriptor> patchRequestFields() {
     return List.of(
-        optField("firstName", JsonFieldType.STRING, "이름(선택)"),
-        optField("lastName", JsonFieldType.STRING, "성(선택)"),
-        optField("gender", JsonFieldType.STRING, "성별 MALE|FEMALE(선택)"),
-        optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(선택)"),
-        optField("country", JsonFieldType.STRING, "국적 ISO 코드(선택)"),
-        optField("occupation", JsonFieldType.STRING, "직업 enum(선택)"),
-        optField("visaType", JsonFieldType.STRING, "비자유형 enum(선택)"),
+        optField("firstName", JsonFieldType.STRING, "이름(세입자·선택)"),
+        optField("lastName", JsonFieldType.STRING, "성(세입자·선택)"),
+        optField("gender", JsonFieldType.STRING, "성별 MALE|FEMALE(세입자·선택)"),
+        optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(세입자·선택)"),
+        optField("country", JsonFieldType.STRING, "국적 ISO 코드(세입자·선택)"),
+        optField("occupation", JsonFieldType.STRING, "직업 enum(세입자·선택)"),
+        optField("visaType", JsonFieldType.STRING, "비자유형 enum(세입자·선택)"),
+        optField("name", JsonFieldType.STRING, "이름(임대인 전체 이름·선택)"),
+        optField(
+            "phoneNumber",
+            JsonFieldType.STRING,
+            "연락처(임대인·선택) — 새 번호는 SMS 재인증(§4-1·§4-2) 후에만 반영(미인증 422)"),
         optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택)"));
   }
 
@@ -1109,8 +1114,10 @@ class AuthOnboardingDocsTest {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.id", JsonFieldType.NUMBER, "회원 ID"),
-        field("data.firstName", JsonFieldType.STRING, "이름"),
-        field("data.lastName", JsonFieldType.STRING, "성"),
+        field("data.userType", JsonFieldType.STRING, "회원 역할(TENANT|LANDLORD) — 응답 필드가 이에 따라 갈린다"),
+        field("data.firstName", JsonFieldType.STRING, "이름(세입자)"),
+        field("data.lastName", JsonFieldType.STRING, "성(세입자)"),
+        optField("data.name", JsonFieldType.STRING, "전체 이름(임대인만 — 세입자는 생략)"),
         field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정, 형용사+사물)"),
         field("data.gender", JsonFieldType.STRING, "성별(MALE|FEMALE)"),
         field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
@@ -1120,6 +1127,7 @@ class AuthOnboardingDocsTest {
         field("data.occupation", JsonFieldType.STRING, "직업 enum"),
         field("data.email", JsonFieldType.STRING, "인증된 연락 이메일"),
         field("data.visaType", JsonFieldType.STRING, "비자유형 enum"),
+        optField("data.phoneNumber", JsonFieldType.STRING, "연락처(임대인만·본인 조회 평문 — 세입자는 생략)"),
         field("data.status", JsonFieldType.STRING, "회원 상태(PENDING|TERMS_AGREED|ACTIVE|WITHDRAWN)"),
         field("data.termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의 여부"),
         field("data.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의 여부"),
@@ -1256,9 +1264,9 @@ class AuthOnboardingDocsTest {
           "gender": "MALE",
           "birthDate": "1990-01-01",
           "country": "KR",
-          "occupation": "STUDENT",
+          "occupation": "UNDERGRADUATE_STUDENT",
           "email": "%s",
-          "visaType": "VISA_WORK"
+          "visaType": "SHORT_TERM_VISIT_C-2_C-3"
         }
         """
         .formatted(email);
@@ -1272,9 +1280,9 @@ class AuthOnboardingDocsTest {
           "gender": "MALE",
           "birthDate": "1990-01-01",
           "country": "KR",
-          "occupation": "STUDENT",
+          "occupation": "UNDERGRADUATE_STUDENT",
           "email": "gil@mail.example",
-          "visaType": "VISA_WORK"
+          "visaType": "SHORT_TERM_VISIT_C-2_C-3"
         }
         """;
   }

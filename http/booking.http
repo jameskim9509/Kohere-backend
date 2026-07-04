@@ -85,9 +85,9 @@ Content-Type: application/json
   "gender": "FEMALE",
   "birthDate": "1995-03-21",
   "country": "VN",
-  "occupation": "STUDENT",
+  "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "VISA_STUDENT"
+  "visaType": "STUDY_D-2"
 }
 
 ### 5-b. (참고) 매물 목록 — 예약할 listingId·roomOfferId 확보용
