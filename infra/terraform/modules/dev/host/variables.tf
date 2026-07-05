@@ -94,9 +94,9 @@ variable "mongo_username" {
   default     = "kohere"
 }
 
-# ----- 매물 이미지(S3 + CloudFront, shared 모듈 출력) -----
+# ----- 콘텐츠 이미지(S3 + CloudFront, shared 모듈 출력) -----
 variable "images_bucket" {
-  description = "매물 이미지 S3 버킷 이름(앱 env)"
+  description = "콘텐츠 이미지 S3 버킷 이름(앱 env)"
   type        = string
   default     = ""
 }

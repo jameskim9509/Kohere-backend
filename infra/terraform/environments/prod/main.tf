@@ -181,7 +181,7 @@ locals {
     { name = "SPRING_MAIL_HOST", value = var.smtp_host },
     { name = "SPRING_MAIL_PORT", value = tostring(var.smtp_port) },
     { name = "MAIL_FROM", value = var.mail_from },
-    # 매물 이미지: 앱이 S3에 업로드하고 CDN URL을 클라이언트에 반환(앱은 서빙 경로 아님).
+    # 콘텐츠 이미지: 앱이 S3에 업로드하고 CDN URL을 클라이언트에 반환(앱은 서빙 경로 아님).
     # APP_IMAGES_CDN_DOMAIN은 커스텀 별칭(cdn_domain_name)으로 고정 — 필수·강제(폴백 없음).
     { name = "APP_IMAGES_BUCKET", value = module.s3_cloudfront.bucket_name },
     { name = "APP_IMAGES_CDN_DOMAIN", value = module.s3_cloudfront.cdn_domain },
@@ -243,7 +243,7 @@ module "ecs" {
   depends_on = [module.alb]
 }
 
-# ===== S3 + CloudFront (매물 이미지) =====
+# ===== S3 + CloudFront (콘텐츠 이미지) =====
 module "s3_cloudfront" {
   source = "../../modules/shared/s3-cloudfront"
 

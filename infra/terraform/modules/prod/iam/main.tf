@@ -52,7 +52,7 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
   policy = data.aws_iam_policy_document.task_execution_secrets.json
 }
 
-# ===== ECS 태스크 역할 (앱 런타임) — ECS Exec(디버깅) + 매물 이미지 S3 업로드 =====
+# ===== ECS 태스크 역할 (앱 런타임) — ECS Exec(디버깅) + 콘텐츠 이미지 S3 업로드 =====
 resource "aws_iam_role" "task" {
   name               = "${var.name_prefix}-ecs-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
@@ -71,7 +71,7 @@ data "aws_iam_policy_document" "task_exec_command" {
     resources = ["*"]
   }
 
-  # 매물 이미지 버킷 읽기/쓰기(앱이 태스크 역할로 업로드) — images_bucket_arn 제공 시에만.
+  # 콘텐츠 이미지 버킷 읽기/쓰기(앱이 태스크 역할로 업로드) — images_bucket_arn 제공 시에만.
   dynamic "statement" {
     for_each = var.images_bucket_arn != "" ? [1] : []
     content {

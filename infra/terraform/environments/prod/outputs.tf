@@ -39,7 +39,7 @@ output "redis_primary_endpoint" {
 }
 
 output "cloudfront_domain_name" {
-  description = "매물 이미지 CloudFront 기본 도메인(*.cloudfront.net)"
+  description = "콘텐츠 이미지 CloudFront 기본 도메인(*.cloudfront.net)"
   value       = module.s3_cloudfront.cloudfront_domain_name
 }
 
@@ -49,7 +49,7 @@ output "images_cdn_domain" {
 }
 
 output "images_bucket_name" {
-  description = "매물 이미지 S3 버킷 이름"
+  description = "콘텐츠 이미지 S3 버킷 이름"
   value       = module.s3_cloudfront.bucket_name
 }
 

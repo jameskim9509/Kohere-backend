@@ -2,7 +2,7 @@
 # ALB·ECS·RDS·DocumentDB·ElastiCache·NAT 없음 — 매니지드는 dev엔 과투자라 비용 최소화([ADR-0021]).
 #   접속: EIP → Route53 A 레코드 + Caddy/Let's Encrypt HTTPS(도메인 필수).
 #   데이터: 전용 암호화 EBS. 시크릿: SSM Parameter Store SecureString(무료·SM 미사용).
-#   앱 이미지: ECR(=prod와 동일). 매물 이미지: S3 + CloudFront(shared 모듈).
+#   앱 이미지: ECR(=prod와 동일). 콘텐츠 이미지: S3 + CloudFront(shared 모듈).
 # prod처럼 서비스별 dev 모듈(network·security·iam·secrets·storage·host·dns·monitoring)로 조립한다.
 
 locals {
@@ -29,7 +29,7 @@ module "cdn_acm" {
   route53_zone_id = var.route53_zone_id
 }
 
-# ===== 매물 이미지 (S3 + CloudFront) — prod·dev 공용 =====
+# ===== 콘텐츠 이미지 (S3 + CloudFront) — prod·dev 공용 =====
 module "s3_cloudfront" {
   source = "../../modules/shared/s3-cloudfront"
 

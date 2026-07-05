@@ -20,7 +20,7 @@ variable "account_id" {
 }
 
 variable "images_bucket_arn" {
-  description = "매물 이미지 S3 버킷 ARN(앱 업로드 권한). 빈 값이면 S3 권한 미부여"
+  description = "콘텐츠 이미지 S3 버킷 ARN(앱 업로드 권한). 빈 값이면 S3 권한 미부여"
   type        = string
   default     = ""
 }

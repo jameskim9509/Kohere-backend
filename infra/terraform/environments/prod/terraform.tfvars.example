@@ -11,7 +11,7 @@ route53_zone_id = "Z0123456789ABCDEFGHIJ"
 cdn_domain_name = "cdn.kohere.app"
 
 # ----- S3 이미지 버킷 (필수 — S3는 전역 유일) -----
-images_bucket_name = "kohere-prod-listing-images"
+images_bucket_name = "kohere-prod-images"
 
 # ----- CI/CD (GitHub Actions OIDC) -----
 github_org           = "swyp-app-5th-team1"

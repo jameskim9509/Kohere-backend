@@ -1,4 +1,4 @@
-# 매물 이미지 호스팅 — 비공개 S3 + CloudFront(OAC). 클라이언트가 CloudFront에서 직접 로드.
+# 콘텐츠 이미지 호스팅(매물·생활팁·국기 등 — 도메인은 키 프리픽스로 구분) — 비공개 S3 + CloudFront(OAC). 클라이언트가 CloudFront에서 직접 로드.
 # 서빙 경로에 앱은 없다(읽기는 CloudFront 직결, 앱은 URL만 저장). 이 모듈은 버킷·CDN·읽기 정책만
 # 정의하며, 앱의 업로드(PutObject) 권한은 iam 모듈이 태스크 역할에 부여한다(images_bucket_arn 연결 시).
 
@@ -40,7 +40,7 @@ resource "aws_s3_bucket_versioning" "images" {
 
 resource "aws_cloudfront_origin_access_control" "images" {
   name                              = "${var.name_prefix}-images-oac"
-  description                       = "OAC for listing images bucket"
+  description                       = "OAC for content images bucket"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
@@ -52,7 +52,7 @@ data "aws_cloudfront_cache_policy" "optimized" {
 
 resource "aws_cloudfront_distribution" "images" {
   enabled         = true
-  comment         = "${var.name_prefix} listing images"
+  comment         = "${var.name_prefix} content images"
   price_class     = var.price_class
   is_ipv6_enabled = true
   aliases         = var.domain_aliases
