@@ -6,10 +6,12 @@ import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingSearchResult;
+import com.kohere.listing.domain.RecentListingView;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -118,12 +120,57 @@ final class ListingResponseMapper {
         favoriteListing.favorite().getFavoritedAt());
   }
 
+  /**
+   * 최근 본 매물 화면에서 사용할 카드 응답을 만든다.
+   *
+   * <p>최근 본 목록은 검색 필터가 없으므로, 공개 매물 안의 활성 방 상품 전체를 집계해 일반 매물 리스트와 같은 범위 필드를 만든다. {@code favorited}는
+   * 목록 조회 시 FavoriteRepository에서 한 번에 계산한 사용자별 찜 여부다.
+   */
+  static RecentListingResponse toRecentListing(RecentListingView recentListing, boolean favorited) {
+    Listing listing = recentListing.listing();
+    List<Listing.RoomOffer> offers = activeRoomOffers(listing);
+    return new RecentListingResponse(
+        listing.getId(),
+        listing.getTitle(),
+        listing.getType(),
+        minMonthlyRent(offers),
+        maxMonthlyRent(offers),
+        minDeposit(offers),
+        maxDeposit(offers),
+        minMaintenanceFee(offers),
+        maxMaintenanceFee(offers),
+        minStayMonths(offers),
+        maxStayMonths(offers),
+        thumbnailUrl(listing),
+        listing.getLocation().latitude(),
+        listing.getLocation().longitude(),
+        listing.getAddress().fullAddress(),
+        toNearestTransitSummary(listing.getNearestTransit()),
+        aggregateConditionTags(offers),
+        null,
+        favorited,
+        listing.getFavoriteCount(),
+        recentListing.recentListing().getViewedAt());
+  }
+
   /** 상세 화면에서 객체별 섹션으로 렌더링할 수 있게 상세 DTO를 만든다. */
   static ListingDetailResponse toDetail(Listing listing) {
+    return toDetail(listing, false);
+  }
+
+  /**
+   * 상세 화면에서 객체별 섹션으로 렌더링할 수 있게 상세 DTO를 만든다.
+   *
+   * <p>상세 API는 로그인 필수이므로 {@code favorited}에는 현재 사용자 기준 실제 찜 여부를 넣는다. 매물 전체 찜 수는 Listing의 비정규화 캐시인
+   * {@code favoriteCount}를 그대로 사용한다.
+   */
+  static ListingDetailResponse toDetail(Listing listing, boolean favorited) {
+    List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
     return new ListingDetailResponse(
         listing.getId(),
         new ListingDetailResponse.BasicInfo(
             listing.getTitle(), listing.getType(), listing.getStatus()),
+        toDetailSummary(listing, activeOffers),
         new ListingDetailResponse.LocationInfo(
             new ListingDetailResponse.GeoPoint(
                 listing.getLocation().latitude(), listing.getLocation().longitude()),
@@ -136,15 +183,38 @@ final class ListingResponseMapper {
             listing.getPropertyPolicies(),
             listing.getFacilities(),
             listing.getFeatureSummary()),
-        listing.getRoomOffers().stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
+        activeOffers.stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
         new ListingDetailResponse.ContentInfo(
             listing.getDescriptions(),
             listing.getExtraNotes(),
             listing.getImageUrls(),
             thumbnailUrl(listing)),
-        new ListingDetailResponse.InteractionInfo(false, listing.getFavoriteCount()),
+        new ListingDetailResponse.ReviewSummary(0),
+        new ListingDetailResponse.InteractionInfo(favorited, listing.getFavoriteCount()),
         listing.getCreatedAt(),
         listing.getUpdatedAt());
+  }
+
+  /**
+   * 상세 화면 상단에서 바로 사용할 가격·계약·이미지·태그 요약을 만든다.
+   *
+   * <p>목록 카드와 동일하게 활성 방 상품만 집계한다. {@code NO_ARC}는 MongoDB의 {@code roomOffers.filterTags}에 저장하지 않는
+   * 검색용 가상 태그이므로, 매물 정책상 ARC가 필요 없을 때만 상세 표시용 조건 목록에 파생해서 넣는다.
+   */
+  private static ListingDetailResponse.SummaryInfo toDetailSummary(
+      Listing listing, List<Listing.RoomOffer> activeOffers) {
+    return new ListingDetailResponse.SummaryInfo(
+        minMonthlyRent(activeOffers),
+        maxMonthlyRent(activeOffers),
+        minDeposit(activeOffers),
+        maxDeposit(activeOffers),
+        minMaintenanceFee(activeOffers),
+        maxMaintenanceFee(activeOffers),
+        minStayMonths(activeOffers),
+        maxStayMonths(activeOffers),
+        activeOffers.size(),
+        listing.getImageUrls().size(),
+        detailConditionTags(listing, activeOffers));
   }
 
   /** 방 상품 하나를 상세 응답의 roomOffers 항목으로 변환한다. */
@@ -178,6 +248,18 @@ final class ListingResponseMapper {
         .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
         .min(Comparator.comparingInt(offer -> offer.pricing().monthlyRent()))
         .orElseGet(() -> listing.getRoomOffers().getFirst());
+  }
+
+  /**
+   * 필터 없는 카드 목록에서 집계할 활성 방 상품만 추린다.
+   *
+   * <p>최근 본 매물은 검색 조건이 없지만 일반 목록 카드와 같은 가격 범위를 보여줘야 한다. 따라서 비활성 방 상품은 제외하고, 조회 저장소가 이미 보장한 "활성 방
+   * 상품이 최소 1개 있다"는 전제 아래 범위 값을 계산한다.
+   */
+  private static List<Listing.RoomOffer> activeRoomOffers(Listing listing) {
+    return listing.getRoomOffers().stream()
+        .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
+        .toList();
   }
 
   /** 조건을 통과한 방 상품 중 가장 낮은 월세를 카드의 월세 범위 시작값으로 쓴다. */
@@ -233,6 +315,22 @@ final class ListingResponseMapper {
   private static List<ConditionTag> aggregateConditionTags(List<Listing.RoomOffer> offers) {
     Set<ConditionTag> tags = EnumSet.noneOf(ConditionTag.class);
     offers.forEach(offer -> tags.addAll(offer.filterTags()));
+    return List.copyOf(tags);
+  }
+
+  /**
+   * 상세 화면에 보여줄 조건 태그를 만든다.
+   *
+   * <p>방 상품에 실제 저장된 태그는 그대로 합치고, ARC가 필요 없는 매물은 UI 필터 칩과 맞추기 위해 {@code NO_ARC}를 추가한다. 이렇게 하면 프론트가
+   * {@code propertyPolicies.arcRequired=false}를 다시 읽어 표시 태그를 직접 만들 필요가 없다.
+   */
+  private static List<ConditionTag> detailConditionTags(
+      Listing listing, List<Listing.RoomOffer> offers) {
+    Set<ConditionTag> tags = EnumSet.noneOf(ConditionTag.class);
+    offers.forEach(offer -> tags.addAll(offer.filterTags()));
+    if (!listing.getPropertyPolicies().arcRequired()) {
+      tags.add(ConditionTag.NO_ARC);
+    }
     return List.copyOf(tags);
   }
 

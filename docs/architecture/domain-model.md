@@ -316,7 +316,7 @@
 | `listingId` | 식별자 | 조회한 매물 → `Listing` 식별자 참조 |
 | `viewedAt` | Instant | 마지막 조회 시각(UTC, 최신순 정렬 기준) |
 
-**불변식:** `(userId, listingId)`는 유일 → 재조회는 새 기록 없이 `viewedAt`만 갱신(upsert·멱등); 인증 사용자의 상세 조회 시에만 기록(비로그인 미기록); 최근 7일 이내 기록만 유효(7일 경과분 노출 제외); 사용자당 최신순 최대 5건 노출; 본인 기록만 조회(`me` 스코프).
+**불변식:** `(userId, listingId)`는 유일 → 재조회는 새 기록 없이 `viewedAt`만 갱신(upsert·멱등); 로그인 사용자의 상세 조회 성공 시 기록; 사용자별 최신순 최대 30개까지 보관하고 초과분은 오래된 기록부터 삭제; 최근 본 목록 API는 저장된 기록 중 공개 상태 매물만 최신순 최대 10건 노출; 본인 기록만 조회(`me` 스코프).
 
 **값 객체(VO):**
 
@@ -400,14 +400,15 @@
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MALE_ONLY` | 남성 전용 |
 | | `GENDER_SEPARATED` | 층/공간 분리 |
-| `ConditionTag` | `IMMEDIATE_MOVE_IN` | 즉시 입주 |
+| `ConditionTag` | `MOVE_IN_NOW` | 즉시 입주 |
 | | `FEMALE_ONLY` | 여성 전용 |
-| | `PRIVATE_BATH` | 개인 욕실 |
-| | `ENGLISH_AVAILABLE` | 영어 소통 가능 |
-| | `RESIDENT_REGISTRATION` | 전입신고 가능 |
-| | `NO_MAINTENANCE_FEE` | 관리비 없음 |
-| | `MEALS_PROVIDED` | 식사 제공 |
+| | `MEALS_INCLUDED` | 식사 제공 |
 | | `DOUBLE_ROOM` | 2인실 |
+| | `PRIVATE_BATH` | 개인 욕실 |
+| | `ENGLISH_OK` | 영어 소통 가능 |
+| | `ADDRESS_REGISTRATION` | 전입신고 가능 |
+| | `NO_MAINT_FEE` | 관리비 없음 |
+| | `NO_ARC` | ARC 없이 가능(검색용 가상 필터) |
 | `RoomFeature` | `SINGLE_ROOM` | 1인실 |
 | | `DOUBLE_ROOM` | 2인실 |
 | | `PRIVATE_BATH` | 개인 욕실 |
@@ -495,16 +496,17 @@
 | | `GWANAK_GU` | 관악구 |
 | | `DONGDAEMUN_GU` | 동대문구 |
 | | `ETC` | 기타 |
-| `DiagnosisCondition` | `IMMEDIATE_MOVE_IN` | 즉시입주 |
+| `DiagnosisCondition` | `MOVE_IN_NOW` | 즉시입주(④, listing `ConditionTag` 이름 통일) |
 | | `FEMALE_ONLY` | 여성전용 |
 | | `PRIVATE_BATH` | 개인욕실 |
-| | `ENGLISH_AVAILABLE` | 영어가능 |
-| | `RESIDENT_REGISTRATION` | 전입신고가능 |
-| | `NO_MAINTENANCE_FEE` | 관리비없음 |
-| | `MEALS_PROVIDED` | 식사제공 |
+| | `ENGLISH_OK` | 영어가능 |
+| | `ADDRESS_REGISTRATION` | 전입신고가능 |
+| | `NO_MAINT_FEE` | 관리비없음 |
+| | `MEALS_INCLUDED` | 식사제공 |
 | | `DOUBLE_ROOM` | 2인실 |
+| | `NO_ARC` | ARC 불요(⑥ `arcStatus=NO_ARC`에서 서버가 파생, ④ 직접 선택 불가·최대 3개 제한 제외) |
 | `ArcStatus` | `ARC_ISSUED` | ARC(외국인등록증) 발급 완료 |
-| | `ARC_PENDING` | ARC 미발급·발급 예정 |
+| | `NO_ARC` | ARC 미발급(추천 시 파생 조건 `DiagnosisCondition.NO_ARC`로 반영) |
 | `DiagnosisStatus` | `IN_PROGRESS` | 진행 중(서버가 단계별 답을 채워가는 in-progress draft, 이력·목록 비노출) |
 | | `COMPLETED` | 제출 확정 완료(`IN_PROGRESS`에서 전이, 이력·목록 노출) |
 | `NoMatchReason` | `NO_MATCH` | 조건에 맞는 매물 없음 |

@@ -3,6 +3,7 @@ package com.kohere.listing.infrastructure;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
@@ -78,9 +79,10 @@ class ListingDocsTest {
           + "필터가 없으면 해당 매물의 active roomOffer 전체를 집계하고, "
           + "필터가 있으면 조건을 만족하는 active roomOffer만 집계한다. "
           + "월세·보증금·관리비·계약기간은 집계 대상 roomOffer의 최저~최고 범위로 내려간다. "
-          + "월세·보증금·조건 태그는 roomOffer 기준으로 적용하고, 매물 종류·ARC·지도 범위는 Listing 기준으로 적용한다. "
-          + "전입신고 가능 여부는 별도 파라미터가 아니라 conditions=RESIDENT_REGISTRATION으로 필터링한다. "
-          + "arcRequired=true는 ARC 필수 매물만 조회하고, false 또는 미전달은 ARC 조건을 적용하지 않는다. "
+          + "월세·보증금·일반 조건 태그는 roomOffer 기준으로 적용하고, 매물 종류·NO_ARC·지도 범위는 Listing 기준으로 적용한다. "
+          + "전입신고 가능 여부는 conditions=ADDRESS_REGISTRATION으로 필터링한다. "
+          + "No ARC 필터는 별도 파라미터가 아니라 conditions=NO_ARC로 요청하며, ARC 없이 가능한 매물(propertyPolicies.arcRequired=false)만 반환한다. "
+          + "conditions에 NO_ARC를 넣지 않으면 ARC 조건은 적용하지 않는다. "
           + "같은 매물에 조건에 맞는 roomOffer가 여러 개 있어도 같은 listingId는 한 번만 내려간다. "
           + "프론트는 minMonthlyRent~maxMonthlyRent, minDeposit~maxDeposit, minMaintenanceFee~maxMaintenanceFee, "
           + "minStayMonths~maxStayMonths로 목록 카드의 범위 문구를 만들고, 카드 선택 시 listingId로 상세 API를 호출하면 된다. "
@@ -90,8 +92,8 @@ class ListingDocsTest {
       "현재 지도 화면의 bbox(swLat, swLng, neLat, neLng)에 포함되는 공개 매물의 개별 마커 좌표를 조회한다. "
           + "bbox 네 좌표는 모두 필수이며, 서버가 전체 범위를 20% 확장해 조회한다. "
           + "필터 적용 기준은 리스트 API와 같지만, 응답은 매물 카드가 아니라 Listing 마커 단위다. "
-          + "전입신고 가능 여부는 conditions=RESIDENT_REGISTRATION으로 필터링하고, "
-          + "arcRequired=true일 때만 ARC 필수 매물로 좁힌다. "
+          + "전입신고 가능 여부는 conditions=ADDRESS_REGISTRATION으로 필터링하고, "
+          + "No ARC 필터는 conditions=NO_ARC로 요청해 ARC 없이 가능한 매물만 조회한다. "
           + "한 매물 안의 roomOffer가 여러 개 매칭되어도 지도 마커는 해당 listingId로 1개만 내려간다. "
           + "서버는 클러스터링하지 않고 listingId·lat·lng만 내려주며, 프론트 지도 SDK가 화면 기준으로 마커를 묶는다.";
   private static final String LISTINGS_SEARCH_SUMMARY = "키워드 장소 검색과 주변 매물 조회";
@@ -107,6 +109,10 @@ class ListingDocsTest {
   private static final String LISTING_DETAIL_DESCRIPTION =
       "매물 카드나 지도 핀에서 선택한 단일 매물의 상세 정보를 조회한다. "
           + "상세 화면의 이미지, 각 방 정보, 가격 정보, 매물 정보, 건물 정보, 공용시설, 위치 및 주변 정보 섹션을 구성하는 데이터를 반환한다. "
+          + "summary는 상세 상단 가격·보증금·관리비·계약기간·이미지 개수·방 개수·표시 태그를 프론트가 재계산하지 않도록 ACTIVE roomOffer 기준으로 집계한다. "
+          + "NO_ARC는 roomOffer에 저장하지 않는 가상 필터라 propertyPolicies.arcRequired=false일 때 summary.conditions에 파생해서 포함한다. "
+          + "roomOffers[]는 상세 화면 Room Types에 실제 노출할 ACTIVE 방 상품만 포함한다. "
+          + "reviewSummary.reviewCount는 리뷰 도메인 도입 전까지 0으로 내려주며, 문의 수는 채팅/문의 기능 고도화 때 별도 계약으로 추가한다. "
           + "고시원 매물의 propertyInfo.featureSummary는 활성 방 상품들이 가진 조건 태그의 합집합이다. "
           + "상세 화면의 작은 지도는 응답의 locationInfo.location 좌표를 사용해 프론트에서 렌더링한다. "
           + "공개 상태가 아닌 매물이나 존재하지 않는 매물은 LISTING_NOT_FOUND를 반환한다.";
@@ -127,6 +133,15 @@ class ListingDocsTest {
           + "MVP에서는 별도 sort 파라미터를 받지 않고 favoritedAt desc로 고정한다. "
           + "응답 항목은 모두 현재 사용자가 찜한 매물이므로 favorited=true이며, "
           + "DRAFT/PAUSED/DELETED 등 공개 상태가 아닌 매물은 content와 totalElements에서 제외된다.";
+  private static final String RECENT_LISTINGS_SUMMARY = "최근 본 매물 목록";
+  private static final String RECENT_LISTINGS_DESCRIPTION =
+      "로그인 사용자가 상세 화면에서 본 매물을 최신 조회순으로 최대 10개 반환한다. "
+          + "프론트가 입력할 query parameter는 없으며, 상세 조회 API가 Authorization 토큰의 userId와 listingId로 최근 본 기록을 자동 저장한다. "
+          + "같은 매물을 다시 보면 중복 생성하지 않고 viewedAt만 갱신한다. "
+          + "DB에는 사용자별 최신 30개 기록까지만 보관하고, 조회 응답은 그중 현재 PUBLISHED 상태이며 활성 roomOffer가 있는 매물만 최대 10개 내려준다. "
+          + "PAUSED/DELETED/DRAFT 매물은 사용자가 과거에 봤더라도 숨긴다. "
+          + "응답 필드는 /api/v1/listings 카드 응답과 최대한 맞췄고, 최근 본 화면에서 정렬 기준을 확인할 수 있도록 viewedAt을 추가한다. "
+          + "favorited는 현재 로그인 사용자의 실제 찜 여부라 하트 UI를 이 값만 보고 그리면 된다.";
 
   // 문서화용 위조 토큰. 401 예시에서도 bearerAuthJWT 보안 스킴이 안정적으로 생성되게 한다.
   private static final String FORGED_TOKEN =
@@ -160,6 +175,7 @@ class ListingDocsTest {
             .build();
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(RecentListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
     new ListingSeedRunner(listingRepository).run(null);
     new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
@@ -182,8 +198,8 @@ class ListingDocsTest {
                 .param("maxDeposit", "500000")
                 .param("type", "GOSIWON")
                 .param("conditions", "FEMALE_ONLY")
-                .param("conditions", "RESIDENT_REGISTRATION")
-                .param("arcRequired", "false")
+                .param("conditions", "ADDRESS_REGISTRATION")
+                .param("conditions", "NO_ARC")
                 .param("sort", "PRICE_ASC")
                 .param("page", "0")
                 .param("size", "20"))
@@ -255,8 +271,8 @@ class ListingDocsTest {
                 .param("maxDeposit", "500000")
                 .param("type", "GOSIWON")
                 .param("conditions", "FEMALE_ONLY")
-                .param("conditions", "RESIDENT_REGISTRATION")
-                .param("arcRequired", "false"))
+                .param("conditions", "ADDRESS_REGISTRATION")
+                .param("conditions", "NO_ARC"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.markers[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.total").value(1))
@@ -275,6 +291,10 @@ class ListingDocsTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.summary.minMonthlyRent").value(300000))
+        .andExpect(jsonPath("$.data.summary.activeRoomOfferCount").value(1))
+        .andExpect(jsonPath("$.data.summary.conditions", hasItem("NO_ARC")))
+        .andExpect(jsonPath("$.data.reviewSummary.reviewCount").value(0))
         .andDo(
             document(
                 "listing-detail",
@@ -336,6 +356,22 @@ class ListingDocsTest {
                     .description(FAVORITES_LIST_DESCRIPTION),
                 queryParameters(favoritesQueryParameters()),
                 responseFields(favoritesResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/users/me/recent-listings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].favorited").value(true))
+        .andExpect(jsonPath("$.data.content[0].viewedAt").isString())
+        .andDo(
+            document(
+                "my-recent-listings",
+                resourceDetails()
+                    .summary(RECENT_LISTINGS_SUMMARY)
+                    .description(RECENT_LISTINGS_DESCRIPTION),
+                responseFields(recentListingsResponseFields())));
 
     mockMvc
         .perform(
@@ -561,6 +597,24 @@ class ListingDocsTest {
         "my-favorites-list-invalid-page-size",
         FAVORITES_LIST_SUMMARY,
         FAVORITES_LIST_DESCRIPTION);
+
+    // ===== GET /users/me/recent-listings =====
+    perform(
+        get("/api/v1/users/me/recent-listings"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "my-recent-listings-unauthenticated",
+        RECENT_LISTINGS_SUMMARY,
+        RECENT_LISTINGS_DESCRIPTION);
+
+    perform(
+        get("/api/v1/users/me/recent-listings")
+            .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "my-recent-listings-token-expired",
+        RECENT_LISTINGS_SUMMARY,
+        RECENT_LISTINGS_DESCRIPTION);
   }
 
   private void perform(
@@ -639,12 +693,11 @@ class ListingDocsTest {
       parameterWithName("conditions")
           .optional()
           .description(
-              "roomOffer 기준 조건 태그. 여러 값을 보내면 같은 roomOffer가 모든 태그를 가진 매물만 반환. "
-                  + "전입신고 가능 필터는 RESIDENT_REGISTRATION을 이 값에 포함해 요청"),
-      parameterWithName("arcRequired")
-          .optional()
-          .description(
-              "Listing 기준 ARC 필수 매물 필터. true면 ARC가 필수인 매물만 조회하고, false 또는 미전달이면 ARC 조건을 적용하지 않음"),
+              "필터 칩 코드. FEMALE_ONLY, PRIVATE_BATH 같은 일반 조건은 같은 active roomOffer가 모두 만족해야 한다. "
+                  + "MOVE_IN_NOW는 같은 roomOffer의 availableCount가 1 이상이어야 하며, "
+                  + "ADDRESS_REGISTRATION은 전입신고 가능 필터다. "
+                  + "NO_ARC는 roomOffer 태그가 아니라 Listing 정책 필터로 처리되어 propertyPolicies.arcRequired=false 매물만 반환한다. "
+                  + "반복 파라미터 또는 콤마 구분 전송을 지원"),
       parameterWithName("sort")
           .optional()
           .description(
@@ -680,12 +733,9 @@ class ListingDocsTest {
       parameterWithName("conditions")
           .optional()
           .description(
-              "roomOffer 기준 조건 태그. 여러 값은 같은 roomOffer가 모두 만족해야 매물 마커가 반환됨. "
-                  + "전입신고 가능 필터는 RESIDENT_REGISTRATION을 이 값에 포함해 요청"),
-      parameterWithName("arcRequired")
-          .optional()
-          .description(
-              "Listing 기준 ARC 필수 매물 필터. true면 ARC가 필수인 매물만 조회하고, false 또는 미전달이면 ARC 조건을 적용하지 않음")
+              "필터 칩 코드. 일반 조건은 같은 active roomOffer가 모두 만족해야 하고, "
+                  + "NO_ARC는 Listing 정책 필터로 처리되어 propertyPolicies.arcRequired=false 매물 마커만 반환한다. "
+                  + "ADDRESS_REGISTRATION은 전입신고 가능 필터다")
     };
   }
 
@@ -776,6 +826,73 @@ class ListingDocsTest {
         field("data.page.totalElements", JsonFieldType.NUMBER, "공개 상태라 실제 응답 가능한 내 찜 매물 수"),
         field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
         field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+        errorNull());
+  }
+
+  /** 최근 본 매물 목록 API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> recentListingsResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.content[].listingId",
+            JsonFieldType.STRING,
+            "최근 본 매물 식별자(ObjectId hex 문자열). 같은 매물을 여러 번 봐도 한 번만 내려오며 viewedAt만 최신화됨"),
+        field("data.content[].title", JsonFieldType.STRING, "최근 본 카드에 표시할 매물 제목"),
+        field(
+            "data.content[].type",
+            JsonFieldType.STRING,
+            "매물 유형. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
+        field(
+            "data.content[].minMonthlyRent",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최저 월세(KRW). 일반 매물 리스트 카드와 같은 방식으로 계산"),
+        field(
+            "data.content[].maxMonthlyRent",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최고 월세(KRW). minMonthlyRent와 같으면 단일 가격으로 표시 가능"),
+        field("data.content[].minDeposit", JsonFieldType.NUMBER, "현재 활성 roomOffers 중 최저 보증금(KRW)"),
+        field("data.content[].maxDeposit", JsonFieldType.NUMBER, "현재 활성 roomOffers 중 최고 보증금(KRW)"),
+        field(
+            "data.content[].minMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최저 관리비(KRW)"),
+        field(
+            "data.content[].maxMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최고 관리비(KRW)"),
+        field(
+            "data.content[].minStayMonths",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 가장 짧은 최소 계약 개월 수"),
+        field(
+            "data.content[].maxStayMonths",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 가장 긴 최대 계약 개월 수"),
+        field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
+        field("data.content[].lat", JsonFieldType.NUMBER, "매물 위도(WGS84)"),
+        field("data.content[].lng", JsonFieldType.NUMBER, "매물 경도(WGS84)"),
+        field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
+        field("data.content[].nearestTransit", JsonFieldType.OBJECT, "가까운 교통수단 요약(없으면 null)"),
+        field("data.content[].nearestTransit.type", JsonFieldType.STRING, "가까운 교통수단 유형"),
+        field("data.content[].nearestTransit.name", JsonFieldType.STRING, "가까운 교통수단 이름"),
+        field(
+            "data.content[].nearestTransit.walkMinutes",
+            JsonFieldType.NUMBER,
+            "가까운 교통수단까지의 도보 시간(분)"),
+        field("data.content[].conditions", JsonFieldType.ARRAY, "현재 활성 roomOffers의 조건 태그 합집합"),
+        field(
+            "data.content[].distanceMeters",
+            JsonFieldType.NULL,
+            "최근 본 목록은 지도 기준 좌표가 없으므로 항상 null. 거리 표시가 필요하면 별도 지도/검색 API를 사용"),
+        field(
+            "data.content[].favorited",
+            JsonFieldType.BOOLEAN,
+            "현재 로그인 사용자의 실제 찜 여부. true면 채운 하트, false면 빈 하트로 표시"),
+        field("data.content[].favoriteCount", JsonFieldType.NUMBER, "매물의 전체 찜 수"),
+        field(
+            "data.content[].viewedAt",
+            JsonFieldType.STRING,
+            "사용자가 이 매물을 마지막으로 상세 조회한 시각(UTC ISO-8601)"),
         errorNull());
   }
 
@@ -968,6 +1085,47 @@ class ListingDocsTest {
             JsonFieldType.STRING,
             "매물 유형. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
         field("data.basicInfo.status", JsonFieldType.STRING, "매물 공개 상태. 상세 조회는 PUBLISHED 매물만 반환"),
+        field(
+            "data.summary.minMonthlyRent",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 월세 범위의 최저값(KRW). ACTIVE roomOffers만 집계하며 프론트는 maxMonthlyRent와 함께 가격 문구를 만든다"),
+        field(
+            "data.summary.maxMonthlyRent",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 월세 범위의 최고값(KRW). minMonthlyRent와 같으면 단일 가격으로 표시 가능"),
+        field(
+            "data.summary.minDeposit",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 보증금 범위의 최저값(KRW). ACTIVE roomOffers만 집계"),
+        field(
+            "data.summary.maxDeposit",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 보증금 범위의 최고값(KRW). minDeposit과 같으면 단일 보증금으로 표시 가능"),
+        field(
+            "data.summary.minMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 관리비 범위의 최저값(KRW). 0이면 프론트에서 No Maint. Fee처럼 표시 가능"),
+        field(
+            "data.summary.maxMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 관리비 범위의 최고값(KRW). minMaintenanceFee와 함께 관리비 범위를 표시"),
+        field(
+            "data.summary.minStayMonths",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 최소 계약기간 범위의 최저 개월 수. 예: 1이면 1 mo~ 표시 가능"),
+        field("data.summary.maxStayMonths", JsonFieldType.NUMBER, "상세 화면 대표 계약기간 범위의 최고 개월 수"),
+        field(
+            "data.summary.activeRoomOfferCount",
+            JsonFieldType.NUMBER,
+            "상세 화면 Room Types 개수. 실제 노출 가능한 ACTIVE roomOffers 수와 일치"),
+        field(
+            "data.summary.imageCount",
+            JsonFieldType.NUMBER,
+            "상단 갤러리 이미지 총 개수. content.imageUrls의 길이와 동일하며 프론트의 1/N 카운터에 사용"),
+        field(
+            "data.summary.conditions",
+            JsonFieldType.ARRAY,
+            "상세 상단/특징 칩에 표시할 조건 태그. ACTIVE roomOffers의 filterTags 합집합에 ARC 불필요 매물은 NO_ARC를 파생 추가"),
         field("data.locationInfo.location.lat", JsonFieldType.NUMBER, "상세 화면 작은 지도에 사용할 위도(WGS84)"),
         field("data.locationInfo.location.lng", JsonFieldType.NUMBER, "상세 화면 작은 지도에 사용할 경도(WGS84)"),
         field("data.locationInfo.address.city", JsonFieldType.STRING, "도시 코드"),
@@ -1016,7 +1174,10 @@ class ListingDocsTest {
             "매물 전체에서 가능한 조건 태그 목록. 고시원은 활성 방 상품들의 filterTags 합집합"),
         field("data.roomOffers[].roomOfferId", JsonFieldType.STRING, "방 상품 식별자(ObjectId hex 문자열)"),
         field("data.roomOffers[].name", JsonFieldType.STRING, "방 상품명. 예: 스탠다드 1인실"),
-        field("data.roomOffers[].status", JsonFieldType.STRING, "방 상품 상태. ACTIVE인 방이 실제 노출/계약 대상"),
+        field(
+            "data.roomOffers[].status",
+            JsonFieldType.STRING,
+            "방 상품 상태. 상세 응답의 roomOffers[]는 Room Types에 보여줄 ACTIVE 방 상품만 포함하므로 현재는 ACTIVE"),
         field("data.roomOffers[].rentalType", JsonFieldType.STRING, "임대 방식"),
         field("data.roomOffers[].pricing.monthlyRent", JsonFieldType.NUMBER, "월세(KRW)"),
         field("data.roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
@@ -1048,9 +1209,13 @@ class ListingDocsTest {
         field("data.content.imageUrls", JsonFieldType.ARRAY, "건물 공용 이미지 URL 목록"),
         field("data.content.thumbnailUrl", JsonFieldType.NULL, "대표 썸네일 URL(없으면 null)"),
         field(
+            "data.reviewSummary.reviewCount",
+            JsonFieldType.NUMBER,
+            "리뷰 수. 리뷰 도메인 도입 전까지 0으로 반환하며, 리뷰 기능 고도화 시 실제 집계값으로 연결 예정"),
+        field(
             "data.interaction.favorited",
             JsonFieldType.BOOLEAN,
-            "현재 사용자 찜 여부. 현재는 사용자별 찜 연동 전이라 false로 반환하며, 찜 API 연동 후 사용자별 상태로 변경 예정"),
+            "현재 로그인 사용자의 실제 찜 여부. true면 상세 화면 하트를 채운 상태로 표시"),
         field("data.interaction.favoriteCount", JsonFieldType.NUMBER, "찜 수"),
         field("data.createdAt", JsonFieldType.STRING, "생성 시각(ISO-8601 UTC)"),
         field("data.updatedAt", JsonFieldType.STRING, "수정 시각(ISO-8601 UTC)"),

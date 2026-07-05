@@ -13,8 +13,11 @@ import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
+import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.application.dto.RecentListingResponse;
+import com.kohere.listing.application.dto.RecentListingsResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Favorite;
 import com.kohere.listing.domain.FavoriteRepository;
@@ -27,6 +30,7 @@ import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.RecentListingRepository;
 import com.kohere.listing.domain.SearchPlaceRepository;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
@@ -62,6 +66,7 @@ class ListingMongoIntegrationTest {
 
   @Autowired private ListingRepository listingRepository;
   @Autowired private FavoriteRepository favoriteRepository;
+  @Autowired private RecentListingRepository recentListingRepository;
   @Autowired private ListingService listingService;
   @Autowired private ListingRecommendationService listingRecommendationService;
   @Autowired private SearchPlaceRepository searchPlaceRepository;
@@ -72,6 +77,7 @@ class ListingMongoIntegrationTest {
   void cleanListingCollections() {
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(RecentListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
   }
 
@@ -135,6 +141,14 @@ class ListingMongoIntegrationTest {
 
     assertThat(favoriteIndexNames).contains("favorites_user_listing", "favorites_user_favoritedAt");
 
+    Set<String> recentListingIndexNames =
+        mongoTemplate.indexOps(RecentListingDocument.class).getIndexInfo().stream()
+            .map(index -> index.getName())
+            .collect(java.util.stream.Collectors.toSet());
+
+    assertThat(recentListingIndexNames)
+        .contains("recentListings_user_listing", "recentListings_user_viewedAt");
+
     Set<String> searchPlaceIndexNames =
         mongoTemplate.indexOps(SearchPlaceDocument.class).getIndexInfo().stream()
             .map(index -> index.getName())
@@ -181,8 +195,7 @@ class ListingMongoIntegrationTest {
         new Document("status", "ACTIVE")
             .append("pricing.monthlyRent", new Document("$lte", 500000))
             .append(
-                "filterTags",
-                new Document("$all", List.of("FEMALE_ONLY", "RESIDENT_REGISTRATION")));
+                "filterTags", new Document("$all", List.of("FEMALE_ONLY", "ADDRESS_REGISTRATION")));
     Document query =
         new Document("status", "PUBLISHED")
             .append("roomOffers", new Document("$elemMatch", roomOfferCondition));
@@ -290,7 +303,6 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
-                false,
                 ListingSort.PRICE_ASC,
                 null,
                 null,
@@ -332,7 +344,7 @@ class ListingMongoIntegrationTest {
                         450000,
                         500000,
                         1,
-                        Set.of(ConditionTag.ENGLISH_AVAILABLE)),
+                        Set.of(ConditionTag.ENGLISH_OK)),
                     roomOffer(
                         "6858e2000000000000000204",
                         "Inactive Zone",
@@ -354,7 +366,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(),
-                null,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -395,7 +406,7 @@ class ListingMongoIntegrationTest {
                         450000,
                         500000,
                         1,
-                        Set.of(ConditionTag.ENGLISH_AVAILABLE))))
+                        Set.of(ConditionTag.ENGLISH_OK))))
             .build());
 
     PageResponse<ListingSearchResult> result =
@@ -409,7 +420,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
-                null,
                 ListingSort.PRICE_ASC,
                 null,
                 null,
@@ -472,7 +482,7 @@ class ListingMongoIntegrationTest {
                         600000,
                         1000000,
                         1,
-                        Set.of(ConditionTag.ENGLISH_AVAILABLE))))
+                        Set.of(ConditionTag.ENGLISH_OK))))
             .build());
 
     ListingSearchCondition firstPageCondition =
@@ -485,7 +495,6 @@ class ListingMongoIntegrationTest {
             null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
-            null,
             ListingSort.RECOMMENDED,
             null,
             null,
@@ -501,7 +510,6 @@ class ListingMongoIntegrationTest {
             null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
-            null,
             ListingSort.RECOMMENDED,
             null,
             null,
@@ -536,14 +544,14 @@ class ListingMongoIntegrationTest {
                         490000,
                         1000000,
                         0,
-                        Set.of(ConditionTag.IMMEDIATE_MOVE_IN, ConditionTag.FEMALE_ONLY)),
+                        Set.of(ConditionTag.MOVE_IN_NOW, ConditionTag.FEMALE_ONLY)),
                     roomOffer(
                         "6858e2000000000000000502",
                         "Move In Now Zone",
                         550000,
                         1000000,
                         2,
-                        Set.of(ConditionTag.IMMEDIATE_MOVE_IN, ConditionTag.FEMALE_ONLY))))
+                        Set.of(ConditionTag.MOVE_IN_NOW, ConditionTag.FEMALE_ONLY))))
             .build());
 
     PageResponse<ListingSearchResult> result =
@@ -556,8 +564,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 Set.of(ListingType.GOSIWON),
-                Set.of(ConditionTag.IMMEDIATE_MOVE_IN),
-                null,
+                Set.of(ConditionTag.MOVE_IN_NOW),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -585,7 +592,7 @@ class ListingMongoIntegrationTest {
                         490000,
                         1000000,
                         3,
-                        Set.of(ConditionTag.RESIDENT_REGISTRATION)),
+                        Set.of(ConditionTag.ADDRESS_REGISTRATION)),
                     roomOffer(
                         "6858e2000000000000000802",
                         "No Registration Zone",
@@ -605,8 +612,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 Set.of(ListingType.GOSIWON),
-                Set.of(ConditionTag.RESIDENT_REGISTRATION),
-                null,
+                Set.of(ConditionTag.ADDRESS_REGISTRATION),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -619,9 +625,9 @@ class ListingMongoIntegrationTest {
         .containsExactly("Registration Zone");
   }
 
-  /** ARC 필터는 true일 때만 적용하고, false는 ARC 여부와 상관없이 조회한다. */
+  /** NO_ARC 필터를 선택하면 ARC 없이 가능한 매물만 조회하고, 미선택이면 ARC 조건을 적용하지 않는다. */
   @Test
-  void search_arcRequired_false는_ARC_조건을_적용하지_않고_true만_필터링한다() {
+  void search_NO_ARC는_arcRequired_false_매물만_필터링한다() {
     String arcOptionalListingId = "6858e2000000000000000007";
     String arcRequiredListingId = "6858e2000000000000000008";
     listingRepository.save(
@@ -651,13 +657,12 @@ class ListingMongoIntegrationTest {
             null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
-            false,
             ListingSort.RECOMMENDED,
             null,
             null,
             0,
             20);
-    ListingSearchCondition onlyArcRequired =
+    ListingSearchCondition onlyNoArc =
         new ListingSearchCondition(
             withoutArcFilter.bounds(),
             null,
@@ -666,8 +671,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             Set.of(ListingType.GOSIWON),
-            Set.of(),
-            true,
+            Set.of(ConditionTag.NO_ARC),
             ListingSort.RECOMMENDED,
             null,
             null,
@@ -675,14 +679,14 @@ class ListingMongoIntegrationTest {
             20);
 
     PageResponse<ListingSearchResult> unfiltered = listingRepository.search(withoutArcFilter);
-    PageResponse<ListingSearchResult> requiredOnly = listingRepository.search(onlyArcRequired);
+    PageResponse<ListingSearchResult> noArcOnly = listingRepository.search(onlyNoArc);
 
     assertThat(unfiltered.content())
         .extracting(searchResult -> searchResult.listing().getId())
         .containsExactlyInAnyOrder(arcOptionalListingId, arcRequiredListingId);
-    assertThat(requiredOnly.content())
+    assertThat(noArcOnly.content())
         .extracting(searchResult -> searchResult.listing().getId())
-        .containsExactly(arcRequiredListingId);
+        .containsExactly(arcOptionalListingId);
   }
 
   /** 서비스 응답은 조건에 맞는 방 상품들을 매물 단위로 집계해 범위 필드와 재고 합계를 내려준다. */
@@ -711,7 +715,7 @@ class ListingMongoIntegrationTest {
                         3,
                         12,
                         2,
-                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ENGLISH_AVAILABLE)),
+                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ENGLISH_OK)),
                     roomOffer(
                         "6858e2000000000000000603",
                         "Filtered Out Zone",
@@ -721,7 +725,7 @@ class ListingMongoIntegrationTest {
                         2,
                         6,
                         1,
-                        Set.of(ConditionTag.RESIDENT_REGISTRATION))))
+                        Set.of(ConditionTag.ADDRESS_REGISTRATION))))
             .build());
     ListingSearchRequest request = new ListingSearchRequest();
     request.setSwLat(37.45);
@@ -751,7 +755,7 @@ class ListingMongoIntegrationTest {
                 Listing.TransitType.SUBWAY, "서울대입구역", 5));
     assertThat(card.conditions())
         .containsExactly(
-            ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH, ConditionTag.ENGLISH_AVAILABLE);
+            ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH, ConditionTag.ENGLISH_OK);
   }
 
   /** DISTANCE 정렬은 프론트가 보낸 중심 좌표가 아니라 bbox의 원본 중심점을 기준으로 계산한다. */
@@ -814,7 +818,6 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
-                false,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -861,7 +864,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
-                null,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -1006,6 +1008,211 @@ class ListingMongoIntegrationTest {
         .hasMessageContaining("size");
   }
 
+  /** 상세 조회가 성공하면 최근 본 매물 기록을 남기고, 상세 응답에는 현재 사용자의 실제 찜 여부를 반영한다. */
+  @Test
+  void recent_상세조회는_최근본을_저장하고_상세_찜여부를_반영한다() {
+    listingRepository.save(sampleListingBuilder().favoriteCount(1).build());
+    favoriteRepository.saveIfAbsent(favorite(1L, LISTING_ID, "2026-06-24T01:00:00Z"));
+
+    ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
+
+    assertThat(response.listingId()).isEqualTo(LISTING_ID);
+    assertThat(response.interaction().favorited()).isTrue();
+    assertThat(response.interaction().favoriteCount()).isEqualTo(1);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isEqualTo(1);
+  }
+
+  /** 상세 응답은 MongoDB에 저장된 방 상품 중 ACTIVE 방만 내려주고, UI 상단 요약도 같은 기준으로 집계한다. */
+  @Test
+  void detail_상세요약과_방목록은_ACTIVE_roomOffer만_사용한다() {
+    listingRepository.save(
+        sampleListingBuilder()
+            .imageUrls(
+                List.of(
+                    "https://cdn.kohere.app/listings/detail/1.jpg",
+                    "https://cdn.kohere.app/listings/detail/2.jpg",
+                    "https://cdn.kohere.app/listings/detail/3.jpg"))
+            .roomOffers(
+                List.of(
+                    roomOffer(
+                        "6858e2000000000000000901",
+                        "Green Zone 1",
+                        380000,
+                        500000,
+                        0,
+                        1,
+                        6,
+                        2,
+                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION)),
+                    roomOffer(
+                        "6858e2000000000000000902",
+                        "Green Zone 2",
+                        400000,
+                        700000,
+                        20000,
+                        2,
+                        12,
+                        1,
+                        Set.of(ConditionTag.PRIVATE_BATH, ConditionTag.NO_MAINT_FEE)),
+                    roomOffer(
+                        "6858e2000000000000000903",
+                        "Inactive Zone",
+                        Listing.RoomOfferStatus.INACTIVE,
+                        100000,
+                        100000,
+                        0,
+                        1,
+                        1,
+                        1,
+                        Set.of(ConditionTag.MOVE_IN_NOW))))
+            .build());
+
+    ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
+
+    assertThat(response.summary().minMonthlyRent()).isEqualTo(380000);
+    assertThat(response.summary().maxMonthlyRent()).isEqualTo(400000);
+    assertThat(response.summary().minDeposit()).isEqualTo(500000);
+    assertThat(response.summary().maxDeposit()).isEqualTo(700000);
+    assertThat(response.summary().maxMaintenanceFee()).isEqualTo(20000);
+    assertThat(response.summary().minStayMonths()).isEqualTo(1);
+    assertThat(response.summary().maxStayMonths()).isEqualTo(12);
+    assertThat(response.summary().activeRoomOfferCount()).isEqualTo(2);
+    assertThat(response.summary().imageCount()).isEqualTo(3);
+    assertThat(response.summary().conditions()).contains(ConditionTag.NO_ARC);
+    assertThat(response.roomOffers())
+        .extracting(ListingDetailResponse.RoomOfferResponse::name)
+        .containsExactly("Green Zone 1", "Green Zone 2");
+    assertThat(response.reviewSummary().reviewCount()).isZero();
+  }
+
+  /** 같은 매물을 다시 보면 최근 본 문서를 중복 생성하지 않고 viewedAt만 최신값으로 갱신한다. */
+  @Test
+  void recent_같은_매물_재조회는_viewedAt만_갱신한다() {
+    listingRepository.save(sampleListing());
+    Instant firstViewedAt = Instant.parse("2026-06-24T01:00:00Z");
+    Instant secondViewedAt = Instant.parse("2026-06-24T03:00:00Z");
+
+    recentListingRepository.upsertViewedAt(1L, LISTING_ID, firstViewedAt);
+    recentListingRepository.upsertViewedAt(1L, LISTING_ID, secondViewedAt);
+
+    RecentListingsResponse result = listingService.getRecentListings(1L);
+
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().listingId()).isEqualTo(LISTING_ID);
+    assertThat(result.content().getFirst().viewedAt()).isEqualTo(secondViewedAt);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isEqualTo(1);
+  }
+
+  /** 최근 본 목록은 공개 매물만 최신순 최대 10개 반환하고, 현재 사용자의 실제 찜 여부를 함께 내려준다. */
+  @Test
+  void recent_목록은_공개매물만_최신순_최대10개와_실제찜여부를_반환한다() {
+    Instant baseViewedAt = Instant.parse("2026-06-24T00:00:00Z");
+    for (int index = 1; index <= 13; index++) {
+      Listing.ListingStatus status =
+          index == 12
+              ? Listing.ListingStatus.PAUSED
+              : index == 13 ? Listing.ListingStatus.DELETED : Listing.ListingStatus.PUBLISHED;
+      saveListingWithRecentView(1L, index, status, baseViewedAt.plusSeconds(index));
+    }
+    recentListingRepository.upsertViewedAt(2L, listingId(11), baseViewedAt.plusSeconds(999));
+    favoriteRepository.saveIfAbsent(favorite(1L, listingId(10), "2026-06-24T05:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(2L, listingId(11), "2026-06-24T06:00:00Z"));
+
+    RecentListingsResponse result = listingService.getRecentListings(1L);
+
+    assertThat(result.content()).hasSize(10);
+    assertThat(result.content())
+        .extracting(RecentListingResponse::listingId)
+        .containsExactly(
+            listingId(11),
+            listingId(10),
+            listingId(9),
+            listingId(8),
+            listingId(7),
+            listingId(6),
+            listingId(5),
+            listingId(4),
+            listingId(3),
+            listingId(2));
+    assertThat(result.content())
+        .filteredOn(response -> response.listingId().equals(listingId(10)))
+        .singleElement()
+        .satisfies(
+            response -> {
+              assertThat(response.favorited()).isTrue();
+              assertThat(response.distanceMeters()).isNull();
+              assertThat(response.nearestTransit())
+                  .isEqualTo(
+                      new ListingSummaryResponse.NearestTransitSummary(
+                          Listing.TransitType.SUBWAY, "서울대입구역", 5));
+            });
+    assertThat(result.content())
+        .filteredOn(response -> response.listingId().equals(listingId(11)))
+        .singleElement()
+        .satisfies(response -> assertThat(response.favorited()).isFalse());
+  }
+
+  /** 상세 조회로 최근 본 기록을 남긴 뒤 사용자별 30개를 넘으면 오래된 기록부터 삭제한다. */
+  @Test
+  void recent_상세조회후_사용자별_최대30개만_보관한다() {
+    for (int index = 1; index <= 31; index++) {
+      listingRepository.save(listingWithIndex(index));
+      listingService.getListing(1L, listingId(index));
+    }
+    recentListingRepository.upsertViewedAt(2L, listingId(1), Instant.parse("2026-06-24T10:00:00Z"));
+
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isEqualTo(30);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 2L)))
+        .isEqualTo(1);
+    assertThat(listingService.getRecentListings(1L).content()).hasSize(10);
+  }
+
+  /** 없거나 공개 상태가 아닌 매물 상세 조회는 LISTING_NOT_FOUND가 되며 최근 본 기록도 남기지 않는다. */
+  @Test
+  void recent_상세조회_대상이_없거나_비공개면_기록하지_않는다() {
+    String pausedListingId = listingId(40);
+    listingRepository.save(listingWithIndex(40, Listing.ListingStatus.PAUSED));
+
+    assertThatThrownBy(() -> listingService.getListing(1L, pausedListingId))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThatThrownBy(() -> listingService.getListing(1L, listingId(41)))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThatThrownBy(() -> listingService.getListing(1L, "not-object-id"))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isZero();
+  }
+
+  /** 최근 본 기록이 없거나 모두 비공개 매물이면 content 빈 배열을 정상 응답으로 반환한다. */
+  @Test
+  void recent_목록이_비어도_정상_응답을_반환한다() {
+    listingRepository.save(listingWithIndex(50, Listing.ListingStatus.DELETED));
+    recentListingRepository.upsertViewedAt(
+        1L, listingId(50), Instant.parse("2026-06-24T01:00:00Z"));
+
+    RecentListingsResponse result = listingService.getRecentListings(1L);
+
+    assertThat(result.content()).isEmpty();
+  }
+
   /** 조건을 모두 만족하는 같은 방 상품이 없으면 목록 검색 결과는 비어 있어야 한다. */
   @Test
   void search_조건을_모두_만족하지_않으면_빈_목록을_반환한다() {
@@ -1022,7 +1229,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
-                false,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -1032,9 +1238,9 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).isEmpty();
   }
 
-  /** diagnosis 추천 조건이 listing 추천 서비스와 Mongo 조회로 연결되는지 확인한다. */
+  /** diagnosis가 전달한 UI 필터 조건 코드로 매물 요약을 반환한다. */
   @Test
-  void recommendByCriteria_진단조건으로_매물요약을_반환한다() {
+  void recommendByCriteria_조건코드로_매물요약을_반환한다() {
     new ListingSeedRunner(listingRepository).run(null);
 
     PageResponse<RecommendedListingView> result =
@@ -1042,7 +1248,7 @@ class ListingMongoIntegrationTest {
             new RecommendationCriteria(
                 "SEOUL",
                 500000,
-                Set.of("FEMALE_ONLY", "RESIDENT_REGISTRATION"),
+                Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 "SNU",
                 null,
                 0,
@@ -1055,7 +1261,7 @@ class ListingMongoIntegrationTest {
     assertThat(listing.monthlyRent()).isEqualTo(300000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
-    assertThat(listing.conditions()).contains("FEMALE_ONLY", "RESIDENT_REGISTRATION");
+    assertThat(listing.conditions()).contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
   }
 
   /** 즉시입주 조건은 active 방 상품의 availableCount가 있을 때만 매칭되는지 확인한다. */
@@ -1066,7 +1272,7 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> result =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 500000, Set.of("IMMEDIATE_MOVE_IN"), "SNU", null, 0, 20, null));
+                "SEOUL", 500000, Set.of("MOVE_IN_NOW"), "SNU", null, 0, 20, null));
 
     assertThat(result.content()).isEmpty();
   }
@@ -1091,6 +1297,50 @@ class ListingMongoIntegrationTest {
         .userId(userId)
         .listingId(listingId)
         .favoritedAt(Instant.parse(favoritedAt))
+        .build();
+  }
+
+  /** 최근 본 매물 목록 테스트에 사용할 매물을 저장하고 같은 사용자에게 최근 본 기록을 남긴다. */
+  private void saveListingWithRecentView(
+      Long userId, int index, Listing.ListingStatus status, Instant viewedAt) {
+    listingRepository.save(listingWithIndex(index, status));
+    recentListingRepository.upsertViewedAt(userId, listingId(index), viewedAt);
+  }
+
+  /** 반복 테스트에서 충돌 없는 고정 listingId를 만든다. */
+  private static String listingId(int index) {
+    return String.format("6858e200000000000000%04x", index);
+  }
+
+  /** 반복 테스트에서 충돌 없는 고정 roomOfferId를 만든다. */
+  private static String roomOfferId(int index) {
+    return String.format("6858e200000000000001%04x", index);
+  }
+
+  /** 반복 테스트에서 사용할 공개 매물 기본값이다. */
+  private static Listing listingWithIndex(int index) {
+    return listingWithIndex(index, Listing.ListingStatus.PUBLISHED);
+  }
+
+  /** 반복 테스트에서 사용할 매물 기본값이다. */
+  private static Listing listingWithIndex(int index, Listing.ListingStatus status) {
+    return sampleListingBuilder()
+        .id(listingId(index))
+        .title("최근 본 테스트 매물 " + index)
+        .status(status)
+        .roomOffers(
+            List.of(
+                roomOffer(
+                    roomOfferId(index),
+                    "최근 본 방 " + index,
+                    300000 + index * 1000,
+                    300000,
+                    10000,
+                    1,
+                    6,
+                    1,
+                    Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION))))
+        .favoriteCount(index)
         .build();
   }
 
@@ -1137,7 +1387,7 @@ class ListingMongoIntegrationTest {
         300000,
         300000,
         1,
-        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.RESIDENT_REGISTRATION));
+        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION));
   }
 
   /**

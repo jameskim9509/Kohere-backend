@@ -43,7 +43,7 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
         listings.page());
   }
 
-  /** 문자열 조건 태그를 listing 도메인의 ConditionTag enum으로 변환한다. */
+  /** 문자열 조건 태그를 listing 도메인의 ConditionTag enum으로 변환한다(diagnosis가 UI 필터 코드로 전달). */
   private static Set<ConditionTag> parseConditionTags(Set<String> conditions) {
     if (conditions == null || conditions.isEmpty()) {
       return Collections.emptySet();

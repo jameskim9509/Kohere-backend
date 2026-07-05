@@ -9,7 +9,7 @@
 
 - `ListingType`: `GOSIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
-- `ConditionTag`(주거 환경 조건 8종, 필터 칩·편의시설 태그 공용): `IMMEDIATE_MOVE_IN`(즉시 입주), `FEMALE_ONLY`(여성 전용), `PRIVATE_BATH`(개인 욕실), `ENGLISH_AVAILABLE`(영어 소통 가능), `RESIDENT_REGISTRATION`(전입신고 가능), `NO_MAINTENANCE_FEE`(관리비 없음), `MEALS_PROVIDED`(식사 제공), `DOUBLE_ROOM`(2인실)
+- `ConditionTag`(매물 옵션 필터 9종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음), `NO_ARC`(ARC 없이 가능)
 - `ContractTerm`(계약기간, 개월): `ONE_MONTH`, `THREE_MONTHS`, `SIX_MONTHS`, `TWELVE_MONTHS`
 - `MatchedPlaceType`(키워드 검색 매칭 분류): `UNIVERSITY`, `REGION`, `SUBWAY_STATION`
 
@@ -22,13 +22,13 @@
 | GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
 | GET | `/api/v1/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
 | GET | `/api/v1/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
-| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회(로그인 시 최근 본 매물 기록) | 선택 | 200 |
+| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 + 최근 본 매물 기록 | 필수 | 200 |
 | POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
 | DELETE | `/api/v1/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
 | GET | `/api/v1/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
-| GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(7일 이내, 최대 5건) | 필수 | 200 |
+| GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
 
-> 인증 "선택"은 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 찜·찜 목록·최근 본 매물은 모두 `me` 스코프라 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(인증 실패는 `401`).
+> 인증 "선택"인 탐색 API는 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 상세·찜·찜 목록·최근 본 매물은 인증 필수이며, `me` 스코프 API는 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(인증 실패는 `401`).
 
 ## 상세
 
@@ -50,8 +50,7 @@ Query 파라미터:
 | `minDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 하한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
 | `maxDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 상한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
 | `type` | `ListingType` | 선택 | — | Listing 기준 매물 유형. 다중 값 콤마 구분(`GOSIWON,CO_LIVING`) |
-| `conditions` | `ConditionTag[]` | 선택 | — | roomOffer 기준 조건 칩. 콤마 구분 또는 같은 이름 반복 전송 가능. 같은 roomOffer가 모두 만족해야 하며, 전입신고 가능 필터는 `RESIDENT_REGISTRATION`을 포함해 요청 |
-| `arcRequired` | boolean | 선택 | — | Listing 기준 ARC 필수 매물 필터. `true`면 ARC가 필수인 매물만 조회하고, `false` 또는 미전달이면 ARC 조건을 적용하지 않음 |
+| `conditions` | `ConditionTag[]` | 선택 | — | 필터 칩. 콤마 구분 또는 같은 이름 반복 전송 가능. 일반 조건은 같은 active roomOffer가 모두 만족해야 한다. `MOVE_IN_NOW`는 같은 roomOffer의 `availableCount > 0`도 필요하다. `NO_ARC`는 roomOffer 태그가 아니라 Listing 정책 필터로 처리되어 `propertyPolicies.arcRequired=false` 매물만 반환한다. |
 | `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 프리셋. `RECOMMENDED`는 기본 추천순, `PRICE_ASC`는 조건을 통과한 roomOffer들의 최저 월세 낮은 순, `DISTANCE`는 요청 bbox의 원본 중심점에서 가까운 Listing 순 |
 | `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
 | `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
@@ -82,7 +81,7 @@ Request Body: 없음
         "lng": 126.936893,
         "address": "서울 서대문구 ...",
         "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
-        "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION"],
+        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
         "distanceMeters": 320,
         "favorited": true,
         "favoriteCount": 12
@@ -104,14 +103,15 @@ Request Body: 없음
 - 필터가 없으면 조회 범위 안의 공개 매물에 속한 모든 활성 `roomOffer`를 집계한다. 필터가 있으면 같은 `roomOffer`가 가격·보증금·재고·옵션 조건을 모두 만족하는 방 상품만 집계한다.
 - `minMonthlyRent`/`maxMonthlyRent`, `minDeposit`/`maxDeposit`, `minMaintenanceFee`/`maxMaintenanceFee`, `minStayMonths`/`maxStayMonths`는 조건을 통과한 `roomOffer`들의 최저~최고 범위다. 프론트는 이 값으로 `₩380~400K/mo`, `Dep.`, `Maint.`, `1 mo~` 같은 카드 문구를 만들 수 있다.
 - `nearestTransit`는 카드에 표시할 가까운 교통수단 요약이며, 없으면 `null`이다.
-- `availableCount`는 MVP 단계에서는 목록/검색 응답에 노출하지 않는다. 단, `conditions=IMMEDIATE_MOVE_IN` 필터는 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
+- `availableCount`는 MVP 단계에서는 목록/검색 응답에 노출하지 않는다. 단, `conditions=MOVE_IN_NOW` 필터는 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
 - `conditions`는 조건을 통과한 `roomOffer`들이 가진 태그의 합집합이다.
 - `sort=PRICE_ASC`는 조건에 맞는 `roomOffer`들의 최저 월세 오름차순으로 매물 카드를 정렬한다.
 - `sort=DISTANCE`는 프론트가 별도 중심 좌표를 보내지 않는다. 서버가 요청 bbox(`swLat`·`swLng`·`neLat`·`neLng`)의 원본 중심점을 계산해 가까운 Listing 순으로 정렬한다. 따라서 `sort=DISTANCE`를 쓰려면 bbox 네 좌표가 모두 필요하다.
 - `distanceMeters`는 bbox가 제공된 경우 서버가 계산한 원본 bbox 중심점 기준 직선 거리다. bbox 없이 조회하면 `null`이다.
 - 방 상품별 상세 정보가 필요하면 카드의 `listingId`로 `GET /api/v1/listings/{listingId}`를 호출해 응답의 `roomOffers[]`를 표시한다.
-- 전입신고 가능 여부는 별도 boolean 파라미터가 아니라 `conditions=RESIDENT_REGISTRATION`으로 요청한다.
-- `arcRequired=false`는 "ARC 불필요 매물만"이 아니라 "ARC 조건을 적용하지 않음"이다.
+- 전입신고 가능 여부는 `conditions=ADDRESS_REGISTRATION`으로 요청한다.
+- ARC 없이 가능한 매물만 보려면 `conditions=NO_ARC`로 요청한다. 이 필터는 `propertyPolicies.arcRequired=false`인 매물만 반환한다.
+- `conditions`에 `NO_ARC`를 넣지 않으면 ARC 조건은 적용하지 않으며, ARC가 필요한 매물과 필요 없는 매물이 모두 조회될 수 있다.
 - 비로그인 시 `favorited`는 `false`로 고정한다.
 
 발생 가능한 에러:
@@ -135,11 +135,11 @@ Query 파라미터:
 | `swLng` | number | bbox 모드 필수 | 남서 경도 |
 | `neLat` | number | bbox 모드 필수 | 북동 위도(`swLat` 이상) |
 | `neLng` | number | bbox 모드 필수 | 북동 경도(`swLng` 이상) |
-| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions`/`arcRequired` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용. 단 응답은 매물 카드가 아니라 지도 마커 수 기준 |
+| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용. 단 응답은 매물 카드가 아니라 지도 마커 수 기준 |
 
 > 지도 마커 조회는 bbox 4좌표가 모두 필요하다. 서버는 `/listings` 목록 조회와 동일하게 요청 bbox를 20% 확장해 조회한다.
 > 한 Listing 안에 조건을 만족하는 roomOffer가 여러 개 있어도 지도 마커는 해당 Listing 위치에 1개만 반환한다.
-> 전입신고 가능 여부는 `conditions=RESIDENT_REGISTRATION`으로 필터링하며, `arcRequired=true`일 때만 ARC 필수 매물로 좁힌다.
+> 전입신고 가능 여부는 `conditions=ADDRESS_REGISTRATION`으로 필터링한다. ARC 없이 가능한 매물만 보려면 `conditions=NO_ARC`를 함께 보낸다.
 
 Request Body: 없음
 
@@ -228,8 +228,8 @@ Request Body: 없음
 
 ### GET /api/v1/listings/{listingId} — 매물 상세
 
-- 설명: 단건 매물 상세를 반환한다. 인증 사용자면 최근 본 매물에 upsert한다.
-- 인증: 선택 (로그인 시 `favorited` 채움 + 최근 본 매물 기록)
+- 설명: 단건 매물 상세를 반환하고, 로그인 사용자의 최근 본 매물에 upsert한다.
+- 인증: 필수
 
 Path 파라미터:
 
@@ -246,26 +246,61 @@ Request Body: 없음
   "success": true,
   "data": {
     "listingId": "6858e2000000000000000001",
-    "title": "신촌 도보 5분 1인실 고시원",
-    "type": "GOSIWON",
-    "imageUrls": [
-      "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
-      "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
-    ],
-    "location": {
-      "lat": 37.555134,
-      "lng": 126.936893,
-      "address": "서울 서대문구 신촌로 ...",
-      "addressDetail": "3층 305호"
+    "basicInfo": {
+      "title": "신촌 도보 5분 1인실 고시원",
+      "type": "GOSIWON",
+      "status": "PUBLISHED"
     },
-    "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
-    "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
-    "featureSummary": ["FEMALE_ONLY", "RESIDENT_REGISTRATION", "NO_MAINTENANCE_FEE"],
-    "propertyPolicies": {
-      "arcRequired": false,
-      "residentRegistrationAvailable": true,
-      "englishAvailable": false,
-      "mealsProvided": true
+    "summary": {
+      "minMonthlyRent": 380000,
+      "maxMonthlyRent": 400000,
+      "minDeposit": 500000,
+      "maxDeposit": 700000,
+      "minMaintenanceFee": 0,
+      "maxMaintenanceFee": 20000,
+      "minStayMonths": 1,
+      "maxStayMonths": 12,
+      "activeRoomOfferCount": 3,
+      "imageCount": 20,
+      "conditions": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC"]
+    },
+    "locationInfo": {
+      "location": { "lat": 37.555134, "lng": 126.936893 },
+      "address": {
+        "city": "SEOUL",
+        "district": "SEODAEMUN_GU",
+        "fullAddress": "서울 서대문구 신촌로 ...",
+        "detail": "3층 305호"
+      },
+      "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
+      "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
+      "nearbyUniversityCodes": ["YONSEI", "EWHA"]
+    },
+    "propertyInfo": {
+      "building": {
+        "type": "VILLA",
+        "usedFloorMin": 2,
+        "usedFloorMax": 3,
+        "totalFloors": 5,
+        "parkingAvailable": false,
+        "elevatorAvailable": false,
+        "heatingSystem": "CENTRAL"
+      },
+      "propertyPolicies": {
+        "arcRequired": false,
+        "residentRegistrationAvailable": true,
+        "studySuitable": true,
+        "mealsProvided": false,
+        "englishAvailable": true
+      },
+      "facilities": {
+        "laundry": ["WASHER", "IRON"],
+        "livingAmenities": ["WIFI", "TV", "SOFA"],
+        "securityFeatures": ["CCTV", "DIGITAL_DOOR_LOCK"],
+        "commonSpaces": [{ "type": "STUDY_ROOM", "count": null }],
+        "providedSupplies": ["TOILET_PAPER", "SLIPPERS"]
+      },
+      "featureSummary": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_MAINT_FEE"]
     },
     "roomOffers": [
       {
@@ -280,34 +315,65 @@ Request Body: 없음
         },
         "contract": {
           "minStayMonths": 2,
-          "maxStayMonths": 6
+          "maxStayMonths": 6,
+          "refundPolicy": {
+            "code": "FULL_REFUND_BEFORE_7_DAYS",
+            "description": "입주 7일 전 취소 시 전액 환불"
+          }
         },
         "inventory": {
           "totalCount": 10,
-          "availableCount": 0,
+          "availableCount": 2,
           "nextAvailableFrom": null
         },
         "genderPolicy": "FEMALE_ONLY",
-        "filterTags": ["FEMALE_ONLY", "RESIDENT_REGISTRATION", "NO_MAINTENANCE_FEE"]
+        "features": ["SINGLE_ROOM", "PRIVATE_BATH"],
+        "filterTags": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"],
+        "roomImageUrls": [
+          "https://cdn.kohere.app/listings/6858e2000000000000000001/rooms/101.jpg"
+        ]
       }
     ],
-    "landlordId": 77,
-    "favorited": true,
-    "favoriteCount": 12,
-    "createdAt": "2026-05-30T02:11:00Z"
+    "content": {
+      "descriptions": {
+        "ko": "신촌역 도보권의 조용한 1인실 고시원입니다.",
+        "en": "A quiet goshiwon within walking distance of Sinchon Station."
+      },
+      "extraNotes": "직접 연락처는 노출하지 않으며 신청은 앱에서 진행합니다.",
+      "imageUrls": [
+        "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
+        "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
+      ],
+      "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg"
+    },
+    "reviewSummary": {
+      "reviewCount": 0
+    },
+    "interaction": {
+      "favorited": true,
+      "favoriteCount": 12
+    },
+    "createdAt": "2026-05-30T02:11:00Z",
+    "updatedAt": "2026-06-01T02:11:00Z"
   },
   "error": null
 }
 ```
 
 - 전화번호 등 직접 연락처는 노출하지 않는다. 매물 예약(신청)은 인앱 채팅과 분리된 독립 기능으로 연결되고, 문의는 인앱 채팅으로 연결된다(문의·인앱 채팅은 후속·이연 — [04-booking-inquiry-chat](04-booking-inquiry-chat.md)).
-- `roomOffers[]`는 같은 가격·조건의 실제 방 묶음이다. 필터 조건은 같은 `roomOffer`가 가격·재고·옵션을 모두 만족하는지 기준으로 판단한다.
-- 비로그인 시 `favorited=false`, 최근 본 매물 기록은 생성하지 않는다.
+- `summary`는 상세 화면 상단 가격·보증금·관리비·계약기간·방 타입 수·이미지 카운터를 프론트가 바로 그릴 수 있게 서버가 계산한 값이다. 계산 기준은 **ACTIVE roomOffers**다.
+- `summary.conditions`는 ACTIVE roomOffers의 `filterTags` 합집합이다. 단, `NO_ARC`는 DB에 저장되는 방 태그가 아니라 `propertyPolicies.arcRequired=false`에서 파생한 표시/검색용 가상 태그다.
+- `roomOffers[]`는 같은 가격·조건의 실제 방 묶음이며, 상세 화면 Room Types에 보여줄 **ACTIVE 방 상품만** 반환한다. INACTIVE 방 상품은 응답에서 제외한다.
+- `reviewSummary.reviewCount`는 리뷰 도메인 도입 전까지 `0`으로 반환한다. 문의 수는 현재 상세 응답에 포함하지 않으며, 문의/채팅 기능 고도화 때 별도 계약으로 추가한다.
+- 상세 조회가 성공하면 `(userId, listingId)` 기준으로 최근 본 매물을 upsert하고 `viewedAt`을 최신 시각으로 갱신한다.
+- 최근 본 저장이나 사용자별 30개 초과 정리에 실패해도 상세 조회 응답은 성공으로 유지한다. 서버는 실패를 로그로 남기고, 프론트는 별도 재시도를 하지 않아도 된다.
+- `interaction.favorited`는 현재 로그인 사용자의 실제 찜 여부다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제된 매물 |
 
 ### POST /api/v1/listings/{listingId}/favorite — 찜 등록(토글)
@@ -407,7 +473,7 @@ Request Body: 없음
         "deposit": 0,
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
         "location": { "lat": 37.555134, "lng": 126.936893, "address": "서울 서대문구 ..." },
-        "conditions": ["ENGLISH_AVAILABLE"],
+        "conditions": ["ENGLISH_OK"],
         "favorited": true,
         "favoriteCount": 13,
         "favoritedAt": "2026-06-10T11:20:00Z"
@@ -430,10 +496,10 @@ Request Body: 없음
 
 ### GET /api/v1/users/me/recent-listings — 최근 본 매물
 
-- 설명: 7일 이내에 조회한 매물을 최신순 최대 5건 반환한다(요구사항 정의서 기준). 페이지네이션 없이 고정 상한이므로 `content` 배열만 반환하고 `page` 객체는 두지 않는다.
+- 설명: 상세 조회로 저장된 최근 본 매물 중 현재 공개 상태이고 활성 방 상품이 있는 매물을 `viewedAt desc` 최신순 최대 10건 반환한다. 페이지네이션 없이 고정 상한이므로 `content` 배열만 반환하고 `page` 객체는 두지 않는다.
 - 인증: 필수
 
-Query 파라미터: 없음 (상한 5건 고정)
+Query 파라미터: 없음 (응답 상한 10건 고정)
 
 Request Body: 없음
 
@@ -448,11 +514,23 @@ Request Body: 없음
         "listingId": "6858e2000000000000000001",
         "title": "홍대입구 코리빙 2인실",
         "type": "CO_LIVING",
-        "monthlyRent": 600000,
-        "deposit": 1000000,
+        "minMonthlyRent": 580000,
+        "maxMonthlyRent": 620000,
+        "minDeposit": 1000000,
+        "maxDeposit": 1000000,
+        "minMaintenanceFee": 30000,
+        "maxMaintenanceFee": 50000,
+        "minStayMonths": 1,
+        "maxStayMonths": 12,
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
-        "location": { "lat": 37.5571, "lng": 126.9245, "address": "서울 마포구 ..." },
+        "lat": 37.5571,
+        "lng": 126.9245,
+        "address": "서울 마포구 ...",
+        "nearestTransit": { "type": "SUBWAY", "name": "Hongdae Sta.", "walkMinutes": 8 },
+        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
+        "distanceMeters": null,
         "favorited": false,
+        "favoriteCount": 13,
         "viewedAt": "2026-06-15T01:30:00Z"
       }
     ]
@@ -461,7 +539,10 @@ Request Body: 없음
 }
 ```
 
-- 7일이 지난 기록은 응답에서 제외한다(만료 즉시 숨김 + 배치 삭제, 정리 주기는 운영 설정값).
+- 응답 필드는 `/api/v1/listings` 카드 응답과 최대한 동일하며, 최근 본 목록 전용으로 `viewedAt`을 추가한다.
+- `favorited`는 현재 로그인 사용자의 실제 찜 여부다. 프론트는 이 값으로 하트 상태를 바로 표시할 수 있다.
+- DB에는 사용자별 최근 본 기록을 최신순 최대 30개까지 보관한다. 상세 조회로 새 기록을 저장한 뒤 30개를 넘으면 오래된 기록부터 삭제한다.
+- 조회 API는 저장된 30개 중 현재 `PUBLISHED` 상태이고 활성 `roomOffer`가 있는 매물만 최신순 최대 10개 반환한다. 비공개/삭제/노출중지 매물은 목록에서 숨긴다.
 - 같은 매물 재조회는 새 항목을 만들지 않고 `viewedAt`만 갱신한다.
 
 발생 가능한 에러:
