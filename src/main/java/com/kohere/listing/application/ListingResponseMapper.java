@@ -55,19 +55,27 @@ final class ListingResponseMapper {
         listing.getFavoriteCount());
   }
 
-  /** diagnosis 모듈에 전달할 추천 매물 published view를 만든다. */
+  /**
+   * diagnosis 모듈에 전달할 추천 매물 published view를 만든다.
+   *
+   * <p>추천 조회는 방 상품이 아니라 매물 단위 카드로 내려가므로, 월세는 단일 값이 아니라 활성 방 상품 전체의 최저~최고 범위({@code
+   * monthlyRentMin}/{@code monthlyRentMax})로 집계한다(목록·최근 본 매물 카드와 동일 규칙). 보증금·대표 조건 태그는 대표(최저 월세) 방
+   * 상품 기준으로 채운다.
+   */
   static RecommendedListingView toRecommendedView(Listing listing) {
-    Listing.RoomOffer offer = representativeOffer(listing);
+    List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
+    Listing.RoomOffer representative = representativeOffer(listing);
     return new RecommendedListingView(
         listing.getId(),
         listing.getTitle(),
         listing.getType().name(),
-        offer.pricing().monthlyRent(),
-        offer.pricing().deposit(),
+        minMonthlyRent(activeOffers),
+        maxMonthlyRent(activeOffers),
+        representative.pricing().deposit(),
         thumbnailUrl(listing),
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
-        offer.filterTags().stream().map(Enum::name).toList());
+        representative.filterTags().stream().map(Enum::name).toList());
   }
 
   /**

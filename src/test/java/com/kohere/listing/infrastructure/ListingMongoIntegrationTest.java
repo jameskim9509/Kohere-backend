@@ -1259,7 +1259,8 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).hasSize(1);
     RecommendedListingView listing = result.content().getFirst();
     assertThat(listing.listingId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
-    assertThat(listing.monthlyRent()).isEqualTo(300000);
+    assertThat(listing.monthlyRentMin()).isEqualTo(300000);
+    assertThat(listing.monthlyRentMax()).isEqualTo(300000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
     assertThat(listing.conditions()).contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
