@@ -10,7 +10,7 @@ variable "tags" {
 }
 
 variable "bucket_name" {
-  description = "매물 이미지 버킷 이름 — 필수(S3는 전역 유일)"
+  description = "콘텐츠 이미지 버킷 이름 — 필수(S3는 전역 유일)"
   type        = string
 }
 

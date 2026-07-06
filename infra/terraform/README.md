@@ -9,7 +9,7 @@
                                   │  └─ redis ──▶ ElastiCache(Redis)   (refresh 토큰)
                                   └─ 시크릿 ────▶ SSM Parameter Store
 앱 이미지: GitHub Actions ──OIDC──▶ ECR ──▶ Fargate
-매물 이미지: S3 ──OAC──▶ CloudFront (클라이언트 직접 로드)
+콘텐츠 이미지: S3 ──OAC──▶ CloudFront (클라이언트 직접 로드)
 ```
 
 ## 결정 사항
@@ -53,7 +53,7 @@ infra/terraform/
 │   │   ├── dns/               # Route53 A 레코드(EIP)
 │   │   └── monitoring/        # CloudWatch 알람 + SNS
 │   └── shared/
-│       └── s3-cloudfront/     # 매물 이미지(S3 + CloudFront OAC) — prod·dev 공용
+│       └── s3-cloudfront/     # 콘텐츠 이미지(S3 + CloudFront OAC) — prod·dev 공용
 ├── environments/prod/         # prod 매니지드 배선(루트)
 └── environments/dev/          # dev 저비용 단일 EC2 배선(루트)
 ```

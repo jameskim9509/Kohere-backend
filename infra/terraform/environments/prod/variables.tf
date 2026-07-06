@@ -283,7 +283,7 @@ variable "github_deploy_branch" {
 
 # ===== S3 / CloudFront =====
 variable "images_bucket_name" {
-  description = "매물 이미지 버킷 이름 — 필수(S3는 전역 유일)"
+  description = "콘텐츠 이미지 버킷 이름 — 필수(S3는 전역 유일)"
   type        = string
 }
 
@@ -294,7 +294,7 @@ variable "cloudfront_price_class" {
 }
 
 variable "cdn_domain_name" {
-  description = "매물 이미지 CDN 커스텀 도메인(예: cdn.kohere.app) — 필수(us-east-1 ACM + CloudFront 별칭)"
+  description = "콘텐츠 이미지 CDN 커스텀 도메인(예: cdn.kohere.app) — 필수(us-east-1 ACM + CloudFront 별칭)"
   type        = string
 }
 

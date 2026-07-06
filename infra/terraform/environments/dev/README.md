@@ -2,7 +2,7 @@
 
 이 문서 하나로 **AWS 계정도 Terraform도 없는 상태에서 dev 환경을 `apply` 까지** 끝낸다. dev는 매니지드 서비스 대신 **EC2 1대 위 docker-compose**(Caddy·app·MySQL·MongoDB·Redis)로 도는 저비용 구성이다([ADR-0021](../../../../docs/adr/0021-cost-optimization-profile.md)).
 
-**결과물**: 고정 IP(EIP)에 도메인을 붙여 **항상 HTTPS**로 접속되는 앱, 매물 이미지용 S3 + CloudFront CDN(커스텀 도메인), `release` 브랜치 머지(push) 시 자동 재배포되는 CI/CD 배포 역할.
+**결과물**: 고정 IP(EIP)에 도메인을 붙여 **항상 HTTPS**로 접속되는 앱, 콘텐츠 이미지용 S3 + CloudFront CDN(커스텀 도메인), `release` 브랜치 머지(push) 시 자동 재배포되는 CI/CD 배포 역할.
 
 - 상위 문서: [infra/terraform/README.md](../../README.md) (전체 아키텍처·prod 포함)
 - 원격 상태 부트스트랩: [bootstrap/README.md](../../bootstrap/README.md)
@@ -22,7 +22,7 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
                                                   └─ redis:7     (refresh 토큰)     ┘ 에 영속
                                                   └─ 시크릿 ─────▶ SSM Parameter Store(부팅 시 .env 주입, ADR-0023)
 앱 이미지: GitHub Actions ──OIDC──▶ ECR(:dev 이동 태그) ──▶ SSM run-command로 EC2 재배포
-매물 이미지: S3 ──OAC──▶ CloudFront(커스텀 도메인 별칭, us-east-1 ACM) ──▶ 클라이언트 직접 로드
+콘텐츠 이미지: S3 ──OAC──▶ CloudFront(커스텀 도메인 별칭, us-east-1 ACM) ──▶ 클라이언트 직접 로드
 ```
 
 루트(`environments/dev/`)가 배선하는 모듈:
@@ -37,7 +37,7 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
 | `modules/dev/host` | EC2 + EIP + EBS attach, user_data(compose·Caddyfile·refresh-env·reconcile-db) |
 | `modules/dev/dns` | Route53 A 레코드(domain→EIP) — **항상 생성**(domain·zone 필수) |
 | `modules/dev/monitoring` | CloudWatch 알람 + SNS → Discord(`discord_webhook_url`, SNS→Lambda) |
-| `modules/shared/s3-cloudfront` | 매물 이미지 S3 + CloudFront(OAC, 커스텀 도메인 별칭) — **항상 생성** |
+| `modules/shared/s3-cloudfront` | 콘텐츠 이미지 S3 + CloudFront(OAC, 커스텀 도메인 별칭) — **항상 생성** |
 | `cdn_acm`(루트 `main.tf`) | 이미지 CDN 커스텀 도메인용 us-east-1 ACM + DNS 검증 — **항상 생성** |
 
 > 도메인/HTTPS/CDN은 옵션이 아니라 **필수**다. `cdn_acm`·`s3_cloudfront`·`dns` 모듈은 `count`/조건 없이 항상 인스턴스화되며 `cdn_domain_name`·`route53_zone_id`·`domain_name` 을 그대로 받는다. 따라서 `providers.tf` 의 `aws.us_east_1` provider(CloudFront용 ACM)도 **항상 사용**된다.
@@ -134,7 +134,7 @@ apply 전에 아래 5개는 **반드시** 손에 들고 있어야 한다(아래 
 | 앱 도메인 | `domain_name` | 사용할 dev 도메인(예: `dev.kohere.app`) |
 | Route53 호스팅 영역 ID | `route53_zone_id` | 해당 도메인의 **이미 존재하는** 호스팅 영역 Z-ID |
 | 이미지 CDN 도메인 | `cdn_domain_name` | 이미지 서빙용 커스텀 도메인(예: `cdn.dev.kohere.app`) |
-| 이미지 S3 버킷명 | `images_bucket_name` | 매물 이미지 버킷 이름(S3 전역 유일 — 직접 지정, 자동생성 없음) |
+| 이미지 S3 버킷명 | `images_bucket_name` | 콘텐츠 이미지 버킷 이름(S3 전역 유일 — 직접 지정, 자동생성 없음) |
 
 > **Route53 사전 조건(중요)**: `route53_zone_id` 가 필수이므로 apply 전에 그 호스팅 영역이 계정에 **이미 존재**하고, 도메인 등록·NS 위임이 끝나 있어야 한다. NS 위임이 안 끝났으면 `module.cdn_acm` 의 ACM **DNS 검증이 통과하지 못하고 무한 대기/타임아웃**한다.
 
@@ -209,10 +209,10 @@ app_image          = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-b
 # 앱 도메인 + HTTPS(Caddy 자동 인증서, ADR-0022). 항상 Route53 A 레코드(domain→EIP)가 생성된다.
 domain_name        = "dev.kohere.app"
 route53_zone_id    = "Z0123456789ABCDEFGHIJ"
-# 매물 이미지 CDN 커스텀 도메인(us-east-1 ACM + CloudFront 별칭)
+# 콘텐츠 이미지 CDN 커스텀 도메인(us-east-1 ACM + CloudFront 별칭)
 cdn_domain_name    = "cdn.dev.kohere.app"
-# 매물 이미지 S3 버킷명(전역 유일 — 자동생성 없음)
-images_bucket_name = "kohere-dev-listing-images-123456789012"
+# 콘텐츠 이미지 S3 버킷명(전역 유일 — 자동생성 없음)
+images_bucket_name = "kohere-dev-images-123456789012"
 
 # --- 외부 OIDC / SMTP 시크릿 (옵션, SSM SecureString 으로 저장) ---
 google_client_id = "..."
@@ -284,7 +284,7 @@ terraform apply
 | `public_ip` | dev 호스트 EIP(Route53 A 레코드 대상) |
 | `instance_id` | EC2 인스턴스 ID(SSM 접속용) |
 | `github_deploy_role_arn` | GitHub Actions가 assume할 배포 역할 ARN → 리포 Variables `AWS_DEPLOY_ROLE_ARN` 에 설정 |
-| `images_bucket` | 매물 이미지 S3 버킷명 |
+| `images_bucket` | 콘텐츠 이미지 S3 버킷명 |
 | `images_cdn_domain` | 이미지 서빙 커스텀 도메인(`cdn_domain_name` 별칭, 항상 설정됨) |
 
 ```bash
