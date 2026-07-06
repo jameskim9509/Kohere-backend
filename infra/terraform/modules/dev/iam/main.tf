@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "params" {
     actions   = ["kms:Decrypt"]
     resources = [data.aws_kms_alias.ssm.target_key_arn]
   }
-  # 매물 이미지 버킷 읽기/쓰기(앱이 인스턴스 역할로 업로드) — images_bucket_arn 제공 시에만.
+  # 콘텐츠 이미지 버킷 읽기/쓰기(앱이 인스턴스 역할로 업로드) — images_bucket_arn 제공 시에만.
   dynamic "statement" {
     for_each = var.images_bucket_arn != "" ? [1] : []
     content {

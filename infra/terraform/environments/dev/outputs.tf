@@ -14,7 +14,7 @@ output "instance_id" {
 }
 
 output "images_bucket" {
-  description = "매물 이미지 S3 버킷"
+  description = "콘텐츠 이미지 S3 버킷"
   value       = module.s3_cloudfront.bucket_name
 }
 

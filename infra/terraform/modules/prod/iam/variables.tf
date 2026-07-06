@@ -52,7 +52,7 @@ variable "kms_key_arns" {
 }
 
 variable "images_bucket_arn" {
-  description = "앱(ECS 태스크 역할)이 업로드할 매물 이미지 S3 버킷 ARN. 빈 값이면 S3 권한 미부여"
+  description = "앱(ECS 태스크 역할)이 업로드할 콘텐츠 이미지 S3 버킷 ARN. 빈 값이면 S3 권한 미부여"
   type        = string
   default     = ""
 }
