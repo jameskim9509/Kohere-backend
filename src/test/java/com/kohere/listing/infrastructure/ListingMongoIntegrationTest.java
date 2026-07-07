@@ -170,6 +170,71 @@ class ListingMongoIntegrationTest {
         .isEqualTo(legacyRoomOfferId.toHexString());
   }
 
+  /** schemaVersion만 2이고 실제 모양은 v1인 문서도 보정 changeUnit이 다시 v2로 정규화한다. */
+  @Test
+  void migration_v2로_표시된_레거시_문서도_보정한다() {
+    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a02");
+    Document legacy = legacyV1ListingDocument(legacyRoomOfferId);
+    legacy.put("schemaVersion", 2);
+    mongoTemplate
+        .getCollection(ListingDocument.COLLECTION_NAME)
+        .insertOne(legacy, new InsertOneOptions().bypassDocumentValidation(true));
+
+    new ListingSchemaV2RepairChangeUnit().execution(mongoTemplate);
+
+    Document migrated =
+        mongoTemplate
+            .getCollection(ListingDocument.COLLECTION_NAME)
+            .find(new Document("_id", new ObjectId(LISTING_ID)))
+            .first();
+    assertThat(migrated).isNotNull();
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
+    assertThat(migrated.get("featureSummary")).isNull();
+    assertThat(migrated.get("nearbyPlacesDescription")).isNull();
+    assertThat(migrated.get("extraNotes")).isNull();
+    assertThat(migrated.get("building", Document.class).get("heatingSystem")).isNull();
+    assertThat(migrated.get("facilities", Document.class).getList("heatingSystem", String.class))
+        .containsExactly("CENTRAL");
+    assertThat(migrated.getList("roomOffers", Document.class).getFirst().getString("roomOfferId"))
+        .isEqualTo(legacyRoomOfferId.toHexString());
+    assertThat(migrated.getList("roomOffers", Document.class).getFirst().get("contract")).isNull();
+  }
+
+  /** 기존 v2 validator가 먼저 걸린 DB도 validator를 풀고 이행한 뒤 다시 strict validator를 적용한다. */
+  @Test
+  void migration_기존_validator를_풀고_v2_이행후_다시_적용한다() {
+    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a03");
+    mongoTemplate
+        .getCollection(ListingDocument.COLLECTION_NAME)
+        .insertOne(
+            legacyV1ListingDocument(legacyRoomOfferId),
+            new InsertOneOptions().bypassDocumentValidation(true));
+
+    new ListingValidatorV2ChangeUnit().execution(mongoTemplate);
+    new ListingValidatorRelaxBeforeSchemaV2ChangeUnit().execution(mongoTemplate);
+    new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
+    new ListingValidatorV2ChangeUnit().execution(mongoTemplate);
+
+    Document migrated =
+        mongoTemplate
+            .getCollection(ListingDocument.COLLECTION_NAME)
+            .find(new Document("_id", new ObjectId(LISTING_ID)))
+            .first();
+    assertThat(migrated).isNotNull();
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
+
+    Document invalidLegacy = legacyV1ListingDocument(new ObjectId("6858e2000000000000000a04"));
+    invalidLegacy.put("_id", new ObjectId("6858e2000000000000000b04"));
+    assertThatThrownBy(
+            () ->
+                mongoTemplate
+                    .getCollection(ListingDocument.COLLECTION_NAME)
+                    .insertOne(invalidLegacy))
+        .isInstanceOf(Exception.class);
+  }
+
   /** 앱 시작 시 지도·필터 조회용 MongoDB 인덱스가 생성되는지 확인한다. */
   @Test
   void initialize_지도와_필터_인덱스를_모두_생성한다() {
@@ -285,8 +350,9 @@ class ListingMongoIntegrationTest {
     assertThat(response.content()).hasSize(1);
     assertThat(response.content().getFirst().listingId())
         .isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
-    assertThat(response.content().getFirst().minMonthlyRent()).isEqualTo(300000);
-    assertThat(response.content().getFirst().maxMonthlyRent()).isEqualTo(300000);
+    assertThat(response.content().getFirst().roomOffers().getFirst().pricing().monthlyRent())
+        .isEqualTo(300000);
+    assertThat(response.content().getFirst().contract().minStayMonths()).isEqualTo(2);
     assertThat(response.content().getFirst().distanceMeters()).isLessThan(500);
     assertThat(response.page().totalElements()).isEqualTo(1);
   }
@@ -794,22 +860,34 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).hasSize(1);
     ListingSummaryResponse card = result.content().getFirst();
     assertThat(card.listingId()).isEqualTo(LISTING_ID);
-    assertThat(card.minMonthlyRent()).isEqualTo(490000);
-    assertThat(card.maxMonthlyRent()).isEqualTo(550000);
-    assertThat(card.minDeposit()).isEqualTo(1000000);
-    assertThat(card.maxDeposit()).isEqualTo(1500000);
-    assertThat(card.minMaintenanceFee()).isEqualTo(20000);
-    assertThat(card.maxMaintenanceFee()).isEqualTo(30000);
-    assertThat(card.availableCount()).isEqualTo(5);
-    assertThat(card.minStayMonths()).isEqualTo(1);
-    assertThat(card.maxStayMonths()).isEqualTo(12);
+    assertThat(card.status()).isEqualTo(Listing.ListingStatus.PUBLISHED);
+    assertThat(card.rentalType()).isEqualTo(Listing.RentalType.MONTHLY_RENT);
+    assertThat(card.contract().minStayMonths()).isEqualTo(1);
+    assertThat(card.contract().maxStayMonths()).isEqualTo(12);
+    assertThat(card.location())
+        .isEqualTo(new ListingDetailResponse.GeoPoint(37.459471, 126.951422));
+    assertThat(card.address().fullAddress()).isEqualTo("서울특별시 관악구 테스트로 1");
     assertThat(card.nearestTransit())
-        .isEqualTo(
-            new ListingSummaryResponse.NearestTransitSummary(
-                Listing.TransitType.SUBWAY, "서울대입구역", 5));
-    assertThat(card.conditions())
-        .containsExactly(
-            ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH, ConditionTag.ENGLISH_OK);
+        .isEqualTo(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"));
+    assertThat(card.building().type()).isEqualTo(Listing.BuildingType.VILLA);
+    assertThat(card.facilities().heatingSystem()).containsExactly(Listing.HeatingSystem.CENTRAL);
+    assertThat(card.roomOffers())
+        .extracting(ListingDetailResponse.RoomOfferResponse::name)
+        .containsExactly("Green Zone 1", "Green Zone 2");
+    assertThat(card.roomOffers())
+        .extracting(roomOffer -> roomOffer.pricing().monthlyRent())
+        .containsExactly(490000, 550000);
+    assertThat(card.roomOffers())
+        .extracting(roomOffer -> roomOffer.pricing().deposit())
+        .containsExactly(1000000, 1500000);
+    assertThat(card.roomOffers())
+        .extracting(roomOffer -> roomOffer.pricing().maintenanceFee())
+        .containsExactly(20000, 30000);
+    assertThat(card.roomOffers())
+        .extracting(roomOffer -> roomOffer.inventory().availableCount())
+        .containsExactly(3, 2);
+    assertThat(card.roomOffers().getFirst().filterTags())
+        .containsExactlyInAnyOrder(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH);
   }
 
   /** DISTANCE 정렬은 프론트가 보낸 중심 좌표가 아니라 bbox의 원본 중심점을 기준으로 계산한다. */
@@ -1071,8 +1149,8 @@ class ListingMongoIntegrationTest {
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
 
     assertThat(response.listingId()).isEqualTo(LISTING_ID);
-    assertThat(response.interaction().favorited()).isTrue();
-    assertThat(response.interaction().favoriteCount()).isEqualTo(1);
+    assertThat(response.favorited()).isTrue();
+    assertThat(response.favoriteCount()).isEqualTo(1);
     assertThat(
             mongoTemplate
                 .getCollection(RecentListingDocument.COLLECTION_NAME)
@@ -1080,9 +1158,9 @@ class ListingMongoIntegrationTest {
         .isEqualTo(1);
   }
 
-  /** 상세 응답은 MongoDB에 저장된 방 상품 중 ACTIVE 방만 내려주고, UI 상단 요약도 같은 기준으로 집계한다. */
+  /** 상세 응답은 MongoDB v2 구조에 가깝게 루트 공통 필드를 내려주고, 방 상품은 ACTIVE 항목만 내려준다. */
   @Test
-  void detail_상세요약과_방목록은_ACTIVE_roomOffer만_사용한다() {
+  void detail_루트필드와_방목록은_v2_구조를_따르고_ACTIVE_roomOffer만_반환한다() {
     listingRepository.save(
         sampleListingBuilder()
             .imageUrls(
@@ -1128,28 +1206,21 @@ class ListingMongoIntegrationTest {
 
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
 
-    assertThat(response.summary().minMonthlyRent()).isEqualTo(380000);
-    assertThat(response.summary().maxMonthlyRent()).isEqualTo(400000);
-    assertThat(response.summary().minDeposit()).isEqualTo(500000);
-    assertThat(response.summary().maxDeposit()).isEqualTo(700000);
-    assertThat(response.summary().maxMaintenanceFee()).isEqualTo(20000);
-    assertThat(response.summary().minStayMonths()).isEqualTo(1);
-    assertThat(response.summary().maxStayMonths()).isEqualTo(12);
-    assertThat(response.summary().activeRoomOfferCount()).isEqualTo(2);
-    assertThat(response.summary().imageCount()).isEqualTo(3);
-    assertThat(response.summary().conditions()).contains(ConditionTag.NO_ARC);
+    assertThat(response.rentalType()).isEqualTo(Listing.RentalType.MONTHLY_RENT);
+    assertThat(response.contract().minStayMonths()).isEqualTo(1);
+    assertThat(response.contract().maxStayMonths()).isEqualTo(12);
+    assertThat(response.genderPolicy()).isEqualTo(Listing.GenderPolicy.FEMALE_ONLY);
+    assertThat(response.propertyPolicies().arcRequired()).isFalse();
+    assertThat(response.imageUrls()).hasSize(3);
     assertThat(response.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::name)
         .containsExactly("Green Zone 1", "Green Zone 2");
     assertThat(response.roomOffers())
         .allSatisfy(
             roomOffer -> {
-              assertThat(roomOffer.rentalType()).isEqualTo(Listing.RentalType.MONTHLY_RENT);
-              assertThat(roomOffer.contract().minStayMonths()).isEqualTo(1);
-              assertThat(roomOffer.contract().maxStayMonths()).isEqualTo(12);
-              assertThat(roomOffer.genderPolicy()).isEqualTo(Listing.GenderPolicy.FEMALE_ONLY);
+              assertThat(roomOffer.status()).isEqualTo(Listing.RoomOfferStatus.ACTIVE);
+              assertThat(roomOffer.pricing().monthlyRent()).isBetween(380000, 400000);
             });
-    assertThat(response.reviewSummary().reviewCount()).isZero();
   }
 
   /** 같은 매물을 다시 보면 최근 본 문서를 중복 생성하지 않고 viewedAt만 최신값으로 갱신한다. */
@@ -1211,11 +1282,11 @@ class ListingMongoIntegrationTest {
         .satisfies(
             response -> {
               assertThat(response.favorited()).isTrue();
-              assertThat(response.distanceMeters()).isNull();
               assertThat(response.nearestTransit())
                   .isEqualTo(
-                      new ListingSummaryResponse.NearestTransitSummary(
-                          Listing.TransitType.SUBWAY, "서울대입구역", 5));
+                      new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"));
+              assertThat(response.roomOffers().getFirst().pricing().monthlyRent())
+                  .isEqualTo(310000);
             });
     assertThat(result.content())
         .filteredOn(response -> response.listingId().equals(listingId(11)))
@@ -1324,6 +1395,8 @@ class ListingMongoIntegrationTest {
     assertThat(listing.listingId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
     assertThat(listing.monthlyRentMin()).isEqualTo(300000);
     assertThat(listing.monthlyRentMax()).isEqualTo(300000);
+    assertThat(listing.minDeposit()).isEqualTo(300000);
+    assertThat(listing.maxDeposit()).isEqualTo(300000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
     assertThat(listing.conditions()).contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
