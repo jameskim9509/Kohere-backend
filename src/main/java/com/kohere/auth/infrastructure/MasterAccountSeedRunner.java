@@ -72,7 +72,8 @@ class MasterAccountSeedRunner implements ApplicationRunner {
     long userId = userAccountService.createPendingUser();
     userAccountService.agreeToTerms(userId, true);
     userAccountService.completeLandlordOnboarding(
-        userId, new LandlordOnboardingProfile("Master Landlord", "01000000000"));
+        userId,
+        new LandlordOnboardingProfile("Master Landlord", "01000000000", LocalDate.of(1980, 1, 1)));
     link(account, userId);
     log.warn("[TEST SEED] 임대인 마스터 계정 시드 완료 (userId={}, subject={}).", userId, account.subject());
   }

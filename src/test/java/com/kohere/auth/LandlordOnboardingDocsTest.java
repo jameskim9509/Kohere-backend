@@ -13,6 +13,7 @@ import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWit
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -83,6 +84,7 @@ class LandlordOnboardingDocsTest {
   private static final String INVALID_SOCIAL_TOKEN = "invalid-social-token";
   private static final String MALFORMED_BODY = "{ \"oops\" }";
   private static final String PHONE = "01012345678";
+  private static final String BIRTH_DATE = "1988-05-20";
   private static final String BIZ_NUMBER = "1234567890";
 
   // 서명이 깨진(다른 키) 액세스 토큰 — 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라 restdocs-api-spec 이
@@ -223,6 +225,19 @@ class LandlordOnboardingDocsTest {
                         "사업자등록번호 검증(임대인 전용, 온보딩 후) — 정식 토큰(ACTIVE)으로 정상 사업자 무상태 검증(번호 마스킹 반환)"),
                 requestFields(businessVerifyRequestFields()),
                 responseFields(businessVerifyResponseFields())));
+
+    // 임대인 내 프로필 조회 — 생년월일 포함(프로필 조회 §8, #131). 세입자 전용 필드·이메일 미포함, 연락처는 본인이라 평문.
+    mockMvc
+        .perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.userType").value("LANDLORD"))
+        .andExpect(jsonPath("$.data.birthDate").value(BIRTH_DATE))
+        .andDo(
+            document(
+                "users-me-landlord",
+                resourceDetails()
+                    .summary("내 프로필 조회(임대인) — name·생년월일·연락처(평문) 중심, 세입자 전용 필드·이메일 미포함"),
+                responseFields(landlordProfileResponseFields())));
   }
 
   /** 스펙의 "발생 가능한 에러"를 엔드포인트별로 실제 트리거해 스니펫으로 생성하고 status·error.code를 단정한다. */
@@ -685,13 +700,15 @@ class LandlordOnboardingDocsTest {
   private static List<FieldDescriptor> landlordOnboardingRequestFields() {
     return List.of(
         field("name", JsonFieldType.STRING, "임대인 이름(성·이름 합친 단일 이름, 필수·빈값 불가)"),
-        field("phoneNumber", JsonFieldType.STRING, "사전 SMS 인증된 연락처와 일치(필수)"));
+        field("phoneNumber", JsonFieldType.STRING, "사전 SMS 인증된 연락처와 일치(필수)"),
+        field("birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD, 필수·과거 날짜만)"));
   }
 
   /**
-   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·birthDate·country·countryName·countryFlag·
+   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·country·countryName·countryFlag·
    * occupation·email·visaType)는 {@code null}이라 응답에서 생략된다(UserProfileView
-   * {@code @JsonInclude(NON_NULL)}). 임대인은 단일 {@code name}·마스킹된 {@code phoneNumber}를 받는다(spec §5-2).
+   * {@code @JsonInclude(NON_NULL)}). 임대인은 단일 {@code name}·생년월일({@code birthDate})·마스킹된 {@code
+   * phoneNumber}를 받는다(spec §5-2, #131).
    */
   private static List<FieldDescriptor> landlordOnboardingResponseFields() {
     return List.of(
@@ -699,6 +716,7 @@ class LandlordOnboardingDocsTest {
         field("data.user.id", JsonFieldType.NUMBER, "회원 ID"),
         field("data.user.name", JsonFieldType.STRING, "임대인 이름(요청 name — 성·이름 합친 전체 이름)"),
         field("data.user.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
+        field("data.user.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
         field("data.user.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
         field("data.user.userType", JsonFieldType.STRING, "회원 역할(LANDLORD)"),
         field("data.user.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"),
@@ -711,6 +729,28 @@ class LandlordOnboardingDocsTest {
             "정식 access 토큰(JWT, onboardingCompleted=true)"),
         field("data.refreshToken", JsonFieldType.STRING, "정식 refresh 토큰(불투명)"),
         field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
+        errorNull());
+  }
+
+  /**
+   * 임대인 프로필 조회(GET /users/me) 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·country·countryName·
+   * countryFlag·occupation·email·visaType)는 {@code null}이라 생략된다(UserProfileResponse
+   * {@code @JsonInclude(NON_NULL)}). 본인 조회이므로 {@code phoneNumber}는 평문이다(spec §8, #131).
+   */
+  private static List<FieldDescriptor> landlordProfileResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.id", JsonFieldType.NUMBER, "회원 ID"),
+        field("data.userType", JsonFieldType.STRING, "회원 역할(LANDLORD)"),
+        field("data.name", JsonFieldType.STRING, "임대인 이름(성·이름 합친 전체 이름)"),
+        field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
+        field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
+        field("data.phoneNumber", JsonFieldType.STRING, "연락처(본인 조회는 평문)"),
+        field("data.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"),
+        field("data.termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의 여부"),
+        field("data.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의 여부"),
+        field("data.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"),
+        field("data.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"),
         errorNull());
   }
 
@@ -804,6 +844,12 @@ class LandlordOnboardingDocsTest {
   }
 
   private static String landlordJson(String name, String phone) {
-    return "{\"name\":\"" + name + "\",\"phoneNumber\":\"" + phone + "\"}";
+    return "{\"name\":\""
+        + name
+        + "\",\"phoneNumber\":\""
+        + phone
+        + "\",\"birthDate\":\""
+        + BIRTH_DATE
+        + "\"}";
   }
 }

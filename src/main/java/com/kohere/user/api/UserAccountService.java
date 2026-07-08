@@ -29,8 +29,8 @@ public interface UserAccountService {
   UserProfileView completeOnboarding(long userId, OnboardingProfile profile);
 
   /**
-   * 임대인 온보딩 완료 — TERMS_AGREED→ACTIVE 전이 + 임대인 프로필 확정(name·연락처) + userType=LANDLORD 확정 + 닉네임 자동 배정.
-   * 연락처 SMS 인증 완료 확인은 호출자(auth)가 선행한다. 사업자등록번호는 온보딩에서 수집하지 않는다 — 온보딩 후 별도 검증 API로
+   * 임대인 온보딩 완료 — TERMS_AGREED→ACTIVE 전이 + 임대인 프로필 확정(name·연락처·생년월일) + userType=LANDLORD 확정 + 닉네임 자동
+   * 배정. 연락처 SMS 인증 완료 확인은 호출자(auth)가 선행한다. 사업자등록번호는 온보딩에서 수집하지 않는다 — 온보딩 후 별도 검증 API로
    * 검증한다(ADR-0033·0034).
    *
    * @throws com.kohere.user.domain.TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(422)
