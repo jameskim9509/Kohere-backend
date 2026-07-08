@@ -11,6 +11,8 @@
 
 Proposed
 
+> **개정(2026-07-08, [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131))**: 임대인 온보딩에서 **생년월일(`birthDate`)을 필수 수집**하도록 범위를 조정했다(세입자와 동일 규칙 — `YYYY-MM-DD`·과거 날짜만). **이메일 미수집(§5)·연락처 SMS 인증 결정은 그대로 유지**되며, 변경은 `birthDate`에 한정된다. 아래 §4의 요청 본문이 `{ name, phoneNumber, birthDate }`가 되고 `GET /users/me` 임대인 응답에도 `birthDate`가 포함된다(단, 프로필 수정 `PATCH /users/me`의 임대인 수정 대상에는 넣지 않는다 — 조회 전용). `gender`·`country`·`occupation`·`visaType`·`email`은 **여전히 미수집**이다.
+
 ## Context
 
 - 임대인 온보딩(US-1-9)은 본래 세입자와 **이메일 인증(US-1-6)을 공통 선행**으로 두고, 온보딩 제출에서 제출 `email`을 사전 인증값과 대조했다. 검증 게이트는 **약관 → 이메일 → 사업자번호** 순이었다.
@@ -32,7 +34,7 @@ Proposed
 3. **챌린지·VERIFIED 마커(Redis)**: 이메일 인증 마커와 동일 패턴이다([ADR-0006](./0006-refresh-token-store-redis.md)의 키-값+TTL). **인증번호 정책은 이메일 인증과 통일한다** — 인증번호 6자리·코드 TTL 5분·검증 마커 TTL 30분·검증 시도 상한 5회·재발송 간격 60초.
    - `phone-verify:code:{userId}` — `{ phoneNumber, codeHash, attempts, issuedAt, expiresAt, status }`, TTL=인증번호 만료(5분 — 이메일과 동일). 인증번호는 **단방향 해시(SHA-256(+pepper))로만** 보관(원문은 SMS로만).
    - `phone-verify:verified:{userId}` — 검증 완료 `phoneNumber`, TTL=온보딩 토큰 만료(30분 — 이메일과 동일).
-4. **온보딩 제출 시 대조**: `POST /api/v1/auth/landlord/onboarding`은 검증 게이트를 **약관 미동의 → 연락처 미인증** 우선순위로 통과시킨다(약관 → 연락처 두 단계만이며 **사업자번호 게이트는 없다**). 요청 본문은 `{ name, phoneNumber }` 두 필드뿐이다(사업자번호 필드 없음). 제출 `phoneNumber`가 마커 값과 일치할 때만 통과하고, 성공 시 `TERMS_AGREED→ACTIVE` + `userType=LANDLORD` 확정 + 닉네임 자동배정 + 정식 토큰을 발급한다. **사업자번호 검증은 온보딩과 분리된 별도 API**([ADR-0033](./0033-business-registry-verification.md))로, 온보딩을 마친(`ACTIVE`) 임대인이 매물 등록 시점에 정식 토큰으로 호출하는 무상태 검증이며 온보딩 선행·게이트가 아니다.
+4. **온보딩 제출 시 대조**: `POST /api/v1/auth/landlord/onboarding`은 검증 게이트를 **약관 미동의 → 연락처 미인증** 우선순위로 통과시킨다(약관 → 연락처 두 단계만이며 **사업자번호 게이트는 없다**). 요청 본문은 `{ name, phoneNumber, birthDate }` 세 필드다(사업자번호·이메일 필드 없음; `birthDate`는 필수·과거 날짜만 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)). 제출 `phoneNumber`가 마커 값과 일치할 때만 통과하고, 성공 시 `TERMS_AGREED→ACTIVE` + `userType=LANDLORD` 확정 + 닉네임 자동배정 + 정식 토큰을 발급한다. **사업자번호 검증은 온보딩과 분리된 별도 API**([ADR-0033](./0033-business-registry-verification.md))로, 온보딩을 마친(`ACTIVE`) 임대인이 매물 등록 시점에 정식 토큰으로 호출하는 무상태 검증이며 온보딩 선행·게이트가 아니다.
 5. **이메일 미수집(임대인)**: 임대인 온보딩 요청 본문·프로필 응답·`users.email` 어디에도 이메일을 두지 않는다. 임대인은 `users.email`이 **NULL**이다. 단, 소셜 로그인 단계에서 OIDC가 회신하는 제공자 이메일(`auth.SocialAccount.email` / `social_accounts.email`)은 **연락 이메일이 아닌 소셜 연동 메타데이터**이므로 역할과 무관하게 종전대로 보관한다(둘은 별개 — [database-design §4-2](../database/database-design.md)). 세입자는 `users.email` 수집·인증을 **종전대로 유지**한다.
 6. **연락처 저장·변경**: 검증 통과한 `phoneNumber`를 `users.phone_number`로 영속한다(임대인 전용, 세입자 NULL). 응답·로그·`toString`에는 **마스킹**해 노출한다(예 `010-****-5678`). 본인 `GET /users/me`만 평문 반환. **프로필에서 연락처를 변경할 때(US-1-5)도 새 번호를 SMS 재인증해 VERIFIED된 뒤에만 반영**하며(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`), 검증 엔드포인트(`/auth/phone/verification-code`·`/auth/phone/verify`)와 마커를 그대로 재사용한다 — 이때는 정식 토큰(`ACTIVE`) 컨텍스트를 허용하도록 보안 경로 티어를 확장한다.
 7. **에러 매핑**: 신규 도메인 에러코드 2종을 추가한다(이메일 인증의 `AUTH_EMAIL_*`와 대칭).

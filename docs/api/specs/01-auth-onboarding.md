@@ -19,7 +19,8 @@
 | --- | --- | --- |
 | 사용자 상태 `status` | `PENDING`, `TERMS_AGREED`, `ACTIVE`, `WITHDRAWN` | 소셜 검증만 완료 → 약관 동의 완료 → 온보딩 완료 → 탈퇴 |
 | provider | `APPLE`, `GOOGLE` | 소셜 로그인 제공자 |
-| 성별 `gender` | `MALE`, `FEMALE` | 온보딩 필수 |
+| 성별 `gender` | `MALE`, `FEMALE` | 온보딩 필수(세입자만) |
+| 생년월일 `birthDate` | 날짜 문자열(`YYYY-MM-DD`) | 온보딩 필수(세입자·임대인 공통) · 과거 날짜만 허용(미래 불가) |
 | 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `EDUCATION_ACADEMIC_RESEARCH`(교육/학술 연구), `IT_SOFTWARE_ENGINEERING`(IT/소프트웨어 엔지니어링), `DEVELOPER`(개발자), `DESIGNER`(디자이너) | 온보딩 필수 · 요구사항 확정값(#93) |
 | 비자정보 `visaType` | `DIPLOMATIC_OFFICIAL_A-1_A-2`(외교·공무), `VISA_EXEMPTED_B`(사증면제), `JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6`(취재·종교), `SHORT_TERM_VISIT_C-2_C-3`(단기방문), `STUDY_D-2`(유학), `TRAINEE_D-3_D-4`(연수), `INTRA_COMPANY_TRANSFER_D-7`(주재), `PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7`(전문인력), `NON_PROFESSIONAL_E-8_E-9_E-10`(비전문취업), `WORKING_HOLIDAY_H-1`(워킹홀리데이), `WORK_AND_VISIT_H-2`(방문취업), `FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3`(방문동거·거주·동반), `OVERSEAS_KOREAN_F-4`(재외동포), `PERMANENT_RESIDENCE_F-5`(영주), `MARRIAGE_MIGRANT_F-6`(결혼이민), `OTHERS_G-1`(기타) | 온보딩 필수 · 요구사항 확정값(#93). 값=상수명_체류자격코드(하이픈 포함) |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
@@ -543,7 +544,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 ### 5-2. POST `/api/v1/auth/landlord/onboarding` — 임대인 온보딩 제출(임대인 전용·가입 완료)
 
-`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행**되어야 한다 — **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 수집·검증하지 않는다(온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 검증). 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며**, 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다.
+`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행**되어야 한다 — **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 수집·검증하지 않는다(온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 검증). 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·국적·직업·비자정보와 **이메일을 수집하지 않으며**(생년월일 `birthDate`은 세입자와 동일하게 필수 수집한다 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)), 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다.
 
 > **검증 게이트 우선순위**: 약관 미동의(`PENDING`) → `422 AUTH_TERMS_AGREEMENT_REQUIRED`(이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`) → 제출 `phoneNumber` 미검증·불일치 → `422 AUTH_PHONE_NOT_VERIFIED` 순으로 판정한다(약관 → 연락처, 사업자번호 게이트 없음). 약관 동의·`termsVersion`은 §2에서 이미 기록되므로 이 요청 본문에 약관 필드를 담지 않는다. `phoneNumber`는 §4-1·§4-2로 검증 완료된 값과 일치해야 한다. `nickname`은 서버가 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가).
 
@@ -555,7 +556,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```json
 {
   "name": "Kim Minsu",
-  "phoneNumber": "010-1234-5678"
+  "phoneNumber": "010-1234-5678",
+  "birthDate": "1998-04-12"
 }
 ```
 
@@ -563,6 +565,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | --- | --- | --- | --- |
 | `name` | string | 필수 | 성·이름을 합친 단일 이름. 빈 문자열 불가 |
 | `phoneNumber` | string | 필수 | 전화번호 형식. **§4-1·§4-2로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_PHONE_NOT_VERIFIED` 422) |
+| `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) — 세입자 온보딩(§5)과 동일 규칙 |
 
 #### 성공 Response — 200 OK
 
@@ -574,6 +577,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "id": 2048,
       "name": "Kim Minsu",
       "nickname": "BraveOtter",
+      "birthDate": "1998-04-12",
       "phoneNumber": "010-****-5678",
       "userType": "LANDLORD",
       "status": "ACTIVE",
@@ -589,13 +593,13 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`birthDate`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
+> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
 
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `name`/`phoneNumber` 누락·빈값·형식(전화번호) 위반(`errors[]`로 위반 필드 반환) |
+| 400 | `INVALID_INPUT` | `name`/`phoneNumber` 누락·빈값·형식(전화번호) 위반, `birthDate` 누락·형식·미래 날짜 위반(`errors[]`로 위반 필드 반환) |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 `ACTIVE`인 사용자의 온보딩 재요청(동시 요청 포함 — 한 요청만 성공) |
@@ -730,6 +734,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
     "userType": "LANDLORD",
     "name": "Kim Minsu",
     "nickname": "BraveOtter",
+    "birthDate": "1998-04-12",
     "phoneNumber": "010-1234-5678",
     "status": "ACTIVE",
     "termsOfServiceAgreed": true,
@@ -742,7 +747,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```
 
 > 본인 프로필이므로 `phoneNumber`는 평문으로 반환한다(로그·타 사용자 노출 시에만 마스킹). 임대인 응답의 `name`은 저장된 `FullName.firstName`(전체 이름)을 매핑한 값이다.
-> 임대인 응답은 세입자 전용 필드(`gender`·`country`·`countryName`·`countryFlag`·`occupation`·`visaType`·`birthDate`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
+> 임대인 응답은 세입자 전용 필드(`gender`·`country`·`countryName`·`countryFlag`·`occupation`·`visaType`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
 
 #### 발생 가능한 에러
 
@@ -801,7 +806,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 > 필수 약관 동의(`termsOfServiceAgreed`/`privacyPolicyAgreed`)는 이 엔드포인트로 철회할 수 없다(탈퇴 경로로만 처리). (확인 필요: 동의 철회 정책)
 > `nickname`은 시스템 배정값이라 수정 대상이 아니다(세입자·임대인 공통 불변). **세입자** `email` 변경은 재인증(§3·§4)이 필요하므로 이 엔드포인트로는 수정하지 않는다(임대인은 `email` 미보유 — 별도 흐름, 확인 필요).
-> **임대인 전용**: `userType`은 온보딩으로 확정된 뒤 불변이다. `businessRegistrationNumber`는 온보딩·프로필에서 수집·저장하지 않으므로 이 경로의 수정 대상이 아니다(필요 시 별도 검증 API §5-1로 무상태 검증). **`phoneNumber` 변경은 SMS 재인증(§4-1·§4-2)이 필요하다** — 새 번호를 재인증(VERIFIED)한 뒤에만 반영하며, 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **클라이언트 계약**: 앱은 연락처 변경 시 **PATCH 이전에 새 번호 인증(§4-1·§4-2)을 먼저 수행**한다(정상 흐름). `422 AUTH_PHONE_NOT_VERIFIED`는 happy path가 아니라 **미인증·마커 TTL 만료·불일치 제출에 대한 서버 가드**다.
+> **임대인 전용**: `userType`은 온보딩으로 확정된 뒤 불변이다. `birthDate`는 온보딩에서 수집·확정하며 이 경로의 수정 대상이 아니다(임대인 조회 전용 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)). `businessRegistrationNumber`는 온보딩·프로필에서 수집·저장하지 않으므로 이 경로의 수정 대상이 아니다(필요 시 별도 검증 API §5-1로 무상태 검증). **`phoneNumber` 변경은 SMS 재인증(§4-1·§4-2)이 필요하다** — 새 번호를 재인증(VERIFIED)한 뒤에만 반영하며, 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **클라이언트 계약**: 앱은 연락처 변경 시 **PATCH 이전에 새 번호 인증(§4-1·§4-2)을 먼저 수행**한다(정상 흐름). `422 AUTH_PHONE_NOT_VERIFIED`는 happy path가 아니라 **미인증·마커 TTL 만료·불일치 제출에 대한 서버 가드**다.
 
 #### 성공 Response — 200 OK
 
@@ -830,7 +835,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 개인정보(세입자: 이름·생년월일·국적·직업·이메일·비자·닉네임 / 임대인: 이름·연락처·닉네임, 사업자번호 해시가 저장돼 있으면 함께)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
+본문 없음. 개인정보(세입자: 이름·생년월일·국적·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·닉네임, 사업자번호 해시가 저장돼 있으면 함께)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 #### 발생 가능한 에러
 
