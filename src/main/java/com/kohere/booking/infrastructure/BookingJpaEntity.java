@@ -37,6 +37,7 @@ public class BookingJpaEntity {
   private Long tenantId;
   private String listingId;
   private String roomOfferId;
+  private Long landlordId;
   private LocalDate moveInDate;
   private int contractPeriod;
 

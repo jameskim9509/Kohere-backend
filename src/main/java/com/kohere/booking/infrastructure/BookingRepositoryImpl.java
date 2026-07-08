@@ -44,12 +44,33 @@ public class BookingRepositoryImpl implements BookingRepository {
     return jpaRepository.findByIdAndTenantId(id, tenantId).map(BookingRepositoryImpl::toDomain);
   }
 
+  @Override
+  public List<Booking> findByLandlordId(Long landlordId, int page, int size) {
+    return jpaRepository
+        .findByLandlordId(
+            landlordId, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")))
+        .stream()
+        .map(BookingRepositoryImpl::toDomain)
+        .toList();
+  }
+
+  @Override
+  public long countByLandlordId(Long landlordId) {
+    return jpaRepository.countByLandlordId(landlordId);
+  }
+
+  @Override
+  public Optional<Booking> findByIdAndLandlordId(Long id, Long landlordId) {
+    return jpaRepository.findByIdAndLandlordId(id, landlordId).map(BookingRepositoryImpl::toDomain);
+  }
+
   private static Booking toDomain(BookingJpaEntity e) {
     return Booking.builder()
         .id(e.getId())
         .tenantId(e.getTenantId())
         .listingId(e.getListingId())
         .roomOfferId(e.getRoomOfferId())
+        .landlordId(e.getLandlordId())
         .moveInDate(e.getMoveInDate())
         .contractPeriod(e.getContractPeriod())
         .status(e.getStatus())
@@ -63,6 +84,7 @@ public class BookingRepositoryImpl implements BookingRepository {
         .tenantId(b.getTenantId())
         .listingId(b.getListingId())
         .roomOfferId(b.getRoomOfferId())
+        .landlordId(b.getLandlordId())
         .moveInDate(b.getMoveInDate())
         .contractPeriod(b.getContractPeriod())
         .status(b.getStatus())

@@ -95,7 +95,8 @@ final class ListingResponseMapper {
         offer.name(),
         offer.pricing().deposit(),
         offer.pricing().monthlyRent(),
-        offer.inventory().nextAvailableFrom());
+        offer.inventory().nextAvailableFrom(),
+        listing.getLandlordId());
   }
 
   /** 지도 SDK가 개별 마커로 사용할 최소 좌표 DTO를 만든다. */

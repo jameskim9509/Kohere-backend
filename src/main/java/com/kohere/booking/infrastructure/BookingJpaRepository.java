@@ -13,4 +13,10 @@ interface BookingJpaRepository extends JpaRepository<BookingJpaEntity, Long> {
   Optional<BookingJpaEntity> findByIdAndTenantId(Long id, Long tenantId);
 
   long countByTenantId(Long tenantId);
+
+  Page<BookingJpaEntity> findByLandlordId(Long landlordId, Pageable pageable);
+
+  Optional<BookingJpaEntity> findByIdAndLandlordId(Long id, Long landlordId);
+
+  long countByLandlordId(Long landlordId);
 }
