@@ -41,7 +41,7 @@ sequenceDiagram
                 BOOK-->>C: 200 OK (내 예약 목록)
                 C-->>U: 내 예약 목록 표시
             else userType = LANDLORD
-                Note over BOOK: 내 소유 매물 신청만 조회 — landlord_id로 직접 스코핑<br/>createdAt 내림차순 · 오프셋 페이지네이션(page/size)<br/>(landlordId는 생성 시 저장; 매물 상태 무관 → PAUSED 포함)
+                Note over BOOK: 내 소유 매물 신청만 조회 — landlord_id로 직접 스코핑<br/>createdAt 내림차순 · 오프셋 페이지네이션(page/size)<br/>(landlordId는 생성 시 저장, 매물 상태 무관해 PAUSED 포함)
                 BOOK->>XDB: 신청 페이지 조회<br/>(landlord_id = userId, createdAt desc, page/size)
                 XDB-->>BOOK: 신청 페이지 (빈 목록 가능)
                 Note over BOOK: 스냅샷 없음 — 조회 시점 실시간 조인<br/>매물 요약(listing::api) · 신청자 성명(user::api getUserName)
@@ -93,9 +93,9 @@ sequenceDiagram
             else userType = LANDLORD
                 BOOK->>XDB: bookingId로 예약 조회
                 XDB-->>BOOK: 예약(tenantId·listingId·roomOfferId·landlordId·moveInDate·contractPeriod·status·createdAt) 또는 없음
-                Note over BOOK: 소유권 확인 — booking.landlordId == userId 행 단위 대조<br/>(생성 시 저장된 값; listing::api 왕복 없음)
+                Note over BOOK: 소유권 확인 — booking.landlordId 가 userId 와 같은지 행 단위 대조<br/>(생성 시 저장된 값, listing::api 왕복 없음)
 
-                alt 예약 없음 또는 booking.landlordId ≠ userId
+                alt 예약 없음 또는 booking.landlordId 가 userId 와 다름
                     Note over BOOK: 존재 여부 비노출 — 내 매물 신청이 아니면 404로 통일
                     BOOK-->>C: 404 BOOKING_NOT_FOUND
                     C-->>U: 신청을 찾을 수 없음 안내
