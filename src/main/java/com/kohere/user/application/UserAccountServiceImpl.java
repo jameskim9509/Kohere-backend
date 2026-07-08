@@ -103,7 +103,7 @@ public class UserAccountServiceImpl implements UserAccountService {
     String nickname = nicknameGenerator.generateUnique();
     User active =
         user.completeLandlordOnboarding(
-            profile.name(), profile.phoneNumber(), nickname, Instant.now());
+            profile.name(), profile.phoneNumber(), profile.birthDate(), nickname, Instant.now());
     return toProfileView(userRepository.save(active));
   }
 

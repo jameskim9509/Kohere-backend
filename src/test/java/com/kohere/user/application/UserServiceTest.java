@@ -171,7 +171,8 @@ class UserServiceTest {
   private static User landlord(long id) {
     return User.createPending(NOW)
         .agreeToTerms(true, "v1.0", NOW)
-        .completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW)
+        .completeLandlordOnboarding(
+            "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW)
         .toBuilder()
         .id(id)
         .build();
