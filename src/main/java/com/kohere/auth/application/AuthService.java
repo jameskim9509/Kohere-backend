@@ -280,7 +280,9 @@ public class AuthService {
     phoneVerificationService.assertVerified(userId, request.phoneNumber());
     UserProfileView user =
         userAccountService.completeLandlordOnboarding(
-            userId, new LandlordOnboardingProfile(request.name(), request.phoneNumber()));
+            userId,
+            new LandlordOnboardingProfile(
+                request.name(), request.phoneNumber(), request.birthDate()));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());

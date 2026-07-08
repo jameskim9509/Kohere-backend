@@ -155,7 +155,8 @@ class UserTest {
     User termsAgreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
 
     User active =
-        termsAgreed.completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW);
+        termsAgreed.completeLandlordOnboarding(
+            "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
 
     assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
     assertThat(active.getUserType()).isEqualTo(UserType.LANDLORD);
@@ -166,13 +167,13 @@ class UserTest {
     // 사업자번호 해시는 온보딩에서 확정하지 않는다(온보딩 후 매물 등록 시점에 채움, ADR-0033)
     assertThat(active.getBusinessRegistrationNumberHash()).isNull();
     assertThat(active.getNickname()).isEqualTo("CalmFox");
-    // 임대인은 성별·국적·직업·비자·생년월일·이메일을 수집하지 않는다
+    // 임대인은 성별·국적·직업·비자·이메일을 수집하지 않는다(생년월일은 세입자와 동일하게 수집 — #131)
     assertThat(active.getGender()).isNull();
     assertThat(active.getCountry()).isNull();
     assertThat(active.getOccupation()).isNull();
     assertThat(active.getVisaType()).isNull();
-    assertThat(active.getBirthDate()).isNull();
     assertThat(active.getEmail()).isNull();
+    assertThat(active.getBirthDate()).isEqualTo(LocalDate.of(1988, 5, 20));
   }
 
   @Test
@@ -180,7 +181,9 @@ class UserTest {
     User pending = User.createPending(NOW);
 
     assertThatThrownBy(
-            () -> pending.completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW))
+            () ->
+                pending.completeLandlordOnboarding(
+                    "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW))
         .isInstanceOf(TermsAgreementRequiredException.class);
   }
 
@@ -189,7 +192,9 @@ class UserTest {
     User active = activeUser();
 
     assertThatThrownBy(
-            () -> active.completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW))
+            () ->
+                active.completeLandlordOnboarding(
+                    "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW))
         .isInstanceOf(OnboardingAlreadyCompletedException.class);
   }
 
@@ -198,7 +203,8 @@ class UserTest {
     User landlord =
         User.createPending(NOW)
             .agreeToTerms(true, "v1.0", NOW)
-            .completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW);
+            .completeLandlordOnboarding(
+                "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
 
     User withdrawn = landlord.withdraw(NOW);
 
@@ -235,7 +241,8 @@ class UserTest {
   private static User activeLandlord() {
     return User.createPending(NOW)
         .agreeToTerms(true, "v1.0", NOW)
-        .completeLandlordOnboarding("Kim Imdae", "01012345678", "CalmFox", NOW);
+        .completeLandlordOnboarding(
+            "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
   }
 
   private static User activeUser() {

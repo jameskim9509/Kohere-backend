@@ -11,11 +11,19 @@ public interface BookingRepository {
 
   Booking save(Booking booking);
 
-  /** 요청자 본인 예약을 최신순(createdAt desc)으로 오프셋 조회한다. */
+  /** 요청자 본인 예약을 최신순(createdAt desc)으로 오프셋 조회한다(세입자 분기). */
   List<Booking> findByTenantId(Long tenantId, int page, int size);
 
   long countByTenantId(Long tenantId);
 
   /** 본인 예약 단건 조회. 없거나 타인 예약이면 빈 값을 반환한다(호출측이 404로 통일). */
   Optional<Booking> findByIdAndTenantId(Long id, Long tenantId);
+
+  /** 요청자 소유 매물에 신청된 예약을 최신순(createdAt desc)으로 오프셋 조회한다(임대인 분기 · landlord_id 스코프). */
+  List<Booking> findByLandlordId(Long landlordId, int page, int size);
+
+  long countByLandlordId(Long landlordId);
+
+  /** 요청자 소유 매물의 예약 단건 조회. 없거나 내 소유 매물 신청이 아니면 빈 값을 반환한다(호출측이 404로 통일). */
+  Optional<Booking> findByIdAndLandlordId(Long id, Long landlordId);
 }

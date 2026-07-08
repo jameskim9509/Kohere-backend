@@ -8,10 +8,15 @@
 #   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
 #   4) "1. 소셜 로그인"부터 위에서 순서대로 "Send Request" 클릭 — 토큰은 이름붙은 응답으로 자동 전달된다.
 #
-# 사전 조건 — 예약은 **ACTIVE 세입자(userType=TENANT)** 전용이다.
+# 사전 조건 — 예약 **생성(6)** 은 **ACTIVE 세입자(userType=TENANT)** 전용이다.
 #   · 미온보딩(임시 ROLE_ONBOARDING) 토큰으로 호출하면 403 AUTH_ONBOARDING_REQUIRED.
 #   · 아래 2~5로 온보딩(TENANT)을 마쳐 정식 access 토큰을 얻는다. 이미 ACTIVE 회원이면 1번 응답의 accessToken 을
 #     그대로 쓰면 되고(2~5 생략), 예약 요청의 토큰 참조를 {{socialLogin...}} 으로 바꾼다.
+#
+# 조회 **분기(7·8=세입자 / 8-a·8-b=임대인)** — 목록·상세는 **별도 임대인 API 없이 같은 엔드포인트**(GET /api/v1/bookings·/{id})가
+#   요청자 userType 으로 분기한다: 세입자 토큰이면 "내 예약", 임대인 토큰이면 "내 소유 매물에 신청된 예약"을 반환한다(역할 403 없음).
+#   임대인 분기(8-a·8-b)는 @landlordToken(auth-onboarding-landlord.http 로 발급) 을 쓰며, 결과가 보이려면 그 임대인이 예약 대상
+#   매물의 소유자(listing.landlordId == 임대인 userId)여야 한다.
 #
 # 참고:
 #   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
@@ -25,6 +30,9 @@
 # 5-b(매물 목록)에서 확인한 실제 값으로 교체 (아래는 형식 예시 — ObjectId 24자리 hex)
 @listingId = 6858e2000000000000000001
 @roomOfferId = 6858e2000000000000000abc
+
+# 임대인 분기(8-a·8-b)·13번 403 테스트용 — auth-onboarding-landlord.http 로 임대인 ACTIVE 토큰을 발급해 붙여넣기
+@landlordToken = PASTE_LANDLORD_ACTIVE_ACCESS_TOKEN
 
 ### 0. 헬스 체크 (인증 불필요) — 200 UP 이면 앱 + 인프라(MySQL·Redis·Mongo) 정상
 GET {{baseUrl}}/actuator/health
@@ -115,6 +123,19 @@ Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
 GET {{baseUrl}}/api/v1/bookings/{{createBooking.response.body.$.data.bookingId}}
 Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
 
+# ─────────────── 임대인 분기 (7·8과 같은 엔드포인트, userType=LANDLORD) ───────────────
+#   같은 GET /api/v1/bookings·/{id} 를 임대인 토큰(@landlordToken)으로 호출하면 "내 소유 매물에 신청된 예약"을 반환한다.
+#   전제: @landlordToken 의 임대인이 위 예약 대상 매물의 소유자(listing.landlordId == 임대인 userId)여야 결과가 보인다.
+
+### 8-a. (임대인 분기) 내 매물에 신청된 예약 목록 — 각 항목에 신청자 성명(applicantName)·방 상품명(roomOfferName) 포함
+GET {{baseUrl}}/api/v1/bookings?page=0&size=20
+Authorization: Bearer {{landlordToken}}
+
+### 8-b. (임대인 분기) 내 매물에 신청된 예약 단건 상세 — 신청자 프로필(이름·성별·국적·이메일)·매물 요약·보증금·총 금액
+#     내 소유 매물의 신청이 아니거나 없으면 404 BOOKING_NOT_FOUND(존재 비노출, 세입자 분기와 동일 통일).
+GET {{baseUrl}}/api/v1/bookings/{{createBooking.response.body.$.data.bookingId}}
+Authorization: Bearer {{landlordToken}}
+
 # ─────────────────────────── 에러 케이스 ───────────────────────────
 
 ### 9. 401 UNAUTHENTICATED — 토큰 없이 예약 생성
@@ -152,10 +173,10 @@ Content-Type: application/json
 GET {{baseUrl}}/api/v1/bookings/999999
 Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
 
-### 13. 403 FORBIDDEN — 임대인(LANDLORD) 토큰으로 예약 시도 (예약은 세입자 전용)
-#     임대인 ACTIVE 토큰은 auth-onboarding-landlord.http 로 발급해 아래 Authorization 에 넣는다.
+### 13. 403 FORBIDDEN — 임대인(LANDLORD) 토큰으로 예약 **생성** 시도 (생성은 세입자 전용)
+#     조회(8-a·8-b)와 달리 생성은 임대인이면 403 이다. @landlordToken 을 쓴다.
 POST {{baseUrl}}/api/v1/listings/{{listingId}}/bookings
-Authorization: Bearer PASTE_LANDLORD_ACTIVE_ACCESS_TOKEN
+Authorization: Bearer {{landlordToken}}
 Content-Type: application/json
 
 {

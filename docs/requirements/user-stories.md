@@ -27,7 +27,7 @@
 
 외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 본인 확인 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(본인 확인은 세입자 이메일 인증·임대인 연락처 SMS 인증으로 갈린다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
 
-사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 이메일 인증(US-1-6)을 거쳐 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 이름(성·이름을 합친 단일 `name`)·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며, 사업자등록번호도 온보딩에서 수집하지 않는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**다.
+사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 이메일 인증(US-1-6)을 거쳐 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 이름(성·이름을 합친 단일 `name`)·생년월일·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·국적·직업·비자정보와 **이메일을 수집하지 않으며(생년월일은 세입자와 동일하게 수집), 사업자등록번호도 온보딩에서 수집하지 않는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**다.
 
 > 관련 NFR: [non-functional-requirements](non-functional-requirements.md) — 4. 보안(토큰/민감정보 보호), 1. 성능(소셜 검증 응답시간), 5. 관측성(인증 실패 로깅·마스킹). 구체 목표값은 NFR 문서 확정 전이라 (확인 필요).
 
@@ -187,8 +187,8 @@
 - 우선순위: **Mid**
 - 관련 NFR: 보안(본인 리소스만 접근), 보안(민감정보 응답 마스킹 정책 — 확인 필요)
 - 백엔드 관점: `GET`/`PATCH /api/v1/users/me`는 세입자·임대인 **공통 엔드포인트**이며, `userType`(`TENANT`/`LANDLORD`)에 따라 응답·수정 가능 필드가 갈린다.
-  - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`·`birthDate`)를 포함한다(기존 동작 그대로).
-  - **임대인(`LANDLORD`)**: 단일 `name`(내부 저장은 세입자와 동일한 `FullName` VO의 `firstName` 재사용 — `lastName`은 미사용/`null`, 별도 `name` 컬럼/필드를 두지 않음. API 요청·응답 필드명은 `name` 유지)·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`만 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인은 `email`을 수집하지 않아 응답에 포함하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`/`birthDate`)도 **임대인 응답에 포함하지 않는다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
+  - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`)와 `birthDate`(임대인과 공통)를 포함한다(기존 동작 그대로).
+  - **임대인(`LANDLORD`)**: 단일 `name`(내부 저장은 세입자와 동일한 `FullName` VO의 `firstName` 재사용 — `lastName`은 미사용/`null`, 별도 `name` 컬럼/필드를 두지 않음. API 요청·응답 필드명은 `name` 유지)·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`을 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인은 `email`을 수집하지 않아 응답에 포함하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`)는 **임대인 응답에 포함하지 않지만, `birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
   - 두 역할 공통으로 `userType`·`nickname`은 불변이고, 세입자 `email`은 재인증이 필요해 이 경로로 수정하지 않는다(임대인은 `email` 미보유).
 
 **AC (Given / When / Then)**
@@ -204,11 +204,11 @@
 - **정상 — 조회(임대인)**
   Given 유효한 access 토큰을 보유한 `ACTIVE` 임대인(`userType=LANDLORD`)이
   When `GET /api/v1/users/me`를 호출하면
-  Then `200 OK` + `data`에 `userType="LANDLORD"`·`name`(=`FullName.firstName`)·`nickname`·`phoneNumber`·`status`·약관 동의 상태(`termsOfServiceAgreed`/`privacyPolicyAgreed`/`marketingAgreed`)·`createdAt`을 반환한다. 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`/`birthDate`)와 `email`(임대인 미수집)·`businessRegistrationNumber`는 응답에 포함하지 않는다.
+  Then `200 OK` + `data`에 `userType="LANDLORD"`·`name`(=`FullName.firstName`)·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태(`termsOfServiceAgreed`/`privacyPolicyAgreed`/`marketingAgreed`)·`createdAt`을 반환한다. 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`)와 `email`(임대인 미수집)·`businessRegistrationNumber`는 응답에 포함하지 않는다(`birthDate`는 임대인도 수집·반환).
 - **정상 — 부분 수정(임대인)**
   Given 유효한 access 토큰을 보유한 임대인(`userType=LANDLORD`)이
   When `PATCH /api/v1/users/me`에 자유 수정 필드(`name`·`marketingAgreed`) 중 일부(예: `name`)만 담아 호출하면
-  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 내부적으로 `FullName.firstName`에 매핑해 저장한다. `businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`은 이 경로로 수정할 수 없다(임대인은 `email` 미보유). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
+  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 내부적으로 `FullName.firstName`에 매핑해 저장한다. `birthDate`(온보딩에서 확정, 조회 전용)·`businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`은 이 경로로 수정할 수 없다(임대인은 `email` 미보유). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
 - **비즈니스 규칙 — 임대인 연락처 변경 시 SMS 재인증(임대인)**
   Given 임대인이 새 `phoneNumber`로 변경하려 하나 그 번호를 SMS 재인증(US-1-10)하지 않았으면(VERIFIED 마커 없음·불일치)
   When `PATCH /api/v1/users/me`에 새 `phoneNumber`를 담아 호출하면
@@ -361,22 +361,22 @@
 ### US-1-9 — 임대인 온보딩 정보 제출하기 (임대인 전용)
 
 **As a** 약관 동의·연락처 인증을 마친(TERMS_AGREED) 임대인 가입자
-**I want** 이름(성·이름을 합친 단일 `name`)·연락처(전화)를 한 번에 제출하기를(연락처는 사전 인증, 닉네임은 서버 자동 배정, 이메일·사업자번호는 미수집)
+**I want** 이름(성·이름을 합친 단일 `name`)·생년월일·연락처(전화)를 한 번에 제출하기를(연락처는 사전 인증, 닉네임은 서버 자동 배정, 이메일·사업자번호는 미수집)
 **So that** 임대인으로 가입을 완료하고 정식 access/refresh 토큰으로 임대인 기능(매물 연결·세입자 채팅 등)을 이용할 수 있다.
 
 - 우선순위: **High**
 - 관련 NFR: 보안(연락처 등 민감정보 저장·로그 마스킹), 보안(휴대폰 소유 인증)
 - 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)이 완료되어야 한다(약관 + 연락처만으로 온보딩 완료 — 사업자등록번호 검증(US-1-8)은 온보딩 선행이 아니라 온보딩 후 별도 단계다).
-- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ name, phoneNumber }` 두 필드뿐이다. 임대인은 성별·국적·직업·비자정보·생년월일과 **이메일을 수집하지 않으며, 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 추후 매물 등록 시점에 채운다). 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
+- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ name, phoneNumber, birthDate }` 세 필드다. 임대인은 성별·국적·직업·비자정보와 **이메일을 수집하지 않으며(생년월일 `birthDate`은 세입자와 동일하게 필수 수집), 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 추후 매물 등록 시점에 채운다). 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
 
 **AC (Given / When / Then)**
 
 - **정상 — 임대인 온보딩 완료**
   Given 약관 동의를 마친(`TERMS_AGREED`) 사용자의 유효한 온보딩 토큰을 보유하고 제출 `phoneNumber`가 사전 인증(US-1-10)되어 있으며
-  When 모든 필수 필드(`name`·`phoneNumber`)를 담아 `POST /api/v1/auth/landlord/onboarding`을 호출하면(약관 필드는 담지 않음)
+  When 모든 필수 필드(`name`·`phoneNumber`·`birthDate`)를 담아 `POST /api/v1/auth/landlord/onboarding`을 호출하면(약관 필드는 담지 않음)
   Then `200 OK` + `data`에 완성된 임대인 프로필(`userType="LANDLORD"`·서버가 자동 배정한 `nickname` 포함)과 정식 `accessToken`/`refreshToken`을 내려주고, 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이한다.
 - **입력 검증 실패**
-  Given `name`/`phoneNumber` 중 빈값이 있거나 형식(전화번호)이 어긋나면
+  Given `name`/`phoneNumber` 중 빈값이 있거나 형식(전화번호)이 어긋나거나 `birthDate`가 누락·형식 위반·미래 날짜이면
   When `POST /api/v1/auth/landlord/onboarding`을 호출하면
   Then `400` + `error.code=INVALID_INPUT` + `errors[]`로 위반 필드를 반환한다.
 - **비즈니스 규칙 — 약관 미동의 상태(우선 판정)**
@@ -838,7 +838,7 @@
 
 > 관련 API 스펙: [04-booking-inquiry-chat](../api/specs/04-booking-inquiry-chat.md)
 >
-> **스코프(1차 MVP)**: **매물 예약(= 신청, Booking)** 은 인앱 채팅과 분리된 **독립 기능**으로 구현한다. (**본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**) `ACTIVE` 세입자가 방 상품(`roomOffer`)에 타겟 입주일·계약기간으로 예약을 신청해 내역을 저장하고(US-4-1), 내 예약을 목록·단건 상세로 조회한다(US-4-2). 예약 상세는 **매물 정보·예약 일시·타겟 입주일·계약기간·예약자 성명·보증금·총 금액**을 내려준다. 후속으로 분리·이연하는 것은 **예약(신청) 자체가 아니라 문의(inquiry)·인앱 채팅(US-4-3~US-4-5), 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 기존 F-03 chat 결합**이다 — 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 하지 않는다. 예약은 매물·회원과 cross-store 조인이 금지되므로([ADR-0005](../adr/0005-polyglot-persistence.md)) 가격·성명은 조회 시점에 애플리케이션 레벨로 조합한다(`listing :: api`·`user :: api` 공개 쿼리, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)).
+> **스코프(1차 MVP)**: **매물 예약(= 신청, Booking)** 은 인앱 채팅과 분리된 **독립 기능**으로 구현한다. (**본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**) `ACTIVE` 세입자가 방 상품(`roomOffer`)에 타겟 입주일·계약기간으로 예약을 신청해 내역을 저장하고(US-4-1), 내 예약을 목록·단건 상세로 조회한다(US-4-2). 예약 상세는 **매물 정보·예약 일시·타겟 입주일·계약기간·예약자 성명·보증금·총 금액**을 내려준다. **임대인은 자기 소유 매물(`listing.landlordId`=본인)에 신청된 예약을 목록·단건 상세로 조회한다(US-4-6)** — 예약 **생성**은 세입자 전용이지만 **조회는 세입자(내 예약)·임대인(내 매물에 신청된 예약)** 두 관점으로 나뉜다. 후속으로 분리·이연하는 것은 **예약(신청) 자체가 아니라 문의(inquiry)·인앱 채팅(US-4-3~US-4-5), 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 기존 F-03 chat 결합**이다 — 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 하지 않는다. 예약은 매물·회원과 cross-store 조인이 금지되므로([ADR-0005](../adr/0005-polyglot-persistence.md)) 가격·성명은 조회 시점에 애플리케이션 레벨로 조합한다(`listing :: api`·`user :: api` 공개 쿼리, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)).
 
 외국인 세입자가 매물의 방 상품에 예약을 신청하면 예약 내역(대상 방 상품·타겟 입주일·계약기간·상태)이 저장되고, 세입자는 자신의 예약 목록과 상세(예상 비용 포함)를 다시 확인할 수 있다.
 
@@ -998,6 +998,44 @@
   - **Given** 방 참여자가 짧은 시간에 메시지를 도배하거나, 읽음 처리를 동시에/반복 호출할 때
   - **When** 메시지 전송이 레이트리밋을 초과하면 → `429` + `TOO_MANY_REQUESTS`. **When** 같은 `lastReadMessageId`로 `read`를 반복 호출하거나 현재보다 과거 ID를 보내면
   - **Then** 읽음 위치는 전진만 하며 중복 호출에도 결과가 동일(멱등)하고, 다른 방의 메시지 ID를 보내면 `422` + `CHAT_MESSAGE_NOT_IN_ROOM`으로 거절된다.
+
+### US-4-6 — 임대인 받은 신청 조회(내 매물, 목록·단건 상세)
+
+> **[1차 MVP] 매물 예약(신청) 스토리다** — 후속·이연(US-4-3~US-4-5, 문의·채팅)이 아니라 US-4-1·US-4-2와 함께 booking 독립 기능에 속한다. 예약 **생성**은 세입자 전용이지만 **조회**는 세입자(내 예약, US-4-2)와 임대인(내 매물에 신청된 예약, 본 스토리)으로 나뉜다.
+
+**As a** 매물을 등록·소유한 `ACTIVE` 임대인(`userType=LANDLORD`)  
+**I want** 내 소유 매물에 신청된 예약을 목록으로 보고 각 신청의 상세(신청자 정보·매물 정보·타겟 입주일·계약기간·보증금·총 금액)를 조회하기를  
+**So that** 어떤 세입자가 어떤 방에 어떤 조건으로 신청했는지 확인하고 응대(수락/거절은 후속)를 준비한다.
+
+- 우선순위: High
+- 관련 NFR: 보안(내 소유 매물 신청만 조회 — 소유권 스코프), 개인정보(신청자 PII(이름·성별·국적·이메일)를 임대인에게 **마스킹 없이 평문 노출** — 제품 결정), 성능(목록 페이지네이션), 정합성(가격·신청자 정보 조회 시점 조인)
+- 백엔드 관점: **별도 임대인 전용 API를 두지 않고** 조회 엔드포인트(`GET /api/v1/bookings`·`GET /api/v1/bookings/{bookingId}`)에서 요청자 `userType`으로 **분기**한다 — `LANDLORD`면 내 소유 매물에 신청된 예약을(`TENANT`면 내 예약, US-4-2). `userType`은 토큰 클레임이 아니라 `user :: api`(`getUserType`)로 서비스 계층에서 판정하며, **두 역할 모두 유효한 요청이라 역할 `403`은 없다**. 소유권은 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 **비정규화 저장**해 두므로(생성은 이미 `listing :: api`로 매물을 조회 중이라 소유자 캡처 비용이 거의 없다), 임대인 **목록**은 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건을 `createdAt` 내림차순 **오프셋 페이지네이션**(api-design-guide §4-1)으로 조회한다(cross-store 조인 없음, [ADR-0005](../adr/0005-polyglot-persistence.md); `chat_rooms` 비정규화 선례와 일치). `landlordId`는 매물 상태와 무관해 `PAUSED` 매물의 신청도 포함된다. **상세**는 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**한다(listing::api 왕복 없음). 응답 조립 시 매물 요약·가격은 `listing :: api`로, 신청자 프로필(성명·성별·국적·이메일)은 `user :: api`(신규 `getApplicantProfile`)로 조회 시점에 실시간 조인한다(스냅샷 없음, 마스킹 없이 평문 노출). **총 금액**(`totalAmount`)은 세입자 분기와 **동일한 필드·정의**(`보증금 + 월세 × 개월수`, 관리비 제외)다. 신규 에러코드는 없고 기존 `BOOKING_NOT_FOUND`(404) + 공통 `AUTH_ONBOARDING_REQUIRED`를 재사용한다.
+
+**AC (Given/When/Then)**
+
+- 정상(목록 — 임대인 분기)
+  - **Given** 소유 매물에 신청 3건을 보유한 `ACTIVE` 임대인이
+  - **When** `GET /api/v1/bookings?page=0&size=20`을 호출하면(요청자 `userType=LANDLORD`)
+  - **Then** `200 OK` + `data.content`가 `createdAt` 내림차순으로 정렬되고, 각 항목에 `bookingId`·매물 요약(`listingId`·제목·썸네일)·`roomOfferId`·`roomOfferName`·신청자 성명(`applicant.name`)·`moveInDate`·`contractPeriod`·`status`·`createdAt`가 포함되며 `data.page`에 오프셋 메타가 담긴다. **타 임대인 매물의 신청은 절대 포함되지 않는다.**
+- 정상(단건 상세 — 임대인 분기)
+  - **Given** `ACTIVE` 임대인이 자기 소유 매물에 신청된 예약 1건을 지목할 때
+  - **When** `GET /api/v1/bookings/{bookingId}`를 호출하면(요청자 `userType=LANDLORD`)
+  - **Then** `200 OK` + `data`에 **신청자 정보**(`applicant`: 이름·성별·국적(`country`·`countryName`)·이메일, 마스킹 없음)·**매물 정보**(제목·썸네일·주소·방 상품명)·**타겟 입주일**(`moveInDate`)·**계약기간**(`contractPeriod`)·**상태**(`status`)·**보증금**(`deposit`)·**총 금액**(`totalAmount`, 세입자와 동일 필드)이 포함된다.
+- 정합성(실시간 가격·현재값)
+  - **Given** 신청 이후 해당 방 상품의 가격(`pricing`)이 변경됐을 때
+  - **When** 임대인이 상세를 다시 조회하면
+  - **Then** 스냅샷이 아니라 **현재 가격 기준**으로 보증금·총 금액을 계산해 내려준다.
+- 인증·분기·소유권 스코프
+  - **Given** 토큰이 없거나 만료된 요청이면 → `401` + `UNAUTHENTICATED`/`TOKEN_EXPIRED`.
+  - **Given** 온보딩 미완료(비 `ACTIVE`) 요청이면 → `403` + `AUTH_ONBOARDING_REQUIRED`.
+  - **When** `userType=TENANT`(세입자)가 같은 `GET /api/v1/bookings`를 호출하면 → **내 예약**으로 분기된다(US-4-2, 역할 `403` 없음).
+  - **When** 임대인이 존재하지 않는 예약이거나 **내 소유 매물의 신청이 아닌** `bookingId`로 상세를 조회하면 → `404` + `BOOKING_NOT_FOUND`(존재 여부를 노출하지 않도록 내 매물 신청이 아니면 404로 통일 — 세입자 분기의 '타인 예약→404'와 동일).
+- 경계(빈 목록/일시중지 매물/삭제된 매물)
+  - **Given** 소유 매물이 없거나 소유 매물에 신청이 하나도 없을 때 → 임대인 분기 `GET /api/v1/bookings`는 `200` + `content: []`, `page.totalElements: 0`.
+  - **Given** 소유 매물이 `PAUSED`(일시중지) 상태일 때 → 그 매물에 신청된 예약도 목록·상세에 포함된다(`landlordId`가 매물 상태와 무관하게 booking 행에 저장돼 있으므로 `PUBLISHED` 한정이 아니다).
+  - **Given** 신청된 방 상품이 이후 비공개/삭제됐을 때 → 상세 조회 시 예약 코어 내역(날짜·계약기간·상태)은 유지하되 매물 정보·가격 파트의 표기 정책은 **(확인 필요)**(US-4-2와 동일).
+
+> 신설 의존: 조회 서비스가 `user :: api`(`getUserType`)로 `userType`을 판정해 세입자/임대인 동작을 분기한다(별도 임대인 API·역할 `403` 없음). 선행 작업 — ① 예약 **생성** 시 소유자 캡처를 위해 `listing :: api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId` 추가 노출 + `Booking`에 `landlordId` 저장, ② `user :: api` 신청자 프로필 조회(`getApplicantProfile` — 성명·성별·국적·이메일), ③ booking 저장소의 `landlord_id` 컬럼 + `findByLandlordId`(페이지·카운트) + `(landlord_id, created_at)` 인덱스(신규 마이그레이션, database-design §4-5). 임대인 조회에 listing::api 소유권 조회 메서드는 불필요(소유권은 booking 행에서 판정). `booking → {listing::api, user::api}` 의존 화이트리스트는 이미 선언돼 있다. 신규 에러코드 없이 기존 `BOOKING_NOT_FOUND`(404)를 재사용한다. **임대인에게 신청자 이메일·성별·국적은 마스킹 없이 평문으로 노출한다(제품 결정).**
 
 ## 5. 커뮤니티 (게시판 · 동네친구)
 

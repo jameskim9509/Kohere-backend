@@ -1,11 +1,16 @@
 package com.kohere.auth.presentation.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Past;
+import java.time.LocalDate;
 
 /**
  * 임대인 온보딩 제출 요청 DTO(POST /api/v1/auth/landlord/onboarding, 임대인 전용). 단일 {@code name}(성·이름 합친 전체
- * 이름)·연락처를 담는다. 약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행되어야 하며, {@code phoneNumber}는 사전 SMS 인증값과 일치해야 한다.
- * 사업자등록번호는 온보딩에서 수집하지 않는다 — 온보딩 후 별도 검증 API(§5-1)로 검증한다. 닉네임은 서버가 생성하므로 입력에 없다(이메일 미수집).
+ * 이름)·연락처·생년월일({@code birthDate})을 담는다. 약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행되어야 하며, {@code phoneNumber}는
+ * 사전 SMS 인증값과 일치해야 한다. {@code birthDate}는 필수·과거 날짜만 허용한다(세입자 온보딩과 동일 규칙 — #131). 사업자등록번호·이메일은 온보딩에서
+ * 수집하지 않는다(사업자번호는 온보딩 후 별도 검증 API §5-1로 검증). 닉네임은 서버가 생성하므로 입력에 없다.
  * docs/api/specs/01-auth-onboarding.md §5-2 · ADR-0034.
  */
-public record LandlordOnboardingRequest(@NotBlank String name, @NotBlank String phoneNumber) {}
+public record LandlordOnboardingRequest(
+    @NotBlank String name, @NotBlank String phoneNumber, @NotNull @Past LocalDate birthDate) {}

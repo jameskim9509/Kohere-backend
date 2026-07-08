@@ -4,12 +4,13 @@
 
 ## [1차 MVP] 매물 예약(신청)
 
-인앱 채팅과 분리된 독립 기능. 예약을 저장하고(US-4-1), 내 예약을 목록·상세로 조회한다(US-4-2).
+인앱 채팅과 분리된 독립 기능. 예약을 저장하고(US-4-1), 예약 조회 엔드포인트는 요청자 `userType`으로 분기해 세입자는 내 예약을(US-4-2), 임대인은 자기 소유 매물에 신청된 예약을(US-4-6) 목록·상세로 조회한다. US-4-2·US-4-6은 **같은 엔드포인트**(`GET /api/v1/bookings`·`/{bookingId}`)의 두 `userType` 분기다.
 
 | 스토리 | 제목 | 다이어그램 |
 | --- | --- | --- |
 | US-4-1 | 매물 예약 생성(신청 저장) | [us-4-1-booking-create](us-4-1-booking-create.md) |
-| US-4-2 | 내 예약 조회(목록·단건 상세) | [us-4-2-booking-retrieve](us-4-2-booking-retrieve.md) |
+| US-4-2 | 내 예약 조회(목록·단건 상세, 세입자 분기) | [us-4-2-booking-retrieve](us-4-2-booking-retrieve.md) |
+| US-4-6 | 임대인 받은 신청 조회(내 매물, 임대인 분기) | [us-4-6-landlord-booking-retrieve](us-4-6-landlord-booking-retrieve.md) |
 
 ## [후속·이연] 문의 · 인앱 채팅
 
