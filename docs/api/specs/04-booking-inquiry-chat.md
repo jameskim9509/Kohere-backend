@@ -5,14 +5,14 @@
 
 ## 개요
 
-세입자(외국인 사용자)가 매물의 방 상품(`roomOffer`)에 **예약(= 신청, Booking)** 을 신청하고, 자신의 예약 내역을 목록·단건 상세로 다시 확인한다. **본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**
+세입자(외국인 사용자)가 매물의 방 상품(`roomOffer`)에 **예약(= 신청, Booking)** 을 신청하고 자신의 예약 내역을 목록·단건 상세로 다시 확인하며, **임대인은 자기 소유 매물에 신청된 예약을 목록·단건 상세로 조회**한다. **본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**
 
-- **[1차 MVP] 매물 예약(신청)**: 세입자가 방 상품에 타겟 입주일 + 계약기간(개월수)으로 예약을 생성·저장하고, 내 예약을 목록·단건 상세로 조회한다. 인앱 채팅과 **분리된 독립 기능**이다. MVP의 예약은 "신청" 성격이라 중복 신청 제한·본인 매물 차단이 없다(예약은 세입자 전용).
+- **[1차 MVP] 매물 예약(신청)**: 세입자가 방 상품에 타겟 입주일 + 계약기간(개월수)으로 예약을 생성·저장하고, 내 예약을 목록·단건 상세로 조회한다. **임대인은 자기 소유 매물(`listing.landlordId`=본인)에 신청된 예약을 목록·단건 상세로 조회한다**(소유권 스코프). 인앱 채팅과 **분리된 독립 기능**이다. MVP의 예약은 "신청" 성격이라 중복 신청 제한·본인 매물 차단이 없다(예약 **생성**은 세입자 전용; 조회는 세입자=내 예약, 임대인=내 매물에 신청된 예약으로 갈린다).
 - **[후속·이연] 문의 · 인앱 채팅**: 임대인과의 1:1 채팅방 문의·리스트·메시지·읽음 처리, 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 결합(F-03 chat)은 1차 MVP에서 후속으로 분리·이연한다(삭제 아님 — 설계 보존).
 
 문서 구조:
 
-- **[1차 MVP] 매물 예약(신청)** — 엔드포인트 요약 · 1. 예약 생성 · 2. 예약 목록 · 3. 예약 상세
+- **[1차 MVP] 매물 예약(신청)** — 엔드포인트 요약 · 1. 예약 생성 · 2. 예약 목록(userType 분기) · 3. 예약 상세(userType 분기)
 - **[후속·이연] 문의 · 인앱 채팅** — 4. 문의 · 5. 채팅방 리스트 · 6. 메시지 조회 · 7. 메시지 전송 · 8. 읽음 처리
 
 ### 핵심 개념·enum
@@ -32,11 +32,14 @@
 
 ### 저장·조합 규약 (매물 예약)
 
-- **Booking 저장 필드**: `id`(bookingId, `Long`, PK) · `tenantId`(`Long`) · `listingId`(string) · `roomOfferId`(string) · `moveInDate`(`LocalDate`) · `contractPeriod`(정수, 개월수) · `status`(enum, 생성 시 `REQUESTED` 고정) · `createdAt`(`Instant`). 예약은 append 성격(중복 제한·유니크 제약 없음)이며, 숫자 PK·조회 정합상 저장소는 **MySQL 유력**이나 [ADR-0005](../../adr/0005-polyglot-persistence.md) 폴리글랏 매핑 표에서 `booking`은 아직 "추후 결정"이라 **(확인 필요)** 로 둔다.
+- **Booking 저장 필드**: `id`(bookingId, `Long`, PK) · `tenantId`(`Long`) · `listingId`(string) · `roomOfferId`(string) · `landlordId`(`Long`, **생성 시 매물 소유자(`listing.landlordId`) 스냅샷** — 임대인 조회 스코프) · `moveInDate`(`LocalDate`) · `contractPeriod`(정수, 개월수) · `status`(enum, 생성 시 `REQUESTED` 고정) · `createdAt`(`Instant`). 예약은 append 성격(중복 제한·유니크 제약 없음)이며, 숫자 PK·조회 정합상 저장소는 **MySQL 유력**이나 [ADR-0005](../../adr/0005-polyglot-persistence.md) 폴리글랏 매핑 표에서 `booking`은 아직 "추후 결정"이라 **(확인 필요)** 로 둔다.
 - **중복 방지**: 동일 세입자–동일 방 상품의 활성 예약(`REQUESTED`/`ACCEPTED`)은 `(tenantId, roomOfferId)` 유니크 제약 + 트랜잭션으로 **정확히 1건**만 허용한다.
 - **스냅샷 없음 — 조회 시점 실시간 조인**: 가격·매물 요약·예약자 성명은 예약에 스냅샷 저장하지 않고, 조회 시점에 애플리케이션 레벨로 조합한다. `listing :: api`로 `(listingId, roomOfferId)`의 매물 요약·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명을 조회한다(둘 다 신규 공개 조회 메서드 필요). cross-store 조인·트랜잭션은 금지된다([ADR-0005](../../adr/0005-polyglot-persistence.md), [ADR-0002](../../adr/0002-inter-module-communication-via-events.md)). 가격 변경 시 상세는 **현재가 기준**으로 계산한다.
-- **모듈 의존**: `booking → { listing::api, user::api }` — `booking/package-info.java` 의존 화이트리스트에 추가가 선행돼야 한다.
-- **인증·상태 게이트**: 온보딩을 마친 `ACTIVE` 세입자(`userType=TENANT`) 전용. 다른 보호 엔드포인트와 **동일한 온보딩 상태 게이트**로 검사한다.
+- **예약 조회의 userType 분기(§2·§3)**: 조회 엔드포인트(`GET /api/v1/bookings`·`GET /api/v1/bookings/{bookingId}`)는 **별도 임대인 전용 API 없이** 요청자 `userType`으로 동작을 분기한다 — `TENANT`면 **내 예약**(요청자 `tenantId` 기준), `LANDLORD`면 **내 소유 매물에 신청된 예약**(요청자가 소유한 매물 기준)을 반환한다. `userType`은 토큰 클레임이 아니라 서비스 계층에서 `user::api`(`getUserType`)로 판정한다(`ROLE_LANDLORD` 없음 — URL 티어는 `ROLE_USER`). 두 역할 모두 유효한 요청이라 **역할에 따른 `403`은 없다**(권한 밖 리소스는 아래 404 통일로 처리).
+- **임대인 분기 — 소유권 스코프(생성 시 landlordId 비정규화)**: 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 **함께 저장**한다 — 생성은 이미 `listing::api`로 매물·방 상품을 조회(검증)하므로 소유자 스냅샷을 같이 캡처하는 비용은 거의 없다. 임대인 **목록** 조회는 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건으로 `createdAt` 내림차순 조회한다(cross-store 조인 없음 — 소유권 판정이 booking 행에 있다). **상세**는 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**하고, 예약이 없거나 내 소유 매물의 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(존재 비노출 — 세입자 분기의 '타인 예약→404'와 동일 규약). `landlordId`는 매물 상태와 무관하게 저장돼 `PAUSED`(일시중지) 매물의 신청도 자동 포함된다. `landlordId`는 생성 시점 스냅샷이라 **소유권 이전 시 stale**하나, 소유권 이전은 MVP 범위 밖이라 충분하다(이전 도입 시 백필 또는 조회 시점 해석으로 전환). 이 방식은 `chat_rooms`가 `tenant_id`·`landlord_id`를 비정규화하는 선례와 일치한다.
+- **신청자 프로필 조인(임대인 상세)**: 임대인 상세 분기는 신청자(세입자) 프로필 — 성명·**성별**·**국적**·**이메일** — 을 `user::api`(신규 `getApplicantProfile(tenantId)`)로 조회해 조합한다(목록 분기는 신청자 성명 `getUserName`만, 경량). 신청자는 세입자라 프로필이 존재하며, 탈퇴 회원은 PII 익명화([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md))로 값이 비어 있을 수 있다. 임대인에게 세입자 이메일·성별·국적은 **마스킹 없이 평문으로 노출**한다(제품 결정).
+- **모듈 의존**: `booking → { listing::api, user::api }` — `booking/package-info.java` 의존 화이트리스트에 이미 선언돼 있다. 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId`를 추가 노출하고, 임대인 **상세** 분기의 신청자 프로필 조회를 위해 `user::api`에 `getApplicantProfile` 공개 메서드가 신규로 필요하다. 임대인 조회에 listing::api 소유권 조회 메서드는 **불필요**하다 — 소유권은 booking 행(`landlord_id`)에서 판정한다.
+- **인증·상태 게이트**: 예약 조회(§2·§3)는 온보딩을 마친 `ACTIVE` 사용자 전용이다(세입자·임대인 공통 — `userType`으로 결과만 분기하며 역할 `403`은 없다). 예약 **생성**(§1)은 세입자 전용(`userType=TENANT`)이라 임대인은 `403 FORBIDDEN`이다. 두 경우 모두 비 `ACTIVE`(온보딩 미완료)는 다른 보호 엔드포인트와 **동일한 온보딩 상태 게이트**(`403 AUTH_ONBOARDING_REQUIRED`)로 검사한다.
 
 ---
 
@@ -47,10 +50,10 @@
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
 | POST | `/api/v1/listings/{listingId}/bookings` | 매물 예약(신청) 생성·저장 | 필수 | 201 |
-| GET | `/api/v1/bookings` | 내 예약 목록(요청자 본인, 오프셋 페이지네이션) | 필수 | 200 |
-| GET | `/api/v1/bookings/{bookingId}` | 내 예약 단건 상세(본인만) | 필수 | 200 |
+| GET | `/api/v1/bookings` | 예약 목록 — `userType` 분기(세입자=내 예약 / 임대인=내 매물에 신청된 예약, 오프셋 페이지네이션) | 필수 | 200 |
+| GET | `/api/v1/bookings/{bookingId}` | 예약 단건 상세 — `userType` 분기(세입자=내 예약 / 임대인=내 매물에 신청된 예약) | 필수 | 200 |
 
-> 예약 생성은 매물의 방 상품에 종속되는 액션이므로 `/listings/{listingId}` 하위 1단계 중첩으로 둔다(api-design-guide §2). 조회는 예약을 독립 컬렉션(`/bookings`)으로 둔다.
+> 예약 생성은 매물의 방 상품에 종속되는 액션이므로 `/listings/{listingId}` 하위 1단계 중첩으로 둔다(api-design-guide §2). 조회는 예약을 독립 컬렉션(`/bookings`)으로 두고 **별도 임대인 전용 경로 없이** 요청자 `userType`으로 반환 대상을 분기한다(세입자=내 예약, 임대인=내 소유 매물에 신청된 예약).
 
 ---
 
@@ -121,11 +124,12 @@
 
 ---
 
-### 2. GET `/api/v1/bookings` — 내 예약 목록
+### 2. GET `/api/v1/bookings` — 예약 목록(userType 분기)
 
-요청자 **본인의 예약**만 `createdAt` 내림차순으로 반환한다. **오프셋 페이지네이션**(api-design-guide §4-1). 타인 예약은 조회되지 않는다.
+요청자 `userType`으로 반환 대상을 분기한다 — **세입자(`TENANT`)** 는 **내 예약**(본인 `tenantId`)을, **임대인(`LANDLORD`)** 은 **내 소유 매물(`listing.landlordId`=본인)에 신청된 예약**(`PAUSED` 매물 포함)을 반환한다. 둘 다 `createdAt` 내림차순 **오프셋 페이지네이션**(api-design-guide §4-1)이며, 다른 스코프의 예약은 목록에 포함되지 않는다. **별도 임대인 전용 경로는 없다.**
 
-- **인증**: 필수. 본인 예약만 반환된다(타인 예약은 애초에 목록에 없음).
+- **인증**: 필수. `ACTIVE` 사용자 전용(세입자·임대인 공통, 역할 `403` 없음). `userType`은 토큰 클레임이 아니라 서비스 계층에서 `user :: api`(`getUserType`)로 판정한다.
+- **임대인 분기 소유권 스코프**: 예약 생성 시 저장된 `Booking.landlordId`로 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건으로 조회한다(cross-store 조인 없음, [ADR-0005](../../adr/0005-polyglot-persistence.md)). 소유 매물 상태와 무관해 `PAUSED` 매물의 신청도 포함되며, 신청이 없으면 빈 목록.
 
 #### Query 파라미터
 
@@ -134,9 +138,9 @@
 | `page` | int | 선택 | 0 | 0-base 페이지 번호 |
 | `size` | int | 선택 | 20 | 페이지 크기(최대 100). 범위 초과는 `INVALID_INPUT`(400) |
 
-> 정렬은 `createdAt,desc` 고정(쿼리로 변경 불가). 각 항목의 매물 요약(제목·썸네일)은 조회 시점에 `listing :: api`로 실시간 조인한다.
+> 정렬은 `createdAt,desc` 고정(쿼리로 변경 불가). MVP는 상태 전이가 없어 신청이 모두 `REQUESTED`이므로 `status` 필터는 두지 않는다. 매물 요약은 `listing :: api`로, 신청자 성명(임대인 분기)은 `user :: api`(`getUserName`)로 조회 시점에 실시간 조인한다.
 
-#### 성공 Response — 200 OK
+#### 성공 Response — 200 OK (세입자 `TENANT` 분기)
 
 ```json
 {
@@ -169,7 +173,46 @@
 }
 ```
 
-> 예약이 하나도 없으면 `content: []` + `page.totalElements: 0` + `page.hasNext: false`(에러 아님).
+> 세입자 분기: 예약자가 본인이라 신청자 정보를 담지 않는다. 예약이 하나도 없으면 `content: []` + `page.totalElements: 0` + `page.hasNext: false`(에러 아님).
+
+#### 성공 Response — 200 OK (임대인 `LANDLORD` 분기)
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "bookingId": 9001,
+        "listing": {
+          "listingId": "6858e2000000000000000001",
+          "title": "강남역 도보 5분 원룸",
+          "thumbnailUrl": "https://cdn.kohere.com/listings/6858e2000000000000000001/thumb.jpg"
+        },
+        "roomOfferId": "6858e2000000000000000abc",
+        "roomOfferName": "원룸 A타입",
+        "applicant": {
+          "name": "John Doe"
+        },
+        "moveInDate": "2026-07-01",
+        "contractPeriod": 6,
+        "status": "REQUESTED",
+        "createdAt": "2026-06-15T08:30:00Z"
+      }
+    ],
+    "page": {
+      "number": 0,
+      "size": 20,
+      "totalElements": 3,
+      "totalPages": 1,
+      "hasNext": false
+    }
+  },
+  "error": null
+}
+```
+
+> 임대인 분기: 각 항목에 신청자 성명(`applicant.name`)·방 상품명(`roomOfferName`)이 추가된다. 신청자 상세(성별·국적·이메일)는 단건 상세(§3 임대인 분기)에서 내려준다. 소유 매물에 신청이 없으면 `content: []` + `page.totalElements: 0`.
 
 #### 발생 가능한 에러
 
@@ -177,16 +220,18 @@
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `size` 범위 초과 등 페이지 파라미터 오류 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 
 ---
 
 ### 3. GET `/api/v1/bookings/{bookingId}` — 예약 단건 상세
 
-요청자 **본인의 예약 1건**을 상세 조회한다. 매물 정보·예약 일시·타겟 입주일·계약기간·예약자 성명·보증금·총 금액을 내려준다. **가격·매물 정보·예약자 성명은 스냅샷이 아니라 조회 시점에 실시간 조인**한다(가격 변경 시 현재가 기준).
+요청자 `userType`으로 분기한다 — **세입자(`TENANT`)** 는 **내 예약 1건**을, **임대인(`LANDLORD`)** 은 **내 소유 매물에 신청된 예약 1건**을 상세 조회한다. **가격·매물 정보·성명(신청자 정보)은 스냅샷이 아니라 조회 시점에 실시간 조인**한다(가격 변경 시 현재가 기준). 별도 임대인 전용 경로는 없다.
 
-- **인증**: 필수. **본인 예약이 아니거나 존재하지 않으면 `404 BOOKING_NOT_FOUND`**(존재 여부를 노출하지 않도록 본인 예약이 아니면 404로 통일).
-- **실시간 조인**: `listing :: api`로 `(listingId, roomOfferId)`의 매물 요약·주소·방 상품명·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명(`tenantName`)을 조회해 조합한다.
-- **총 금액**: `totalAmount = deposit + monthlyRent × contractPeriod`(`contractPeriod`는 계약 개월수 정수). **관리비(`maintenanceFee`)는 총액에서 제외**한다.
+- **인증**: 필수. `ACTIVE` 사용자 전용(역할 `403` 없음). **조회 권한 밖이면 `404 BOOKING_NOT_FOUND`로 통일**(존재 비노출) — 세입자는 본인 예약이 아닐 때, 임대인은 내 소유 매물의 신청이 아닐 때.
+- **임대인 분기 소유권 확인**: 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**한다(생성 시 저장된 값; listing::api 왕복 없음). 불일치·부재는 아래 `404 BOOKING_NOT_FOUND`로 통일한다.
+- **실시간 조인**: `listing :: api`로 `(listingId, roomOfferId)`의 매물 요약·주소·방 상품명·`pricing`(보증금·월세)을 조회한다. 성명은 **세입자 분기**가 `user :: api`(`getUserName`)로 예약자 본인(`tenantName`)을, **임대인 분기**가 `user :: api`(신규 `getApplicantProfile`)로 신청자 프로필(성명·성별·국적·이메일)을 조회한다.
+- **금액**: 세입자·임대인 분기 **모두 동일한 필드·정의**로 **총 금액** `totalAmount = deposit + monthlyRent × contractPeriod`(`contractPeriod`는 계약 개월수 정수, **관리비 제외**)를 내려준다.
 
 #### Path 파라미터
 
@@ -194,7 +239,7 @@
 | --- | --- | --- | --- |
 | `bookingId` | Long | 필수 | 예약 ID |
 
-#### 성공 Response — 200 OK
+#### 성공 Response — 200 OK (세입자 `TENANT` 분기)
 
 ```json
 {
@@ -221,14 +266,53 @@
 }
 ```
 
-> 위 예: `deposit` 5,000,000 + `monthlyRent` 500,000 × `contractPeriod` 6 = `totalAmount` 8,000,000. 관리비는 포함하지 않는다. 예약한 방 상품이 이후 비공개/삭제된 경우 예약 코어 내역(날짜·계약기간·상태)은 유지하되 매물 정보·가격 파트의 표기 정책(매물 필드 `null`/tombstone vs 별도 상태 코드)은 **(확인 필요)**.
+> 세입자 분기: `deposit` 5,000,000 + `monthlyRent` 500,000 × `contractPeriod` 6 = `totalAmount` 8,000,000(관리비 미포함). 예약자가 본인이라 `tenantName`은 본인 성명이다.
+
+#### 성공 Response — 200 OK (임대인 `LANDLORD` 분기)
+
+```json
+{
+  "success": true,
+  "data": {
+    "bookingId": 9001,
+    "status": "REQUESTED",
+    "createdAt": "2026-06-15T08:30:00Z",
+    "moveInDate": "2026-07-01",
+    "contractPeriod": 6,
+    "listing": {
+      "listingId": "6858e2000000000000000001",
+      "title": "강남역 도보 5분 원룸",
+      "thumbnailUrl": "https://cdn.kohere.com/listings/6858e2000000000000000001/thumb.jpg",
+      "address": "서울특별시 강남구 역삼동 …",
+      "roomOfferId": "6858e2000000000000000abc",
+      "roomOfferName": "원룸 A타입"
+    },
+    "applicant": {
+      "userId": 7,
+      "name": "John Doe",
+      "gender": "MALE",
+      "country": "US",
+      "countryName": "United States",
+      "email": "john.doe@example.com"
+    },
+    "deposit": 5000000,
+    "totalAmount": 8000000
+  },
+  "error": null
+}
+```
+
+> 임대인 분기: 예약자 본인(`tenantName`) 대신 **신청자 프로필**(`applicant`: `userId`·`name`·`gender`·`country`·`countryName`·`email`)을 담고, `deposit`·`totalAmount`(총 금액)는 세입자 분기와 **동일한 필드·정의**다. `applicant.gender`는 user 소유 `Gender` enum 문자열(UPPER_SNAKE), `country`는 ISO 3166-1 alpha-2 코드, `countryName`은 서버가 참조로 resolve한 표시명이며, **마스킹 없이 평문으로 임대인에게 노출**한다. 신청자가 탈퇴한 경우 PII 익명화([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md))로 `name`·`gender`·`country`·`email`이 비어 있을 수 있다.
+>
+> 공통: 조회 대상 방 상품이 이후 비공개/삭제된 경우 예약 코어 내역(날짜·계약기간·상태)은 유지하되 매물 정보·가격 파트의 표기 정책(매물 필드 `null`/tombstone vs 별도 상태 코드)은 **(확인 필요)**.
 
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
-| 404 | `BOOKING_NOT_FOUND` | 예약이 없거나 **타인의 예약**(본인 예약이 아니면 404로 통일) |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
+| 404 | `BOOKING_NOT_FOUND` | 예약이 없거나 **조회 권한 밖**(세입자: 본인 예약 아님 / 임대인: 내 소유 매물 신청 아님) — 404로 통일 |
 | 404 | `LISTING_NOT_FOUND` | 조인 대상 매물/방 상품이 없음 — 표기 정책은 위 (확인 필요) 참조 |
 
 ---
@@ -580,7 +664,7 @@
 | code | status | 의미 | 스코프 |
 | --- | --- | --- | --- |
 | `BOOKING_INVALID_MOVE_IN_DATE` | 422 | 타겟 입주일이 과거이거나 매물의 입주 가능일 이전 | 1차 MVP |
-| `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 본인 예약이 아님(존재 여부를 노출하지 않도록 404로 통일) | 1차 MVP |
+| `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물의 신청 아님) — 존재 여부를 노출하지 않도록 404로 통일 | 1차 MVP |
 | `CHAT_ROOM_NOT_FOUND` | 404 | 채팅방이 존재하지 않음 | 후속·이연 |
 | `CHAT_SELF_INQUIRY_NOT_ALLOWED` | 422 | 본인 소유 매물에 문의 시도 | 후속·이연 |
 | `CHAT_ROOM_INACTIVE` | 422 | 비활성(차단/나간) 채팅방에 메시지 전송. 차단·나가기 기능 도입 시 활성화되는 예약 코드 | 후속·이연 |

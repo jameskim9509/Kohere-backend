@@ -69,4 +69,13 @@ public interface UserAccountService {
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
    */
   String getUserName(long userId);
+
+  /**
+   * 신청자(세입자) 프로필 조회. booking의 임대인 받은 신청 상세 조회(US-4-6, userType 분기)가 신청자 정보를 표시하기 위해 동기
+   * 호출한다(ADR-0002 공개 API 협력). 성명(firstName + lastName)·성별·국적(ISO 코드·표시명)·이메일을 담으며, 임대인에게 마스킹 없이 평문
+   * 노출한다(제품 결정). 온보딩 전/탈퇴 등으로 값이 없으면 {@code name}은 빈 문자열, 나머지는 {@code null}이다.
+   *
+   * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
+   */
+  ApplicantProfileView getApplicantProfile(long userId);
 }

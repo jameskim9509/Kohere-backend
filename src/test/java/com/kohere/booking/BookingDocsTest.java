@@ -22,6 +22,7 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
+import com.kohere.user.api.ApplicantProfileView;
 import com.kohere.user.api.UserAccountService;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -59,6 +60,7 @@ import org.springframework.web.context.WebApplicationContext;
 class BookingDocsTest {
 
   private static final long TENANT_ID = 1L;
+  private static final long LANDLORD_ID = 42L;
   private static final String LISTING_ID = "6858e2000000000000000001";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000abc";
   private static final Pattern BOOKING_ID = Pattern.compile("\"bookingId\"\\s*:\\s*(\\d+)");
@@ -94,7 +96,12 @@ class BookingDocsTest {
         "101호 원룸",
         5_000_000,
         500_000,
-        LocalDate.of(2026, 1, 1));
+        LocalDate.of(2026, 1, 1),
+        LANDLORD_ID);
+  }
+
+  private String landlordToken() {
+    return "Bearer " + jwtTokenService.issueAccessToken(LANDLORD_ID);
   }
 
   private static String createRequestJson(String roomOfferId, String moveInDate, Integer months) {
@@ -247,6 +254,113 @@ class BookingDocsTest {
                         "data.totalAmount",
                         JsonFieldType.NUMBER,
                         "총 금액 = 보증금 + 월세 × 계약 개월수(관리비 제외)"),
+                    errorNull())));
+  }
+
+  // ── §2 임대인 분기 — 받은 신청 목록 ───────────────────────────
+  @Test
+  void getBookings_landlord_success() throws Exception {
+    createBooking(); // 생성 시 landlord_id = LANDLORD_ID(offerView) 저장
+    given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
+    given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
+        .willReturn(Optional.of(offerView()));
+    given(userAccountService.getUserName(TENANT_ID)).willReturn("길동 홍");
+
+    mockMvc
+        .perform(
+            get("/api/v1/bookings")
+                .header(HttpHeaders.AUTHORIZATION, landlordToken())
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].applicantName").value("길동 홍"))
+        .andExpect(jsonPath("$.data.content[0].roomOfferName").value("101호 원룸"))
+        .andDo(
+            document(
+                "booking-list-landlord",
+                queryParameters(
+                    parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
+                    parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")),
+                responseFields(
+                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
+                    field("data.content[].bookingId", JsonFieldType.NUMBER, "예약 식별자"),
+                    field("data.content[].listingId", JsonFieldType.STRING, "매물 ID"),
+                    optField(
+                        "data.content[].title", JsonFieldType.STRING, "매물 제목(조회 시 조인, 삭제 시 null)"),
+                    optField(
+                        "data.content[].thumbnailUrl", JsonFieldType.STRING, "매물 썸네일(삭제 시 null)"),
+                    field("data.content[].roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
+                    optField(
+                        "data.content[].roomOfferName", JsonFieldType.STRING, "방 상품명(조회 시 조인)"),
+                    field("data.content[].applicantName", JsonFieldType.STRING, "신청자(세입자) 성명"),
+                    field("data.content[].moveInDate", JsonFieldType.STRING, "타겟 입주일"),
+                    field("data.content[].contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
+                    field("data.content[].status", JsonFieldType.STRING, "예약 상태"),
+                    field("data.content[].createdAt", JsonFieldType.STRING, "예약 일시"),
+                    field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
+                    field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
+                    field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
+                    field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
+                    field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+                    errorNull())));
+  }
+
+  // ── §3 임대인 분기 — 받은 신청 단건 상세 ──────────────────────
+  @Test
+  void getBooking_landlord_success() throws Exception {
+    long bookingId = createBooking();
+    given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
+    given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(userAccountService.getApplicantProfile(TENANT_ID))
+        .willReturn(
+            new ApplicantProfileView(
+                TENANT_ID, "길동 홍", "MALE", "US", "United States", "hong@example.com"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/bookings/{bookingId}", bookingId)
+                .header(HttpHeaders.AUTHORIZATION, landlordToken()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.bookingId").value(bookingId))
+        .andExpect(jsonPath("$.data.applicantName").value("길동 홍"))
+        .andExpect(jsonPath("$.data.applicantEmail").value("hong@example.com"))
+        .andExpect(jsonPath("$.data.totalAmount").value(8_000_000)) // 5,000,000 + 500,000 × 6
+        .andDo(
+            document(
+                "booking-detail-landlord",
+                pathParameters(
+                    parameterWithName("bookingId").description("예약 식별자(내 소유 매물에 신청된 예약)")),
+                responseFields(
+                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
+                    field("data.bookingId", JsonFieldType.NUMBER, "예약 식별자"),
+                    field("data.status", JsonFieldType.STRING, "예약 상태"),
+                    field("data.listingId", JsonFieldType.STRING, "매물 ID"),
+                    field("data.roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
+                    optField("data.title", JsonFieldType.STRING, "매물 제목(조회 시 조인)"),
+                    optField("data.thumbnailUrl", JsonFieldType.STRING, "매물 썸네일"),
+                    optField("data.address", JsonFieldType.STRING, "매물 주소"),
+                    optField("data.roomOfferName", JsonFieldType.STRING, "방 상품명"),
+                    field("data.createdAt", JsonFieldType.STRING, "예약 일시(UTC)"),
+                    field("data.moveInDate", JsonFieldType.STRING, "타겟 입주일"),
+                    field("data.contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
+                    field("data.applicantId", JsonFieldType.NUMBER, "신청자(세입자) ID"),
+                    field("data.applicantName", JsonFieldType.STRING, "신청자 성명"),
+                    optField(
+                        "data.applicantGender",
+                        JsonFieldType.STRING,
+                        "신청자 성별(UPPER_SNAKE, 마스킹 없음 · 탈퇴 시 null)"),
+                    optField(
+                        "data.applicantCountry", JsonFieldType.STRING, "신청자 국적 ISO 코드(탈퇴 시 null)"),
+                    optField(
+                        "data.applicantCountryName", JsonFieldType.STRING, "신청자 국적 표시명(탈퇴 시 null)"),
+                    optField(
+                        "data.applicantEmail", JsonFieldType.STRING, "신청자 이메일(마스킹 없음 · 탈퇴 시 null)"),
+                    field("data.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
+                    field(
+                        "data.totalAmount",
+                        JsonFieldType.NUMBER,
+                        "총 금액 = 보증금 + 월세 × 계약 개월수(관리비 제외, 세입자 분기와 동일)"),
                     errorNull())));
   }
 

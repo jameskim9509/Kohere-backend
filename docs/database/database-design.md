@@ -442,7 +442,7 @@
 
 > 스토어: **MySQL 유력**(숫자 PK·조회 정합) — 단 [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표에 `booking` 매핑이 **아직 미확정**(추후 결정)이라 store를 단정하지 않는다(확인 필요). 확정 전까지 아래 물리 타입(MySQL 표기)은 논리 스키마로 읽는다. domain-model `Booking`(append 성격 — 중복 제한 없음).
 >
-> **스코프(1차 MVP)**: 매물 예약(= 신청, `Booking`)은 인앱 채팅과 분리된 독립 기능이다(user-stories US-4-1·US-4-2). 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 **후속·이연**(chat 결합, §4-6)이라 본 스키마에 관련 필드가 없다.
+> **스코프(1차 MVP)**: 매물 예약(= 신청, `Booking`)은 인앱 채팅과 분리된 독립 기능이다(user-stories US-4-1·US-4-2, 그리고 조회 엔드포인트를 `userType`으로 분기하는 임대인 받은 신청 조회 US-4-6). 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 **후속·이연**(chat 결합, §4-6)이라 본 스키마에 관련 필드가 없다.
 
 `bookings`
 
@@ -452,15 +452,18 @@
 | `tenant_id` | BIGINT | NOT NULL · 예약자(세입자) → user(값 참조) |
 | `listing_id` | VARCHAR(24) | NOT NULL · Mongo `listings._id` ObjectId hex 문자열 값 참조 |
 | `room_offer_id` | VARCHAR(24) | NOT NULL · Listing 내부 방 상품 식별자 ObjectId hex 문자열 값 참조 |
+| `landlord_id` | BIGINT | NOT NULL · 매물 소유자(임대인) → user(값 참조). **생성 시 `listing.landlordId` 스냅샷** — 임대인 받은 신청 조회(US-4-6) 소유권 스코프 키 |
 | `move_in_date` | DATE | NOT NULL · 타겟 입주일(날짜만) |
 | `contract_period` | INT | NOT NULL · 계약 개월수(양의 정수, 예: 1·3·6·12·24) |
 | `status` | VARCHAR(16) (enum `BookingStatus`) | NOT NULL · 생성 시 `REQUESTED` 고정 · `REQUESTED`/`ACCEPTED`/`REJECTED`/`CANCELED` |
 | `created_at` | DATETIME(6) | NOT NULL · 예약 일시(UTC) |
 
-**인덱스**: PK `id` / INDEX `(tenant_id, created_at desc)`(내 예약 목록 최신순). MVP의 예약은 "신청" 성격이라 **중복 방지 유니크 제약을 두지 않는다**(같은 방 상품에 다건 신청 허용).
+**인덱스**: PK `id` / INDEX `(tenant_id, created_at desc)`(세입자 분기 — 내 예약 목록 최신순) / INDEX `(landlord_id, created_at desc)`(임대인 분기 — 내 매물에 신청된 목록: `landlord_id = 요청자`를 최신순으로 조회). MVP의 예약은 "신청" 성격이라 **중복 방지 유니크 제약을 두지 않는다**(같은 방 상품에 다건 신청 허용).
+
+> `landlord_id` 컬럼과 `(landlord_id, created_at)` 인덱스는 임대인 조회 분기(US-4-6)를 위한 것으로, `bookings`는 이미 배포된 `V9__bookings.sql`이라 **구현 시 별도 신규 마이그레이션**(예: `V11__add_bookings_landlord_id.sql` — 컬럼 추가 + 인덱스, 확장 변경)으로 넣는다([migration-policy](migration-policy.md)). 기존 예약 행이 있으면 `landlord_id`를 매물 소유자로 백필해야 하나(cross-store라 앱레벨), MVP는 booking 테이블이 신규라 사실상 비어 있다. 소유권은 `bookings` 행(`landlord_id`)에서 판정하며 `listing::api` 소유권 조회는 불요다(아래 교차 모듈 no-FK 참조).
 
 - **중복 제한 없음**: MVP의 예약은 "신청"(application) 성격이라 동일 세입자–방 상품 중복을 막지 않는다 — 활성 유니크 제약이 없고, 같은 방 상품에도 여러 신청을 append한다. (수락/거절 등 상태 전이·중복 정책은 후속에서 정의.)
-- **교차 모듈 no-FK**: `tenant_id`·`listing_id`·`room_offer_id` 모두 값 참조(FK 없음). `listing_id`·`room_offer_id`는 Mongo ObjectId 문자열이라 자동증가 숫자가 아니다. 매물·방 상품 존재·공개 여부·입주일 검증은 `listing :: api` 공개 쿼리로 한다(소유자 조회 불요 — 예약은 세입자 전용; cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md)).
+- **교차 모듈 no-FK**: `tenant_id`·`landlord_id`·`listing_id`·`room_offer_id` 모두 값 참조(FK 없음). `listing_id`·`room_offer_id`는 Mongo ObjectId 문자열이라 자동증가 숫자가 아니다. 매물·방 상품 존재·공개 여부·입주일 검증과 **생성 시 소유자(`landlord_id`) 캡처**는 `listing :: api` 공개 쿼리로 한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md)). 조회 엔드포인트의 **임대인 분기**(`userType=LANDLORD`)는 "내 매물에 신청됨"을 booking 행의 `landlord_id`로 직접 스코핑한다 — 목록 `landlord_id = 요청자`, 단건 상세는 `booking.landlord_id == 요청자` 행 단위 확인(미소유/부재는 `404 BOOKING_NOT_FOUND` 통일). `landlord_id`는 매물 상태와 무관하게 저장돼 `PAUSED` 매물의 신청도 포함되며, 생성 시점 스냅샷이라 소유권 이전 시 백필이 필요하다(이전은 MVP 범위 밖). `chat_rooms`의 `landlord_id` 비정규화 선례와 일치한다.
 - **가격·성명 비영속(조회 시점 조인)**: 보증금·월세·총 금액·매물 요약·예약자 성명은 예약에 **스냅샷 저장하지 않는다** — 단건 상세(US-4-2) 조회 시점에 애플리케이션 레벨로 조합한다. `listing :: api`로 `(listing_id, room_offer_id)`의 매물 요약·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명을 가져온다. **총 금액 = 보증금 + 월세 × 계약 개월수(`contract_period` 정수)**(**관리비 제외**)이며 가격 변경 시 상세는 **현재가 기준**(스냅샷 아님)이다. → 모듈 의존 `booking → { listing :: api, user :: api }`.
 - **소프트삭제 불요**: 취소는 `status=CANCELED`. 상태 전이(수락/거절/취소)는 현 스펙 범위 밖 — 도입 시 `updated_at` 추가.
 - **후속·이연(chat 결합)**: 예약 생성 시 채팅방에 예약 카드를 자동 기록하던 결합(`chatRoomId`·`BOOKING_CARD`·`BookingCreatedEvent`)은 1차 MVP에서 제외하고 재개 시 구현한다(§4-6 chat은 후속·이연). 해당 값은 `bookings`에 저장하지 않는다.

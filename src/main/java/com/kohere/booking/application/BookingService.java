@@ -3,6 +3,8 @@ package com.kohere.booking.application;
 import com.kohere.booking.application.dto.BookingDetailResponse;
 import com.kohere.booking.application.dto.BookingResponse;
 import com.kohere.booking.application.dto.BookingSummaryResponse;
+import com.kohere.booking.application.dto.LandlordBookingDetailResponse;
+import com.kohere.booking.application.dto.LandlordBookingSummaryResponse;
 import com.kohere.booking.domain.Booking;
 import com.kohere.booking.domain.BookingNotFoundException;
 import com.kohere.booking.domain.BookingRepository;
@@ -15,6 +17,7 @@ import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
+import com.kohere.user.api.ApplicantProfileView;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -36,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class BookingService {
 
   private static final String USER_TYPE_TENANT = "TENANT";
+  private static final String USER_TYPE_LANDLORD = "LANDLORD";
   private static final int MAX_PAGE_SIZE = 100;
 
   private final BookingRepository bookingRepository;
@@ -57,6 +61,7 @@ public class BookingService {
                 .tenantId(tenantId)
                 .listingId(listingId)
                 .roomOfferId(request.roomOfferId())
+                .landlordId(offer.landlordId())
                 .moveInDate(request.moveInDate())
                 .contractPeriod(request.contractPeriod())
                 .status(BookingStatus.REQUESTED)
@@ -73,33 +78,62 @@ public class BookingService {
         saved.getCreatedAt());
   }
 
+  /**
+   * 예약 목록 조회(userType 분기). {@code LANDLORD}면 내 소유 매물에 신청된 예약을({@code landlord_id} 스코프), 그 외(세입자)는 내
+   * 예약을 {@code createdAt} 내림차순 오프셋 페이지네이션으로 반환한다. 두 역할 모두 유효 요청이라 역할 {@code 403}은 없다. 별도 임대인 전용 API
+   * 없음.
+   */
   @Transactional(readOnly = true)
-  public PageResponse<BookingSummaryResponse> getMyBookings(long tenantId, int page, int size) {
+  public PageResponse<?> getBookings(long userId, int page, int size) {
     int safePage = Math.max(page, 0);
     int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
 
+    if (USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
+      List<LandlordBookingSummaryResponse> content =
+          bookingRepository.findByLandlordId(userId, safePage, safeSize).stream()
+              .map(this::toLandlordSummary)
+              .toList();
+      return page(content, safePage, safeSize, bookingRepository.countByLandlordId(userId));
+    }
     List<BookingSummaryResponse> content =
-        bookingRepository.findByTenantId(tenantId, safePage, safeSize).stream()
+        bookingRepository.findByTenantId(userId, safePage, safeSize).stream()
             .map(this::toSummary)
             .toList();
-    long total = bookingRepository.countByTenantId(tenantId);
-
-    int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / safeSize);
-    boolean hasNext = safePage + 1 < totalPages;
-    return PageResponse.of(content, new PageInfo(safePage, safeSize, total, totalPages, hasNext));
+    return page(content, safePage, safeSize, bookingRepository.countByTenantId(userId));
   }
 
+  /**
+   * 예약 단건 상세 조회(userType 분기). {@code LANDLORD}면 내 소유 매물에 신청된 예약을({@code landlord_id} 행 단위 확인 + 신청자
+   * 프로필 조인), 그 외(세입자)는 내 예약을 반환한다. 조회 권한 밖(세입자: 타인 예약 / 임대인: 내 소유 매물 신청 아님)이거나 없으면 {@code
+   * BookingNotFoundException}(404 통일)이다.
+   */
   @Transactional(readOnly = true)
-  public BookingDetailResponse getBooking(long tenantId, long bookingId) {
+  public Object getBooking(long userId, long bookingId) {
+    if (USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
+      Booking booking =
+          bookingRepository
+              .findByIdAndLandlordId(bookingId, userId)
+              .orElseThrow(BookingNotFoundException::new);
+      return toLandlordDetail(
+          booking, offerOf(booking), userAccountService.getApplicantProfile(booking.getTenantId()));
+    }
     Booking booking =
         bookingRepository
-            .findByIdAndTenantId(bookingId, tenantId)
+            .findByIdAndTenantId(bookingId, userId)
             .orElseThrow(BookingNotFoundException::new);
-    RoomOfferBookingView offer =
-        listingQueryService
-            .findPublishedRoomOffer(booking.getListingId(), booking.getRoomOfferId())
-            .orElse(null);
-    return toDetail(booking, offer, userAccountService.getUserName(tenantId));
+    return toDetail(booking, offerOf(booking), userAccountService.getUserName(userId));
+  }
+
+  private RoomOfferBookingView offerOf(Booking booking) {
+    return listingQueryService
+        .findPublishedRoomOffer(booking.getListingId(), booking.getRoomOfferId())
+        .orElse(null);
+  }
+
+  private static <T> PageResponse<T> page(List<T> content, int page, int size, long total) {
+    int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
+    boolean hasNext = page + 1 < totalPages;
+    return PageResponse.of(content, new PageInfo(page, size, total, totalPages, hasNext));
   }
 
   private void assertTenant(long userId) {
@@ -151,6 +185,49 @@ public class BookingService {
         booking.getMoveInDate(),
         booking.getContractPeriod(),
         tenantName,
+        deposit,
+        totalAmount);
+  }
+
+  private LandlordBookingSummaryResponse toLandlordSummary(Booking booking) {
+    RoomOfferBookingView offer = offerOf(booking);
+    return new LandlordBookingSummaryResponse(
+        booking.getId(),
+        booking.getListingId(),
+        offer == null ? null : offer.title(),
+        offer == null ? null : offer.thumbnailUrl(),
+        booking.getRoomOfferId(),
+        offer == null ? null : offer.roomOfferName(),
+        userAccountService.getUserName(booking.getTenantId()),
+        booking.getMoveInDate(),
+        booking.getContractPeriod(),
+        booking.getStatus(),
+        booking.getCreatedAt());
+  }
+
+  private LandlordBookingDetailResponse toLandlordDetail(
+      Booking booking, RoomOfferBookingView offer, ApplicantProfileView applicant) {
+    int deposit = offer == null ? 0 : offer.deposit();
+    int totalAmount =
+        offer == null ? 0 : offer.deposit() + offer.monthlyRent() * booking.getContractPeriod();
+    return new LandlordBookingDetailResponse(
+        booking.getId(),
+        booking.getStatus(),
+        booking.getListingId(),
+        booking.getRoomOfferId(),
+        offer == null ? null : offer.title(),
+        offer == null ? null : offer.thumbnailUrl(),
+        offer == null ? null : offer.address(),
+        offer == null ? null : offer.roomOfferName(),
+        booking.getCreatedAt(),
+        booking.getMoveInDate(),
+        booking.getContractPeriod(),
+        applicant.userId(),
+        applicant.name(),
+        applicant.gender(),
+        applicant.country(),
+        applicant.countryName(),
+        applicant.email(),
         deposit,
         totalAmount);
   }

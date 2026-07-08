@@ -1,6 +1,7 @@
 package com.kohere.user.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.user.api.ApplicantProfileView;
 import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.TermsAgreementView;
@@ -131,6 +132,25 @@ public class UserAccountServiceImpl implements UserAccountService {
     String first = user.getFirstName() == null ? "" : user.getFirstName();
     String last = user.getLastName() == null ? "" : user.getLastName();
     return (first + " " + last).trim();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ApplicantProfileView getApplicantProfile(long userId) {
+    User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
+    Country country =
+        user.getCountry() == null
+            ? null
+            : countryRepository.findByCode(user.getCountry()).orElse(null);
+    String first = user.getFirstName() == null ? "" : user.getFirstName();
+    String last = user.getLastName() == null ? "" : user.getLastName();
+    return new ApplicantProfileView(
+        user.getId(),
+        (first + " " + last).trim(),
+        user.getGender() == null ? null : user.getGender().name(),
+        user.getCountry(),
+        country == null ? null : country.name(),
+        user.getEmail());
   }
 
   @Override

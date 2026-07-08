@@ -838,7 +838,7 @@
 
 > 관련 API 스펙: [04-booking-inquiry-chat](../api/specs/04-booking-inquiry-chat.md)
 >
-> **스코프(1차 MVP)**: **매물 예약(= 신청, Booking)** 은 인앱 채팅과 분리된 **독립 기능**으로 구현한다. (**본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**) `ACTIVE` 세입자가 방 상품(`roomOffer`)에 타겟 입주일·계약기간으로 예약을 신청해 내역을 저장하고(US-4-1), 내 예약을 목록·단건 상세로 조회한다(US-4-2). 예약 상세는 **매물 정보·예약 일시·타겟 입주일·계약기간·예약자 성명·보증금·총 금액**을 내려준다. 후속으로 분리·이연하는 것은 **예약(신청) 자체가 아니라 문의(inquiry)·인앱 채팅(US-4-3~US-4-5), 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 기존 F-03 chat 결합**이다 — 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 하지 않는다. 예약은 매물·회원과 cross-store 조인이 금지되므로([ADR-0005](../adr/0005-polyglot-persistence.md)) 가격·성명은 조회 시점에 애플리케이션 레벨로 조합한다(`listing :: api`·`user :: api` 공개 쿼리, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)).
+> **스코프(1차 MVP)**: **매물 예약(= 신청, Booking)** 은 인앱 채팅과 분리된 **독립 기능**으로 구현한다. (**본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**) `ACTIVE` 세입자가 방 상품(`roomOffer`)에 타겟 입주일·계약기간으로 예약을 신청해 내역을 저장하고(US-4-1), 내 예약을 목록·단건 상세로 조회한다(US-4-2). 예약 상세는 **매물 정보·예약 일시·타겟 입주일·계약기간·예약자 성명·보증금·총 금액**을 내려준다. **임대인은 자기 소유 매물(`listing.landlordId`=본인)에 신청된 예약을 목록·단건 상세로 조회한다(US-4-6)** — 예약 **생성**은 세입자 전용이지만 **조회는 세입자(내 예약)·임대인(내 매물에 신청된 예약)** 두 관점으로 나뉜다. 후속으로 분리·이연하는 것은 **예약(신청) 자체가 아니라 문의(inquiry)·인앱 채팅(US-4-3~US-4-5), 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 기존 F-03 chat 결합**이다 — 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 하지 않는다. 예약은 매물·회원과 cross-store 조인이 금지되므로([ADR-0005](../adr/0005-polyglot-persistence.md)) 가격·성명은 조회 시점에 애플리케이션 레벨로 조합한다(`listing :: api`·`user :: api` 공개 쿼리, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)).
 
 외국인 세입자가 매물의 방 상품에 예약을 신청하면 예약 내역(대상 방 상품·타겟 입주일·계약기간·상태)이 저장되고, 세입자는 자신의 예약 목록과 상세(예상 비용 포함)를 다시 확인할 수 있다.
 
@@ -998,6 +998,44 @@
   - **Given** 방 참여자가 짧은 시간에 메시지를 도배하거나, 읽음 처리를 동시에/반복 호출할 때
   - **When** 메시지 전송이 레이트리밋을 초과하면 → `429` + `TOO_MANY_REQUESTS`. **When** 같은 `lastReadMessageId`로 `read`를 반복 호출하거나 현재보다 과거 ID를 보내면
   - **Then** 읽음 위치는 전진만 하며 중복 호출에도 결과가 동일(멱등)하고, 다른 방의 메시지 ID를 보내면 `422` + `CHAT_MESSAGE_NOT_IN_ROOM`으로 거절된다.
+
+### US-4-6 — 임대인 받은 신청 조회(내 매물, 목록·단건 상세)
+
+> **[1차 MVP] 매물 예약(신청) 스토리다** — 후속·이연(US-4-3~US-4-5, 문의·채팅)이 아니라 US-4-1·US-4-2와 함께 booking 독립 기능에 속한다. 예약 **생성**은 세입자 전용이지만 **조회**는 세입자(내 예약, US-4-2)와 임대인(내 매물에 신청된 예약, 본 스토리)으로 나뉜다.
+
+**As a** 매물을 등록·소유한 `ACTIVE` 임대인(`userType=LANDLORD`)  
+**I want** 내 소유 매물에 신청된 예약을 목록으로 보고 각 신청의 상세(신청자 정보·매물 정보·타겟 입주일·계약기간·보증금·총 금액)를 조회하기를  
+**So that** 어떤 세입자가 어떤 방에 어떤 조건으로 신청했는지 확인하고 응대(수락/거절은 후속)를 준비한다.
+
+- 우선순위: High
+- 관련 NFR: 보안(내 소유 매물 신청만 조회 — 소유권 스코프), 개인정보(신청자 PII(이름·성별·국적·이메일)를 임대인에게 **마스킹 없이 평문 노출** — 제품 결정), 성능(목록 페이지네이션), 정합성(가격·신청자 정보 조회 시점 조인)
+- 백엔드 관점: **별도 임대인 전용 API를 두지 않고** 조회 엔드포인트(`GET /api/v1/bookings`·`GET /api/v1/bookings/{bookingId}`)에서 요청자 `userType`으로 **분기**한다 — `LANDLORD`면 내 소유 매물에 신청된 예약을(`TENANT`면 내 예약, US-4-2). `userType`은 토큰 클레임이 아니라 `user :: api`(`getUserType`)로 서비스 계층에서 판정하며, **두 역할 모두 유효한 요청이라 역할 `403`은 없다**. 소유권은 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 **비정규화 저장**해 두므로(생성은 이미 `listing :: api`로 매물을 조회 중이라 소유자 캡처 비용이 거의 없다), 임대인 **목록**은 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건을 `createdAt` 내림차순 **오프셋 페이지네이션**(api-design-guide §4-1)으로 조회한다(cross-store 조인 없음, [ADR-0005](../adr/0005-polyglot-persistence.md); `chat_rooms` 비정규화 선례와 일치). `landlordId`는 매물 상태와 무관해 `PAUSED` 매물의 신청도 포함된다. **상세**는 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**한다(listing::api 왕복 없음). 응답 조립 시 매물 요약·가격은 `listing :: api`로, 신청자 프로필(성명·성별·국적·이메일)은 `user :: api`(신규 `getApplicantProfile`)로 조회 시점에 실시간 조인한다(스냅샷 없음, 마스킹 없이 평문 노출). **총 금액**(`totalAmount`)은 세입자 분기와 **동일한 필드·정의**(`보증금 + 월세 × 개월수`, 관리비 제외)다. 신규 에러코드는 없고 기존 `BOOKING_NOT_FOUND`(404) + 공통 `AUTH_ONBOARDING_REQUIRED`를 재사용한다.
+
+**AC (Given/When/Then)**
+
+- 정상(목록 — 임대인 분기)
+  - **Given** 소유 매물에 신청 3건을 보유한 `ACTIVE` 임대인이
+  - **When** `GET /api/v1/bookings?page=0&size=20`을 호출하면(요청자 `userType=LANDLORD`)
+  - **Then** `200 OK` + `data.content`가 `createdAt` 내림차순으로 정렬되고, 각 항목에 `bookingId`·매물 요약(`listingId`·제목·썸네일)·`roomOfferId`·`roomOfferName`·신청자 성명(`applicant.name`)·`moveInDate`·`contractPeriod`·`status`·`createdAt`가 포함되며 `data.page`에 오프셋 메타가 담긴다. **타 임대인 매물의 신청은 절대 포함되지 않는다.**
+- 정상(단건 상세 — 임대인 분기)
+  - **Given** `ACTIVE` 임대인이 자기 소유 매물에 신청된 예약 1건을 지목할 때
+  - **When** `GET /api/v1/bookings/{bookingId}`를 호출하면(요청자 `userType=LANDLORD`)
+  - **Then** `200 OK` + `data`에 **신청자 정보**(`applicant`: 이름·성별·국적(`country`·`countryName`)·이메일, 마스킹 없음)·**매물 정보**(제목·썸네일·주소·방 상품명)·**타겟 입주일**(`moveInDate`)·**계약기간**(`contractPeriod`)·**상태**(`status`)·**보증금**(`deposit`)·**총 금액**(`totalAmount`, 세입자와 동일 필드)이 포함된다.
+- 정합성(실시간 가격·현재값)
+  - **Given** 신청 이후 해당 방 상품의 가격(`pricing`)이 변경됐을 때
+  - **When** 임대인이 상세를 다시 조회하면
+  - **Then** 스냅샷이 아니라 **현재 가격 기준**으로 보증금·총 금액을 계산해 내려준다.
+- 인증·분기·소유권 스코프
+  - **Given** 토큰이 없거나 만료된 요청이면 → `401` + `UNAUTHENTICATED`/`TOKEN_EXPIRED`.
+  - **Given** 온보딩 미완료(비 `ACTIVE`) 요청이면 → `403` + `AUTH_ONBOARDING_REQUIRED`.
+  - **When** `userType=TENANT`(세입자)가 같은 `GET /api/v1/bookings`를 호출하면 → **내 예약**으로 분기된다(US-4-2, 역할 `403` 없음).
+  - **When** 임대인이 존재하지 않는 예약이거나 **내 소유 매물의 신청이 아닌** `bookingId`로 상세를 조회하면 → `404` + `BOOKING_NOT_FOUND`(존재 여부를 노출하지 않도록 내 매물 신청이 아니면 404로 통일 — 세입자 분기의 '타인 예약→404'와 동일).
+- 경계(빈 목록/일시중지 매물/삭제된 매물)
+  - **Given** 소유 매물이 없거나 소유 매물에 신청이 하나도 없을 때 → 임대인 분기 `GET /api/v1/bookings`는 `200` + `content: []`, `page.totalElements: 0`.
+  - **Given** 소유 매물이 `PAUSED`(일시중지) 상태일 때 → 그 매물에 신청된 예약도 목록·상세에 포함된다(`landlordId`가 매물 상태와 무관하게 booking 행에 저장돼 있으므로 `PUBLISHED` 한정이 아니다).
+  - **Given** 신청된 방 상품이 이후 비공개/삭제됐을 때 → 상세 조회 시 예약 코어 내역(날짜·계약기간·상태)은 유지하되 매물 정보·가격 파트의 표기 정책은 **(확인 필요)**(US-4-2와 동일).
+
+> 신설 의존: 조회 서비스가 `user :: api`(`getUserType`)로 `userType`을 판정해 세입자/임대인 동작을 분기한다(별도 임대인 API·역할 `403` 없음). 선행 작업 — ① 예약 **생성** 시 소유자 캡처를 위해 `listing :: api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId` 추가 노출 + `Booking`에 `landlordId` 저장, ② `user :: api` 신청자 프로필 조회(`getApplicantProfile` — 성명·성별·국적·이메일), ③ booking 저장소의 `landlord_id` 컬럼 + `findByLandlordId`(페이지·카운트) + `(landlord_id, created_at)` 인덱스(신규 마이그레이션, database-design §4-5). 임대인 조회에 listing::api 소유권 조회 메서드는 불필요(소유권은 booking 행에서 판정). `booking → {listing::api, user::api}` 의존 화이트리스트는 이미 선언돼 있다. 신규 에러코드 없이 기존 `BOOKING_NOT_FOUND`(404)를 재사용한다. **임대인에게 신청자 이메일·성별·국적은 마스킹 없이 평문으로 노출한다(제품 결정).**
 
 ## 5. 커뮤니티 (게시판 · 동네친구)
 
