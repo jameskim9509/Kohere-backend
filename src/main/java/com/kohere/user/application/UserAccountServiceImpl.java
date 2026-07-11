@@ -222,7 +222,8 @@ public class UserAccountServiceImpl implements UserAccountService {
     }
   }
 
-  // VisaType은 상수명이 아니라 value(STUDY_D-2 …)로 주고받으므로 name 기반 parseEnum과 분리한다(#93).
+  // VisaType은 상수명이 아니라 value(표시용 라벨, Short Term Visit(C-1~4, B) …)로 주고받으므로 name 기반 parseEnum과
+  // 분리한다(#138).
   private static VisaType parseVisaType(String value) {
     try {
       return VisaType.fromValue(value);

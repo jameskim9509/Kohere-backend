@@ -105,9 +105,9 @@ class UserTest {
                     Gender.FEMALE,
                     LocalDate.of(1995, 5, 5),
                     "VN",
-                    Occupation.DEVELOPER,
+                    Occupation.ETC,
                     "a@example.com",
-                    VisaType.STUDY,
+                    VisaType.STUDENTS_TRAINEES,
                     NOW))
         .isInstanceOf(OnboardingAlreadyCompletedException.class);
   }

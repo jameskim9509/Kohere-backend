@@ -86,7 +86,7 @@ Content-Type: application/json
   "country": "KR",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "STUDY_D-2"
+  "visaType": "Students & Trainees(D-2, D-3, D-4)"
 }
 
 ### 6. 생활 팁 주제 목록 조회 — 노출 순서대로 전체(번역된 name, 비페이지)

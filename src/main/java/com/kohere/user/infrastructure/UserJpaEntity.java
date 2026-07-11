@@ -54,7 +54,7 @@ public class UserJpaEntity {
 
   private String email;
 
-  // 값에 하이픈이 있어(STUDY_D-2 …) 상수명 저장(@Enumerated)이 불가 — 컨버터로 value를 저장한다(#93).
+  // 값이 표시용 라벨이라(Short Term Visit(C-1~4, B) …) 상수명 저장(@Enumerated)이 불가 — 컨버터로 value를 저장한다(#138).
   @Convert(converter = VisaTypeConverter.class)
   @Column(length = 80)
   private VisaType visaType;

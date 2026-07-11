@@ -144,7 +144,7 @@
 | 식별자 | 리소스 ID는 서버 생성. 본문/경로에서 숫자(Long) 또는 문자열로 일관되게 노출 |
 | 금액 | 원(KRW) 정수, 소수점 없음 (`budget: 500000`) |
 | 좌표 | `lat`/`lng` 십진수(WGS84), 소수 6자리 권장 |
-| enum | 응답·요청 모두 **UPPER_SNAKE_CASE 문자열**(`MALE`, `ARC_ISSUED`). 숫자 코드로 노출하지 않는다. (예외: `visaType`은 상수명 뒤에 체류자격 코드를 이어붙여 하이픈을 포함한다 — `STUDY_D-2` 등, #93) |
+| enum | 응답·요청 모두 **UPPER_SNAKE_CASE 문자열**(`MALE`, `ARC_ISSUED`). 숫자 코드로 노출하지 않는다. (예외: `visaType`은 상수명이 아니라 사람이 읽는 표시용 라벨 문자열을 값으로 쓴다 — `Short Term Visit(C-1~4, B)` 등, #138) |
 | 불리언 | `is`/`has` 없이 명사형 필드(`favorited`, `read`) 또는 의미가 분명한 이름 |
 | 네이밍 | JSON 필드·쿼리 파라미터 `lowerCamelCase`, URL 경로 `kebab-case` |
 | 정렬 | `?sort=field,(asc\|desc)` (다중 정렬은 `sort` 반복) |

@@ -4,45 +4,34 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * 비자정보(온보딩 필수). 요구사항 정의서의 비자 드롭다운 확정 항목(#93).
+ * 비자정보(온보딩 필수). 요구사항 정의서의 비자 드롭다운 확정 항목(#93, #138 개편).
  *
- * <p>API 요청·응답·저장 값은 enum 상수명이 아니라 {@link #getValue()}다 — 카테고리명 뒤에 출입국 체류자격 코드를 언더스코어로 이어붙인 형식(예:
- * {@code STUDY_D-2}, {@code DIPLOMATIC_OFFICIAL_A-1_A-2}). 코드에 하이픈이 들어가 다른 enum의 UPPER_SNAKE 규약과 달리
- * 예외적으로 하이픈을 허용한다(#93). docs/api/specs/01-auth-onboarding.md (visaType).
+ * <p>API 요청·응답·저장 값은 enum 상수명이 아니라 {@link #getValue()}다 — 사람이 읽는 표시용 라벨 문자열이며 공백·괄호·구분기호를 포함한다(예:
+ * {@code Short Term Visit(C-1~4, B)}, {@code Students & Trainees(D-2, D-3, D-4)}). 값이 UPPER_SNAKE가
+ * 아니라 다른 enum 규약과 달리 예외적으로 표시 라벨을 그대로 값으로 쓴다(#138). docs/api/specs/01-auth-onboarding.md
+ * (visaType).
  */
 public enum VisaType {
-  /** 외교·공무. */
-  DIPLOMATIC_OFFICIAL("DIPLOMATIC_OFFICIAL_A-1_A-2"),
-  /** 사증면제. */
-  VISA_EXEMPTED("VISA_EXEMPTED_B"),
-  /** 취재·종교. */
-  JOURNALISM_RELIGIOUS_AFFAIRS("JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6"),
-  /** 단기방문. */
-  SHORT_TERM_VISIT("SHORT_TERM_VISIT_C-2_C-3"),
-  /** 유학. */
-  STUDY("STUDY_D-2"),
-  /** 연수. */
-  TRAINEE("TRAINEE_D-3_D-4"),
-  /** 주재. */
-  INTRA_COMPANY_TRANSFER("INTRA_COMPANY_TRANSFER_D-7"),
-  /** 전문인력. */
-  PROFESSIONAL("PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7"),
-  /** 비전문취업. */
-  NON_PROFESSIONAL("NON_PROFESSIONAL_E-8_E-9_E-10"),
-  /** 워킹홀리데이. */
-  WORKING_HOLIDAY("WORKING_HOLIDAY_H-1"),
-  /** 방문취업. */
-  WORK_AND_VISIT("WORK_AND_VISIT_H-2"),
-  /** 방문동거·거주·동반. */
-  FAMILY_VISITOR_DEPENDENT("FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3"),
-  /** 재외동포. */
-  OVERSEAS_KOREAN("OVERSEAS_KOREAN_F-4"),
-  /** 영주. */
-  PERMANENT_RESIDENCE("PERMANENT_RESIDENCE_F-5"),
-  /** 결혼이민. */
-  MARRIAGE_MIGRANT("MARRIAGE_MIGRANT_F-6"),
+  /** 단기방문(C-1~4, B). */
+  SHORT_TERM_VISIT("Short Term Visit(C-1~4, B)"),
+  /** 유학·연수(D-2, D-3, D-4). */
+  STUDENTS_TRAINEES("Students & Trainees(D-2, D-3, D-4)"),
+  /** 비전문취업(E-8, E-9, E-10, H-2). */
+  NON_PROFESSIONAL_WORKERS("Non-Professional Workers(E-8, E-9, E-10, H-2)"),
+  /** 워킹홀리데이·방문취업(H-1, H-2). */
+  WORKING_HOLIDAY_WORK_AND_VISIT("Working Holiday/Work and Visit(H-1, H-2)"),
+  /** 재외동포(F-4). */
+  OVERSEAS_KOREANS("Overseas Koreans(F-4)"),
+  /** 방문동거·거주·결혼이민(F-1, F-2, F-3, F-6). */
+  FAMILY_MARRIAGE_MIGRANTS("Family/Marriage Migrants(F-1, F-2, F-3, F-6)"),
+  /** 영주(F-5). */
+  PERMANENT_RESIDENTS("Permanent Residents(F-5)"),
+  /** 전문인력(C-4, D-1, D-7~10, E-1~7). */
+  PROFESSIONALS("Professionals(C-4, D-1, D-7~10, E-1~7)"),
+  /** 외교·공무·기타(A-1, A-2, G-1). */
+  DIPLOMATIC_OFFICIAL_AND_OTHERS("Diplomatic/Official & Others(A-1, A-2, G-1)"),
   /** 기타. */
-  OTHERS("OTHERS_G-1");
+  ETC("etc");
 
   private final String value;
 
@@ -50,7 +39,7 @@ public enum VisaType {
     this.value = value;
   }
 
-  /** API·DB 노출 값(카테고리 + 체류자격 코드, 예 {@code STUDY_D-2}). */
+  /** API·DB 노출 값(표시용 라벨, 예 {@code Short Term Visit(C-1~4, B)}). */
   @JsonValue
   public String getValue() {
     return value;

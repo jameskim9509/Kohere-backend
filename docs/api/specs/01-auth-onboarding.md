@@ -21,8 +21,8 @@
 | provider | `APPLE`, `GOOGLE` | 소셜 로그인 제공자 |
 | 성별 `gender` | `MALE`, `FEMALE` | 온보딩 필수(세입자만) |
 | 생년월일 `birthDate` | 날짜 문자열(`YYYY-MM-DD`) | 온보딩 필수(세입자·임대인 공통) · 과거 날짜만 허용(미래 불가) |
-| 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `EDUCATION_ACADEMIC_RESEARCH`(교육/학술 연구), `IT_SOFTWARE_ENGINEERING`(IT/소프트웨어 엔지니어링), `DEVELOPER`(개발자), `DESIGNER`(디자이너) | 온보딩 필수 · 요구사항 확정값(#93) |
-| 비자정보 `visaType` | `DIPLOMATIC_OFFICIAL_A-1_A-2`(외교·공무), `VISA_EXEMPTED_B`(사증면제), `JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6`(취재·종교), `SHORT_TERM_VISIT_C-2_C-3`(단기방문), `STUDY_D-2`(유학), `TRAINEE_D-3_D-4`(연수), `INTRA_COMPANY_TRANSFER_D-7`(주재), `PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7`(전문인력), `NON_PROFESSIONAL_E-8_E-9_E-10`(비전문취업), `WORKING_HOLIDAY_H-1`(워킹홀리데이), `WORK_AND_VISIT_H-2`(방문취업), `FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3`(방문동거·거주·동반), `OVERSEAS_KOREAN_F-4`(재외동포), `PERMANENT_RESIDENCE_F-5`(영주), `MARRIAGE_MIGRANT_F-6`(결혼이민), `OTHERS_G-1`(기타) | 온보딩 필수 · 요구사항 확정값(#93). 값=상수명_체류자격코드(하이픈 포함) |
+| 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `LANGUAGE_TEACHING`(어학·교육), `MANUFACTURING_PRODUCTION`(제조·생산), `BUSINESS_TRADE`(사업·무역), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편) |
+| 비자정보 `visaType` | `Short Term Visit(C-1~4, B)`(단기방문), `Students & Trainees(D-2, D-3, D-4)`(유학·연수), `Non-Professional Workers(E-8, E-9, E-10, H-2)`(비전문취업), `Working Holiday/Work and Visit(H-1, H-2)`(워킹홀리데이·방문취업), `Overseas Koreans(F-4)`(재외동포), `Family/Marriage Migrants(F-1, F-2, F-3, F-6)`(방문동거·거주·결혼이민), `Permanent Residents(F-5)`(영주), `Professionals(C-4, D-1, D-7~10, E-1~7)`(전문인력), `Diplomatic/Official & Others(A-1, A-2, G-1)`(외교·공무·기타), `etc`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). 값=표시용 라벨 문자열(상수명 아님) |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
 | 이메일 `email` | 이메일 문자열 | **세입자** 온보딩 필수 · 인증번호로 사전 검증(§3·§4). 임대인은 미수집([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)) |
 | 닉네임 `nickname` | `형용사 + 사물` 문자열 | 서버가 자동 배정(사용자 입력·수정 불가), 전역 유니크 |
@@ -428,7 +428,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
   "country": "VN",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "minh@example.com",
-  "visaType": "STUDY_D-2"
+  "visaType": "Students & Trainees(D-2, D-3, D-4)"
 }
 ```
 
@@ -439,9 +439,9 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `gender` | string(enum) | 필수 | `MALE` \| `FEMALE` |
 | `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) |
 | `country` | string | 필수 | 국적 ISO 3166-1 alpha-2 코드(예: `VN`). `countries`에 존재해야 함(없으면 `INVALID_INPUT`) |
-| `occupation` | string(enum) | 필수 | `UNDERGRADUATE_STUDENT` \| `GRADUATE_STUDENT` \| `EXCHANGE_STUDENT` \| `EDUCATION_ACADEMIC_RESEARCH` \| `IT_SOFTWARE_ENGINEERING` \| `DEVELOPER` \| `DESIGNER` |
+| `occupation` | string(enum) | 필수 | `UNDERGRADUATE_STUDENT` \| `GRADUATE_STUDENT` \| `EXCHANGE_STUDENT` \| `LANGUAGE_TEACHING` \| `MANUFACTURING_PRODUCTION` \| `BUSINESS_TRADE` \| `ETC` |
 | `email` | string | 필수 | 이메일 형식. **§3·§4로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_EMAIL_NOT_VERIFIED` 422) |
-| `visaType` | string(enum) | 필수 | `DIPLOMATIC_OFFICIAL_A-1_A-2` \| `VISA_EXEMPTED_B` \| `JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6` \| `SHORT_TERM_VISIT_C-2_C-3` \| `STUDY_D-2` \| `TRAINEE_D-3_D-4` \| `INTRA_COMPANY_TRANSFER_D-7` \| `PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7` \| `NON_PROFESSIONAL_E-8_E-9_E-10` \| `WORKING_HOLIDAY_H-1` \| `WORK_AND_VISIT_H-2` \| `FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3` \| `OVERSEAS_KOREAN_F-4` \| `PERMANENT_RESIDENCE_F-5` \| `MARRIAGE_MIGRANT_F-6` \| `OTHERS_G-1` |
+| `visaType` | string(enum) | 필수 | `Short Term Visit(C-1~4, B)` \| `Students & Trainees(D-2, D-3, D-4)` \| `Non-Professional Workers(E-8, E-9, E-10, H-2)` \| `Working Holiday/Work and Visit(H-1, H-2)` \| `Overseas Koreans(F-4)` \| `Family/Marriage Migrants(F-1, F-2, F-3, F-6)` \| `Permanent Residents(F-5)` \| `Professionals(C-4, D-1, D-7~10, E-1~7)` \| `Diplomatic/Official & Others(A-1, A-2, G-1)` \| `etc` |
 
 > 약관 동의(`termsOfServiceAgreed`·`privacyPolicyAgreed`·`marketingAgreed`)는 이 요청에 포함하지 않는다 — 앞선 `POST /auth/terms`(§2)에서 처리·기록된다.
 
@@ -463,7 +463,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "countryFlag": "https://flagcdn.com/vn.svg",
       "occupation": "UNDERGRADUATE_STUDENT",
       "email": "minh@example.com",
-      "visaType": "STUDY_D-2",
+      "visaType": "Students & Trainees(D-2, D-3, D-4)",
       "userType": "TENANT",
       "status": "ACTIVE",
       "marketingAgreed": false,
@@ -713,7 +713,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
     "countryFlag": "https://flagcdn.com/vn.svg",
     "occupation": "UNDERGRADUATE_STUDENT",
     "email": "minh@example.com",
-    "visaType": "STUDY_D-2",
+    "visaType": "Students & Trainees(D-2, D-3, D-4)",
     "status": "ACTIVE",
     "termsOfServiceAgreed": true,
     "privacyPolicyAgreed": true,
@@ -771,8 +771,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```json
 {
   "country": "KR",
-  "occupation": "DEVELOPER",
-  "visaType": "SHORT_TERM_VISIT_C-2_C-3",
+  "occupation": "BUSINESS_TRADE",
+  "visaType": "Short Term Visit(C-1~4, B)",
   "marketingAgreed": true
 }
 ```

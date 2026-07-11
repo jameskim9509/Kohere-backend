@@ -95,7 +95,7 @@ Content-Type: application/json
   "country": "VN",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "STUDY_D-2"
+  "visaType": "Students & Trainees(D-2, D-3, D-4)"
 }
 
 ### 5-b. (참고) 매물 목록 — 예약할 listingId·roomOfferId 확보용

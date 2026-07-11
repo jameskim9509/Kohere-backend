@@ -1055,12 +1055,12 @@ class AuthOnboardingDocsTest {
         field(
             "occupation",
             JsonFieldType.STRING,
-            "직업 enum(필수): UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|EDUCATION_ACADEMIC_RESEARCH|IT_SOFTWARE_ENGINEERING|DEVELOPER|DESIGNER"),
+            "직업 enum(필수): UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC"),
         field("email", JsonFieldType.STRING, "사전 인증된 이메일과 일치(필수)"),
         field(
             "visaType",
             JsonFieldType.STRING,
-            "비자유형 enum(필수): DIPLOMATIC_OFFICIAL_A-1_A-2|VISA_EXEMPTED_B|JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6|SHORT_TERM_VISIT_C-2_C-3|STUDY_D-2|TRAINEE_D-3_D-4|INTRA_COMPANY_TRANSFER_D-7|PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7|NON_PROFESSIONAL_E-8_E-9_E-10|WORKING_HOLIDAY_H-1|WORK_AND_VISIT_H-2|FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3|OVERSEAS_KOREAN_F-4|PERMANENT_RESIDENCE_F-5|MARRIAGE_MIGRANT_F-6|OTHERS_G-1"));
+            "비자유형 enum(필수): Short Term Visit(C-1~4, B)|Students & Trainees(D-2, D-3, D-4)|Non-Professional Workers(E-8, E-9, E-10, H-2)|Working Holiday/Work and Visit(H-1, H-2)|Overseas Koreans(F-4)|Family/Marriage Migrants(F-1, F-2, F-3, F-6)|Permanent Residents(F-5)|Professionals(C-4, D-1, D-7~10, E-1~7)|Diplomatic/Official & Others(A-1, A-2, G-1)|etc"));
   }
 
   private static List<FieldDescriptor> refreshTokenRequestField(String description) {
@@ -1266,7 +1266,7 @@ class AuthOnboardingDocsTest {
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
           "email": "%s",
-          "visaType": "SHORT_TERM_VISIT_C-2_C-3"
+          "visaType": "Short Term Visit(C-1~4, B)"
         }
         """
         .formatted(email);
@@ -1282,7 +1282,7 @@ class AuthOnboardingDocsTest {
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
           "email": "gil@mail.example",
-          "visaType": "SHORT_TERM_VISIT_C-2_C-3"
+          "visaType": "Short Term Visit(C-1~4, B)"
         }
         """;
   }
