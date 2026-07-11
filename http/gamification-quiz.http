@@ -84,7 +84,7 @@ Content-Type: application/json
   "country": "KR",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "STUDY_D-2"
+  "visaType": "STUDENTS_TRAINEES"
 }
 
 ### 6. 랜덤 퀴즈 조회 — 활성 풀에서 무작위 1개(사용자 언어 번역, 정답·해설 미포함)
