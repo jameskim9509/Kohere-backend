@@ -54,7 +54,8 @@ public class UserJpaEntity {
 
   private String email;
 
-  // 값이 표시용 라벨이라(Short Term Visit(C-1~4, B) …) 상수명 저장(@Enumerated)이 불가 — 컨버터로 value를 저장한다(#138).
+  // DB엔 상수명이 아니라 표시용 라벨(value, Short Term Visit(C-1~4, B) …)을 저장 — @Enumerated(상수명) 대신 컨버터
+  // 사용(#138).
   @Convert(converter = VisaTypeConverter.class)
   @Column(length = 80)
   private VisaType visaType;

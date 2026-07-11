@@ -633,7 +633,7 @@ class AuthServiceTest {
         "https://flagcdn.com/kr.svg",
         "UNDERGRADUATE_STUDENT",
         "gil@example.com",
-        "Short Term Visit(C-1~4, B)",
+        "SHORT_TERM_VISIT",
         null,
         "TENANT",
         "ACTIVE",
@@ -650,7 +650,7 @@ class AuthServiceTest {
         "KR",
         "UNDERGRADUATE_STUDENT",
         "gil@example.com",
-        "Short Term Visit(C-1~4, B)");
+        "SHORT_TERM_VISIT");
   }
 
   /**

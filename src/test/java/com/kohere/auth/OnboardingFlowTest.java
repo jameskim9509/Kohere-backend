@@ -232,7 +232,7 @@ class OnboardingFlowTest {
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
           "email": "%s",
-          "visaType": "Short Term Visit(C-1~4, B)"
+          "visaType": "SHORT_TERM_VISIT"
         }
         """
         .formatted(email);

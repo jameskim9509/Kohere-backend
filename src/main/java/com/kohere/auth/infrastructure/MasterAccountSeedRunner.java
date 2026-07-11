@@ -59,7 +59,7 @@ class MasterAccountSeedRunner implements ApplicationRunner {
             "US",
             "UNDERGRADUATE_STUDENT",
             account.email(),
-            "Students & Trainees(D-2, D-3, D-4)"));
+            "STUDENTS_TRAINEES"));
     link(account, userId);
     log.warn("[TEST SEED] 세입자 마스터 계정 시드 완료 (userId={}, subject={}).", userId, account.subject());
   }

@@ -70,7 +70,7 @@ Content-Type: application/json
 ### 5. 온보딩 제출 — 성공 시 user 프로필 + 정식 access/refresh 발급
 #    enum 유효값: gender=MALE|FEMALE
 #                 occupation=UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC
-#                 visaType=Short Term Visit(C-1~4, B)|Students & Trainees(D-2, D-3, D-4)|Non-Professional Workers(E-8, E-9, E-10, H-2)|Working Holiday/Work and Visit(H-1, H-2)|Overseas Koreans(F-4)|Family/Marriage Migrants(F-1, F-2, F-3, F-6)|Permanent Residents(F-5)|Professionals(C-4, D-1, D-7~10, E-1~7)|Diplomatic/Official & Others(A-1, A-2, G-1)|etc
+#                 visaType=SHORT_TERM_VISIT|STUDENTS_TRAINEES|NON_PROFESSIONAL_WORKERS|WORKING_HOLIDAY_WORK_AND_VISIT|OVERSEAS_KOREANS|FAMILY_MARRIAGE_MIGRANTS|PERMANENT_RESIDENTS|PROFESSIONALS|DIPLOMATIC_OFFICIAL_AND_OTHERS|ETC
 #    country=ISO 3166-1 alpha-2 (시드: KR,CN,VN,US,UZ,TH,PH,NP,MN,JP,ID,KH,RU,IN,MM) / email=4단계서 인증한 값
 # @name onboarding
 POST {{baseUrl}}/api/v1/auth/onboarding
@@ -85,7 +85,7 @@ Content-Type: application/json
   "country": "VN",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "Students & Trainees(D-2, D-3, D-4)"
+  "visaType": "STUDENTS_TRAINEES"
 }
 
 ### 6. 내 프로필 조회 (정식 access 토큰 필요)
@@ -103,7 +103,7 @@ Content-Type: application/json
 {
   "country": "JP",
   "occupation": "BUSINESS_TRADE",
-  "visaType": "Short Term Visit(C-1~4, B)"
+  "visaType": "SHORT_TERM_VISIT"
 }
 
 ### 8. 토큰 재발급 (공개 엔드포인트, 본문 refresh 토큰)

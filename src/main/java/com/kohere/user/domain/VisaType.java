@@ -1,15 +1,12 @@
 package com.kohere.user.domain;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
-
 /**
  * 비자정보(온보딩 필수). 요구사항 정의서의 비자 드롭다운 확정 항목(#93, #138 개편).
  *
- * <p>API 요청·응답·저장 값은 enum 상수명이 아니라 {@link #getValue()}다 — 사람이 읽는 표시용 라벨 문자열이며 공백·괄호·구분기호를 포함한다(예:
- * {@code Short Term Visit(C-1~4, B)}, {@code Students & Trainees(D-2, D-3, D-4)}). 값이 UPPER_SNAKE가
- * 아니라 다른 enum 규약과 달리 예외적으로 표시 라벨을 그대로 값으로 쓴다(#138). docs/api/specs/01-auth-onboarding.md
- * (visaType).
+ * <p>API(요청·응답)는 다른 enum과 동일하게 상수명(코드, 예 {@code SHORT_TERM_VISIT})으로 주고받는다. 다만 DB에는 상수명이 아니라 사람이 읽는
+ * 표시용 라벨({@link #getValue()}, 예 {@code Short Term Visit(C-1~4, B)})을 저장한다 — 영속은 {@code
+ * VisaTypeConverter}가 {@link #getValue()}/{@link #fromValue(String)}로 처리한다.
+ * docs/api/specs/01-auth-onboarding.md (visaType).
  */
 public enum VisaType {
   /** 단기방문(C-1~4, B). */
@@ -39,14 +36,12 @@ public enum VisaType {
     this.value = value;
   }
 
-  /** API·DB 노출 값(표시용 라벨, 예 {@code Short Term Visit(C-1~4, B)}). */
-  @JsonValue
+  /** DB 저장용 표시 라벨(예 {@code Short Term Visit(C-1~4, B)}). API 노출은 상수명이다. */
   public String getValue() {
     return value;
   }
 
-  /** {@link #getValue()} 문자열로 enum을 역매핑한다(요청 역직렬화·DB 로드). 미정의 값은 예외. */
-  @JsonCreator
+  /** {@link #getValue()} 라벨로 enum을 역매핑한다(DB 로드). 미정의 값은 예외. */
   public static VisaType fromValue(String value) {
     for (VisaType type : values()) {
       if (type.value.equals(value)) {

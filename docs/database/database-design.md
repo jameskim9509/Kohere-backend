@@ -188,7 +188,7 @@
 | `country` | CHAR(2) | NULL · 국적 ISO 3166-1 alpha-2 코드 · → `countries.code`(같은 모듈) · 표시명·국기는 `countries`에서 확보(PII) |
 | `occupation` | VARCHAR(32) (enum `Occupation`) | NULL · 확정 분류값 7종(#93, #138 개편): `UNDERGRADUATE_STUDENT`·`GRADUATE_STUDENT`·`EXCHANGE_STUDENT`·`LANGUAGE_TEACHING`·`MANUFACTURING_PRODUCTION`·`BUSINESS_TRADE`·`ETC`(PII) |
 | `email` | VARCHAR(255) | NULL · 인증 완료 연락 이메일 · 민감정보(PII). **세입자 전용**(임대인은 NULL — 미수집, [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 소셜 제공자 이메일(`social_accounts.email`)과 별개 |
-| `visa_type` | VARCHAR(80) (enum `VisaType`) | NULL · 민감정보(PII) · 값=표시용 라벨 문자열(상수명 아님, 예: `Short Term Visit(C-1~4, B)` · #138). 라벨에 공백·괄호가 있어 상수명 저장(`@Enumerated`) 불가 → `VisaTypeConverter`로 value 저장 |
+| `visa_type` | VARCHAR(80) (enum `VisaType`) | NULL · 민감정보(PII) · **저장값=표시용 라벨**(예: `Short Term Visit(C-1~4, B)`), API 노출은 상수명(`SHORT_TERM_VISIT`) · 라벨에 공백·괄호가 있어 `@Enumerated` 대신 `VisaTypeConverter`로 저장(#138) |
 | `status` | VARCHAR(16) (enum `UserStatus`) | NOT NULL · 신규 `PENDING` |
 | `terms_of_service_agreed` | BOOLEAN | NOT NULL · VO `Consent` |
 | `privacy_policy_agreed` | BOOLEAN | NOT NULL · VO `Consent` |

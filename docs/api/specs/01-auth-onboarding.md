@@ -22,7 +22,7 @@
 | 성별 `gender` | `MALE`, `FEMALE` | 온보딩 필수(세입자만) |
 | 생년월일 `birthDate` | 날짜 문자열(`YYYY-MM-DD`) | 온보딩 필수(세입자·임대인 공통) · 과거 날짜만 허용(미래 불가) |
 | 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `LANGUAGE_TEACHING`(어학·교육), `MANUFACTURING_PRODUCTION`(제조·생산), `BUSINESS_TRADE`(사업·무역), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편) |
-| 비자정보 `visaType` | `Short Term Visit(C-1~4, B)`(단기방문), `Students & Trainees(D-2, D-3, D-4)`(유학·연수), `Non-Professional Workers(E-8, E-9, E-10, H-2)`(비전문취업), `Working Holiday/Work and Visit(H-1, H-2)`(워킹홀리데이·방문취업), `Overseas Koreans(F-4)`(재외동포), `Family/Marriage Migrants(F-1, F-2, F-3, F-6)`(방문동거·거주·결혼이민), `Permanent Residents(F-5)`(영주), `Professionals(C-4, D-1, D-7~10, E-1~7)`(전문인력), `Diplomatic/Official & Others(A-1, A-2, G-1)`(외교·공무·기타), `etc`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). 값=표시용 라벨 문자열(상수명 아님) |
+| 비자정보 `visaType` | `SHORT_TERM_VISIT`(단기방문), `STUDENTS_TRAINEES`(유학·연수), `NON_PROFESSIONAL_WORKERS`(비전문취업), `WORKING_HOLIDAY_WORK_AND_VISIT`(워킹홀리데이·방문취업), `OVERSEAS_KOREANS`(재외동포), `FAMILY_MARRIAGE_MIGRANTS`(방문동거·거주·결혼이민), `PERMANENT_RESIDENTS`(영주), `PROFESSIONALS`(전문인력), `DIPLOMATIC_OFFICIAL_AND_OTHERS`(외교·공무·기타), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). API는 상수명, DB 저장은 표시 라벨 |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
 | 이메일 `email` | 이메일 문자열 | **세입자** 온보딩 필수 · 인증번호로 사전 검증(§3·§4). 임대인은 미수집([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)) |
 | 닉네임 `nickname` | `형용사 + 사물` 문자열 | 서버가 자동 배정(사용자 입력·수정 불가), 전역 유니크 |
@@ -428,7 +428,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
   "country": "VN",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "minh@example.com",
-  "visaType": "Students & Trainees(D-2, D-3, D-4)"
+  "visaType": "STUDENTS_TRAINEES"
 }
 ```
 
@@ -441,7 +441,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `country` | string | 필수 | 국적 ISO 3166-1 alpha-2 코드(예: `VN`). `countries`에 존재해야 함(없으면 `INVALID_INPUT`) |
 | `occupation` | string(enum) | 필수 | `UNDERGRADUATE_STUDENT` \| `GRADUATE_STUDENT` \| `EXCHANGE_STUDENT` \| `LANGUAGE_TEACHING` \| `MANUFACTURING_PRODUCTION` \| `BUSINESS_TRADE` \| `ETC` |
 | `email` | string | 필수 | 이메일 형식. **§3·§4로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_EMAIL_NOT_VERIFIED` 422) |
-| `visaType` | string(enum) | 필수 | `Short Term Visit(C-1~4, B)` \| `Students & Trainees(D-2, D-3, D-4)` \| `Non-Professional Workers(E-8, E-9, E-10, H-2)` \| `Working Holiday/Work and Visit(H-1, H-2)` \| `Overseas Koreans(F-4)` \| `Family/Marriage Migrants(F-1, F-2, F-3, F-6)` \| `Permanent Residents(F-5)` \| `Professionals(C-4, D-1, D-7~10, E-1~7)` \| `Diplomatic/Official & Others(A-1, A-2, G-1)` \| `etc` |
+| `visaType` | string(enum) | 필수 | `SHORT_TERM_VISIT` \| `STUDENTS_TRAINEES` \| `NON_PROFESSIONAL_WORKERS` \| `WORKING_HOLIDAY_WORK_AND_VISIT` \| `OVERSEAS_KOREANS` \| `FAMILY_MARRIAGE_MIGRANTS` \| `PERMANENT_RESIDENTS` \| `PROFESSIONALS` \| `DIPLOMATIC_OFFICIAL_AND_OTHERS` \| `ETC` |
 
 > 약관 동의(`termsOfServiceAgreed`·`privacyPolicyAgreed`·`marketingAgreed`)는 이 요청에 포함하지 않는다 — 앞선 `POST /auth/terms`(§2)에서 처리·기록된다.
 
@@ -463,7 +463,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "countryFlag": "https://flagcdn.com/vn.svg",
       "occupation": "UNDERGRADUATE_STUDENT",
       "email": "minh@example.com",
-      "visaType": "Students & Trainees(D-2, D-3, D-4)",
+      "visaType": "STUDENTS_TRAINEES",
       "userType": "TENANT",
       "status": "ACTIVE",
       "marketingAgreed": false,
@@ -713,7 +713,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
     "countryFlag": "https://flagcdn.com/vn.svg",
     "occupation": "UNDERGRADUATE_STUDENT",
     "email": "minh@example.com",
-    "visaType": "Students & Trainees(D-2, D-3, D-4)",
+    "visaType": "STUDENTS_TRAINEES",
     "status": "ACTIVE",
     "termsOfServiceAgreed": true,
     "privacyPolicyAgreed": true,
@@ -772,7 +772,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 {
   "country": "KR",
   "occupation": "BUSINESS_TRADE",
-  "visaType": "Short Term Visit(C-1~4, B)",
+  "visaType": "SHORT_TERM_VISIT",
   "marketingAgreed": true
 }
 ```

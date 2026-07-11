@@ -1060,7 +1060,7 @@ class AuthOnboardingDocsTest {
         field(
             "visaType",
             JsonFieldType.STRING,
-            "비자유형 enum(필수): Short Term Visit(C-1~4, B)|Students & Trainees(D-2, D-3, D-4)|Non-Professional Workers(E-8, E-9, E-10, H-2)|Working Holiday/Work and Visit(H-1, H-2)|Overseas Koreans(F-4)|Family/Marriage Migrants(F-1, F-2, F-3, F-6)|Permanent Residents(F-5)|Professionals(C-4, D-1, D-7~10, E-1~7)|Diplomatic/Official & Others(A-1, A-2, G-1)|etc"));
+            "비자유형 enum(필수): SHORT_TERM_VISIT|STUDENTS_TRAINEES|NON_PROFESSIONAL_WORKERS|WORKING_HOLIDAY_WORK_AND_VISIT|OVERSEAS_KOREANS|FAMILY_MARRIAGE_MIGRANTS|PERMANENT_RESIDENTS|PROFESSIONALS|DIPLOMATIC_OFFICIAL_AND_OTHERS|ETC"));
   }
 
   private static List<FieldDescriptor> refreshTokenRequestField(String description) {
@@ -1266,7 +1266,7 @@ class AuthOnboardingDocsTest {
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
           "email": "%s",
-          "visaType": "Short Term Visit(C-1~4, B)"
+          "visaType": "SHORT_TERM_VISIT"
         }
         """
         .formatted(email);
@@ -1282,7 +1282,7 @@ class AuthOnboardingDocsTest {
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
           "email": "gil@mail.example",
-          "visaType": "Short Term Visit(C-1~4, B)"
+          "visaType": "SHORT_TERM_VISIT"
         }
         """;
   }
