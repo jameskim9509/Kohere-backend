@@ -208,28 +208,22 @@
 | `Occupation` | `UNDERGRADUATE_STUDENT` | 학부생 |
 | | `GRADUATE_STUDENT` | 대학원생 |
 | | `EXCHANGE_STUDENT` | 교환학생 |
-| | `EDUCATION_ACADEMIC_RESEARCH` | 교육/학술 연구 |
-| | `IT_SOFTWARE_ENGINEERING` | IT/소프트웨어 엔지니어링 |
-| | `DEVELOPER` | 개발자 |
-| | `DESIGNER` | 디자이너 |
-| `VisaType`(값=상수명_코드) | `DIPLOMATIC_OFFICIAL_A-1_A-2` | 외교·공무 |
-| | `VISA_EXEMPTED_B` | 사증면제 |
-| | `JOURNALISM_RELIGIOUS_AFFAIRS_C-1_D-5_D-6` | 취재·종교 |
-| | `SHORT_TERM_VISIT_C-2_C-3` | 단기방문 |
-| | `STUDY_D-2` | 유학 |
-| | `TRAINEE_D-3_D-4` | 연수 |
-| | `INTRA_COMPANY_TRANSFER_D-7` | 주재 |
-| | `PROFESSIONAL_C-4_D-1_D-8_D-9_D-10_E-1_E-2_E-3_E-4_E-5_E-6_E-7` | 전문인력 |
-| | `NON_PROFESSIONAL_E-8_E-9_E-10` | 비전문취업 |
-| | `WORKING_HOLIDAY_H-1` | 워킹홀리데이 |
-| | `WORK_AND_VISIT_H-2` | 방문취업 |
-| | `FAMILY_VISITOR_DEPENDENT_F-1_F-2_F-3` | 방문동거·거주·동반 |
-| | `OVERSEAS_KOREAN_F-4` | 재외동포 |
-| | `PERMANENT_RESIDENCE_F-5` | 영주 |
-| | `MARRIAGE_MIGRANT_F-6` | 결혼이민 |
-| | `OTHERS_G-1` | 기타 |
+| | `LANGUAGE_TEACHING` | 어학·교육 |
+| | `MANUFACTURING_PRODUCTION` | 제조·생산 |
+| | `BUSINESS_TRADE` | 사업·무역 |
+| | `ETC` | 기타 |
+| `VisaType`(API=상수명·DB=라벨) | `SHORT_TERM_VISIT` | 단기방문 · 저장값 `Short Term Visit(C-1~4, B)` |
+| | `STUDENTS_TRAINEES` | 유학·연수 · 저장값 `Students & Trainees(D-2, D-3, D-4)` |
+| | `NON_PROFESSIONAL_WORKERS` | 비전문취업 · 저장값 `Non-Professional Workers(E-8, E-9, E-10, H-2)` |
+| | `WORKING_HOLIDAY_WORK_AND_VISIT` | 워킹홀리데이·방문취업 · 저장값 `Working Holiday/Work and Visit(H-1, H-2)` |
+| | `OVERSEAS_KOREANS` | 재외동포 · 저장값 `Overseas Koreans(F-4)` |
+| | `FAMILY_MARRIAGE_MIGRANTS` | 방문동거·거주·결혼이민 · 저장값 `Family/Marriage Migrants(F-1, F-2, F-3, F-6)` |
+| | `PERMANENT_RESIDENTS` | 영주 · 저장값 `Permanent Residents(F-5)` |
+| | `PROFESSIONALS` | 전문인력 · 저장값 `Professionals(C-4, D-1, D-7~10, E-1~7)` |
+| | `DIPLOMATIC_OFFICIAL_AND_OTHERS` | 외교·공무·기타 · 저장값 `Diplomatic/Official & Others(A-1, A-2, G-1)` |
+| | `ETC` | 기타 · 저장값 `etc` |
 
-> `Occupation`·`VisaType` 값은 확정 분류값이다(#93). **`VisaType`의 API·저장 값은 상수명 뒤에 출입국 체류자격 코드를 언더스코어로 이어붙인 형식**이다(예: `STUDY_D-2`, `DIPLOMATIC_OFFICIAL_A-1_A-2`) — 코드에 하이픈이 있어 다른 enum의 UPPER_SNAKE 규약과 달리 예외적으로 하이픈을 허용한다. `country`는 ISO 국가 코드를 보유하고, 표시명·국기(이미지 URL)는 `countries` reference로 확보한다(국가+국기 수집 — 클라이언트는 국가만 전송).
+> `Occupation`·`VisaType` 값은 확정 분류값이다(#93, #138 개편). **`VisaType`은 API(요청·응답)에서 다른 enum과 동일하게 상수명(예: `SHORT_TERM_VISIT`)으로 주고받되, DB에는 사람이 읽는 표시용 라벨(예: `Short Term Visit(C-1~4, B)`)을 저장한다** — 영속은 `VisaTypeConverter`가 `getValue()`/`fromValue()`로 처리한다(#138). `country`는 ISO 국가 코드를 보유하고, 표시명·국기(이미지 URL)는 `countries` reference로 확보한다(국가+국기 수집 — 클라이언트는 국가만 전송).
 
 **협력 / 이벤트:** 모든 타 모듈은 사용자를 `User` 식별자(`id`)로만 참조한다(엔티티 비공유). 소셜 자격→회원 매핑·이메일 인증·사업자번호 검증은 `auth`가 소유하며, `user`는 **회원 생성(`PENDING`)·약관 동의(`TERMS_AGREED` 전이)·온보딩 완료(`ACTIVE` 전이 + `userType` 확정)·탈퇴(`WITHDRAWN` 전이)** 를 공개 명령으로, 프로필을 공개 쿼리로 제공한다(`auth`가 소셜 로그인 분기·약관 동의·온보딩 완료에서 호출). 온보딩 완료 명령은 사용자가 `TERMS_AGREED`이고, **역할별 게이트 우선순위**를 통과한 뒤에만 수행된다 — 세입자는 **약관 동의 → 이메일 인증**(이메일이 `auth`에서 `VERIFIED`), 임대인은 **약관 동의 → 연락처 인증**(연락처가 `auth`에서 `VERIFIED`)된 뒤에만 완료된다(역할은 호출 엔드포인트로 분기, `userType`으로 확정 — 임대인 온보딩에는 사업자번호 게이트가 없다). 임대인 사업자등록번호는 온보딩과 분리된 무상태 검증(§1 `BusinessVerification`)으로 다루며 온보딩 완료 시 저장되지 않는다. 탈퇴 시 도메인 이벤트(예: `UserWithdrawnEvent`)를 발행해 `auth`가 refresh 토큰을 일괄 무효화하게 한다(ADR-0002). 닉네임·국적 등 표시정보가 필요한 타 모듈(예: `community`)에는 식별자 기반 공개 쿼리를 제공한다(탈퇴 회원은 닉네임 `(탈퇴한 사용자)`·국적 비움으로 마스킹).
 

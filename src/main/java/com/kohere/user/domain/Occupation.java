@@ -1,7 +1,7 @@
 package com.kohere.user.domain;
 
 /**
- * 직업 유형(온보딩 필수). 요구사항 정의서의 직업 드롭다운 확정 항목(#93). docs/architecture/domain-model.md §2 ·
+ * 직업 유형(온보딩 필수). 요구사항 정의서의 직업 드롭다운 확정 항목(#93, #138 개편). docs/architecture/domain-model.md §2 ·
  * database-design §6.
  */
 public enum Occupation {
@@ -11,12 +11,12 @@ public enum Occupation {
   GRADUATE_STUDENT,
   /** 교환학생(exchange student). */
   EXCHANGE_STUDENT,
-  /** 교육/학술 연구(education/academic research). */
-  EDUCATION_ACADEMIC_RESEARCH,
-  /** IT/소프트웨어 엔지니어링(it/software engineering). */
-  IT_SOFTWARE_ENGINEERING,
-  /** 개발자(developer). */
-  DEVELOPER,
-  /** 디자이너(designer). */
-  DESIGNER
+  /** 어학·교육(language teaching). */
+  LANGUAGE_TEACHING,
+  /** 제조·생산(manufacturing/production). */
+  MANUFACTURING_PRODUCTION,
+  /** 사업·무역(business/trade). */
+  BUSINESS_TRADE,
+  /** 기타(etc). */
+  ETC
 }

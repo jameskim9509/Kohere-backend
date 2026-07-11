@@ -57,9 +57,9 @@ class MasterAccountSeedRunner implements ApplicationRunner {
             "MALE",
             LocalDate.of(1990, 1, 1),
             "US",
-            "DEVELOPER",
+            "UNDERGRADUATE_STUDENT",
             account.email(),
-            "STUDY_D-2"));
+            "STUDENTS_TRAINEES"));
     link(account, userId);
     log.warn("[TEST SEED] 세입자 마스터 계정 시드 완료 (userId={}, subject={}).", userId, account.subject());
   }
