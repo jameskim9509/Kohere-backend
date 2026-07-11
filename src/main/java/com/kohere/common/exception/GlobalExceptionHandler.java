@@ -38,6 +38,11 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(BusinessException.class)
   public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
     ErrorCode ec = e.getErrorCode();
+    // 5xx(UPSTREAM_ERROR·INTERNAL_ERROR 등)는 서버/의존성 장애다 — cause 스택트레이스까지 남겨야
+    // 삼켜지지 않는다(예: SMTP MailException). 4xx는 클라이언트 오류라 노이즈이므로 로깅하지 않는다.
+    if (ec.getHttpStatus().is5xxServerError()) {
+      log.error("Business exception [{}]: {}", ec.getCode(), e.getMessage(), e);
+    }
     return ResponseEntity.status(ec.getHttpStatus())
         .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, e.getMessage())));
   }
