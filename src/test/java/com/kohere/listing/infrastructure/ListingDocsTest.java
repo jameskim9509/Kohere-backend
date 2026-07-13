@@ -381,6 +381,36 @@ class ListingDocsTest {
                 responseFields(favoriteToggleResponseFields())));
   }
 
+  /** 프론트 호환 별칭 GOSHIWON을 목록·지도 필터에서 받아 기존 GOSIWON 매물을 조회한다. */
+  @Test
+  void acceptsGoshiwonAliasForListingFilters() throws Exception {
+    String token = jwtTokenService.issueAccessToken(1L);
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("type", "GOSHIWON")
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].type").value("GOSIWON"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings/map")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("swLat", "37.45920")
+                .param("swLng", "126.95120")
+                .param("neLat", "37.45946")
+                .param("neLng", "126.95141")
+                .param("type", "GOSHIWON"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.markers[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.total").value(1));
+  }
+
   /** 스펙의 "발생 가능한 에러"를 실제로 트리거해 status·error.code와 실패 응답 스니펫을 함께 만든다. */
   @Test
   void generatesListingErrorSnippets() throws Exception {
