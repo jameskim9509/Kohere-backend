@@ -676,6 +676,64 @@
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** 언어와 무관하게 동일 코드로 정상 검증·저장된다
 
+### US-2-7 — 지역 매물 부재 시 재질의·종료 및 서버 주도 진단 흐름 (v2)
+
+**As a** 진단을 진행하는 외국인 사용자
+**I want** 서버가 다음 질문·확정 시점을 알아서 판단해 진단을 이끌고, ① 지역에 매물이 없으면 다른 지역으로 다시 시작하거나 진단을 끝낼 수 있게 하고
+**So that** 매물이 없는 지역인데도 끝까지 답하는 헛수고 없이, 앱을 나갔다 들어오지 않고 그 자리에서 재시도하거나 종료할 수 있다
+
+- **우선순위**: High (진단 완주율·이탈 개선)
+- **관련 NFR**: 사용성(불필요한 단계 진행 차단·클라 로컬 분기 제거), 유지보수성(진행 흐름을 서버가 소유), 신뢰성(진행 상태 서버 보관)
+- **백엔드 관점**: 기존 v1(`/api/v1/diagnoses/*`, 클라이언트가 `step`·확정을 주도)은 **그대로 두고**, **서버 주도 대화형 흐름을 `/api/v2`에 신설**한다(하위 호환이 깨지는 변경이라 버전 상향 — [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). 클라이언트는 `step`을 지정하지 않고 **`POST /api/v2/diagnoses/next`** 하나만 반복 호출하며, 서버가 진행 위치(`cursor`)로 다음 질문을 결정하고 빌더가 다 채워지면 **자동 확정**한다. ① 지역(`region`) 답 직후 매칭 매물이 0건이면 서버가 예외질문("다른 지역 방을 찾아보시겠어요?")을 삽입하고 — "예"면 지역부터 재시작, "아니오"면 진단을 종료(`TERMINATED`)한다. 6단계까지 마친 뒤 매칭이 0건이면 **`NO_MATCH` 코드만** 반환한다(v2는 조정 제안 `suggestions`를 쓰지 않으며, v1의 `suggestions` 기능·시드는 유지하되 v2는 참조하지 않는다). 매 응답은 정상 `200 OK`의 `data.resultCode`(태그드 유니온: `NEXT_QUESTION` / `REGION_RETRY` / `COMPLETED` / `NO_MATCH` / `TERMINATED`)로 표현한다(에러 아님). 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 v2 전용 세션(`diagnosisFlowSessions`)에 담고, 완료 시에만 정본 진단을 기존 `diagnoses`에 저장한다. 문항 카탈로그·번역·입력 enum·③ 분기 규칙은 v1과 동일 출처(US-2-5·US-2-6·[ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../adr/0029-diagnosis-i18n-strategy.md))를 공유한다. 시퀀스: [US-2-7 다이어그램](../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md), API: [02 스펙 v2 절](../api/specs/02-diagnosis-recommendation.md).
+
+**AC (Given / When / Then)**
+
+- 시나리오: 서버 주도 — step 없이 다음 질문 조회
+
+  - **Given** 진단을 시작한 사용자가 유효한 access token을 보유하고 아직 진행 세션이 없다
+  - **When** 답 없이 `POST /api/v2/diagnoses/next`를 호출한다
+  - **Then** `200 OK`와 `data.resultCode=NEXT_QUESTION`, `data.question`에 ① 지역(`field=region`) 문항 1개를 반환한다(클라이언트는 `step`을 지정하지 않는다)
+- 시나리오: 서버 주도 — 답 적용 후 다음 질문을 서버가 결정
+
+  - **Given** ① 지역 문항을 받은 사용자가 매물이 있는 지역(예: `region=SEOUL`)을 골랐다
+  - **When** 그 답 1개(`{ "field": "region", "code": "SEOUL" }`)를 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 답을 저장하고 다음 단계(② 입국 목적) 문항을 `data.resultCode=NEXT_QUESTION`으로 반환한다(다음 `step`을 클라이언트가 지정하지 않는다)
+- 시나리오: 지역 매물 0건 — 재질의(REGION_RETRY)
+
+  - **Given** ① 지역 답이 매칭 매물이 없는 지역(예: MVP에서 `BUSAN`/`GYEONGGI`)이다
+  - **When** 그 지역 답을 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 지역-only 매칭이 0건임을 확인하고 `200 OK`와 `data.resultCode=REGION_RETRY`, `data.question`에 서버 합성 yes/no 질문(`field=regionRetry`, 옵션 `YES`/`NO`, "다른 지역 방을 찾아보시겠어요?")을 반환한다
+- 시나리오: 재질의에 "예" — 지역부터 재시작
+
+  - **Given** 직전 응답이 `REGION_RETRY`다
+  - **When** `{ "field": "regionRetry", "code": "YES" }`를 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 저장된 지역 답을 비우고 진행을 ①로 되돌려 `data.resultCode=NEXT_QUESTION`, `data.question`에 ① 지역 문항을 다시 반환한다
+- 시나리오: 재질의에 "아니오" — 진단 종료
+
+  - **Given** 직전 응답이 `REGION_RETRY`다
+  - **When** `{ "field": "regionRetry", "code": "NO" }`를 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 진행 세션을 폐기하고 `200 OK`와 `data.resultCode=TERMINATED`(진단종료코드)를 반환한다(에러 아님; `question`·`recommendation` 없음)
+- 시나리오: 자동 확정 — 6단계 완성 시 서버가 확정·추천
+
+  - **Given** ①~⑥ 단계 답이 모두 채워지도록 마지막(⑥ ARC) 답을 보낸다(빌더 완성)
+  - **When** 그 답을 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 별도 확정 요청 없이 진단을 `IN_PROGRESS → COMPLETED`로 자동 확정해 저장하고, 매칭 매물이 있으면 `data.resultCode=COMPLETED`와 `data.recommendation`(추천 매물 + 지도 좌표)·`data.diagnosisId`를 반환한다
+- 시나리오: 최종 매칭 0건 — NO_MATCH 코드만
+
+  - **Given** 6단계까지 다 채웠으나 전체 조건에 맞는 매물이 0건이다
+  - **When** 마지막 답으로 자동 확정이 일어난다
+  - **Then** `200 OK`와 `data.resultCode=NO_MATCH`만 반환한다(조정 제안 `suggestions` 없이 — v2는 제안 기능을 쓰지 않는다)
+- 시나리오: 멱등 — 종료/완료 후 재요청
+
+  - **Given** 직전 응답이 터미널(`COMPLETED`/`NO_MATCH`/`TERMINATED`)이라 진행 세션이 없다
+  - **When** (더블탭·재시도로) `POST /api/v2/diagnoses/next`를 다시 호출한다
+  - **Then** 스테일 답을 무시하고 ① 지역부터 새 흐름을 시작해 `NEXT_QUESTION`을 반환한다(중복 확정 진단을 만들지 않는다)
+- 시나리오: v1 무변경 — 기존 흐름 보존
+
+  - **Given** 기존 클라이언트가 v1 흐름(`GET /api/v1/diagnoses/questions/{step}` · `POST /api/v1/diagnoses/answers` · `POST /api/v1/diagnoses`)을 사용한다
+  - **When** v2 추가 이후에도 v1 엔드포인트를 그대로 호출한다
+  - **Then** v1 동작·응답 계약이 바뀌지 않는다(v2는 새 컨트롤러로만 추가되고 v1 로직을 건드리지 않는다)
+
 ## 3. 매물 탐색 · 찜
 
 > 관련 API 스펙: [03-listings-favorites](../api/specs/03-listings-favorites.md)

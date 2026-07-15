@@ -16,7 +16,7 @@
 | [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}` / `social_accounts` | ✅ |
 | [`user`](#4-2-user) | **MySQL** | `users`·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
-| [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안) — 인라인 언어-키 맵 번역, US-2-5·US-2-6 | ✅ |
+| [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안)·`diagnosisFlowSessions`(v2 서버 주도 진행 세션) — 인라인 언어-키 맵 번역, US-2-5·US-2-6·US-2-7 | ✅ |
 | [`booking`](#4-5-booking) | **저장소(추후 결정)** | `bookings` | ✅ |
 | [`chat`](#4-6-chat) | **저장소(추후 결정)** | `chat_rooms`·`messages`·`chat_room_members` | ✅ |
 | [`community`](#4-7-community) | **MySQL** | `posts`·`comments`·`post_likes`·`post_hashtags` | 이후 |
@@ -437,6 +437,26 @@
 | `_id` | string | PK · 사유 식별 키(언어 무관, 예 `NO_MATCH`) |
 | `message` | object | NOT NULL · 사유 안내 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ko": "..." }`) |
 | `actions` | object[] | 조정 액션 배열 · 각 항목은 `type`(언어 무관 식별 키, 예 `RELAX_REGION`)와 `detail`(표시 문자열 **인라인 언어-키 맵**)을 보유 |
+
+#### v2 서버 주도 진행 세션 — `diagnosisFlowSessions`
+
+서버 주도(next) 진단 흐름(v2, issue #157 · [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md))의 **진행 상태**를 담는 컬렉션이다. v1의 진행 중 초안(`diagnoses`의 `IN_PROGRESS`)을 공유하지 않고 분리한다 — `cursor`·`state` 같은 절차 필드가 `diagnoses` 스키마에 없고, v1의 "사용자당 `IN_PROGRESS` 1건" 제약과 충돌하기 때문이다. **완료(`cursor=6`) 시에만** `draft`를 정본 `Diagnosis`로 확정해 `diagnoses`에 저장하고 이 세션은 삭제한다(사용자당 최대 1 세션). v1 컬렉션(`diagnoses`·`diagnosisQuestions`·`diagnosisSuggestions`)은 변경하지 않는다.
+
+`diagnosisFlowSessions`
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | ObjectId | PK |
+| `userId` | long | 필수 · UNIQUE(사용자당 1 세션) · → user(값 참조) |
+| `draft` | object | 누적 답 스냅샷 — `diagnoses`의 criteria와 동형(`region`·`purpose`·`university`/`district`·`conditions`·`monthlyRentMin`/`monthlyRentMax`·`arcStatus`)의 **부분 값**(단계별로 채워짐) |
+| `cursor` | int | 진행한 슬롯 수(0~6) · 다음 질문·완료 판정의 정본 |
+| `state` | string (enum `FlowState`) | `IN_FLOW`·`AWAITING_REGION_RETRY`(① 지역 0건 예외질문 대기) |
+
+**인덱스**: PK `_id` / UNIQUE `(userId)`(사용자당 1 세션). 기동 시 부트스트랩 initializer(`DiagnosisFlowSessionIndexInitializer`, `@Profile("!test")`)가 멱등 생성한다 — 인덱스는 Mongock이 아니라 부트스트랩으로 만든다([migration-policy §8](./migration-policy.md) — 인덱스=부트스트랩, 시드·데이터 진화=Mongock).
+
+- **정본 순서**: `cursor`가 `REGION(1) → PURPOSE(2) → BRANCH(3, purpose로 university|district) → CONDITIONS(4) → MONTHLY_RENT(5) → ARC_STATUS(6)`를 강제한다 — `Diagnosis`의 확정 검증(`validateComplete`)이 `conditions`를 필수로 보지 않아(비어도 통과) 순서를 `cursor`로 별도 강제한다. 도메인 순서 enum은 `DiagnosisFlowStep`([domain-model §4](../architecture/domain-model.md)).
+- **자동 확정·재시작·종료**: `cursor==6`이면 서버가 `draft`를 `Diagnosis.complete()`로 확정해 `diagnoses`에 저장하고 세션을 삭제한다(매칭 0건이면 결과코드 `NO_MATCH`만, 조정 제안 없음). ① 지역 답 직후 지역-only 매칭이 0건이면 `state=AWAITING_REGION_RETRY`로 전이하고, "예"=`draft.region`을 비우고 `cursor=0`(지역부터 재시작)·"아니오"=세션 삭제(`TERMINATED`). 상세 [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md).
+- **저장소 선택**: v1 `diagnoses`와 동일한 MongoDB 영속 패턴(도메인 리포지토리 포트로 요청 사이 상태 보존)이다. Redis(TTL) 세션 대안은 검토했으나 v1 초안 저장과의 일관성으로 MongoDB를 채택했다([ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md) Alternatives).
 
 ### 4-5. `booking`
 

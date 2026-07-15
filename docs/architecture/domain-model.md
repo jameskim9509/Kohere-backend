@@ -24,7 +24,7 @@
 | [`auth`](#1-auth--인증온보딩) | `SocialAccount`, `RefreshToken`, `EmailVerification`, `PhoneVerification` (+ `BusinessVerification` — 무상태 검증, 영속 없음) | `SocialIdentity`, `TokenHash` | ✅ |
 | [`user`](#2-user--회원-프로필계정-lifecycle) | `User` | `FullName`, `Consent` | ✅ |
 | [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `Location`, `Address`, `RoomOffer`, `MatchedPlace` | ✅ |
-| [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis` | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
+| [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis`, `DiagnosisFlowSession`(v2) | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
 | [`booking`](#5-booking--매물-신청예약) | `Booking` | — (`GreetingMessage`는 후속·이연) | ✅ |
 | [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | 후속·이연 |
 | [`community`](#7-community--커뮤니티) | `Post`(+`Comment`·`PostLike`) | `Hashtag` | 이후 |
@@ -427,7 +427,7 @@
 
 ## 4. `diagnosis` — 6단계 맞춤 진단
 
-> [API 스펙](../api/specs/02-diagnosis-recommendation.md) · [시퀀스](sequence-diagrams/02-diagnosis-recommendation/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`)
+> [API 스펙](../api/specs/02-diagnosis-recommendation.md) · [시퀀스](sequence-diagrams/02-diagnosis-recommendation/README.md) · `allowedDependencies = {common, listing, user}`(추천·지역 매칭 `listing::api recommendByCriteria`, 번역용 표시 언어 조회 `user::api getLanguage`)
 
 6단계 맞춤 진단(지역·입국 목적(유학 여부)·대학 그룹/지역(구) 선택·주거 환경 조건·월세 최소-최대 범위·ARC 발급 여부)을 본인 소유 레코드로 영속하고, 진단 조건으로 `listing` 공개 쿼리와 협력해 추천 매물을 제공한다. **진행 중 답은 서버가 DB에 저장**한다 — 사용자당 진행 중(`IN_PROGRESS`) 진단 1건을 in-progress draft로 들고 단계별 답을 채워가다가, 제출 시 `COMPLETED`로 확정한다(누적 답 재전송 없음). 재진단은 기존을 수정하지 않고 새 in-progress 진단을 시작해 항상 새 레코드로 이력을 보존한다.
 
@@ -527,7 +527,38 @@
 
 - **문항·선택지 카탈로그(US-2-5)** — 6단계별 {질문(`question`), 선택지[`code`], 선택 제약(`select{type, max}`)}는 `Diagnosis` 애그리거트가 아니라 **MongoDB `diagnosisQuestions` 컬렉션(도메인 포트로 조회)**로 제공한다 — **데이터만 보유**하고 분기 메타(`branchOn` 등)는 두지 않는다(분기는 서비스 비즈니스 로직 소관). 번역(표시 문자열)은 분리 컬렉션 없이 **같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`로 두고 선택지 `code`(UPPER_SNAKE)는 언어 무관 불변이다. 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)을 호출하면, 서버가 (카탈로그 + 본인 진행 중(`IN_PROGRESS`) 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question, select{type, max}, options[{code, label}] }`(`question`·`label`은 서버가 인라인 언어-키 맵에서 사용자 언어 키로 고른 표시 문자열, `code`는 언어 무관)로 내려준다(한 번에 다 주지 않음; 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열; **⑤ 월세 범위는 enum 코드가 아니라 두 숫자 필드** `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` — 순서 없는 `codes[]` 배열을 재사용하지 않는다)로 보내면 서버가 **본인 진행 중(`IN_PROGRESS`) 진단에 저장**한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`(제출)가 진행 중 진단의 저장된 답을 재검증해 `COMPLETED`로 확정한다. **분기는 서비스 비즈니스 로직이 결정한다(클라 로컬 분기·데이터 분기 메타 아님)** — ③ 대학·지역 단계(step 3)는 저장된 `purpose`를 보고 서비스가 알맞은 질문만 낸다: `STUDY`면 대학 그룹 질문(`university`, 목록 `UniversityGroup` 6개 그룹)을, `NON_STUDY`면 지역 질문(`district`, 목록 `District`)을 내려준다(두 질문 데이터는 카탈로그에 각각 존재하고, 노출은 서비스가 결정; 한 응답에 두 목록을 함께 주지 않는다). 선택지 `code`는 제출 검증 enum과 **동일 출처(1:1)** 라 코드로 제출하면 `INVALID_INPUT` 없이 수용된다(카탈로그·번역 모두 `diagnosisQuestions` 도큐먼트에 함께 보유). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`로 거른다.
 - **라벨 번역(US-2-6)** — 표시 `label`·`question`은 **사용자 표시 언어**의 값으로 채운다. `code`는 언어 무관 동일(UPPER_SNAKE)이며 인라인 언어-키 맵의 값(표시 문자열)만 언어별이고, 해당 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님; `Accept-Language` 비의존). 표시 언어는 **`user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기 제거; ADR-0002 Decision 5) — `user`는 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다. 표시 문자열은 **`diagnosisQuestions` 도큐먼트의 `question`/`options[].label`에 인라인 언어-키 맵으로 임베드**한다: `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**이다(문항·옵션은 `diagnosisQuestions`, 추천 사유/액션은 `diagnosisSuggestions` 컬렉션에 같은 인라인 언어-키 맵 방식 재사용). **국가→언어 매핑은 `user`의 `countries.lang`이 보유**하며, 미지원 언어의 **폴백 기본 언어는 영어**다. 서버 동작: 표시 언어(`user` `getLanguage`) → 도큐먼트의 언어-키 맵에서 그 언어 키 값을 골라(부재 시 `en`) 응답 조립.
-- **`allowedDependencies`** — 라벨 번역이 표시 언어를 `user` 공개 쿼리(`getLanguage`)로 동기 취득하므로 `diagnosis`의 `allowedDependencies`는 **`user`를 포함**한다(즉 `{common, user}`; 토큰 클레임 분기 제거로 `{common}` 유지 안 함). 이는 `package-info.java`/`@ApplicationModule`에 반영된다.
+- **`allowedDependencies`** — 추천·지역 매칭은 `listing` 공개 쿼리(`recommendByCriteria`)를, 라벨 번역 표시 언어는 `user` 공개 쿼리(`getLanguage`)를 동기 호출하므로 `diagnosis`의 `allowedDependencies`는 **`listing :: api`·`user :: api`를 포함**한다(즉 `{common, listing :: api, user :: api}`; 토큰 클레임 분기 제거로 `{common}` 유지 안 함). 이는 `package-info.java`/`@ApplicationModule`에 반영된다(v2 서버 주도 흐름의 지역 조기 게이트·최종 매칭도 동일 `listing::api`를 재사용하므로 의존은 그대로다).
+
+**v2 — 서버 주도 진단 흐름 (issue #157):**
+
+기존 v1(클라이언트가 `step`·확정을 주도) 위에, 클라이언트가 `POST /api/v2/diagnoses/next` 하나로 대화하고 서버가 다음 질문·확정 시점을 판단하는 **서버 주도 흐름**을 `/api/v2`에 신설한다([ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). v2는 위 `Diagnosis`·`DiagnosisCriteria`·상태 enum(`Region`…`ArcStatus`)을 그대로 재사용하고, **진행 상태만 별도 애그리거트**에 담는다. v1은 변경하지 않는다.
+
+**`DiagnosisFlowSession`** — v2 진행 세션 애그리거트 루트. 사용자당 최대 1건이며, 완료 시 `draft`를 `Diagnosis.complete()`로 확정해 정본 `Diagnosis`로 만들고(기존 `diagnoses`에 저장) 세션은 삭제한다. v1의 `IN_PROGRESS` 초안(`Diagnosis`)을 공유하지 않는 이유: `cursor`·`state` 절차 필드가 `Diagnosis`에 없고, "사용자당 `IN_PROGRESS` 1건" 제약과 충돌하기 때문이다.
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | 식별자 | 애그리거트 식별자 |
+| `userId` | 식별자 | 세션 소유자 → `User` 식별자 참조(사용자당 1 세션, UNIQUE) |
+| `draft` | VO `DiagnosisCriteria`(부분) | 누적 답 스냅샷(단계별로 채워지는 부분 값) |
+| `cursor` | int(0~6) | 진행한 슬롯 수 — 다음 질문·완료 판정의 단일 정본 |
+| `state` | enum `FlowState` | 흐름 상태(`IN_FLOW` / `AWAITING_REGION_RETRY`) |
+
+**불변식:** 선형 순서는 `DiagnosisFlowStep`(`REGION → PURPOSE → BRANCH → CONDITIONS → MONTHLY_RENT → ARC_STATUS`)를 `cursor`로 강제한다 — `Diagnosis.validateComplete`가 `conditions`를 필수로 보지 않아(비어도 통과) 순서를 `cursor`로 별도 강제한다; `cursor == 6`이면 서버가 `draft`를 `COMPLETED`로 자동 확정한다(확정 시점을 클라가 주지 않음); ① 지역 답 직후 지역-only 매칭이 0건이면 `state = AWAITING_REGION_RETRY`로 전이해 예외질문("다른 지역?")을 내고, "예"=`draft.region`을 비우고 `cursor = 0`(지역부터 재시작)·"아니오"=세션 삭제(진단 종료); 조회·매칭은 본인 소유(`userId`)에 한한다.
+
+**상태(enum, v2 추가):**
+
+| enum | 값 | 의미 |
+| --- | --- | --- |
+| `DiagnosisFlowStep` | `REGION`·`PURPOSE`·`BRANCH`·`CONDITIONS`·`MONTHLY_RENT`·`ARC_STATUS` | v2 정본 6슬롯 선형 순서(`BRANCH`=step 3, 저장된 `purpose`로 `university`/`district` 택일) |
+| `FlowState` | `IN_FLOW` | 일반 진행 중 |
+| | `AWAITING_REGION_RETRY` | ① 지역 0건 예외질문 응답 대기 |
+| `FlowResultCode` | `NEXT_QUESTION` | 다음 질문 반환(`cursor < 6`) |
+| | `REGION_RETRY` | ① 지역 0건 → 재질의(서버 합성 yes/no) |
+| | `COMPLETED` | 자동 확정 + 추천 있음 |
+| | `NO_MATCH` | 자동 확정 후 매칭 0건(코드만, 제안 없음) |
+| | `TERMINATED` | 지역 예외질문 "아니오" → 진단 종료 |
+
+> `FlowResultCode`는 `POST /api/v2/diagnoses/next`의 정상 `200` 응답 `data`에 실리는 결과코드(태그드 유니온)이며 에러가 아니다 — `DiagnosisStatus`(도메인 전이 enum)와 분리한다. v2는 v1의 `RecommendationSuggestions`(조정 제안)를 쓰지 않고 매칭 0건 시 `NO_MATCH` 코드만 반환한다(v1의 `diagnosisSuggestions` 자산은 유지·미참조). 상세: [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md), 시퀀스 [US-2-7](sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md).
 
 ---
 

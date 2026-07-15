@@ -10,6 +10,9 @@ import static org.mockito.BDDMockito.then;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
+import com.kohere.diagnosis.application.DiagnosisAnswerApplier;
+import com.kohere.diagnosis.application.DiagnosisCriteriaMapper;
+import com.kohere.diagnosis.application.DiagnosisQuestionTranslator;
 import com.kohere.diagnosis.application.DiagnosisService;
 import com.kohere.diagnosis.application.SuggestionMessages;
 import com.kohere.diagnosis.application.dto.DiagnosisCreatedResponse;
@@ -62,6 +65,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @TestPropertySource(properties = "mongock.enabled=false")
 @Import({
   DiagnosisService.class,
+  DiagnosisAnswerApplier.class,
+  DiagnosisCriteriaMapper.class,
+  DiagnosisQuestionTranslator.class,
   DiagnosisRepositoryImpl.class,
   SequenceGenerator.class,
   DiagnosisQuestionCatalogImpl.class,

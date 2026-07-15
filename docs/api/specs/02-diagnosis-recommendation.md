@@ -9,6 +9,8 @@
 
 ② 입국 목적은 유학 여부(`STUDY`/`NON_STUDY`) 분기이며, 이에 따라 ③ 단계가 대학 선택(유학) 또는 지역(구) 선택(비유학)으로 갈린다. 진단 문항·선택지는 앱이 하드코딩하지 않고 백엔드가 제공한다. 클라이언트가 받을 단계(`step` 1~6)를 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개를 조회하고, 그 단계 답 1개(`field`+`code`)를 `POST /api/v1/diagnoses/answers`로 보내면 서버가 그 답을 **진행 중(IN_PROGRESS) 진단에 저장**한다. 다음 step 번호는 클라이언트가 정한다(서버가 다음 질문을 함께 끼워 주지 않는다 — 질문 조회와 답 저장이 분리된 두 엔드포인트다). ③ 단계의 대학/지역 분기는 클라이언트 분기가 아니라 **서버 비즈니스 로직이 진행 중 진단에 저장된 `purpose`로 결정**해 한쪽 질문만 내려준다. 요청에 누적 답을 묶어 다시 보내지 않는다 — 진행 상태는 서버가 DB에 들고 있다. 표시 라벨은 사용자의 등록 국가 기준으로 번역되어 내려간다(US-2-5·US-2-6).
 
+> **v2 서버 주도 흐름(issue #157)**: 위 v1 흐름과 별개로, 클라이언트가 `step`을 모르고 **`POST /api/v2/diagnoses/next`** 하나만 호출하면 서버가 진행 위치로 다음 질문을 결정하는 **서버 주도 대화형 흐름**을 `/api/v2`에 신설한다 — ① 지역 답 직후 매칭 0건이면 재질의·종료, 빌더 완성 시 자동 확정, 매칭 0건이면 `NO_MATCH` 코드만 반환(조정 제안 없음). 상세는 아래 **[v2 — 서버 주도 진단 흐름](#v2--서버-주도-진단-흐름-issue-157)** 절, 결정은 [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md), 시퀀스는 [US-2-7](../../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md). **v1(`/api/v1/diagnoses/*`)은 그대로 유지된다.**
+
 공통 규약:
 
 - 경로 프리픽스 `/api/v1`, 경로는 kebab-case, JSON 필드·쿼리 파라미터는 lowerCamelCase.
@@ -509,6 +511,143 @@
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조 / 만료 |
 | 403 | `FORBIDDEN` | 타인 소유 진단 접근 |
 | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않음 |
+
+---
+
+## v2 — 서버 주도 진단 흐름 (issue #157)
+
+> 위 v1 흐름(§1~§7, `/api/v1/diagnoses/*`)은 **그대로 유지**하고, 서버 주도 대화형 흐름을 `/api/v2`에 **신설**한다. 결정: [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md) · 시퀀스: [US-2-7](../../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md) · 유저 스토리: [US-2-7](../../requirements/user-stories.md).
+
+클라이언트가 `step`을 지정하지 않고 **`POST /api/v2/diagnoses/next`** 하나만 반복 호출하면, 서버가 진행 위치(`cursor`)로 **다음 질문을 결정**하고, 빌더가 다 채워지면 **자동 확정**해 추천을 계산한다. ① 지역(`region`) 답 직후 매칭 매물이 0건이면 서버가 **"다른 지역 방을 찾아보시겠어요?"** 예외질문을 삽입하고, **"예" → 지역부터 재시작 / "아니오" → 진단 종료(`TERMINATED`)**. 6단계까지 마친 뒤 매칭이 0건이면 **`NO_MATCH` 코드만** 반환한다(v2는 조정 제안 `suggestions`를 쓰지 않는다 — v1의 `suggestions` 기능·시드는 그대로 두되 v2는 참조하지 않는다).
+
+- 문항 카탈로그(`diagnosisQuestions`)·번역(등록 국가 기준, `en` 폴백)·진단 입력 enum·③ 대학/지역 분기 규칙은 **v1과 동일 출처를 공유**한다(§1·§3의 "진단 입력 enum 정의"·[ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)를 그대로 따른다). 정본 순서는 `REGION(1) → PURPOSE(2) → BRANCH(3, purpose로 university|district) → CONDITIONS(4) → MONTHLY_RENT(5) → ARC_STATUS(6)`이다.
+- 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 **v2 전용 세션**(`diagnosisFlowSessions` 컬렉션: `{ draft, cursor(0~6), state }`)에 담는다. 완료 시에만 정본 진단을 만들어 기존 `diagnoses` 컬렉션에 저장한다(v1 이력/상세/추천 조회 재사용). 상세는 [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md).
+
+### 엔드포인트 요약
+
+| Method | Path | 설명 | 인증 | 성공 status |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v2/diagnoses/next` | 서버 주도 대화형 진단: 현재 문항 답을 적용하고 다음 결과(질문/지역 예외질문/자동 확정 결과)를 결과코드로 반환 | 필수 | 200 |
+
+### 결과코드(`resultCode`) 계약
+
+정상 `200 OK`, 공통 래퍼 `{ success, data, error }`의 `data`가 **태그드 유니온**이다 — `data.resultCode`(UPPER_SNAKE enum) 값에 따라 채워지는 payload가 다르며, 채워지지 않는 payload 필드는 생략된다. **`TERMINATED`·`NO_MATCH`는 에러가 아니라 정상 결과**이므로 `error`가 아니라 `data.resultCode`로 표현한다.
+
+| `resultCode` | 의미 | payload |
+| --- | --- | --- |
+| `NEXT_QUESTION` | 다음 질문이 남음(`cursor < 6`) | `question`(그 단계 문항 1개, §1과 동일 형태) |
+| `REGION_RETRY` | ① 지역 답 직후 매칭 0건 → 재질의 | `question`(서버 합성 yes/no; `field: "regionRetry"`, `options: [{code:"YES"},{code:"NO"}]`) |
+| `COMPLETED` | 빌더 완성 → 자동 확정, 매칭 있음 | `recommendation`(추천 매물 + 지도 좌표, §7과 동일 형태) + `diagnosisId` |
+| `NO_MATCH` | 자동 확정 후 매칭 0건 | 없음(코드만 — 조정 제안 `suggestions` 없음) |
+| `TERMINATED` | 지역 예외질문에서 "아니오" → 진단 종료 | 없음(진단종료코드) |
+
+### v2-1. POST `/api/v2/diagnoses/next` — 서버 주도 대화형 진단
+
+현재 문항의 답 1개를 보내면(최초·재개 호출은 무답 허용) 서버가 답을 저장(진행 세션)하고 **다음에 할 일**을 결과코드로 돌려준다. `field`·`code`·`min/max`·`codes` 규약은 v1 §2(`POST /answers`)와 동일하며, 지역 예외질문 응답만 서버 합성 필드 `regionRetry`(`code: "YES" | "NO"`)로 보낸다.
+
+- **인증**: 필수
+- **동작**: (1) 진행 세션을 조회(없으면 시작)한다. (2) `state=AWAITING_REGION_RETRY`이면 `regionRetry`(YES=지역부터 재시작, NO=종료)만 처리하고, 그 외 상태이면 현재 `cursor` 슬롯의 기대 `field`와 일치하는 답을 적용하고 `cursor`를 진행한다. (3) 방금 ① 지역을 답했으면 지역-only 매칭 유무를 확인해 0건이면 `REGION_RETRY`를 반환한다. (4) `cursor < 6`이면 `NEXT_QUESTION`, `cursor == 6`이면 자동 확정 후 `COMPLETED`(매칭 있음) 또는 `NO_MATCH`(0건)를 반환한다.
+- **멱등**: 터미널(`COMPLETED`/`NO_MATCH`/`TERMINATED`) 이후에는 세션이 삭제된 상태다 — 이때 재요청(더블탭·재시도)이 오면 스테일 답은 무시하고 ① 지역부터 새 흐름을 시작한다(중복 확정 방지).
+
+#### Headers
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `Authorization` | 필수 | `Bearer <accessToken>` |
+
+#### Request Body (래퍼 없이)
+
+현재 문항 답 1개. 최초·재개 호출은 본문 없이(`{}`) 보낸다(서버가 다음 질문을 계산). 지역 예외질문 응답은 `regionRetry`로 보낸다.
+
+```jsonc
+// 일반 단계 답(§2와 동일) — 예: ② 입국 목적
+{ "field": "purpose", "code": "STUDY" }
+
+// 지역 예외질문(REGION_RETRY) 응답 — 예=재시작 / 아니오=종료
+{ "field": "regionRetry", "code": "YES" }
+
+// 최초·재개(다음 질문만 받기) — 무답
+{}
+```
+
+#### 성공 Response — 200 OK (공통 래퍼) — `resultCode`별
+
+```jsonc
+// NEXT_QUESTION — 다음 질문(§1과 동일 형태의 question)
+{
+  "success": true,
+  "data": {
+    "resultCode": "NEXT_QUESTION",
+    "question": {
+      "step": 2,
+      "field": "purpose",
+      "question": "入国目的を選択してください",
+      "select": { "type": "SINGLE", "max": 1 },
+      "options": [
+        { "code": "STUDY", "label": "留学" },
+        { "code": "NON_STUDY", "label": "留学以外" }
+      ]
+    }
+  },
+  "error": null
+}
+```
+
+```jsonc
+// REGION_RETRY — ① 지역 매칭 0건, 서버 합성 yes/no 질문
+{
+  "success": true,
+  "data": {
+    "resultCode": "REGION_RETRY",
+    "question": {
+      "step": 1,
+      "field": "regionRetry",
+      "question": "다른 지역 방을 찾아보시겠어요?",
+      "select": { "type": "SINGLE", "max": 1 },
+      "options": [
+        { "code": "YES", "label": "예" },
+        { "code": "NO", "label": "아니오" }
+      ]
+    }
+  },
+  "error": null
+}
+```
+
+```jsonc
+// COMPLETED — 자동 확정 + 추천(§7과 동일 형태의 recommendation) + diagnosisId
+{
+  "success": true,
+  "data": {
+    "resultCode": "COMPLETED",
+    "diagnosisId": 1024,
+    "recommendation": {
+      "content": [ /* ListingSummaryResponse[] — §7과 동일 */ ],
+      "markers": [ { "listingId": "6858e2000000000000000001", "lat": 37.555134, "lng": 126.936893 } ],
+      "page": { "number": 0, "size": 20, "totalElements": 12, "totalPages": 1, "hasNext": false }
+    }
+  },
+  "error": null
+}
+```
+
+```jsonc
+// NO_MATCH — 6단계까지 마친 뒤 매칭 0건(코드만, 조정 제안 없음)
+{ "success": true, "data": { "resultCode": "NO_MATCH" }, "error": null }
+```
+
+```jsonc
+// TERMINATED — 지역 예외질문에서 "아니오"(진단 종료)
+{ "success": true, "data": { "resultCode": "TERMINATED" }, "error": null }
+```
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | 현재 단계와 맞지 않는 `field`, 미정의 enum, `regionRetry` 규칙 위반(`code`가 `YES`/`NO` 아님), 자동 확정 시 저장된 답 재검증 실패 등 + `errors[]` |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치(검증 이전) |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조 / 만료 |
 
 ---
 
