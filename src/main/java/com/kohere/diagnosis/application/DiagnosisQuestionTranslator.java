@@ -21,8 +21,13 @@ public class DiagnosisQuestionTranslator {
   /** 라벨·메시지 언어-키 맵에서 사용자 언어 값이 없을 때의 폴백 언어(ADR-0029). */
   private static final String DEFAULT_LANGUAGE = "en";
 
-  /** 카탈로그 문항 1개를 사용자 언어로 조립한 표시 DTO로 변환한다. */
-  QuestionResponse translate(DiagnosisQuestion question, String language) {
+  /**
+   * 카탈로그 문항 1개를 사용자 언어로 조립한 표시 DTO로 변환한다.
+   *
+   * <p>{@code step}은 카탈로그가 아니라 <b>호출자가 넘긴다</b> — 순서·단계 번호의 정본은 코드({@code DiagnosisFlowStep})이고
+   * 카탈로그는 표현만 담기 때문이다(ADR-0036). ① 지역 0건 예외질문도 호출자가 지역 단계 번호를 실어준다.
+   */
+  QuestionResponse translate(DiagnosisQuestion question, int step, String language) {
     QuestionResponse.Select select =
         new QuestionResponse.Select(question.select().type(), question.select().max());
     List<QuestionResponse.Option> options =
@@ -30,22 +35,7 @@ public class DiagnosisQuestionTranslator {
             .map(o -> new QuestionResponse.Option(o.code(), pickLabel(o.label(), language)))
             .toList();
     return new QuestionResponse(
-        question.step(),
-        question.field(),
-        pickLabel(question.question(), language),
-        select,
-        options);
-  }
-
-  /** step 3은 {@code branchField}(university/district)로 택일하고, 그 외 단계는 단일 문항을 그대로 쓴다. */
-  DiagnosisQuestion selectQuestion(List<DiagnosisQuestion> questions, String branchField) {
-    if (branchField == null) {
-      return questions.get(0);
-    }
-    return questions.stream()
-        .filter(q -> branchField.equals(q.field()))
-        .findFirst()
-        .orElseThrow(() -> new IllegalStateException("진단 문항 카탈로그가 없습니다: " + branchField));
+        step, question.field(), pickLabel(question.question(), language), select, options);
   }
 
   /** ③ 분기: 저장된 purpose로 university/district 필드를 정한다(purpose 미선행이면 INVALID_INPUT). */

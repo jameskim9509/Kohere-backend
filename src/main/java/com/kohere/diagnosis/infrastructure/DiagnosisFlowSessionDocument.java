@@ -3,7 +3,6 @@ package com.kohere.diagnosis.infrastructure;
 import com.kohere.diagnosis.domain.ArcStatus;
 import com.kohere.diagnosis.domain.DiagnosisCondition;
 import com.kohere.diagnosis.domain.District;
-import com.kohere.diagnosis.domain.FlowState;
 import com.kohere.diagnosis.domain.Purpose;
 import com.kohere.diagnosis.domain.Region;
 import com.kohere.diagnosis.domain.UniversityGroup;
@@ -38,8 +37,9 @@ public class DiagnosisFlowSessionDocument {
   private Long userId;
 
   private DraftDocument draft;
-  private int cursor;
-  private FlowState state;
+
+  /** 서버가 직전에 낸 문항의 field — 다음 답의 기대값이자 진행 위치의 단일 정본(정본 슬롯 문항·예외질문 공통). */
+  private String pendingField;
 
   /** 누적 답 스냅샷(진행 중 초안의 답 필드만; status/id는 세션 레벨에서 유도). */
   @Getter

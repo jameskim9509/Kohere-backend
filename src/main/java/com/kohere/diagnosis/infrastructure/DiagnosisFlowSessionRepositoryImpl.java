@@ -8,6 +8,11 @@ import com.kohere.diagnosis.infrastructure.DiagnosisFlowSessionDocument.DraftDoc
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -19,6 +24,7 @@ import org.springframework.stereotype.Repository;
 public class DiagnosisFlowSessionRepositoryImpl implements DiagnosisFlowSessionRepository {
 
   private final DiagnosisFlowSessionMongoRepository mongoRepository;
+  private final MongoTemplate mongoTemplate;
 
   @Override
   public Optional<DiagnosisFlowSession> findByUserId(long userId) {
@@ -28,6 +34,25 @@ public class DiagnosisFlowSessionRepositoryImpl implements DiagnosisFlowSessionR
   @Override
   public DiagnosisFlowSession save(DiagnosisFlowSession session) {
     return toDomain(mongoRepository.save(toDocument(session)));
+  }
+
+  @Override
+  public DiagnosisFlowSession upsertByUserId(DiagnosisFlowSession session) {
+    DiagnosisFlowSessionDocument document = toDocument(session);
+    Update update =
+        new Update()
+            .set("userId", document.getUserId())
+            .set("draft", document.getDraft())
+            .set("pendingField", document.getPendingField());
+    // userId UNIQUE 인덱스와 같은 조건으로 upsert해, 삭제 후 삽입 사이에 낀 동시 요청이 중복 키로 깨지지 않게 한다.
+    // returnNew로 부여된 _id까지 한 번에 받는다(덮어쓰는 이전 세션은 그냥 버린다 — ADR-0036 결정 12).
+    DiagnosisFlowSessionDocument saved =
+        mongoTemplate.findAndModify(
+            new Query(Criteria.where("userId").is(session.getUserId())),
+            update,
+            FindAndModifyOptions.options().upsert(true).returnNew(true),
+            DiagnosisFlowSessionDocument.class);
+    return toDomain(saved);
   }
 
   @Override
@@ -52,8 +77,7 @@ public class DiagnosisFlowSessionRepositoryImpl implements DiagnosisFlowSessionR
         .id(s.getId())
         .userId(s.getUserId())
         .draft(draft)
-        .cursor(s.getCursor())
-        .state(s.getState())
+        .pendingField(s.getPendingField())
         .build();
   }
 
@@ -78,8 +102,7 @@ public class DiagnosisFlowSessionRepositoryImpl implements DiagnosisFlowSessionR
         .id(e.getId())
         .userId(e.getUserId())
         .draft(draftBuilder.build())
-        .cursor(e.getCursor())
-        .state(e.getState())
+        .pendingField(e.getPendingField())
         .build();
   }
 }

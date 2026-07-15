@@ -819,7 +819,6 @@ class DiagnosisDocsTest {
   private void seedQuestions() {
     questionMongoRepository.save(
         question(
-            1,
             "region",
             "SINGLE",
             1,
@@ -830,7 +829,6 @@ class DiagnosisDocsTest {
                 option("GYEONGGI", "Gyeonggi", "경기"))));
     questionMongoRepository.save(
         question(
-            3,
             "university",
             "SINGLE",
             1,
@@ -840,7 +838,6 @@ class DiagnosisDocsTest {
                 option("HUFS_KHU_KOREA", "HUFS · Kyung Hee · Korea Univ.", "한국외대·경희대·고려대"))));
     questionMongoRepository.save(
         question(
-            3,
             "district",
             "SINGLE",
             1,
@@ -867,14 +864,12 @@ class DiagnosisDocsTest {
   }
 
   private static DiagnosisQuestionDocument question(
-      int step,
       String field,
       String selectType,
       int max,
       Map<String, String> question,
       List<OptionSpec> options) {
     return DiagnosisQuestionDocument.builder()
-        .step(step)
         .field(field)
         .active(true)
         .question(question)
