@@ -676,6 +676,97 @@
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** 언어와 무관하게 동일 코드로 정상 검증·저장된다
 
+### US-2-7 — 지역 매물 부재 시 재질의·종료 및 서버 주도 진단 흐름 (v2)
+
+**As a** 진단을 진행하는 외국인 사용자
+**I want** 내가 시작을 결정한 진단을 서버가 다음 질문·분기·확정 시점을 알아서 판단해 이끌고, ① 지역에 매물이 없으면 다른 지역으로 다시 시도하거나 진단을 끝낼 수 있게 하고
+**So that** 매물이 없는 지역인데도 끝까지 답하는 헛수고 없이, 앱을 나갔다 들어오지 않고 그 자리에서 재시도하거나 종료할 수 있다
+
+- **우선순위**: High (진단 완주율·이탈 개선)
+- **관련 NFR**: 사용성(불필요한 단계 진행 차단·클라 로컬 분기 제거), 유지보수성(진행 흐름을 서버가 소유), 신뢰성(진행 상태 서버 보관)
+- **백엔드 관점**: 기존 v1(`/api/v1/diagnoses/*`, 클라이언트가 `step`·확정을 주도)은 **그대로 두고**, **서버 주도 대화형 흐름을 `/api/v2`에 신설**한다(하위 호환이 깨지는 변경이라 버전 상향 — [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). **서버는 질문과 분기만 주도하고, 진단을 시작할 시점과 매물을 받을 시점은 클라이언트가 결정한다** — 클라이언트가 **`POST /api/v2/diagnoses/start`**(본문 없음)로 진단을 시작하고 **`POST /api/v2/diagnoses/next`**로 현재 문항 답 1개씩을 이어 보내면, 서버는 `step`을 받지 않고 직전에 낸 문항에서 다음 질문을 결정하며 빌더가 다 채워지면 **자동 확정**한다. `/start`는 진행 중 세션이 있어도 **무조건 버리고** 새 세션(빈 draft·`pendingField=region`)을 만든다 — 진단하다 홈으로 갔다 다시 시작해도 서버가 기존 진단 정보를 보고 이어가지 않고 **언제나 처음부터**다. 진행 세션이 없는데 `/next`가 오면 서버가 임의로 흐름을 되살리지 않고 `400 DIAGNOSIS_SESSION_NOT_FOUND`로 막으며, 클라이언트는 `/start`로 복구한다. `/next`는 답(`field`)이 반드시 있어야 한다(없으면 `INVALID_INPUT`). 확정 응답에 추천 매물을 인라인으로 싣지 않고 **`diagnosisId`만** 담으며, **확정 시점에 매칭 유무조차 확인하지 않는다** — 매물은 클라이언트가 시점을 정해 **`GET /api/v2/diagnoses/{id}/recommendations`**(v1 §7과 같되 `suggestions` 없음)로 별도 조회하고, **매칭 0건은 그 응답의 `resultCode: NO_MATCH`로 드러난다**(흐름 응답엔 그 코드가 없다 — 미리 알려주려면 클라가 요청하지 않은 추천 쿼리를 서버가 돌려야 한다). ① 지역(`region`) 답 직후 매칭이 0건일 때만 서버가 예외적으로 미리 필터링해 "다른 지역 방을 찾아보시겠어요?" 문항을 끼워 넣는다 — 이 예외질문은 서버 코드에 하드코딩한 합성 문구가 아니라 **문항 카탈로그(`diagnosisQuestions`)의 일반 질문**(`step: 1`·`field: regionRetry`·`select: {type: SINGLE, max: 1}`·옵션 `YES`/`NO`)이라 별도 결과코드 없이 다른 문항과 똑같이 `NEXT_QUESTION`으로 내려가고 번역도 US-2-6과 동일 경로를 탄다(신규 환경은 order 0000 시드, 기배포 환경은 멱등 changeUnit order 0005로 적재). 그 예/아니오 응답에만 **클라이언트가 행할 행위**를 코드로 알린다 — 예=`RESTART`(클라가 `/start`로 처음부터 재시도) · 아니오=`TERMINATED`(진단 종료), 둘 다 세션을 삭제한다. 6단계까지 마친 뒤 매칭이 0건이면 `NO_MATCH`이며 **어떤 제안도 없다**(v1의 `suggestions` 기능·시드는 v1 전용으로 유지하되 v2는 참조하지 않는다). 매 응답은 정상 `200 OK`의 `data.resultCode`(태그드 유니온: `NEXT_QUESTION` / `RESTART` / `COMPLETED` / `TERMINATED`)로 표현한다(에러 아님). 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 v2 전용 세션(`diagnosisFlowSessions`)에 담고, 완료 시에만 정본 진단을 기존 `diagnoses`에 저장한다. **① 지역 0건으로 끝난 시도는 버리지 않는다** — 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 "어느 지역을 원했는데 매물이 없었나"를 수요 분석에 쓴다(재시도·종료 양쪽. 사용자 노출 경로 없음 — 이력·최근은 `COMPLETED`만, v1 초안 조회는 `IN_PROGRESS`만 본다). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다. 문항 카탈로그·번역·입력 enum·③ 분기 규칙은 v1과 동일 출처(US-2-5·US-2-6·[ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../adr/0029-diagnosis-i18n-strategy.md))를 공유한다. 시퀀스: [US-2-7 다이어그램](../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md), API: [02 스펙 v2 절](../api/specs/02-diagnosis-recommendation.md).
+
+**AC (Given / When / Then)**
+
+- 시나리오: 클라 주도 시작 — `/start`로 ① 지역 질문 수령
+
+  - **Given** 유효한 access token을 보유한 사용자가 진단 화면에 진입한다
+  - **When** 본문 없이 `POST /api/v2/diagnoses/start`를 호출한다
+  - **Then** `200 OK`와 `data.resultCode=NEXT_QUESTION`, `data.question`에 ① 지역(`field=region`) 문항 1개를 반환한다(클라이언트는 `step`을 지정하지 않는다)
+- 시나리오: 클라 주도 시작 — 중단 후 다시 시작하면 처음부터
+
+  - **Given** ①~③까지 답한 진행 세션이 남은 채 사용자가 홈으로 나갔다 진단을 다시 시작한다
+  - **When** `POST /api/v2/diagnoses/start`를 호출한다
+  - **Then** 서버가 진행 중이던 세션을 **무조건 폐기**하고 새 세션(빈 draft·`pendingField=region`)을 만들어 ① 지역 문항을 `NEXT_QUESTION`으로 반환한다(이전 답을 이어받지 않는다 — 서버가 기존 진단 정보를 보고 진행하지 않는다)
+- 시나리오: 서버 주도 — 답 적용 후 다음 질문을 서버가 결정
+
+  - **Given** ① 지역 문항을 받은 사용자가 매물이 있는 지역(예: `region=SEOUL`)을 골랐다
+  - **When** 그 답 1개(`{ "field": "region", "code": "SEOUL" }`)를 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 답을 저장하고 다음 단계(② 입국 목적) 문항을 `data.resultCode=NEXT_QUESTION`으로 반환한다(다음 `step`을 클라이언트가 지정하지 않는다)
+- 시나리오: 지역 매물 0건 — 카탈로그 예외질문을 일반 질문으로 삽입
+
+  - **Given** ① 지역 답이 매칭 매물이 없는 지역(예: MVP에서 `BUSAN`/`GYEONGGI`)이다
+  - **When** 그 지역 답을 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 지역-only 매칭이 0건임을 확인하고 `200 OK`와 `data.resultCode=NEXT_QUESTION`(별도 결과코드가 아님), `data.question`에 문항 카탈로그의 예외질문(`step=1`, `field=regionRetry`, 옵션 `YES`/`NO`, "현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?")을 사용자 언어로 반환한다
+- 시나리오: 예외질문에 "예" — 클라가 `/start`로 재시도(RESTART)
+
+  - **Given** 직전 응답이 `field=regionRetry` 문항이다
+  - **When** `{ "field": "regionRetry", "code": "YES" }`를 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** `200 OK`와 `data.resultCode=RESTART`(코드만, `question`·`diagnosisId` 없음)를 반환하고 서버는 세션을 삭제한다 — 클라이언트가 그 행위 코드를 받아 `POST /api/v2/diagnoses/start`로 처음부터 다시 시작한다(서버가 지역만 비워 되돌리지 않는다)
+- 시나리오: 예외질문에 "아니오" — 진단 종료(TERMINATED)
+
+  - **Given** 직전 응답이 `field=regionRetry` 문항이다
+  - **When** `{ "field": "regionRetry", "code": "NO" }`를 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 진행 세션을 폐기하고 `200 OK`와 `data.resultCode=TERMINATED`(진단종료코드)를 반환한다(에러 아님; `question`·`diagnosisId` 없음)
+- 시나리오: 자동 확정 — 6단계 완성 시 서버가 확정하고 `diagnosisId`만 반환
+
+  - **Given** ①~⑥ 단계 답이 모두 채워지도록 마지막(⑥ ARC) 답(`{ "field": "arcStatus", "code": "ARC_ISSUED" }`)을 보낸다(빌더 완성)
+  - **When** 그 답을 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 별도 확정 요청 없이 진단을 `IN_PROGRESS → COMPLETED`로 자동 확정해 저장하고, 매칭 매물이 존재하면 `data.resultCode=COMPLETED`와 `data.diagnosisId`만 반환한다(추천 매물을 함께 싣지 않는다 — 앱이 시점을 정해 `GET /api/v1/diagnoses/{diagnosisId}/recommendations`로 별도 요청한다)
+- 시나리오: 최종 매칭 0건 — 확정은 COMPLETED, 0건은 추천 조회에서 드러남
+
+  - **Given** 6단계까지 다 채웠으나 전체 조건에 맞는 매물이 0건이다
+  - **When** 마지막 답으로 자동 확정이 일어난다
+  - **Then** 서버는 매칭을 조회하지 않고 `200 OK`와 `data.resultCode=COMPLETED`·`data.diagnosisId`를 반환한다(매칭 유무와 무관 — no-match를 미리 알려주려면 클라이언트가 요청하지도 않은 추천 쿼리를 서버가 돌려야 하므로)
+  - **And** 클라이언트가 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출하면 `content: []`·`markers: []`를 받으며 **이 빈 목록이 곧 no-match**다(조정 제안 `suggestions` 필드 자체가 없다 — v2는 제안 기능을 쓰지 않는다)
+- 시나리오: 미완주 시도 보존 — 지역 0건에 "아니오"(포기)
+
+  - **Given** ① 지역으로 매물이 없는 지역(예: `BUSAN`)을 골라 예외질문을 받았다
+  - **When** `{ "field": "regionRetry", "code": "NO" }`를 보내 진단을 종료한다
+  - **Then** 서버가 진행 세션을 지우기 전에 그때까지의 답을 `diagnoses`에 `status=DISCARDED`(`region=BUSAN`, 나머지 null, `submittedAt`=폐기 시각)로 남긴다 — "부산을 원했는데 매물이 없었다"는 수요 신호를 버리지 않기 위해서다
+  - **And** 이 기록은 **사용자에게 노출되지 않는다** — 이력(`GET /api/v1/diagnoses`)·최근 진단은 `COMPLETED`만 보므로 목록에서 자동으로 빠지고, **id로 직접 조회하는 상세(`GET /api/v1/diagnoses/{id}`)·추천도 `404 DIAGNOSIS_NOT_FOUND`** 다(소유권만으론 못 막는다 — 본인 기록인 데다 진단 id가 순차 발급이라 추측 가능하다)
+- 시나리오: 미완주 시도 보존 — "예"(재시도)도 남긴다
+
+  - **Given** ① 지역 0건 예외질문을 받았다
+  - **When** `{ "field": "regionRetry", "code": "YES" }`로 재시도를 택한다
+  - **Then** 그 시도도 `DISCARDED`로 남는다 — 안 남기면 사용자가 다른 지역으로 완주했을 때 **원래 원했던 지역이 증발**한다
+- 시나리오: 중도 이탈은 기록하지 않는다
+
+  - **Given** ①~③까지 답하고 홈으로 나갔다가 나중에 진단을 다시 시작한다
+  - **When** `POST /api/v2/diagnoses/start`가 이전 세션을 덮어쓴다
+  - **Then** 이전 시도는 **기록하지 않고 버린다** — 이탈은 요청으로 오지 않아 돌아왔을 때에야 알 수 있어, 영영 안 돌아온 사용자는 집계에서 누락되고 시각도 실제 이탈 시각이 아니라 재시작 시각이라 신뢰할 수 없다(그 자리에서 정확히 아는 ① 지역 0건 경로만 남긴다)
+- 시나리오: 매물 조회는 클라가 결정 — v2 추천 엔드포인트
+
+  - **Given** 확정으로 `diagnosisId`를 받은 사용자가 진단 결과 화면에 진입한다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations?page=0&size=20`을 호출한다
+  - **Then** `200 OK`와 추천 매물(`content`)·지도 좌표(`markers`)·페이지 메타(`page`)를 반환한다(v1 §7과 같은 계약이되 `suggestions`는 없다)
+  - **And** 타인 소유 진단이면 `403 FORBIDDEN`, 없는 진단이면 `404 DIAGNOSIS_NOT_FOUND`다
+- 시나리오: 세션 없음 — 진행 중 진단 없이 `/next`
+
+  - **Given** 앱 재시작·터미널 응답 후 재전송·세션 만료 등으로 진행 중 세션이 없다
+  - **When** `POST /api/v2/diagnoses/next`를 호출한다
+  - **Then** `400`과 `error.code=DIAGNOSIS_SESSION_NOT_FOUND`("진행 중인 진단이 없습니다. 진단을 다시 시작해 주세요.")를 반환한다 — 서버가 임의로 흐름을 되살리거나 새 진단을 시작하지 않으며, 클라이언트가 `POST /api/v2/diagnoses/start`로 복구한다
+- 시나리오: 답 누락 — `/next`에 답이 없음
+
+  - **Given** 진행 중 세션이 있으나 요청 본문이 없거나 `field`가 비어 있다
+  - **When** `POST /api/v2/diagnoses/next`를 호출한다
+  - **Then** `400`과 `error.code=INVALID_INPUT`을 반환한다(현재 단계와 다른 `field`·미정의 enum·`regionRetry` code가 `YES`/`NO`가 아닌 경우도 동일)
+- 시나리오: v1 무변경 — 기존 흐름 보존
+
+  - **Given** 기존 클라이언트가 v1 흐름(`GET /api/v1/diagnoses/questions/{step}` · `POST /api/v1/diagnoses/answers` · `POST /api/v1/diagnoses`)을 사용한다
+  - **When** v2 추가 이후에도 v1 엔드포인트를 그대로 호출한다
+  - **Then** v1 동작·응답 계약이 바뀌지 않는다(예: `GET /api/v1/diagnoses/questions/1`은 `regionRetry` 문항이 같은 `step 1`에 있어도 ① 지역(`field=region`) 문항을 그대로 반환한다 — v2는 새 컨트롤러로만 추가되고 v1 로직을 건드리지 않는다)
+
 ## 3. 매물 탐색 · 찜
 
 > 관련 API 스펙: [03-listings-favorites](../api/specs/03-listings-favorites.md)
