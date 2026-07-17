@@ -68,6 +68,16 @@ public class SecurityConfig {
                     .hasRole("USER")
                     .requestMatchers(HttpMethod.GET, "/api/v1/bookings", "/api/v1/bookings/*")
                     .hasRole("USER")
+                    // 예약 내역 관리(삭제·차단·신고) — 조회 매처는 GET·단일 세그먼트라 신규 경로를 덮지 못한다.
+                    // 명시하지 않으면 anyRequest().authenticated()로 떨어져 온보딩(ROLE_ONBOARDING) 토큰이 통과한다.
+                    .requestMatchers(HttpMethod.DELETE, "/api/v1/bookings/*")
+                    .hasRole("USER")
+                    .requestMatchers(
+                        HttpMethod.POST, "/api/v1/bookings/*/block", "/api/v1/bookings/*/report")
+                    .hasRole("USER")
+                    // 차단 목록·해제 — /api/v1/users/me 정확 매처가 /me/blocks를 덮지 않아 별도 매처가 필요하다.
+                    .requestMatchers("/api/v1/users/me/blocks", "/api/v1/users/me/blocks/*")
+                    .hasRole("USER")
                     // 생활 팁 — 등록 국가 언어 번역이 온보딩 국가에 의존하므로 ACTIVE 세입자(ROLE_USER)만(US-8,
                     // 08-life-tips.md)
                     .requestMatchers("/api/v1/life-tips/**")

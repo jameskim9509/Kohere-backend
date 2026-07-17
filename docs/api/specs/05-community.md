@@ -409,7 +409,12 @@ Request Body: 없음.
 
 > 채팅 메시지 송수신·조회는 04 채팅 스펙(`/api/v1/chat-rooms/...`)을 재사용한다. `created`가 `false`면 기존 방을 반환한 것이며 status는 `200`이다.
 
-- 발생 가능한 에러: `UNAUTHENTICATED`(401), `TOKEN_EXPIRED`(401), `POST_CHAT_SELF_NOT_ALLOWED`(422, 본인 게시글), `POST_NOT_FOUND`(404), `POST_CHAT_AUTHOR_UNAVAILABLE`(422, 작성자가 탈퇴 등으로 채팅 불가), `POST_CHAT_BLOCKED`(403, 차단 관계 — report 모듈 의존, 확정 필요).
+- 발생 가능한 에러: `UNAUTHENTICATED`(401), `TOKEN_EXPIRED`(401), `POST_CHAT_SELF_NOT_ALLOWED`(422, 본인 게시글), `POST_NOT_FOUND`(404), `POST_CHAT_AUTHOR_UNAVAILABLE`(422, 작성자가 탈퇴 등으로 채팅 불가), `POST_CHAT_BLOCKED`(403, 차단 관계 — `user` 모듈의 `user_blocks`(사용자 단위 차단) 기준. **이 가드는 아직 배선되지 않았다(후속·이연)** — 아래 노트 참조).
+
+> **차단은 사용자 단위 전역이다.** 차단 모델은 `user` 모듈의 `user_blocks`(차단자 ↔ 차단 대상 **사용자**)이며 맥락별(게시글·예약·채팅방)로 쪼개지지 않는다. 생성은 [04-booking-inquiry-chat](./04-booking-inquiry-chat.md)(차단 생성), 목록·해제는 [01-auth-onboarding](./01-auth-onboarding.md)(차단 목록·해제) 참조.
+> 따라서 **예약 문맥에서 차단한 상대는 커뮤니티 채팅 시작에서도 막는 것이 설계 의도**다(`POST_CHAT_BLOCKED`, 403). 맥락별 차단(예: 예약에서만 차단)이 필요해지면 `user_blocks`에 범위(scope) 개념을 도입해야 한다.
+> 다만 **이 채팅 시작 가드는 아직 배선되지 않았다(후속·이연)** — `community`의 `allowedDependencies`는 현재 `{common}`이라 차단을 조회할 수 없고([domain-model](../../architecture/domain-model.md) §7), `user`의 `UserBlock` 협력이 지금 열어 둔 소비자는 `booking` 하나뿐이다(§2). 구현하려면 **`community → user::api`(`isBlockedBetween(요청자, 작성자)`) 의존 신설이 선행**한다. §5(커뮤니티) 자체가 1차 MVP 범위 밖이라 배선도 함께 이연한다([user-stories](../../requirements/user-stories.md) US-5-5).
+> **(확인 필요)** 차단한 사용자의 **게시글·댓글을 목록·상세에서 제외**할지는 MVP 범위 밖의 미결 사항이다. 본 문서의 목록·상세·댓글 엔드포인트에는 차단 필터가 없다(현재 동작 = 제외하지 않음). 도입하려면 `community → user::api`의 `findBlockedUserIds(blockerId)` 의존이 새로 필요한데, community의 `allowedDependencies`는 현재 `{common}`뿐이라([domain-model](../../architecture/domain-model.md) §7) 미도입 상태다.
 
 ## 도메인 에러 코드
 
@@ -421,6 +426,6 @@ Request Body: 없음.
 | `COMMENT_NOT_FOUND` | 404 | 댓글이 없거나 삭제됨 |
 | `POST_CHAT_SELF_NOT_ALLOWED` | 422 | 본인 게시글에 동네친구 채팅 시작 불가 |
 | `POST_CHAT_AUTHOR_UNAVAILABLE` | 422 | 작성자가 탈퇴 등으로 채팅 불가 상태 |
-| `POST_CHAT_BLOCKED` | 403 | 차단 관계로 채팅 시작 불가 (report 모듈의 차단 모델 의존 — 확정 필요) |
+| `POST_CHAT_BLOCKED` | 403 | 차단 관계로 채팅 시작 불가 (`user` 모듈의 `user_blocks` — 사용자 단위 차단). **가드 미배선(후속·이연)** — `community → user::api`(`isBlockedBetween`) 의존 신설이 선행 |
 
 > 작성자 소유권 위반(타인의 게시글·댓글 수정/삭제)은 공통 `FORBIDDEN`(403)을 사용한다. 채팅방 자체의 메시지/조회 관련 에러(`CHAT_ROOM_NOT_FOUND` 등)는 04 채팅 스펙에서 정의한 코드를 재사용한다.

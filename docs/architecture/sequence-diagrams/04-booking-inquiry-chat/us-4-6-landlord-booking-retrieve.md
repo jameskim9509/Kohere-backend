@@ -41,8 +41,10 @@ sequenceDiagram
                 BOOK-->>C: 200 OK (내 예약 목록)
                 C-->>U: 내 예약 목록 표시
             else userType = LANDLORD
-                Note over BOOK: 내 소유 매물 신청만 조회 — landlord_id로 직접 스코핑<br/>createdAt 내림차순 · 오프셋 페이지네이션(page/size)<br/>(landlordId는 생성 시 저장, 매물 상태 무관해 PAUSED 포함)
-                BOOK->>XDB: 신청 페이지 조회<br/>(landlord_id = userId, createdAt desc, page/size)
+                BOOK->>USER: findBlockedUserIds(userId)
+                USER-->>BOOK: 내가 차단한 상대 userId 목록(빈 목록 가능)
+                Note over BOOK: 내 소유 매물 신청만 조회 — landlord_id로 직접 스코핑<br/>삭제·차단 제외: landlord_deleted_at IS NULL<br/>AND tenant_id NOT IN (차단 목록)<br/>createdAt 내림차순 · 오프셋 페이지네이션(page/size)<br/>(landlordId는 생성 시 저장, 매물 상태 무관해 PAUSED 포함)
+                BOOK->>XDB: 신청 페이지 조회<br/>(landlord_id = userId, 삭제·차단 제외, createdAt desc, page/size)
                 XDB-->>BOOK: 신청 페이지 (빈 목록 가능)
                 Note over BOOK: 스냅샷 없음 — 조회 시점 실시간 조인<br/>매물 요약(listing::api) · 신청자 성명(user::api getUserName)
                 BOOK->>LIST: 매물 요약 조회(content의 listingId·roomOfferId)
@@ -91,12 +93,14 @@ sequenceDiagram
                 BOOK-->>C: 200 OK (내 예약 상세) / 404 BOOKING_NOT_FOUND
                 C-->>U: 내 예약 상세 표시
             else userType = LANDLORD
-                BOOK->>XDB: bookingId로 예약 조회
+                BOOK->>USER: findBlockedUserIds(userId)
+                USER-->>BOOK: 내가 차단한 상대 userId 목록(빈 목록 가능)
+                BOOK->>XDB: bookingId로 예약 조회<br/>(landlord_id = userId, 삭제·차단 제외)
                 XDB-->>BOOK: 예약(tenantId·listingId·roomOfferId·landlordId·moveInDate·contractPeriod·status·createdAt) 또는 없음
                 Note over BOOK: 소유권 확인 — booking.landlordId 가 userId 와 같은지 행 단위 대조<br/>(생성 시 저장된 값, listing::api 왕복 없음)
 
-                alt 예약 없음 또는 booking.landlordId 가 userId 와 다름
-                    Note over BOOK: 존재 여부 비노출 — 내 매물 신청이 아니면 404로 통일
+                alt 예약 없음 또는 booking.landlordId 가 userId 와 다름 또는 삭제·차단으로 숨김
+                    Note over BOOK: 존재 여부 비노출 — 내 매물 신청이 아니면 404로 통일<br/>내가 삭제(US-4-7)했거나 신청자를 차단(US-4-8)한 신청도 404
                     BOOK-->>C: 404 BOOKING_NOT_FOUND
                     C-->>U: 신청을 찾을 수 없음 안내
                 else 내 매물 신청 (정상)
@@ -121,8 +125,9 @@ sequenceDiagram
 - **임대인 분기 — 소유권 스코핑(생성 시 landlordId 비정규화)**: 예약 **생성 시(US-4-1)** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 저장해 두므로, 소유권 판정이 booking 행에 있다. cross-store 조인 없이 booking 저장소만으로 처리한다:
   - **목록**: `landlord_id = 요청자`를 `createdAt` 내림차순 오프셋 페이지네이션(api-design-guide §4-1)으로 조회. `landlordId`는 매물 상태와 무관하게 저장돼 `PAUSED`(일시중지) 매물의 신청도 자동 포함된다. 신청이 없으면 빈 페이지(`200`, `content: []`).
   - **상세**: 예약을 `bookingId`로 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**한다. 예약이 없거나 내 소유 매물의 신청이 아니면 존재 여부를 노출하지 않도록 `404 BOOKING_NOT_FOUND`로 **통일**한다(세입자 분기의 '타인 예약→404'와 동일한 규약).
+  - **삭제·차단 제외 필터(목록·상세 공통)**: 임대인 분기의 술어는 세입자 분기와 대칭이다 — `landlord_deleted_at IS NULL`(내가 삭제하지 않은 신청, [US-4-7](us-4-7-booking-delete.md))이고 `tenant_id NOT IN (내가 차단한 신청자, [US-4-8](us-4-8-booking-block.md))`인 행만 본다. 삭제는 **참여자별 컬럼**이라 임대인이 지운 신청도 세입자 목록에는 그대로 남고, 차단 숨김도 **차단자 기준 단방향**이다. 차단 목록은 `user::api`(`findBlockedUserIds`)로 받아 **애플리케이션 레벨 조인**하며(booking이 `user_blocks`를 직접 조인하지 않는다, [ADR-0002](../../../adr/0002-inter-module-communication-via-events.md)), 술어는 응용 계층 후처리가 아니라 저장소 조회로 내려 페이지 메타(`totalPages`/`hasNext`)와 어긋나지 않게 한다. 차단이 0건이면 `NOT IN`이 모든 행을 지우지 않도록(`NOT IN ()`은 문법 오류, `NOT IN (null)`은 `UNKNOWN`이라 **모든 행이 사라진다**) 어댑터 내부에서 빈 목록을 sentinel `-1L` 한 건으로 정규화한다 — `users.id`는 `BIGINT AUTO_INCREMENT`라 `-1`이 실제 식별자와 충돌할 수 없다(세입자 분기 [US-4-2](us-4-2-booking-retrieve.md)와 동일).
   - `landlordId`는 생성 시점 스냅샷이라 **소유권 이전 시 stale**하나, 소유권 이전은 MVP 범위 밖이라 충분하다(이전 도입 시 백필 또는 조회 시점 해석으로 전환).
 - **스냅샷 없음 — 조회 시점 실시간 조인**: 매물 요약·가격·신청자 정보는 예약에 스냅샷 저장하지 않고 조회 시점에 조립한다. **목록**은 항목별 매물 요약(`listing::api`)과 신청자 성명(`user::api` `getUserName`)만 조인한다(경량). **상세**는 매물 요약·주소·방 상품명·`pricing`(보증금·월세)을 `listing::api`로, 신청자 프로필(성명·성별·국적·이메일)을 `user::api`(신규 `getApplicantProfile(tenantId)`)로 조인한다. 신청자는 세입자이므로 프로필(`gender`·`country`·`email`)이 존재하며 **마스킹 없이 평문으로 노출**한다. 탈퇴 회원은 PII 익명화([ADR-0014](../../../adr/0014-withdrawal-pii-anonymization.md))로 값이 비어 있을 수 있다.
 - **비용**: `deposit`(보증금)은 `listing::api` `pricing`에서, `totalAmount`(총 금액)는 조회 시점 계산값이며 **세입자 분기와 동일한 필드·정의**(`deposit + monthlyRent × contractPeriod`, 계약 개월수 정수, **관리비 제외**)다. 가격 변경 시 스냅샷이 아니라 **현재가 기준**으로 계산한다.
 
-> 신설 의존: 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId` 추가 노출; `user::api` — `getApplicantProfile(userId)`(신청자 성명·성별·국적·이메일) 공개 조회 메서드; booking 저장소의 `landlord_id` 컬럼 + `(landlord_id, created_at)` 인덱스(신규 마이그레이션). 임대인 조회에 listing::api 소유권 조회 메서드는 불필요하다(소유권은 booking 행에서 판정). 에러코드는 신규 없이 공통 `AUTH_ONBOARDING_REQUIRED` + 기존 `BOOKING_NOT_FOUND`(404)를 재사용한다(역할 `403` 없음). `booking → {listing::api, user::api}` 의존 화이트리스트는 이미 선언돼 있다([ADR-0002](../../../adr/0002-inter-module-communication-via-events.md)).
+> 신설 의존: 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId` 추가 노출; `user::api` — `getApplicantProfile(userId)`(신청자 성명·성별·국적·이메일)·`findBlockedUserIds(blockerId)`(차단 필터) 공개 조회 메서드; `bookings.landlord_deleted_at` 컬럼과 삭제·차단 술어를 반영한 조회; booking 저장소의 `landlord_id` 컬럼 + `(landlord_id, created_at)` 인덱스(신규 마이그레이션). 임대인 조회에 listing::api 소유권 조회 메서드는 불필요하다(소유권은 booking 행에서 판정). 에러코드는 신규 없이 공통 `AUTH_ONBOARDING_REQUIRED` + 기존 `BOOKING_NOT_FOUND`(404)를 재사용한다(역할 `403` 없음). `booking → {listing::api, user::api}` 의존 화이트리스트는 이미 선언돼 있다([ADR-0002](../../../adr/0002-inter-module-communication-via-events.md)).

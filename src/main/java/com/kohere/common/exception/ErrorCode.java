@@ -53,7 +53,6 @@ public enum ErrorCode {
   // --- 신청·채팅 (booking/chat) — docs/api/specs/04-booking-inquiry-chat.md ---
   BOOKING_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신청한 매물입니다."),
   BOOKING_INVALID_MOVE_IN_DATE(HttpStatus.UNPROCESSABLE_ENTITY, "입주 희망일이 올바르지 않습니다."),
-  BOOKING_SELF_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 소유 매물에는 신청할 수 없습니다."),
   BOOKING_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
   CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
   CHAT_SELF_INQUIRY_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 소유 매물에는 문의할 수 없습니다."),
