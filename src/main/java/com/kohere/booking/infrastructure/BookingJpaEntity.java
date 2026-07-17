@@ -45,4 +45,9 @@ public class BookingJpaEntity {
   private BookingStatus status;
 
   private Instant createdAt;
+
+  // 참여자별 소프트삭제(NULL=미삭제). 한 예약 행을 tenant·landlord가 공유하므로 요청자 쪽 컬럼만 세팅하고, 조회 시 요청자 쪽 컬럼이 NULL인
+  // 예약만 노출한다. 스키마는 Flyway V14__add_bookings_deleted_at.sql.
+  private Instant tenantDeletedAt;
+  private Instant landlordDeletedAt;
 }

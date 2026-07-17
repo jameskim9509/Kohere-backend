@@ -20,6 +20,7 @@ spring:
 
   # 에러 메시지 i18n: ErrorCode 이름을 키로 messages[_<lang>].properties에서 번역(ADR-0030, #52).
   # 미지원 언어·키 부재는 영어(messages.properties)로 폴백. locale은 Accept-Language로 결정(기본 en).
+  # (본문 콘텐츠 i18n은 리소스 번들이 아니라 DB 카탈로그의 언어별 컬럼/맵으로 둔다 — 예약 신고 사유는 booking_report_reasons, #169.)
   messages:
     basename: messages
     encoding: UTF-8

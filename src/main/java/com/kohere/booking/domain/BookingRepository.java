@@ -1,29 +1,50 @@
 package com.kohere.booking.domain;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 /**
  * 예약 영속 포트. 구현은 infrastructure 계층에 두어 의존성을 역전한다(docs/convention/code-style.md §3-3). 도메인은 영속 기술을
- * 모른다. MVP의 예약은 "신청" 성격이라 중복 방지 유니크 제약이 없다.
+ * 모른다.
+ *
+ * <p>조회는 표시 가능한 예약만 반환한다 — 요청자 쪽 소프트삭제가 없고({@code *_deleted_at IS NULL}), 요청자가 차단한 상대의 예약이 아닌 것만
+ * ({@code 상대 id NOT IN blockedIds}). {@code blockedIds}는 {@code user :: api}로 취득한 차단 상대 집합을 응용 계층이
+ * 넘긴다(애플리케이션 레벨 조인). 반대로 변이·신고 대상 검증은 삭제·차단 상태와 무관해야 하므로 {@link #findByIdForMutation} 비필터 조회를 쓴다.
  */
 public interface BookingRepository {
 
   Booking save(Booking booking);
 
-  /** 요청자 본인 예약을 최신순(createdAt desc)으로 오프셋 조회한다(세입자 분기). */
-  List<Booking> findByTenantId(Long tenantId, int page, int size);
+  /** 표시 가능한 내 예약을 최신순(createdAt desc)으로 오프셋 조회한다(세입자 분기). */
+  List<Booking> findVisibleByTenantId(
+      Long tenantId, Collection<Long> blockedIds, int page, int size);
 
-  long countByTenantId(Long tenantId);
+  long countVisibleByTenantId(Long tenantId, Collection<Long> blockedIds);
 
-  /** 본인 예약 단건 조회. 없거나 타인 예약이면 빈 값을 반환한다(호출측이 404로 통일). */
-  Optional<Booking> findByIdAndTenantId(Long id, Long tenantId);
+  /** 표시 가능한 내 예약 단건 조회. 없거나 타인 예약·삭제·차단 대상이면 빈 값(호출측이 404로 통일). */
+  Optional<Booking> findVisibleByIdAndTenantId(Long id, Long tenantId, Collection<Long> blockedIds);
 
-  /** 요청자 소유 매물에 신청된 예약을 최신순(createdAt desc)으로 오프셋 조회한다(임대인 분기 · landlord_id 스코프). */
-  List<Booking> findByLandlordId(Long landlordId, int page, int size);
+  /** 표시 가능한 내 소유 매물 신청을 최신순으로 오프셋 조회한다(임대인 분기 · landlord_id 스코프). */
+  List<Booking> findVisibleByLandlordId(
+      Long landlordId, Collection<Long> blockedIds, int page, int size);
 
-  long countByLandlordId(Long landlordId);
+  long countVisibleByLandlordId(Long landlordId, Collection<Long> blockedIds);
 
-  /** 요청자 소유 매물의 예약 단건 조회. 없거나 내 소유 매물 신청이 아니면 빈 값을 반환한다(호출측이 404로 통일). */
-  Optional<Booking> findByIdAndLandlordId(Long id, Long landlordId);
+  /** 표시 가능한 내 소유 매물 신청 단건 조회. 없거나 내 소유가 아님·삭제·차단 대상이면 빈 값(호출측이 404로 통일). */
+  Optional<Booking> findVisibleByIdAndLandlordId(
+      Long id, Long landlordId, Collection<Long> blockedIds);
+
+  /**
+   * 변이·신고 대상 검증용 비필터 조회(삭제·차단 상태와 무관). 멱등 DELETE·차단 상대 도출·신고 대상 검증에 쓴다 — 이미 삭제·차단한 예약도 신고할 수 있어야
+   * 하고, 필터된 조회를 쓰면 두 번째 DELETE가 404가 되어 멱등이 깨진다.
+   */
+  Optional<Booking> findByIdForMutation(Long id);
+
+  /** 세입자 쪽 소프트삭제 표시(요청자가 세입자일 때). */
+  void markTenantDeleted(Long id, Instant deletedAt);
+
+  /** 임대인 쪽 소프트삭제 표시(요청자가 임대인일 때). */
+  void markLandlordDeleted(Long id, Instant deletedAt);
 }
