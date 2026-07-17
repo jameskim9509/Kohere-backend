@@ -326,6 +326,8 @@
 | `active` | boolean | false면 검색 후보에서 제외 |
 | `priority` | int | 같은 점수로 매칭될 때 대표 장소 우선순위 |
 
+> **장소 후보 검색(`GET /api/v1/listings/places`) — 무상태, 컬렉션 없음**: 지도 검색창 키워드는 네이버 지역 검색 API로 조회한다(아웃바운드 포트 `PlaceSearchClient`, 인프라 어댑터 `NaverPlaceSearchClient`, 설정 `NaverSearchProperties`(prefix `app.naver.search`)). 결과(최대 5개 장소 후보)를 서버에 저장하지 않는다 — 새 컬렉션도 없고 위 `searchPlaces`도 참조하지 않는다(`searchPlaces`는 별개 엔드포인트 `/api/v1/listings/search` 전용). 따라서 이 절엔 관련 스키마가 없다.
+
 `favorites`
 
 | 필드 | 타입 | 키/제약 |

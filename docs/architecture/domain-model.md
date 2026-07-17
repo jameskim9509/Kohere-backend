@@ -421,7 +421,7 @@
 
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox·마커 결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 요청 bbox의 중심 좌표를 기준으로 하며, bbox 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 
-**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·월세 범위·지역·대학 그룹으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다 — `diagnosis`가 선택 대학 그룹을 펼친 member 코드 집합을 넘기면 `nearbyUniversityCodes`를 `$in`(ANY member)으로 매칭하고(빈 집합이면 대학 필터 생략), 월세는 `pricing.monthlyRent`를 `[monthlyRentMin, monthlyRentMax]`의 각 경계(존재 시)로 거른다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자·대표 가격·썸네일이 필요할 때 공개 쿼리로 검증한다.
+**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·월세 범위·지역·대학 그룹으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다 — `diagnosis`가 선택 대학 그룹을 펼친 member 코드 집합을 넘기면 `nearbyUniversityCodes`를 `$in`(ANY member)으로 매칭하고(빈 집합이면 대학 필터 생략), 월세는 `pricing.monthlyRent`를 `[monthlyRentMin, monthlyRentMax]`의 각 경계(존재 시)로 거른다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자·대표 가격·썸네일이 필요할 때 공개 쿼리로 검증한다. 지도 검색창 키워드 장소 검색은 아웃바운드 포트 `PlaceSearchClient`(domain)로 추상화하고 인프라 어댑터 `NaverPlaceSearchClient`(네이버 지역 검색 API)가 구현한다 — **무상태**(매물 미조회·미저장)이며 최대 5개 후보(`title`·`address`·`roadAddress`·`lng`·`lat`, 네이버 `mapx/mapy`→WGS84 변환)를 반환하고, 외부 장애·타임아웃·인증정보 누락·응답/좌표 형식 이상은 `502 UPSTREAM_ERROR`로 응답한다.
 
 ---
 
