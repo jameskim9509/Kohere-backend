@@ -15,7 +15,14 @@ import java.util.Optional;
  */
 public interface BookingRepository {
 
+  /**
+   * 예약을 저장한다. 동일 세입자·동일 방 상품 중복(유니크 {@code (tenant_id, room_offer_id)} 위반)은 {@link
+   * BookingAlreadyExistsException}으로 변환한다(동시성 경합 포함 — 사전 조회만으로는 경합에서 샌다).
+   */
   Booking save(Booking booking);
+
+  /** 동일 세입자·동일 방 상품에 이미 예약이 있는지(신규 신청 중복 방지 사전 검사). */
+  boolean existsByTenantIdAndRoomOfferId(long tenantId, String roomOfferId);
 
   /** 표시 가능한 내 예약을 최신순(createdAt desc)으로 오프셋 조회한다(세입자 분기). */
   List<Booking> findVisibleByTenantId(

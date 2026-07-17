@@ -16,6 +16,8 @@ import org.springframework.data.repository.query.Param;
  */
 interface BookingJpaRepository extends JpaRepository<BookingJpaEntity, Long> {
 
+  boolean existsByTenantIdAndRoomOfferId(Long tenantId, String roomOfferId);
+
   @Query(
       "select b from BookingJpaEntity b where b.tenantId = :tenantId "
           + "and b.tenantDeletedAt is null and b.landlordId not in :blockedIds")

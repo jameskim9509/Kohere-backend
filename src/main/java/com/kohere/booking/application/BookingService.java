@@ -8,6 +8,7 @@ import com.kohere.booking.application.dto.LandlordBookingDetailResponse;
 import com.kohere.booking.application.dto.LandlordBookingSummaryResponse;
 import com.kohere.booking.application.dto.ReportReasonResponse;
 import com.kohere.booking.domain.Booking;
+import com.kohere.booking.domain.BookingAlreadyExistsException;
 import com.kohere.booking.domain.BookingNotFoundException;
 import com.kohere.booking.domain.BookingReport;
 import com.kohere.booking.domain.BookingReportAlreadyExistsException;
@@ -38,7 +39,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 매물 예약(신청) 유스케이스. 예약 저장(생성)·내 예약 조회(목록·단건 상세)와 예약 내역 관리(삭제·차단·신고)를 조율한다. 예약은 {@code ACTIVE} 세입자
- * 전용이며(URL 게이트 {@code ROLE_USER} + 서비스 레벨 {@code TENANT} 검사), MVP의 예약은 "신청" 성격이라 중복 제한이 없다.
+ * 전용이며(URL 게이트 {@code ROLE_USER} + 서비스 레벨 {@code TENANT} 검사), 동일 세입자·동일 방 상품 예약은 1건만 허용한다(재신청 시 409
+ * BOOKING_ALREADY_EXISTS).
  *
  * <p>조회는 표시 가능한 예약만 반환한다 — 요청자 쪽 삭제({@code *_deleted_at})가 없고, 요청자가 차단한 상대의 예약이 아닌 것만. 차단 상대 집합은
  * {@code user :: api}(findBlockedUserIds)로 취득해 리포지토리 술어로 넘긴다(애플리케이션 레벨 조인 · ADR-0002). 삭제·차단·신고는
@@ -72,6 +74,9 @@ public class BookingService {
     validateMoveInDate(request.moveInDate(), offer.nextAvailableFrom());
     if (userBlockService.isBlockedBetween(tenantId, offer.landlordId())) {
       throw new CounterpartBlockedException();
+    }
+    if (bookingRepository.existsByTenantIdAndRoomOfferId(tenantId, request.roomOfferId())) {
+      throw new BookingAlreadyExistsException();
     }
 
     Booking saved =

@@ -573,7 +573,7 @@
     ALTER TABLE bookings ADD COLUMN landlord_deleted_at DATETIME(6) NULL;
     ```
 
-- **중복 방지 UNIQUE 추가 — 전진 마이그레이션 V18 예정**(`V14`=`bookings` 컬럼 추가, `V15`=`user_blocks` 신설, `V16`=`booking_reports` 신설, `V17`=`booking_report_reasons` 신설이라 다음 번호는 `V18__add_bookings_unique_tenant_room_offer.sql`, [migration-policy](migration-policy.md)): `bookings`는 이미 배포된 `V9__bookings.sql`이라 유니크 제약도 **별도 신규 마이그레이션**으로 넣으며, 이는 `V9`의 "중복 방지 유니크 제약을 두지 않는다(다건 신청 허용)" 결정을 되돌린다. 제약 강화라 [migration-policy §3](migration-policy.md)상 **비호환 변경**이므로 기존 중복 행 정리가 선행돼야 하나, `bookings`는 신규 테이블이라 사실상 비어 있어 정리 대상이 없다. #169 삭제·차단·신고·사유 카탈로그용 `V14`~`V17`과는 별개의 제약 변경이라 그 번호와 겹치지 않게 `V18`로 둔다.
+- **중복 방지 UNIQUE 추가 — 전진 마이그레이션 V18**(`V14`=`bookings` 컬럼 추가, `V15`=`user_blocks` 신설, `V16`=`booking_reports` 신설, `V17`=`booking_report_reasons` 신설이라 다음 번호는 `V18__add_bookings_unique_tenant_room_offer.sql`, [migration-policy](migration-policy.md)): `bookings`는 이미 배포된 `V9__bookings.sql`이라 유니크 제약도 **별도 신규 마이그레이션**으로 넣으며, 이는 `V9`의 "중복 방지 유니크 제약을 두지 않는다(다건 신청 허용)" 결정을 되돌린다. 제약 강화라 [migration-policy §3](migration-policy.md)상 **비호환 변경**이므로 기존 중복 행 정리가 선행돼야 하나, `bookings`는 신규 테이블이라 사실상 비어 있어 정리 대상이 없다. #169 삭제·차단·신고·사유 카탈로그용 `V14`~`V17`과는 별개의 제약 변경이라 그 번호와 겹치지 않게 `V18`로 둔다.
 
     ```sql
     -- bookings에 동일 세입자–동일 방 상품 예약 중복 방지 UNIQUE를 추가한다. 재신청은 409 BOOKING_ALREADY_EXISTS("이미 신청한 매물입니다").

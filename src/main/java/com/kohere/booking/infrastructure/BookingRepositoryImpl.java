@@ -1,12 +1,14 @@
 package com.kohere.booking.infrastructure;
 
 import com.kohere.booking.domain.Booking;
+import com.kohere.booking.domain.BookingAlreadyExistsException;
 import com.kohere.booking.domain.BookingRepository;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
@@ -29,7 +31,17 @@ public class BookingRepositoryImpl implements BookingRepository {
 
   @Override
   public Booking save(Booking booking) {
-    return toDomain(jpaRepository.save(toEntity(booking)));
+    try {
+      // IDENTITY 전략이라 save가 즉시 INSERT를 실행한다 — 유니크 (tenant_id, room_offer_id) 위반이 여기서 바로 surface된다.
+      return toDomain(jpaRepository.save(toEntity(booking)));
+    } catch (DataIntegrityViolationException e) {
+      throw new BookingAlreadyExistsException();
+    }
+  }
+
+  @Override
+  public boolean existsByTenantIdAndRoomOfferId(long tenantId, String roomOfferId) {
+    return jpaRepository.existsByTenantIdAndRoomOfferId(tenantId, roomOfferId);
   }
 
   @Override
