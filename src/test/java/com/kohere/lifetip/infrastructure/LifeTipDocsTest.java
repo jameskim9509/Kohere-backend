@@ -96,7 +96,9 @@ class LifeTipDocsTest {
     topicRepository.deleteAll();
     tipRepository.deleteAll();
     seed();
-    // 표시 언어는 user 공개 query로 취득(ADR-0029) — 등록 국가(KR→ko)를 가정해 한국어 라벨을 내려받는다.
+    // 생활 팁은 세입자 전용(US-8) — 조회 진입 게이트가 userType을 확인한다.
+    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
+    // 표시 언어는 user 공개 query로 취득 — 사용자가 고른 ko(users.lang)를 가정해 한국어 라벨을 내려받는다.
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
   }
 
@@ -109,10 +111,14 @@ class LifeTipDocsTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.topics[0].code").value("MOVING_IN"))
         .andExpect(jsonPath("$.data.topics[0].name").value("입주·이사"))
+        .andExpect(jsonPath("$.data.topics[0].shortDescription").value("한국 생활 시작에 필요한 기본 정보."))
+        .andExpect(
+            jsonPath("$.data.topics[0].imageUrl")
+                .value("https://cdn.kohere.app/life-tips/topics/moving-in/card.png"))
         .andDo(
             document(
                 "life-tips-topics",
-                resourceDetails().summary("생활 팁 주제 목록 — 노출 순서, 등록 국가 언어로 번역(비페이지, ROLE_USER)"),
+                resourceDetails().summary("생활 팁 주제 목록 — 노출 순서, 사용자 표시 언어로 번역(비페이지, ROLE_USER)"),
                 responseFields(topicsResponseFields())));
 
     mockMvc
@@ -191,6 +197,11 @@ class LifeTipDocsTest {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.topics[].code", JsonFieldType.STRING, "주제 코드(UPPER_SNAKE, 언어 무관)"),
         field("data.topics[].name", JsonFieldType.STRING, "번역된 주제 표시명"),
+        field("data.topics[].shortDescription", JsonFieldType.STRING, "번역된 짧은 설명(홈 카드용)"),
+        field("data.topics[].longDescription", JsonFieldType.STRING, "번역된 긴 설명(주제 상세 상단용)"),
+        field("data.topics[].imageUrl", JsonFieldType.STRING, "홈 카드 이미지 URL(언어 무관)"),
+        field(
+            "data.topics[].backgroundImageUrl", JsonFieldType.STRING, "주제 상세 상단 배경 이미지 URL(언어 무관)"),
         errorNull());
   }
 
@@ -227,8 +238,24 @@ class LifeTipDocsTest {
   // --- seed / helpers ---
 
   private void seed() {
-    topicRepository.save(topicDoc("MOVING_IN", 1, Map.of("en", "Moving In", "ko", "입주·이사")));
-    topicRepository.save(topicDoc("TRANSPORT", 2, Map.of("en", "Transport", "ko", "교통")));
+    topicRepository.save(
+        topicDoc(
+            "MOVING_IN",
+            1,
+            Map.of("en", "Moving In", "ko", "입주·이사"),
+            Map.of("en", "The basics for starting life in Korea.", "ko", "한국 생활 시작에 필요한 기본 정보."),
+            Map.of("en", "Move-in steps, utilities, and filings.", "ko", "입주 절차·공과금·각종 신고 정리."),
+            "https://cdn.kohere.app/life-tips/topics/moving-in/card.png",
+            "https://cdn.kohere.app/life-tips/topics/moving-in/background.png"));
+    topicRepository.save(
+        topicDoc(
+            "TRANSPORT",
+            2,
+            Map.of("en", "Transport", "ko", "교통"),
+            Map.of("en", "Getting around Korea.", "ko", "한국에서의 이동 정보."),
+            Map.of("en", "Transit cards, subway, bus, taxi.", "ko", "교통카드·지하철·버스·택시."),
+            "https://cdn.kohere.app/life-tips/topics/transport/card.png",
+            "https://cdn.kohere.app/life-tips/topics/transport/background.png"));
     tipRepository.save(
         tipDoc(
             "MOVING_IN",
@@ -245,8 +272,23 @@ class LifeTipDocsTest {
             "https://cdn.kohere.app/life-tips/moving-in/2.png"));
   }
 
-  private static LifeTipTopicDocument topicDoc(String code, int order, Map<String, String> name) {
-    return LifeTipTopicDocument.builder().id(code).name(name).order(order).build();
+  private static LifeTipTopicDocument topicDoc(
+      String code,
+      int order,
+      Map<String, String> name,
+      Map<String, String> shortDescription,
+      Map<String, String> longDescription,
+      String imageUrl,
+      String backgroundImageUrl) {
+    return LifeTipTopicDocument.builder()
+        .id(code)
+        .name(name)
+        .shortDescription(shortDescription)
+        .longDescription(longDescription)
+        .imageUrl(imageUrl)
+        .backgroundImageUrl(backgroundImageUrl)
+        .order(order)
+        .build();
   }
 
   private static LifeTipDocument tipDoc(
