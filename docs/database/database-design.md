@@ -71,7 +71,7 @@
 ### 2-4. 제약·무결성 (공통)
 
 - **FK는 같은 모듈 안에서만.** 교차 모듈 참조는 **store가 같아도 FK 금지** — 식별자 값만 보유한다(Modulith 독립성·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 교차 스토어 조인·FK·분산 트랜잭션 금지([ADR-0005](../adr/0005-polyglot-persistence.md) D5·D6) → 애플리케이션 레벨 조인/이벤트.
-- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `booking_reports(reporter_id,booking_id)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
+- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_reports(reporter_id,booking_id)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
 - **카운트 정합**(`community` like/comment/share, `listings.favoriteCount`)은 단일 store 트랜잭션 또는 원자적 증감 + 배치 재계산으로 유지(음수 방지).
 - **민감정보**(비자·이메일·토큰 원문·인증번호 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
 
@@ -237,7 +237,7 @@
 
 **왜 예약 단위가 아니라 사용자 단위인가**: 차단 대상을 `bookings` 행에 매다는 방식(예약 단위)은 **매물 구조상 반드시 우회된다**. 한 임대인은 **매물을 여러 개** 소유하고(`Listing.landlordId` — 매물이 임대인을 가리키는 N:1), 한 매물은 **방 상품을 여러 개** 갖는다(`Listing.roomOffers`가 `List<RoomOffer>`). 그래서 임대인 A를 예약 #1에서 차단해도 A의 **다른 방 상품**(같은 매물의 다른 방이든, A의 다른 매물이든)에 신청이 들어오면 새 예약 행 = 새 대화가 생기고, 차단은 그 예약에만 걸려 있어 아무것도 막지 못한다. 차단은 본질적으로 **사람**에 대한 것이라 대상이 예약이면 상대가 방을 하나 더 가진 순간 무력해진다 — 그래서 `user` 모듈이 `(blocker_id, blocked_user_id)` **쌍**으로 소유한다.
 
-- **보조 근거(현행 사실)**: 여기에 더해 지금은 `bookings`에 **중복 방지 유니크 제약이 없어 같은 방 상품에도 다건 신청이 허용**된다(§4-5 · `V9__bookings.sql:2` verbatim: `-- MVP의 예약은 "신청" 성격이라 중복 방지 유니크 제약을 두지 않는다(같은 방 상품에 다건 신청 허용).`). 즉 **다른 방으로 갈 것도 없이 같은 방 재신청만으로도** 예약 단위 차단이 뚫려 우회 비용이 더 싸다. 다만 이건 **현행 사실이라 바뀔 수 있다** — #177(동일 세입자–동일 방 상품 예약 중복 제한)이 `UNIQUE (tenant_id, room_offer_id)`를 도입하면 이 보조 근거는 사라진다. **그때도 위 구조적 근거는 그대로 성립하므로 결론(사용자 단위)은 바뀌지 않는다** — #177이 막는 건 "같은 방 재신청"뿐이고 "다른 방·다른 매물로 우회"는 그대로다.
+- **보조 근거(같은 방 재신청은 이제 막히지만 우회는 남는다)**: `bookings`에는 **중복 방지 유니크 제약**(`uq_bookings_tenant_room_offer (tenant_id, room_offer_id)` — 동일 세입자–동일 방 상품 활성 1건)이 있어 **같은 방 상품 재신청은 이제 `409 BOOKING_ALREADY_EXISTS`로 막힌다**(§4-5). 그래서 "같은 방 재신청"이라는 손쉬운 우회로는 닫혔지만, 임대인은 **방 상품·매물을 여러 개** 가지므로 **다른 방·다른 매물로는 여전히 우회된다** — 예약 단위 차단은 상대가 방을 하나 더 가진 순간 그 새 예약엔 걸리지 않기 때문이다. 즉 중복 방지가 손쉬운 우회 하나를 없앴어도 **구조적 우회는 그대로 남아 결론(사용자 단위)은 바뀌지 않으며**, 위 구조적 근거가 유일하게 살아남는 근거가 된다.
 
 **소유는 `user`, 생성 트리거는 `booking`**: 차단 생성 경로는 `POST /api/v1/bookings/{bookingId}/block`이라 예약에서 상대를 도출해야 하지만, `user`가 생성을 소유하면 상대를 도출하려 `user → booking` 의존이 생기고 `booking → user :: api`가 이미 있어 **모듈 순환이 생겨 `ApplicationModules.verify()`가 깨진다**. 그래서 컨트롤러는 `booking`에 두되 저장은 `user :: api` 공개 명령으로 이 테이블에 쓰고, 차단 목록·해제(`GET`/`DELETE /api/v1/users/me/blocks`)는 `user`가 직접 제공한다 — 차단하면 그 예약이 목록에서 사라져 `bookingId`를 다시 얻을 수 없으므로 **예약과 무관한 해제 경로가 반드시 있어야 한다**.
 
@@ -528,7 +528,7 @@
 
 ### 4-5. `booking`
 
-> 스토어: **MySQL** — `bookings`는 이미 [`V9__bookings.sql`](../../src/main/resources/db/migration/V9__bookings.sql)·[`V11__add_bookings_landlord_id.sql`](../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 **MySQL에 배포된 사실**이다. 아래 물리 타입·DDL은 논리 스키마가 아니라 실제 MySQL 스키마이며, 신규 DDL(`V14`·`V16`)도 공유 Flyway 시퀀스의 버전 번호를 예약하는 실행 가능한 마이그레이션이다. 다만 [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표엔 `booking` 매핑이 **아직 미반영**(추후 결정)이라 ADR 차원의 결정은 열려 있다(확인 필요). domain-model `Booking`(append 성격 — 중복 제한 없음).
+> 스토어: **MySQL** — `bookings`는 이미 [`V9__bookings.sql`](../../src/main/resources/db/migration/V9__bookings.sql)·[`V11__add_bookings_landlord_id.sql`](../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 **MySQL에 배포된 사실**이다. 아래 물리 타입·DDL은 논리 스키마가 아니라 실제 MySQL 스키마이며, 신규 DDL(`V14`·`V16`·`V17`)도 공유 Flyway 시퀀스의 버전 번호를 예약하는 실행 가능한 마이그레이션이다. 다만 [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표엔 `booking` 매핑이 **아직 미반영**(추후 결정)이라 ADR 차원의 결정은 열려 있다(확인 필요). domain-model `Booking`(동일 세입자–동일 방 상품 활성 1건 — 중복 방지 UNIQUE).
 >
 > **스코프(1차 MVP)**: 매물 예약(= 신청, `Booking`)은 인앱 채팅과 분리된 독립 기능이다(user-stories US-4-1·US-4-2, 그리고 조회 엔드포인트를 `userType`으로 분기하는 임대인 받은 신청 조회 US-4-6). 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 **후속·이연**(chat 결합, §4-6)이라 본 스키마에 관련 필드가 없다.
 
@@ -548,11 +548,11 @@
 | `tenant_deleted_at` | DATETIME(6) | NULL · **NULL = 미삭제** · 세입자가 자기 목록에서 이 예약을 숨긴 시각(UTC) · 세입자 분기 조회 술어(`IS NULL`) · 임대인 분기는 보지 않는다(§2-2 참여자별 소프트삭제 예외) |
 | `landlord_deleted_at` | DATETIME(6) | NULL · **NULL = 미삭제** · 임대인이 자기 목록에서 이 예약을 숨긴 시각(UTC) · 임대인 분기 조회 술어(`IS NULL`) · 세입자 분기는 보지 않는다 |
 
-**인덱스**: PK `id` / INDEX `(tenant_id, created_at desc)`(세입자 분기 — 내 예약 목록 최신순) / INDEX `(landlord_id, created_at desc)`(임대인 분기 — 내 매물에 신청된 목록: `landlord_id = 요청자`를 최신순으로 조회). MVP의 예약은 "신청" 성격이라 **중복 방지 유니크 제약을 두지 않는다**(같은 방 상품에 다건 신청 허용).
+**인덱스**: PK `id` / INDEX `(tenant_id, created_at desc)`(세입자 분기 — 내 예약 목록 최신순) / INDEX `(landlord_id, created_at desc)`(임대인 분기 — 내 매물에 신청된 목록: `landlord_id = 요청자`를 최신순으로 조회) / **UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`**(동일 세입자–동일 방 상품 예약(신청)은 활성 1건만 허용 — 중복 방지, 재신청은 `409 BOOKING_ALREADY_EXISTS`).
 
 > `landlord_id` 컬럼과 `(landlord_id, created_at)` 인덱스는 임대인 조회 분기(US-4-6)를 위한 것으로, `bookings`는 이미 배포된 `V9__bookings.sql`이라 **구현 시 별도 신규 마이그레이션**(예: `V11__add_bookings_landlord_id.sql` — 컬럼 추가 + 인덱스, 확장 변경)으로 넣는다([migration-policy](migration-policy.md)). 기존 예약 행이 있으면 `landlord_id`를 매물 소유자로 백필해야 하나(cross-store라 앱레벨), MVP는 booking 테이블이 신규라 사실상 비어 있다. 소유권은 `bookings` 행(`landlord_id`)에서 판정하며 `listing::api` 소유권 조회는 불요다(아래 교차 모듈 no-FK 참조).
 
-- **중복 제한 없음**: MVP의 예약은 "신청"(application) 성격이라 동일 세입자–방 상품 중복을 막지 않는다 — 활성 유니크 제약이 없고, 같은 방 상품에도 여러 신청을 append한다. (수락/거절 등 상태 전이·중복 정책은 후속에서 정의.)
+- **중복 방지(동일 세입자–동일 방 상품 활성 1건)**: 같은 세입자(`tenant_id`)가 같은 방 상품(`room_offer_id`)에 내는 예약(신청)은 **1건만 허용**된다 — `bookings`에 **UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`**를 두고 재신청은 `409 BOOKING_ALREADY_EXISTS`로 거절한다. 이 에러코드는 `ErrorCode`·메시지 번들("이미 신청한 매물입니다")에 **이미 선언돼 있으나 여태 아무도 던지지 않던 코드**로, 이 결정으로 **실제 사용(live)** 으로 전환된다(신규 코드 아님). 상태 전이(수락/거절/취소)가 **미구현이라 모든 예약이 `REQUESTED`(=활성)** 이므로 "활성 1건"이 곧 "전체 1건"이라 **조건 없는 `UNIQUE (tenant_id, room_offer_id)`** 로 규칙이 정확히 표현된다. ⚠️ **caveat**: 향후 상태 전이가 도입되면 `REJECTED`·`CANCELED` 건이 그 방 재신청을 **영구 차단**하므로 **활성 상태만 대상으로 하는 부분 유니크**로 교체해야 한다 — MySQL은 부분 유니크 인덱스를 지원하지 않아(예: `active_room_offer_id` nullable 컬럼 + UNIQUE 트릭, 또는 앱 레벨 검사) 표현 방식은 그때 정한다.
 - **교차 모듈 no-FK**: `tenant_id`·`landlord_id`·`listing_id`·`room_offer_id` 모두 값 참조(FK 없음). `listing_id`·`room_offer_id`는 Mongo ObjectId 문자열이라 자동증가 숫자가 아니다. 매물·방 상품 존재·공개 여부·입주일 검증과 **생성 시 소유자(`landlord_id`) 캡처**는 `listing :: api` 공개 쿼리로 한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md)). 조회 엔드포인트의 **임대인 분기**(`userType=LANDLORD`)는 "내 매물에 신청됨"을 booking 행의 `landlord_id`로 직접 스코핑한다 — 목록 `landlord_id = 요청자`, 단건 상세는 `booking.landlord_id == 요청자` 행 단위 확인(미소유/부재는 `404 BOOKING_NOT_FOUND` 통일). `landlord_id`는 매물 상태와 무관하게 저장돼 `PAUSED` 매물의 신청도 포함되며, 생성 시점 스냅샷이라 소유권 이전 시 백필이 필요하다(이전은 MVP 범위 밖). `chat_rooms`의 `landlord_id` 비정규화 선례와 일치한다.
 - **가격·성명 비영속(조회 시점 조인)**: 보증금·월세·총 금액·매물 요약·예약자 성명은 예약에 **스냅샷 저장하지 않는다** — 단건 상세(US-4-2) 조회 시점에 애플리케이션 레벨로 조합한다. `listing :: api`로 `(listing_id, room_offer_id)`의 매물 요약·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명을 가져온다. **총 금액 = 보증금 + 월세 × 계약 개월수(`contract_period` 정수)**(**관리비 제외**)이며 가격 변경 시 상세는 **현재가 기준**(스냅샷 아님)이다. → 모듈 의존 `booking → { listing :: api, user :: api }`.
 - **참여자별 소프트삭제**(#169 · US-4-7 — 종전 "소프트삭제 불요: 취소는 `status=CANCELED`" 개정): 예약 내역 삭제는 **`status=CANCELED`로 표현할 수 없다.** ① `status`는 두 참여자가 **공유하는 1행의 공유 필드**라 한쪽이 지우면 상대 목록에서도 예약이 사라진다(데이터 손실). ② **취소 ≠ 숨김**이다 — 취소는 "예약을 없던 일로 한다"는 양쪽에 보이는 사실이고, 삭제는 "내 목록에서만 안 보이게 한다"는 참여자 개인의 표시 상태다. ③ 애초에 **상태 전이 자체가 현재 미구현**이라(생성 시 `REQUESTED` 고정, 수락/거절/취소는 여전히 범위 밖) 취소로 삭제를 대신할 수단이 없다. 그래서 참여자별 삭제 시각 2컬럼(`tenant_deleted_at`·`landlord_deleted_at`)을 두며, 이는 §2-2 공통 컬럼 표준("소프트삭제는 `community`만")의 **명시적 예외**다. 요청자 역할에 맞는 컬럼만 채우고(세입자→`tenant_deleted_at`, 임대인→`landlord_deleted_at`) 상대 컬럼은 건드리지 않는다. 삭제는 **멱등**이라 이미 채워져 있어도 재삭제가 오류가 아니다. 상태 전이가 도입되면 그때 `updated_at`을 추가한다(삭제 시각 자체가 삭제 이벤트의 타임스탬프라 `updated_at` 없이 성립한다).
@@ -571,6 +571,20 @@
     -- #169 · US-4-7 · docs/database/database-design.md §2-2·§4-5 · docs/api/specs/04-booking-inquiry-chat.md.
     ALTER TABLE bookings ADD COLUMN tenant_deleted_at   DATETIME(6) NULL;
     ALTER TABLE bookings ADD COLUMN landlord_deleted_at DATETIME(6) NULL;
+    ```
+
+- **중복 방지 UNIQUE 추가 — 전진 마이그레이션 V17 예정**(`V14`=`bookings` 컬럼 추가, `V15`=`user_blocks` 신설, `V16`=`booking_reports` 신설이라 다음 번호는 `V17__add_bookings_unique_tenant_room_offer.sql`, [migration-policy](migration-policy.md)): `bookings`는 이미 배포된 `V9__bookings.sql`이라 유니크 제약도 **별도 신규 마이그레이션**으로 넣으며, 이는 `V9`의 "중복 방지 유니크 제약을 두지 않는다(다건 신청 허용)" 결정을 되돌린다. 제약 강화라 [migration-policy §3](migration-policy.md)상 **비호환 변경**이므로 기존 중복 행 정리가 선행돼야 하나, `bookings`는 신규 테이블이라 사실상 비어 있어 정리 대상이 없다. #169 삭제·차단·신고용 `V14`~`V16`과는 별개의 제약 변경이라 그 번호와 겹치지 않게 `V17`로 둔다.
+
+    ```sql
+    -- bookings에 동일 세입자–동일 방 상품 예약 중복 방지 UNIQUE를 추가한다. 재신청은 409 BOOKING_ALREADY_EXISTS("이미 신청한 매물입니다").
+    -- V9의 "중복 방지 유니크 제약을 두지 않는다(같은 방 상품에 다건 신청 허용)" 결정을 되돌린다.
+    -- 상태 전이(수락/거절/취소)가 미구현이라 모든 예약이 REQUESTED(=활성)이므로 "활성 1건" == "전체 1건" → 조건 없는 UNIQUE로 규칙이 정확하다.
+    --   ⚠️ 상태 전이 도입 시 REJECTED·CANCELED 건이 같은 방 재신청을 영구 차단하므로 활성 상태만 대상으로 하는 부분 유니크로 교체 필요 —
+    --      MySQL은 부분 유니크 인덱스를 미지원(active_room_offer_id nullable 컬럼 + UNIQUE 트릭 또는 앱 레벨 검사)이라 표현 방식은 그때 정한다.
+    -- migration-policy §3상 제약 강화 = 비호환이라 기존 중복 행 정리가 선행돼야 하나 bookings는 신규 테이블이라 사실상 비어 있다.
+    -- 삭제·차단·신고용 V14~V16과 별개의 제약 변경이라 V17로 둔다(그 번호는 건드리지 않는다).
+    -- #169 · docs/database/database-design.md §2-4·§4-5 · docs/api/specs/04-booking-inquiry-chat.md.
+    ALTER TABLE bookings ADD CONSTRAINT uq_bookings_tenant_room_offer UNIQUE (tenant_id, room_offer_id);
     ```
 
 #### 예약 신고 접수 — `booking_reports`

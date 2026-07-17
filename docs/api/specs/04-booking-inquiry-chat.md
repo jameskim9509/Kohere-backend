@@ -7,7 +7,7 @@
 
 세입자(외국인 사용자)가 매물의 방 상품(`roomOffer`)에 **예약(= 신청, Booking)** 을 신청하고 자신의 예약 내역을 목록·단건 상세로 다시 확인하며, **임대인은 자기 소유 매물에 신청된 예약을 목록·단건 상세로 조회**한다. **본 서비스에서 "신청"과 "예약"은 같은 `Booking`을 가리키는 동의어다.**
 
-- **[1차 MVP] 매물 예약(신청)**: 세입자가 방 상품에 타겟 입주일 + 계약기간(개월수)으로 예약을 생성·저장하고, 내 예약을 목록·단건 상세로 조회한다. **임대인은 자기 소유 매물(`listing.landlordId`=본인)에 신청된 예약을 목록·단건 상세로 조회한다**(소유권 스코프). 인앱 채팅과 **분리된 독립 기능**이다. MVP의 예약은 "신청" 성격이라 중복 신청 제한·본인 매물 차단이 없다(예약 **생성**은 세입자 전용; 조회는 세입자=내 예약, 임대인=내 매물에 신청된 예약으로 갈린다). 더해 참여자는 자기 예약 내역을 **삭제**(내 목록에서만 숨김)하고, 예약 **상대를 차단**하며, 예약을 **신고 접수**할 수 있다(#169).
+- **[1차 MVP] 매물 예약(신청)**: 세입자가 방 상품에 타겟 입주일 + 계약기간(개월수)으로 예약을 생성·저장하고, 내 예약을 목록·단건 상세로 조회한다. **임대인은 자기 소유 매물(`listing.landlordId`=본인)에 신청된 예약을 목록·단건 상세로 조회한다**(소유권 스코프). 인앱 채팅과 **분리된 독립 기능**이다. MVP의 예약은 "신청" 성격이나 **동일 세입자–동일 방 상품에 활성 1건만 허용**하며(중복 방지 UNIQUE, 재신청 시 `409 BOOKING_ALREADY_EXISTS`), 본인 매물 차단은 없다(예약 **생성**은 세입자 전용; 조회는 세입자=내 예약, 임대인=내 매물에 신청된 예약으로 갈린다). 더해 참여자는 자기 예약 내역을 **삭제**(내 목록에서만 숨김)하고, 예약 **상대를 차단**하며, 예약을 **신고 접수**할 수 있다(#169).
 - **[후속·이연] 문의 · 인앱 채팅**: 임대인과의 1:1 채팅방 문의·리스트·메시지·읽음 처리, 그리고 예약 신청 시 채팅방에 예약 카드를 자동 기록하던 결합(F-03 chat)은 1차 MVP에서 후속으로 분리·이연한다(삭제 아님 — 설계 보존).
 
 문서 구조:
@@ -32,8 +32,14 @@
 
 ### 저장·조합 규약 (매물 예약)
 
-- **Booking 저장 필드**: `id`(bookingId, `Long`, PK) · `tenantId`(`Long`) · `listingId`(string) · `roomOfferId`(string) · `landlordId`(`Long`, **생성 시 매물 소유자(`listing.landlordId`) 스냅샷** — 임대인 조회 스코프) · `moveInDate`(`LocalDate`) · `contractPeriod`(정수, 개월수) · `status`(enum, 생성 시 `REQUESTED` 고정) · `createdAt`(`Instant`). 예약은 append 성격(중복 제한·유니크 제약 없음)이며, 저장소는 **MySQL** — `bookings`는 이미 [`V9__bookings.sql`](../../../src/main/resources/db/migration/V9__bookings.sql)·[`V11__add_bookings_landlord_id.sql`](../../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 **MySQL에 배포된 사실**이다([database-design](../../database/database-design.md) §4-5). 다만 [ADR-0005](../../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표엔 `booking` 매핑이 **아직 미반영**(추후 결정)이라 ADR 차원의 반영만 열려 있다 **(확인 필요)**.
-- **중복 방지 없음**: 동일 세입자–동일 방 상품에 예약이 **여러 건** 존재할 수 있다 — MVP의 예약은 "신청" 성격이라 `(tenantId, roomOfferId)` 유니크 제약을 두지 않는다(배포된 스키마의 사실: [`V9__bookings.sql:2`](../../../src/main/resources/db/migration/V9__bookings.sql) verbatim `-- MVP의 예약은 "신청" 성격이라 중복 방지 유니크 제약을 두지 않는다(같은 방 상품에 다건 신청 허용).` · [database-design](../../database/database-design.md) §2-4 유니크 목록에 `bookings` 없음 · §4-5). 이 성격은 차단이 예약 단위가 아니라 **사용자 단위**여야 하는 **보조** 근거다(§5) — 예약 단위로 막으면 상대의 같은 방 재신청만으로 새 행이 생겨 우회된다. **이 bullet은 [#177](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/177)(동일 세입자–동일 방 상품 예약 중복 제한)로 바뀔 수 있으나, 그래도 차단 설계는 그대로다** — 사용자 단위 차단의 **주 근거는 중복 허용과 무관한 구조**(한 임대인이 매물을, 한 매물이 방 상품을 여러 개 갖는다 → 다른 방으로 우회된다)이기 때문이다(§5).
+- **Booking 저장 필드**: `id`(bookingId, `Long`, PK) · `tenantId`(`Long`) · `listingId`(string) · `roomOfferId`(string) · `landlordId`(`Long`, **생성 시 매물 소유자(`listing.landlordId`) 스냅샷** — 임대인 조회 스코프) · `moveInDate`(`LocalDate`) · `contractPeriod`(정수, 개월수) · `status`(enum, 생성 시 `REQUESTED` 고정) · `createdAt`(`Instant`). 저장소는 **MySQL** — `bookings`는 이미 [`V9__bookings.sql`](../../../src/main/resources/db/migration/V9__bookings.sql)·[`V11__add_bookings_landlord_id.sql`](../../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 **MySQL에 배포된 사실**이다([database-design](../../database/database-design.md) §4-5). 여기에 **동일 세입자–동일 방 상품 활성 1건만 허용**하는 UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`를 두며(전진 마이그레이션 **V17 예정**, 아래 [중복 방지] bullet), 재신청은 `409 BOOKING_ALREADY_EXISTS`로 막는다. 다만 [ADR-0005](../../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표엔 `booking` 매핑이 **아직 미반영**(추후 결정)이라 ADR 차원의 반영만 열려 있다 **(확인 필요)**.
+- **중복 방지**: 동일 세입자–동일 방 상품에 예약(신청)은 **활성 1건만** 허용한다 — `bookings`에 UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`를 두며, 재신청은 신규 생성 없이 `409 BOOKING_ALREADY_EXISTS`다. 지금은 예약 상태 전이(수락/거절/취소)가 미구현이라 **모든 예약이 `REQUESTED`(=활성)**여서 "활성 1건"이 곧 "전체 1건"이므로, 조건 없는 `UNIQUE (tenant_id, room_offer_id)`로 규칙이 정확히 표현된다. ⚠️ **caveat**: 상태 전이가 도입되면 `REJECTED`·`CANCELED` 건이 그 방 재신청을 영구 차단하므로 **활성 상태만 대상으로 하는 부분 유니크**로 교체해야 하는데, MySQL은 부분 유니크 인덱스를 지원하지 않아(대안: `active_room_offer_id` nullable 컬럼 + UNIQUE 트릭, 또는 앱 레벨 검사) 표현 방식은 그때 정한다. 전진 마이그레이션은 **V17 예정** — `V17__add_bookings_unique_tenant_room_offer.sql`:
+
+  ```sql
+  ALTER TABLE bookings ADD CONSTRAINT uq_bookings_tenant_room_offer UNIQUE (tenant_id, room_offer_id);
+  ```
+
+  (V14~V16은 본 #169의 삭제·차단·신고용으로 이미 계획된 번호라 건드리지 않고 중복 제약만 V17로 둔다. 제약 강화는 [migration-policy](../../database/migration-policy.md) §3상 비호환이라 기존 중복 행 정리가 선행돼야 하나 `bookings`는 신규라 사실상 비어 있다.) 이 제약으로 [`V9__bookings.sql:2`](../../../src/main/resources/db/migration/V9__bookings.sql)의 verbatim 주석 `-- MVP의 예약은 "신청" 성격이라 중복 방지 유니크 제약을 두지 않는다(같은 방 상품에 다건 신청 허용).`은 **뒤집힌다**(V9 파일 자체는 이미 배포돼 수정하지 않고, V17이 제약을 덧댄다). [database-design](../../database/database-design.md) §2-4 유니크 목록·§4-5에도 이 제약을 반영한다. 이 중복 방지는 차단이 예약 단위가 아니라 **사용자 단위**여야 하는 **보조** 근거였다(§5) — 같은 방 재신청은 이제 UNIQUE로 막히지만, 임대인은 방·매물을 여러 개 가져 **다른 방으로는 여전히 우회되므로** 사용자 단위 차단의 **주 근거인 구조적 근거**가 살아남는다(§5).
 - **스냅샷 없음 — 조회 시점 실시간 조인**: 가격·매물 요약·예약자 성명은 예약에 스냅샷 저장하지 않고, 조회 시점에 애플리케이션 레벨로 조합한다. `listing :: api`로 `(listingId, roomOfferId)`의 매물 요약·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명을 조회한다(둘 다 신규 공개 조회 메서드 필요). cross-store 조인·트랜잭션은 금지된다([ADR-0005](../../adr/0005-polyglot-persistence.md), [ADR-0002](../../adr/0002-inter-module-communication-via-events.md)). 가격 변경 시 상세는 **현재가 기준**으로 계산한다.
 - **예약 조회의 userType 분기(§2·§3)**: 조회 엔드포인트(`GET /api/v1/bookings`·`GET /api/v1/bookings/{bookingId}`)는 **별도 임대인 전용 API 없이** 요청자 `userType`으로 동작을 분기한다 — `TENANT`면 **내 예약**(요청자 `tenantId` 기준), `LANDLORD`면 **내 소유 매물에 신청된 예약**(요청자가 소유한 매물 기준)을 반환한다. `userType`은 토큰 클레임이 아니라 서비스 계층에서 `user::api`(`getUserType`)로 판정한다(`ROLE_LANDLORD` 없음 — URL 티어는 `ROLE_USER`). 두 역할 모두 유효한 요청이라 **역할에 따른 `403`은 없다**(권한 밖 리소스는 아래 404 통일로 처리).
 - **임대인 분기 — 소유권 스코프(생성 시 landlordId 비정규화)**: 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 **함께 저장**한다 — 생성은 이미 `listing::api`로 매물·방 상품을 조회(검증)하므로 소유자 스냅샷을 같이 캡처하는 비용은 거의 없다. 임대인 **목록** 조회는 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건으로 `createdAt` 내림차순 조회한다(cross-store 조인 없음 — 소유권 판정이 booking 행에 있다). **상세**는 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**하고, 예약이 없거나 내 소유 매물의 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(존재 비노출 — 세입자 분기의 '타인 예약→404'와 동일 규약). `landlordId`는 매물 상태와 무관하게 저장돼 `PAUSED`(일시중지) 매물의 신청도 자동 포함된다. `landlordId`는 생성 시점 스냅샷이라 **소유권 이전 시 stale**하나, 소유권 이전은 MVP 범위 밖이라 충분하다(이전 도입 시 백필 또는 조회 시점 해석으로 전환). 이 방식은 `chat_rooms`가 `tenant_id`·`landlord_id`를 비정규화하는 선례와 일치한다.
@@ -69,11 +75,12 @@
 
 ### 1. POST `/api/v1/listings/{listingId}/bookings` — 매물 예약(신청) 생성
 
-방 상품(`roomOffer`)에 타겟 입주일과 계약기간(개월수)으로 예약을 생성·저장한다. 신청 직후 상태는 `REQUESTED` 고정이다. MVP의 예약은 "신청" 성격이라 **중복 제한이 없다** — 같은 방 상품에도 여러 번 신청할 수 있다.
+방 상품(`roomOffer`)에 타겟 입주일과 계약기간(개월수)으로 예약을 생성·저장한다. 신청 직후 상태는 `REQUESTED` 고정이다. **동일 세입자–동일 방 상품에 예약은 활성 1건만** 허용된다(UNIQUE `uq_bookings_tenant_room_offer`) — 이미 신청한 방 상품에 다시 신청하면 `409 BOOKING_ALREADY_EXISTS`다.
 
 - **인증**: 필수. 요청자는 `ACTIVE` 상태의 세입자(`userType=TENANT`)여야 한다. **예약은 세입자 전용** — 임대인(매물 소유자)은 예약할 수 없으며(비세입자 `403 FORBIDDEN`), 세입자가 자기 소유 매물을 예약하는 상황 자체가 성립하지 않으므로 본인 매물 차단은 두지 않는다.
 - 매물·방 상품 존재·공개 여부는 `listing :: api`로 검증한다(소유자 조회 불요; cross-store 조인 금지, ADR-0005).
 - **차단 가드(양방향)**: 요청자와 매물 소유자(`listing.landlordId`) 사이에 **어느 방향이든** 차단 관계가 있으면 `403 FORBIDDEN`이다(`user :: api`의 `isBlockedBetween(요청자, 소유자)`로 판정). 판정은 매물·방 상품 검증 뒤, 예약 저장 전에 한다.
+- **중복 신청 가드**: 요청자가 **이미 같은 방 상품(`roomOfferId`)에 신청한 예약**이 있으면 `409 BOOKING_ALREADY_EXISTS`다 — DB UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`가 저장 시점에 이를 보장하며, 제약 위반은 이 코드로 변환한다. 지금은 상태 전이가 없어 모든 예약이 활성(`REQUESTED`)이라 "활성 1건"이 곧 "전체 1건"이다(위 §1 [저장·조합 규약]의 중복 방지 bullet).
 
 #### Path 파라미터
 
@@ -130,6 +137,7 @@
 | 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아닌 사용자(임대인)의 예약 시도 |
 | 403 | `FORBIDDEN` | 요청자와 매물 소유자 사이에 차단 관계(양방향 중 어느 쪽이든)가 존재 |
 | 404 | `LISTING_NOT_FOUND` | 매물 또는 방 상품이 없거나 비공개/삭제됨 |
+| 409 | `BOOKING_ALREADY_EXISTS` | 동일 세입자가 동일 방 상품에 이미 신청함 |
 | 422 | `BOOKING_INVALID_MOVE_IN_DATE` | `moveInDate`가 과거이거나 매물의 입주 가능일 이전 |
 
 > 온보딩 미완료(비`ACTIVE`) 사용자는 다른 보호 엔드포인트와 동일한 온보딩 상태 게이트 에러로 차단한다(코드 게이트와 1:1 일치, [error-response-guide](../error-response-guide.md)).
@@ -414,7 +422,7 @@
 >
 > **왜 예약 단위가 아니라 사용자 단위인가 — 구조적 근거**: 상대는 **방을 여러 개 가진다**. [`Listing`](../../../src/main/java/com/kohere/listing/domain/Listing.java)은 소유자를 `landlordId` **하나**로 갖고 방 상품을 `List<RoomOffer> roomOffers`로 갖는다 — 즉 **한 임대인이 매물(`Listing`)을 여러 개, 한 매물이 방 상품(`roomOffer`)을 여러 개** 소유한다. 그래서 임대인 A를 예약 #1에서 차단해도 A의 **다른 방 상품**(같은 매물의 다른 방이든, A의 다른 매물이든)에 신청하면 새 예약 행이 생기고, 방·예약 단위 차단은 **같은 방 재신청을 막든 안 막든** 그 경로로 우회된다((후속·이연) 채팅이 붙으면 새 예약마다 새 채팅방까지 생긴다). 차단의 의미는 "이 예약을 안 보겠다"가 아니라 "이 **사람**을 안 보겠다"다 — 대상이 예약이면 상대가 방을 하나 더 가진 순간 무력해지므로 `user_blocks(blocker_id, blocked_user_id)`만이 대상을 정확히 표현한다.
 >
-> **보조 근거(현행 사실 — 이 결정의 전제가 아니다)**: 더해 MVP의 예약은 "신청" 성격이라 **중복 신청까지 허용**돼(§1 — 같은 방 상품에 다건 신청 가능, 유니크 제약 없음) 우회 비용이 한층 더 싸다 — 다른 방을 찾을 것도 없이 **같은 방 재신청만으로** 뚫린다. 다만 이는 현행 스키마의 사실일 뿐이며 [#177](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/177)(동일 세입자–동일 방 상품 예약 중복 제한)이 `(tenant_id, room_offer_id)` 유니크를 추가하면 바뀔 수 있다. **바뀌어도 결론은 그대로다** — 위 구조적 근거는 중복 허용 여부와 무관하게 성립한다.
+> **보조 근거(중복 방지 반영 — 이 결정의 전제가 아니다)**: 같은 방 재신청은 이제 UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`로 막힌다(§1 — 동일 세입자–동일 방 상품 활성 1건, 재신청 시 `409 BOOKING_ALREADY_EXISTS`). 그럼에도 임대인은 **방·매물을 여러 개** 가지므로 상대의 **다른 방으로는 여전히 우회된다** — 그래서 차단은 여전히 사용자 단위여야 한다. 즉 결론은 그대로이며, 위 **구조적 근거가 유일하게 살아남는 근거**다.
 >
 > **왜 차단 *생성*만 여기 있고 목록·해제는 [01-auth-onboarding](01-auth-onboarding.md)에 있는가**: 경로가 `/bookings/{bookingId}/block`이라 **예약에서 상대를 도출**해야 하는데, 그 도출은 `booking`만 할 수 있다. 만약 `user`가 생성까지 소유하면 상대를 알아내려 `user → booking` 의존이 생기고, `booking → user::api`가 이미 있어 **의존 사이클이 나 `ApplicationModules.verify()`(ModularityTest)가 깨진다**. 그래서 컨트롤러·권한 판정은 `booking`에 두고, 저장은 이미 화이트리스트에 있는 `user::api` 호출로 위임한다(새 의존 엣지 0개). 반대로 **해제 경로는 예약과 무관해야 한다** — 차단하는 순간 그 예약이 내 목록에서 사라져 `bookingId`를 다시 얻을 방법이 없어지므로, `/bookings/{bookingId}/unblock`은 **호출 자체가 불가능한 죽은 경로**가 된다. 그래서 목록·해제는 `GET`/`DELETE /api/v1/users/me/blocks`로 `user`가 소유한다.
 
@@ -904,6 +912,7 @@
 | code | status | 의미 | 스코프 |
 | --- | --- | --- | --- |
 | `BOOKING_INVALID_MOVE_IN_DATE` | 422 | 타겟 입주일이 과거이거나 매물의 입주 가능일 이전 | 1차 MVP |
+| `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함. DB 유니크 제약 `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)` 위반. ErrorCode·messages 번들에 이미 선언돼 있던 코드가 본 결정으로 실사용된다 | 1차 MVP |
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물의 신청 아님), 또는 삭제(§4)·차단(§5)으로 요청자에게 숨겨짐 — 존재 여부를 노출하지 않도록 404로 통일. 삭제·차단·신고(§4~§6)에서 요청자가 참여자가 아닌 경우도 이 코드다(`403`이 아니다) | 1차 MVP |
 | `BOOKING_REPORT_ALREADY_EXISTS` | 409 | 동일 신고자가 동일 예약을 이미 신고함. DB 유니크 제약 `(reporterId, bookingId)` 위반 | 1차 MVP |
 | `CHAT_ROOM_NOT_FOUND` | 404 | 채팅방이 존재하지 않음 | 후속·이연 |
