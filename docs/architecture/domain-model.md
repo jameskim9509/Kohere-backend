@@ -22,10 +22,10 @@
 | 모듈 | 애그리거트 루트 | 핵심 값 객체(VO) | MVP |
 | --- | --- | --- | --- |
 | [`auth`](#1-auth--인증온보딩) | `SocialAccount`, `RefreshToken`, `EmailVerification`, `PhoneVerification` (+ `BusinessVerification` — 무상태 검증, 영속 없음) | `SocialIdentity`, `TokenHash` | ✅ |
-| [`user`](#2-user--회원-프로필계정-lifecycle) | `User` | `FullName`, `Consent` | ✅ |
+| [`user`](#2-user--회원-프로필계정-lifecycle) | `User`, `UserBlock` | `FullName`, `Consent` | ✅ |
 | [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `Location`, `Address`, `RoomOffer`, `MatchedPlace` | ✅ |
 | [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis`, `DiagnosisFlowSession`(v2) | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
-| [`booking`](#5-booking--매물-신청예약) | `Booking` | — (`GreetingMessage`는 후속·이연) | ✅ |
+| [`booking`](#5-booking--매물-신청예약) | `Booking`, `BookingReport` | — (`GreetingMessage`는 후속·이연) | ✅ |
 | [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | 후속·이연 |
 | [`community`](#7-community--커뮤니티) | `Post`(+`Comment`·`PostLike`) | `Hashtag` | 이후 |
 | [`gamification`](#8-gamification--퀴즈) | `Quiz` | `QuizChoice` | 이후 |
@@ -178,6 +178,25 @@
 
 **불변식:** 상태 전이는 `PENDING → TERMS_AGREED → ACTIVE → WITHDRAWN`만 허용(역전이·건너뛰기 금지); **약관 동의** 상태 전이는 `PENDING`에서만 일어나며(→`TERMS_AGREED`) 이때 `consent`(이용약관·개인정보처리방침·마케팅 동의 + `agreedAt` + `termsVersion`)를 확정 — 이용약관·개인정보처리방침 동의가 모두 필요(미동의 `422 AUTH_REQUIRED_AGREEMENT_MISSING`)하고 마케팅 동의는 선택(기본 미동의); 이미 `TERMS_AGREED`면 약관 재호출은 상태·동의를 바꾸지 않는 멱등 성공(`200`, 의도적 재동의 아님 — 마케팅 동의 변경은 프로필 수정으로), 이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`; **온보딩 제출**은 `TERMS_AGREED`에서만 가능하며(약관 미동의 `PENDING` 상태에서 시도하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`) **역할별로 분기**한다 — 세입자는 `POST /auth/onboarding`으로 `name`(`firstName`/`lastName`)·`gender`·`birthDate`·`country`·`occupation`·`email`·`visaType`와 `lang`(**선택** — 미전송이면 저장하지 않고(NULL) 표시 시 `en`으로 폴백)을, 임대인은 `POST /auth/landlord/onboarding`으로 **단일 `name`·`phoneNumber`·`birthDate` 세 필드**를 제출하고(임대인은 `email`·`businessRegistrationNumber` 미수집; 생년월일은 세입자와 동일하게 수집; **`country`=`KR`·`lang`=`ko`는 임대인이 전송하지 않고 서버가 고정으로 심는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)), 성공 시 `ACTIVE`로 전이하면서 해당 필드를 한 번에 확정하고 `userType`(세입자 `TENANT` / 임대인 `LANDLORD`)을 확정(이후 불변)하며 `nickname`을 자동 배정한다(이미 `ACTIVE` 재요청은 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`); 온보딩 완료 게이트는 **역할별로 분기**한다 — **세입자**는 제출 `email`이 `auth`에서 인증 완료(`VERIFIED`)된 이메일과 일치해야 하고(미인증·불일치 `422 AUTH_EMAIL_NOT_VERIFIED`; 우선순위 약관 동의 → 이메일 인증), **임대인**은 제출 `phoneNumber`가 `auth` SMS 인증(`VERIFIED`)된 번호와 일치해야 한다(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`; 우선순위 약관 동의 → 연락처 인증 — **사업자번호 게이트 없음**); `nickname`은 `NicknameGenerator`(도메인 서비스)가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 무작위 배정하되 전역 유니크가 보장될 때까지 재조합 재시도(상한 초과 시 fallback; 사용자 입력·수정 대상 아님); 필수 약관 동의는 프로필 수정으로 철회 불가(탈퇴 경로로만); 프로필 부분 수정은 `ACTIVE`에서만, 전송 필드만 변경(미전송 ≠ 비움) — **역할별로 수정 가능 필드가 갈린다**: 세입자는 `firstName`/`lastName`·`gender`·`birthDate`(과거만)·`country`·`occupation`·`visaType`·`lang`·`marketingAgreed`를, 임대인은 `name`(=`firstName`)·`phoneNumber`·`marketingAgreed`를 수정 가능하다(**`lang` 변경 주체는 세입자뿐** — 임대인 프로필 수정은 `lang`을 읽지 않고 `ko` 고정을 유지한다; `country`와 `lang`은 독립이라 `country`만 보내도 `lang`은 바뀌지 않고 `lang`만 보내면 `country`는 그대로이며, 각 필드는 전송한 값만 저장한다 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); 세입자 `email`은 재인증이 필요해 이 경로로 수정 불가 — 임대인은 `email` 미보유; `nickname`·`userType`은 공통 불변; 임대인 `businessRegistrationNumber`는 온보딩에서 수집하지 않으므로 이 프로필 수정 경로 대상이 아니다 — 추후 매물 등록에서 다룬다; `phoneNumber`는 변경 시 **SMS 재인증(`PhoneVerification` VERIFIED) 필요** — 새 번호 재인증 후에만 반영(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`), [API 스펙](../api/specs/01-auth-onboarding.md) §9); 탈퇴는 `PENDING`/`TERMS_AGREED`/`ACTIVE`에서 `WITHDRAWN`으로(이미 `WITHDRAWN` 재요청 `409 USER_ALREADY_WITHDRAWN`); `WITHDRAWN`·부재 사용자 조회·수정은 `404 USER_NOT_FOUND`; 모든 변경은 `updatedAt`을 갱신; 탈퇴(`WITHDRAWN`) 시 `withdrawnAt`을 기록하고 식별 PII(이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임)를 즉시 익명화한다(`lang`은 국적과 함께 `NULL`로 — 표시 언어도 사용자 식별정보이므로 익명화 범위에 포함, [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md) · [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — 임대인 PII(`name`·`phoneNumber`·`birthDate`, 및 추후 매물 등록에서 채워질 경우 `businessRegistrationNumber`(해시)) 익명화 범위는 확인 필요; `email`·`visaType`(및 임대인 `phoneNumber`, 값이 있으면 `businessRegistrationNumber`)은 민감정보로 로그·타 사용자 노출 시 마스킹(본인 `GET /users/me`는 평문 노출 — 단 임대인 프로필 응답 형태는 추후 확인 필요).
 
+**`UserBlock`** — 한 회원이 다른 회원을 차단한 사실 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(blockerId, blockedUserId)`.
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | 식별자 | 애그리거트 식별자 |
+| `blockerId` | 식별자 | 차단한 회원(차단 주체) → `User` 식별자 참조(소유권·조회 스코프) |
+| `blockedUserId` | 식별자 | 차단당한 회원 → `User` 식별자 참조 |
+| `createdAt` | Instant | 차단 시각(UTC, 차단 목록 정렬 기준 — 응답에는 `blockedAt`으로 노출) |
+
+**불변식:** `(blockerId, blockedUserId)`는 유일 → 중복 차단 불가(동시 차단도 1건만); `blockerId != blockedUserId` — **자기 차단은 구조적으로 성립하지 않는다**: 생성 경로가 `POST /api/v1/bookings/{bookingId}/block` 하나뿐이고 상대를 예약에서 도출하는데(`요청자 == tenantId ? landlordId : tenantId` — 클라이언트가 상대 식별자를 보내지 않는다), 예약 생성이 `userType=TENANT` 전용이고 `userType`은 온보딩 확정 후 불변이라 `tenantId != landlordId`가 항상 참이다(그래서 자기 차단 전용 검증·에러코드를 두지 않는다 — §5 `BookingReport`의 자기 신고와 같은 구조); **행의 존재가 곧 차단**이라 활성 플래그(`is_active` 등)를 두지 않는다 — 해제는 상태 전이가 아니라 **기록 제거**이고 재차단은 새 기록이라 이 애그리거트에는 상태 enum이 없다; 차단·해제는 **멱등** — 이미 차단한 상대를 다시 차단해도 신규 생성 없이 성공(`204`)이고 차단하지 않은 상대의 해제도 에러 없이 성공(`204`); 차단 목록 조회·해제는 본인(`blockerId`=요청자) 것만(`me` 스코프); 차단은 **비대칭 사실**이다 — 한 기록은 `blockerId`가 `blockedUserId`를 차단했다는 것만 말하고 역방향은 별개 기록이라, 양방향 여부가 필요한 소비 측(예: `booking`의 신규 신청 가드)은 두 방향을 함께 질의한다.
+
+> **왜 예약 단위가 아니라 회원 단위 차단인가:** 차단의 대상은 예약이 아니라 **사람**이고, 그 근거는 매물 구조에 있다 — `Listing.landlordId`(§3)라 **한 임대인이 매물을 여러 개** 소유하고, `Listing.roomOffers`가 `List<RoomOffer>`(§3)라 **한 매물이 방 상품을 여러 개** 갖는다. 그래서 예약 #1에서 임대인 A를 차단해도 A의 **다른 방 상품**에 신청하면 새 예약이 생겨(뒤이어 새 채팅방까지) 차단이 그대로 우회된다. 즉 차단 대상이 예약이면 **상대가 방을 하나 더 가진 순간 무력해진다** — 회원 단위 차단만이 "그 사람과의 모든 예약"을 한 번에 가릴 수 있다.
+>
+> **보조 근거(현행 사실):** `booking`은 "MVP의 예약은 '신청' 성격이라 중복 제한이 없다 — 같은 방 상품에도 여러 신청을 허용한다"를 불변식으로 두고 있어(§5), 지금은 **같은 방으로 재신청하는 것만으로도** 예약 단위 차단이 뚫린다 — 우회가 한층 더 싸다는 뜻이다. 다만 이는 **현행 사실일 뿐이며 [#177](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/177)(동일 세입자–동일 방 상품 예약 중복 제한)이 유니크를 더하면 성립하지 않을 수 있다**. **위 구조적 근거는 #177과 무관하게 유지되므로**, 같은 방 재신청이 막히더라도 예약/방 단위 차단으로 되돌릴 이유는 되지 않는다(다른 방으로 우회되는 것은 그대로다).
+>
+> **왜 `user`가 소유하나:** 차단은 회원 대 회원 관계라 예약 없이도 다뤄야 한다 — 차단하면 그 예약이 내 목록에서 사라져 `bookingId`를 다시 얻을 수 없으므로 **해제 경로가 예약에 매여선 안 된다**(`GET`·`DELETE /api/v1/users/me/blocks`가 예약과 무관하게 존재해야 하는 이유). 그래서 회원 관계의 정본인 `user`가 소유한다. 다만 차단 **생성**만은 경로가 예약 상세(`POST /api/v1/bookings/{bookingId}/block`)라 상대를 예약에서 도출해야 해서 컨트롤러가 `booking`에 있고 `user`는 공개 명령으로 저장만 받는다 — `user`가 생성까지 소유하면 상대를 도출하려 `user → booking` 의존이 생기고 기존 `booking → user :: api`와 맞물려 **순환이 나 `ApplicationModules.verify()`가 깨진다**(§5 협력 참조). 이 배치로 `user`의 `allowedDependencies`는 `{common}` 그대로다.
+
 **값 객체(VO):**
 
 | 이름 | 속성 | 타입 | 설명 |
@@ -226,7 +245,7 @@
 
 > `Occupation`·`VisaType` 값은 확정 분류값이다(#93, #138 개편). **`VisaType`은 API(요청·응답)에서 다른 enum과 동일하게 상수명(예: `SHORT_TERM_VISIT`)으로 주고받되, DB에는 사람이 읽는 표시용 라벨(예: `Short Term Visit(C-1~4, B)`)을 저장한다** — 영속은 `VisaTypeConverter`가 `getValue()`/`fromValue()`로 처리한다(#138). `country`는 ISO 국가 코드를 보유하고, 표시명·국기(이미지 URL)는 `countries` reference로 확보한다(국가+국기 수집 — 클라이언트는 국가만 전송).
 
-**협력 / 이벤트:** 모든 타 모듈은 사용자를 `User` 식별자(`id`)로만 참조한다(엔티티 비공유). 소셜 자격→회원 매핑·이메일 인증·사업자번호 검증은 `auth`가 소유하며, `user`는 **회원 생성(`PENDING`)·약관 동의(`TERMS_AGREED` 전이)·온보딩 완료(`ACTIVE` 전이 + `userType` 확정)·탈퇴(`WITHDRAWN` 전이)** 를 공개 명령으로, 프로필을 공개 쿼리로 제공한다(`auth`가 소셜 로그인 분기·약관 동의·온보딩 완료에서 호출). 온보딩 완료 명령은 사용자가 `TERMS_AGREED`이고, **역할별 게이트 우선순위**를 통과한 뒤에만 수행된다 — 세입자는 **약관 동의 → 이메일 인증**(이메일이 `auth`에서 `VERIFIED`), 임대인은 **약관 동의 → 연락처 인증**(연락처가 `auth`에서 `VERIFIED`)된 뒤에만 완료된다(역할은 호출 엔드포인트로 분기, `userType`으로 확정 — 임대인 온보딩에는 사업자번호 게이트가 없다). 임대인 사업자등록번호는 온보딩과 분리된 무상태 검증(§1 `BusinessVerification`)으로 다루며 온보딩 완료 시 저장되지 않는다. 탈퇴 시 도메인 이벤트(예: `UserWithdrawnEvent`)를 발행해 `auth`가 refresh 토큰을 일괄 무효화하게 한다(ADR-0002). 닉네임·국적 등 표시정보가 필요한 타 모듈(예: `community`)에는 식별자 기반 공개 쿼리를 제공한다(탈퇴 회원은 닉네임 `(탈퇴한 사용자)`·국적 비움으로 마스킹). 다국어 콘텐츠를 내려주는 모듈(`diagnosis`·`gamification`·`lifetip`)에는 **표시 언어 공개 쿼리 `getLanguage(userId)`** 를 제공한다 — `user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`을 언어 코드 문자열 하나로 회신하므로, **소비 모듈은 폴백 규칙을 알지 못한다**(도출 규칙 변경은 `user` 안에서 끝난다; 엔티티 비공유·원시 값 전달 — [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 · [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). 임대인은 `lang`이 `ko` 고정이라 이 쿼리도 `ko`를 회신한다. 에러 메시지 i18n은 이 쿼리와 무관하다 — `getLanguage`는 **본문 콘텐츠 번역에만** 쓰이고, 에러 메시지는 `Accept-Language`/`LocaleContextHolder` 경로를 그대로 쓴다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)).
+**협력 / 이벤트:** 모든 타 모듈은 사용자를 `User` 식별자(`id`)로만 참조한다(엔티티 비공유). 소셜 자격→회원 매핑·이메일 인증·사업자번호 검증은 `auth`가 소유하며, `user`는 **회원 생성(`PENDING`)·약관 동의(`TERMS_AGREED` 전이)·온보딩 완료(`ACTIVE` 전이 + `userType` 확정)·탈퇴(`WITHDRAWN` 전이)** 를 공개 명령으로, 프로필을 공개 쿼리로 제공한다(`auth`가 소셜 로그인 분기·약관 동의·온보딩 완료에서 호출). 온보딩 완료 명령은 사용자가 `TERMS_AGREED`이고, **역할별 게이트 우선순위**를 통과한 뒤에만 수행된다 — 세입자는 **약관 동의 → 이메일 인증**(이메일이 `auth`에서 `VERIFIED`), 임대인은 **약관 동의 → 연락처 인증**(연락처가 `auth`에서 `VERIFIED`)된 뒤에만 완료된다(역할은 호출 엔드포인트로 분기, `userType`으로 확정 — 임대인 온보딩에는 사업자번호 게이트가 없다). 임대인 사업자등록번호는 온보딩과 분리된 무상태 검증(§1 `BusinessVerification`)으로 다루며 온보딩 완료 시 저장되지 않는다. 탈퇴 시 도메인 이벤트(예: `UserWithdrawnEvent`)를 발행해 `auth`가 refresh 토큰을 일괄 무효화하게 한다(ADR-0002). 닉네임·국적 등 표시정보가 필요한 타 모듈(예: `community`)에는 식별자 기반 공개 쿼리를 제공한다(탈퇴 회원은 닉네임 `(탈퇴한 사용자)`·국적 비움으로 마스킹). 다국어 콘텐츠를 내려주는 모듈(`diagnosis`·`gamification`·`lifetip`·`booking`)에는 **표시 언어 공개 쿼리 `getLanguage(userId)`** 를 제공한다 — `user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`을 언어 코드 문자열 하나로 회신하므로, **소비 모듈은 폴백 규칙을 알지 못한다**(도출 규칙 변경은 `user` 안에서 끝난다; 엔티티 비공유·원시 값 전달 — [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 · [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). 임대인은 `lang`이 `ko` 고정이라 이 쿼리도 `ko`를 회신한다. **차단(`UserBlock`)은 `user`가 소유하고 공개 쿼리·명령으로 협력한다** — `booking`에 (1) 예약 목록·상세에서 가릴 상대를 고르는 `findBlockedUserIds(blockerId)`(차단 상대 식별자 집합), (2) 신규 예약 신청 가드의 양방향 판정 `isBlockedBetween(a, b)`를 공개 쿼리로 제공하고, 예약 상세에서의 차단 생성은 `booking`이 예약에서 도출한 상대 식별자를 받는 공개 명령으로 처리한다(식별자·원시 값만 오가고 엔티티·테이블은 공유하지 않는다 — `booking`이 차단 기록을 직접 조인하지 않고 받은 식별자 집합을 자기 질의의 술어로 쓴다, ADR-0002 Decision 5). 차단 목록 조회·해제 엔드포인트(`/api/v1/users/me/blocks`)는 `user`가 직접 제공한다. 에러 메시지 i18n은 이 쿼리와 무관하다 — `getLanguage`는 **본문 콘텐츠 번역에만** 쓰이고, 에러 메시지는 `Accept-Language`/`LocaleContextHolder` 경로를 그대로 쓴다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)).
 
 ---
 
@@ -563,11 +582,11 @@
 
 ## 5. `booking` — 매물 신청(예약)
 
-> [API 스펙](../api/specs/04-booking-inquiry-chat.md) · [시퀀스](sequence-diagrams/04-booking-inquiry-chat/README.md) · `allowedDependencies = {common, listing, user}`(조회 시점 매물 요약·가격 조회 `listing::api`, 예약자 성명 조회 `user::api`)
+> [API 스펙](../api/specs/04-booking-inquiry-chat.md) · [시퀀스](sequence-diagrams/04-booking-inquiry-chat/README.md) · `allowedDependencies = {common, listing, user}`(조회 시점 매물 요약·가격 조회 `listing::api`, 예약자 성명·차단 조회·차단 생성 `user::api`, 신고 사유 라벨 번역용 표시 언어 조회 `user::api getLanguage`)
 
 세입자가 매물에 입주를 신청(예약)하는 컨텍스트다. **1차 MVP에서 매물 예약은 인앱 채팅과 분리된 독립 기능**으로, 예약을 저장(생성)하고, 조회 엔드포인트는 요청자 `userType`으로 분기해 **세입자는 내 예약**을, **임대인은 자기 소유 매물(`listing.landlordId`=본인)에 신청된 예약**을 목록·단건 상세로 본다(별도 임대인 전용 API 없이 `userType` 분기; 역할 `403` 없음). 조회는 **스냅샷 없이 조회 시점 실시간 조인**으로 매물 요약·가격은 `listing` 공개 쿼리(`listing::api`)로, 예약자 성명은 `user` 공개 쿼리(`user::api`)로 조합한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md) → 애플리케이션 레벨 조합). **후속·이연**: 신청 성공 시 도메인 이벤트(`BookingCreatedEvent`)를 발행해 임대인과의 채팅·예약 카드(`BOOKING_CARD`) 고정을 `chat`에 위임하는 설계는 1차 MVP 범위 밖으로 이연한다(설계 보존, 아래 협력/이벤트 참조).
 
-**`Booking`** — 세입자가 특정 매물(방 상품)에 제출한 신청(예약) 애그리거트 루트. 식별자 `id`(API에서 `bookingId`로 노출), 활성 예약 비즈니스 키 `(tenantId, roomOfferId)`.
+**`Booking`** — 세입자가 특정 매물(방 상품)에 제출한 신청(예약) 애그리거트 루트. 식별자 `id`(API에서 `bookingId`로 노출) — **별도 비즈니스 키 없음**: MVP의 예약은 "신청" 성격이라 `(tenantId, roomOfferId)`가 유일하지 않다(같은 방 상품에 다건 신청 허용 — `V9__bookings.sql:2` · 아래 불변식 · [database-design](../database/database-design.md) §2-4 유니크 목록에 `bookings` 없음). **이는 현행 사실이며 [#177](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/177)(동일 세입자–동일 방 상품 예약 중복 제한)이 `(tenantId, roomOfferId)` 유니크를 더하면 뒤집힐 수 있다** — 그때는 이 문단과 아래 불변식의 "중복 제한 없음"을 함께 개정한다. 차단이 예약 단위가 아니라 **사용자 단위**인 근거는 이 성격이 아니라 **임대인이 매물·방 상품을 여러 개 갖는 구조**에 있다(§2 `UserBlock` 참조 — #177의 결과와 무관하게 유지된다).
 
 **속성:**
 
@@ -580,16 +599,43 @@
 | `landlordId` | 식별자 | 신청 대상 매물의 소유자 → `User` 식별자 참조. **생성 시 `listing::api`로 조회한 `listing.landlordId` 스냅샷**(숫자) — 임대인 받은 신청 조회(US-4-6)의 소유권 스코프 키 |
 | `moveInDate` | LocalDate | 타겟 입주일(날짜만) |
 | `contractPeriod` | int | 신청 시 입력한 계약 기간(개월수, 양의 정수) |
-| `status` | enum `BookingStatus` | 예약 상태(신청 직후 `REQUESTED` 고정) |
+| `status` | enum `BookingStatus` | 예약 상태(신청 직후 `REQUESTED` 고정). **두 참여자가 공유하는 필드** — 참여자별 표시 여부를 담지 않는다(아래 `*DeletedAt` 참조) |
 | `createdAt` | Instant | 신청 시각(UTC, 목록 정렬 기준) |
+| `tenantDeletedAt` | Instant, nullable | **표시 상태(참여자별)** — 세입자가 이 예약을 자기 목록에서 숨긴 시각(UTC). `null`이면 미삭제. 세입자 분기 목록·상세에서만 제외 기준이 되고 임대인의 가시성에는 영향이 없다 |
+| `landlordDeletedAt` | Instant, nullable | **표시 상태(참여자별)** — 임대인이 이 예약을 자기 목록에서 숨긴 시각(UTC). `null`이면 미삭제. 임대인 분기에만 적용되고 세입자의 가시성에는 영향이 없다 |
 
 > **저장하지 않는 값(조회 시점 계산·조인):** 예약자 성명(`tenantName`)·매물 요약(`title`·`thumbnailUrl`·주소·`RoomOffer` name)·가격(`deposit`·`monthlyRent`)·총 금액(`totalAmount`)은 **애그리거트에 스냅샷으로 저장하지 않는다** — 상세/목록 조회 시점에 `listing`(`listingId`·`roomOfferId`로)·`user`(`tenantId`로) 공개 쿼리로 실시간 조인해 조립한다(가격 변경 시 현재가 기준). 총 금액 `totalAmount = deposit + monthlyRent × contractPeriod`(계약 개월수 정수)이며 **관리비(`maintenanceFee`)는 총액에서 제외**한다 — 저장 필드가 아니라 조회 계산값이다.
 >
 > **소유자 식별자(`landlordId`) — 생성 시 비정규화 저장:** 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 함께 저장한다(생성이 이미 `listing::api`로 매물을 조회하므로 소유자 스냅샷 캡처 비용이 거의 없다). 임대인 **조회 분기**(`userType=LANDLORD`)의 "내 매물에 신청됨"은 이 `landlordId`로 booking 저장소에서 직접 스코핑하며(목록 `landlord_id=요청자`, 상세 `booking.landlordId==요청자` 행 단위 확인), **cross-store 조인이 불필요**하다([ADR-0005](../adr/0005-polyglot-persistence.md)) — `chat_rooms`가 `landlord_id`를 비정규화하는 선례와 일치한다. 생성 시점 스냅샷이라 소유권 이전 시 stale하나 이전은 MVP 범위 밖이다. 예약 **생성** 자체는 세입자 전용이라 본인 매물 차단(소유자 대조)은 여전히 불필요하다. 첫 인사 메시지(`GreetingMessage`)는 채팅 연동 설계에 속하므로 **후속·이연**으로 애그리거트 저장 필드에 두지 않는다.
 
-**불변식:** 예약은 `ACTIVE` 세입자(`userType=TENANT`) 전용 — 임대인/비세입자는 거부(`403 FORBIDDEN`); **MVP의 예약은 "신청" 성격이라 중복 제한이 없다** — 활성 유니크 제약을 두지 않고 같은 방 상품에도 여러 신청을 허용한다(`BOOKING_ALREADY_EXISTS` 없음); 예약은 세입자 전용이라 자기 소유 매물 예약 상황이 성립하지 않아 본인 매물 차단(소유자 조회)도 없다; `moveInDate`는 과거 불가·매물 입주 가능일 이전 불가(`422 BOOKING_INVALID_MOVE_IN_DATE`); `contractPeriod`는 양의 정수 개월수(`400 INVALID_INPUT`); 대상 매물·방 상품이 없거나 비공개면 부재 처리(`404 LISTING_NOT_FOUND`); **신청 생성 시 `status`는 항상 `REQUESTED` 고정 — 수락/거절/취소 등 상태전이는 이 범위 밖**(1차 MVP 미구현); 목록·상세 조회는 `userType`으로 분기한다 — **세입자 분기**는 요청자 본인(`tenantId`) 예약만 반환하며 없거나 타인 예약이면 `404 BOOKING_NOT_FOUND`, **임대인 분기**(`userType=LANDLORD`)는 요청자 소유 매물(`listing.landlordId`=본인)에 신청된 예약만 반환하며 없거나 내 소유 매물 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(두 역할 모두 유효 요청이라 역할 `403` 없음).
+**불변식:** 예약은 `ACTIVE` 세입자(`userType=TENANT`) 전용 — 임대인/비세입자는 거부(`403 FORBIDDEN`); **MVP의 예약은 "신청" 성격이라 중복 제한이 없다** — 활성 유니크 제약을 두지 않고 같은 방 상품에도 여러 신청을 허용한다(`BOOKING_ALREADY_EXISTS` 없음); 예약은 세입자 전용이라 자기 소유 매물 예약 상황이 성립하지 않아 본인 매물 차단(소유자 조회)도 없다; `moveInDate`는 과거 불가·매물 입주 가능일 이전 불가(`422 BOOKING_INVALID_MOVE_IN_DATE`); `contractPeriod`는 양의 정수 개월수(`400 INVALID_INPUT`); 대상 매물·방 상품이 없거나 비공개면 부재 처리(`404 LISTING_NOT_FOUND`); **신청 생성 시 `status`는 항상 `REQUESTED` 고정 — 수락/거절/취소 등 상태전이는 이 범위 밖**(1차 MVP 미구현); 목록·상세 조회는 `userType`으로 분기한다 — **세입자 분기**는 요청자 본인(`tenantId`) 예약만 반환하며 없거나 타인 예약이면 `404 BOOKING_NOT_FOUND`, **임대인 분기**(`userType=LANDLORD`)는 요청자 소유 매물(`listing.landlordId`=본인)에 신청된 예약만 반환하며 없거나 내 소유 매물 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(두 역할 모두 유효 요청이라 역할 `403` 없음); **삭제(내 목록에서 숨김)는 요청자 쪽 필드만 세팅한다** — 세입자는 `tenantDeletedAt`, 임대인은 `landlordDeletedAt`에 삭제 시각(UTC)을 기록하며 **상대의 목록·상세 가시성은 그대로다**(두 참여자가 예약 1건을 공유하므로 단일 삭제 플래그를 두면 한쪽의 삭제가 상대의 기록까지 지우는 데이터 손실이 된다); 삭제는 **멱등** — 이미 삭제한 예약을 다시 삭제해도 성공(`204`)이며, 이를 위해 변이 경로는 삭제·차단으로 **필터되지 않은** 조회로 대상을 찾는다(필터된 조회를 쓰면 두 번째 요청이 `404`가 되어 멱등이 깨진다); 참여자가 아니거나 없는 예약의 삭제는 `404 BOOKING_NOT_FOUND`(존재 비노출 — 조회 규약과 통일); **차단 관계인 상대의 예약은 목록·상세에서 제외한다** — 차단자 기준 **단방향**이라 내가 상대를 차단하면 그 상대와의 모든 예약이 **내 목록에서만** 사라지고 상대의 목록은 그대로다(차단은 `*DeletedAt`을 세팅하지 않는다 — 숨김은 차단 필터가 수행한다); **차단 관계면 신규 예약 신청을 거부한다** — 요청자와 매물 소유자 사이에 **어느 방향으로든**(양방향 판정) 차단이 있으면 `POST /listings/{listingId}/bookings`는 `403 FORBIDDEN`으로 막는다(막지 않으면 생성은 성공하는데 차단 필터가 그 예약을 양쪽 목록에서 영구히 가리는 **블랙홀 예약**이 된다).
 
-**값 객체(VO):** 1차 MVP의 예약 애그리거트에는 값 객체가 없다.
+> **왜 삭제·차단이 `BookingStatus` 값이 아닌가:** 표시 상태는 `status`로 표현하지 않는다 — (1) `status`는 `tenantId`·`landlordId`가 **공유하는 하나의 필드**라 한쪽의 숨김이 상대가 보는 상태까지 바꿔 버리고, (2) **취소(`CANCELED`)와 숨김은 다른 개념**이며(취소는 예약 자체의 종료, 삭제는 내 목록의 표시 여부 — 상대에겐 예약이 그대로 살아 있다), (3) 1차 MVP는 애초에 **상태 전이가 미구현**(`REQUESTED` 고정)이라 `status`에 실을 전이가 없다. 그래서 참여자별 표시 상태는 `tenantDeletedAt`·`landlordDeletedAt` 두 독립 필드로 둔다(물리 컬럼·인덱스·소프트삭제 규약과의 관계는 [database-design](../database/database-design.md) 소관).
+>
+> **차단 목록 조회는 애플리케이션 레벨 조인이다:** 목록·상세에서 가릴 차단 상대는 `user` 공개 쿼리(`user :: api`의 `findBlockedUserIds(요청자)`)로 식별자 집합을 받아 booking 저장소 질의의 술어로 넘기고, 신규 신청 가드의 양방향 판정은 `isBlockedBetween(요청자, 임대인)`으로 받는다 — `booking`이 차단 기록을 **직접 조인하지 않는다**(엔티티·테이블 비공유, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)). `user :: api`는 이미 `allowedDependencies`에 있으므로 **새 모듈 의존 엣지는 생기지 않는다**.
+
+**`BookingReport`** — 예약 상대의 부적절한 행위를 신고한 **접수 기록**(불변) 애그리거트 루트. 식별자 `id`(API에서 `reportId`로 노출), 비즈니스 키 `(reporterId, bookingId)`.
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | 식별자 | 애그리거트 식별자(숫자 PK, API에서 `reportId`로 노출) |
+| `reporterId` | 식별자 | 신고자 → `User` 식별자 참조(대상 예약의 참여자 본인). **응답 비노출** |
+| `bookingId` | 식별자 | 신고 대상 예약 → `Booking` 식별자 참조(같은 모듈) |
+| `reason` | enum `BookingReportReason`, nullable | 신고 사유(**선택** — 전송하면 저장하고 미전송이면 `null`) |
+| `detail` | String, nullable | 신고에 덧붙이는 자유 텍스트(선택, 최대 500자). **원문 응답 비노출** |
+| `createdAt` | Instant | 접수 시각(UTC) |
+
+**불변식:** `(reporterId, bookingId)`는 유일 → 같은 신고자의 같은 예약 재접수는 거부(`409 BOOKING_REPORT_ALREADY_EXISTS`), 동시 접수도 1건만; **접수 후 상태 전이가 없다** — 생성 시점에 확정되는 불변 기록이라 어떤 필드도 갱신되지 않는다(수정·철회 경로 없음); 신고자는 대상 예약의 참여자(`tenantId` 또는 `landlordId`)여야 하며, 참여자가 아니거나 없는 예약이면 `404 BOOKING_NOT_FOUND`(존재 비노출 — 조회·삭제와 동일 규약); **자기 신고는 구조적으로 성립하지 않는다** — 예약 생성이 `userType=TENANT` 전용이고 `userType`은 온보딩 확정 후 불변이라 `tenantId != landlordId`가 항상 참이다(그래서 자기 신고 전용 에러코드를 두지 않는다); **신고 가능 여부는 삭제·차단 상태와 무관하다** — 내가 삭제했거나 상대를 차단한 예약도 신고할 수 있다(증거 보존). 따라서 같은 예약이 `GET /bookings/{id}`에선 `404`인데 신고는 `201`이 되는 **의도된 비대칭**이 생기며, 이를 위해 신고 경로는 삭제·차단으로 **필터되지 않은** 조회로 대상을 찾는다; `reason`은 `BookingReportReason` 카탈로그의 값이거나 미전송(`null`), `detail`은 선택·500자 초과 불가(`400 INVALID_INPUT`); `reporterId`·`detail` 원문은 응답 비노출(프라이버시 — 응답은 `reportId`·`bookingId`·`reason`·`createdAt`).
+
+> **왜 예약 신고를 `booking`이 소유하나(§9 `report`가 아니라):** 신고 **접수**는 "대상 예약이 실재하는가 / 신고자가 그 예약의 참여자인가"를 검증해야 하는데 그건 **예약만 아는 정보**이고, 불변식(참여자만 신고 가능·같은 예약 중복 접수 불가)이 예약 상태에 의존하므로 소유자도 예약이다. `report`가 접수하면 `report → booking :: api` 포트를 새로 뚫어야 하지만, `booking`이 접수하면 모듈 내부 호출이라 **새 의존 엣지가 0개**다. §9 `report`의 `Report`는 **게시글(`POST`)·댓글(`COMMENT`)·채팅 메시지(`MESSAGE`)** 를 대상으로 하고 `BookingReport`는 **예약**을 대상으로 해 **신고 대상이 겹치지 않는 별개 애그리거트**다 — `ReportTargetType`에 `BOOKING`을 두지 않는 것이 이 무충돌의 전제다.
+>
+> **왜 `status`가 없나:** 이 애그리거트의 범위는 **접수(capture)까지**다 — 운영자 검토·제재·처리 상태 전이는 범위 밖이라 실을 전이가 없다. 그래서 §9 `Report`의 `ReportStatus`(`RECEIVED` 단일 값)에 해당하는 필드를 아예 두지 않는다(접수됐다는 사실은 기록의 존재가 말한다).
+>
+> **왜 사유 enum이 별개인가:** `BookingReportReason`은 §9 `ReportReason`과 **값이 같지만 별개 enum**이다 — 사유 카탈로그를 공유하면 `booking → report` 모듈 의존이 생긴다. 각 모듈이 동일 이름의 자기 enum을 소유하는 선례(`diagnosis`의 `DiagnosisCondition` ↔ `listing`의 `ConditionTag`)를 따라 예약 맥락 전용 카탈로그로 둔다.
+
+**값 객체(VO):** 1차 MVP의 예약·예약 신고 애그리거트에는 값 객체가 없다(`BookingReport.detail`은 제약이 "선택·최대 500자"뿐이라 §9 `report`의 `ReportDetail`과 달리 VO로 감싸지 않고 nullable 문자열 속성으로 둔다).
 
 > **후속·이연(1차 MVP 제외) — `GreetingMessage`:** `text`(String, 공백 제외 1~500자). 신청과 함께 보내는 첫 인사로, 존재할 때만 채팅 첫 텍스트 메시지로 전달하는 설계다 — 채팅 연동과 함께 이연한다(설계 보존).
 
@@ -601,10 +647,28 @@
 | | `ACCEPTED` | 임대인 수락(**후속·이연** — 상태전이 미구현) |
 | | `REJECTED` | 임대인 거절(**후속·이연** — 상태전이 미구현) |
 | | `CANCELED` | 세입자 취소(**후속·이연** — 상태전이 미구현) |
+| `BookingReportReason` | `SPAM` | 스팸/광고(예약 신고 사유 카탈로그 — §9 `report`의 `ReportReason`과 값이 같지만 **별개 enum**이다: 예약 맥락 전용) |
+| | `ABUSE` | 욕설/괴롭힘 |
+| | `SEXUAL_CONTENT` | 성적 콘텐츠 |
+| | `EXTERNAL_CONTACT` | 외부 연락처 유도 |
+| | `FALSE_INFO` | 허위 정보 |
+| | `ETC` | 기타 |
 
+> `BookingReportReason`은 **선택 입력**이라 `BookingReport.reason`이 nullable이다(미전송이면 `null`) — enum 값 자체에 "미선택"을 뜻하는 항목을 두지 않는다(`ETC`는 사용자가 고른 "기타"이지 미선택이 아니다). 고정·소규모 집합이라 사유 목록 조회는 페이지네이션 없이 전체를 한 번에 반환한다.
+>
+> **사유 라벨 번역** — 사유 목록 조회(`GET /api/v1/bookings/report-reasons`)의 표시 `label`은 **서버가 사용자 표시 언어로 번역해** 내려준다. 표시 언어는 `user` 공개 쿼리(`user :: api`의 `getLanguage(userId)`)로 동기 취득하며(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`을 언어 코드 문자열로 회신 — `booking`은 폴백 규칙을 알지 못한다), `diagnosis`·`gamification`·`lifetip`이 이미 쓰는 것과 **같은 경로**다. `user :: api`는 이미 `allowedDependencies`에 있으므로 **새 모듈 의존 엣지가 생기지 않는다**. 지원 언어는 `Language` enum의 `EN`·`KO`·`JA` 3종이고 미지원·미설정은 `en` 폴백이다. **`code`는 언어 무관 불변이고 `label`만 언어별**이다(§4 `diagnosis` 문항 카탈로그가 `code`(UPPER_SNAKE)를 언어 무관으로 고정하고 표시 문자열만 언어별로 두는 것과 같은 원칙 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) Decision 6). 클라이언트는 언제나 `code`로 신고를 제출하고 `label`은 표시에만 쓴다.
+>
+> **왜 리소스 번들인가(MongoDB 인라인 언어-키 맵이 아니라):** 번역 라벨은 **리소스 번들(Spring `MessageSource`)** 에 둔다. 신고 사유 6종은 `BookingReportReason` enum과 1:1인 **코드 레벨 상수**라 값이 늘거나 바뀌면 어차피 배포가 따르고, **배포 없이 바뀔 필요가 없다** — 배포 없이 운영 중 바뀌어야 하는 콘텐츠(§4 `diagnosis`의 문항·선택지, §10 `lifetip`의 주제)를 위한 **MongoDB 인라인 언어-키 맵 방식은 이 6종에 과하다**. 게다가 `booking`은 MySQL 저장소라(polyglot, [ADR-0005](../adr/0005-polyglot-persistence.md)) 사유 6종의 라벨만을 위해 cross-store 컬렉션을 새로 만들 이유가 없다.
+>
+> **어느 번들인가 — 기존 `messages`가 아니라 별도 basename `content`:** 라벨 키는 `messages` 번들에 넣지 않고 **별도 리소스 번들 basename `content`**(`content.properties`(기본=`en`)·`content_ko.properties`·`content_ja.properties`)에 두며, `spring.messages.basename`을 `messages,content`로 확장한다(**구현 시 항목** — 코드·설정 변경은 이번 문서 작업 범위 밖). 근거: 기존 `messages` 번들은 [ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)이 **에러 메시지 전용**으로 규정한다 — "키는 `ErrorCode` 이름"이고 검증 불변식이 "`messages.properties`의 키 집합 == `ErrorCode` 전체 상수"이며, 그 경로는 `Accept-Language`/`LocaleContextHolder`로 `Locale`을 정한다. 신고 사유 라벨은 **본문 콘텐츠**라 `Locale`을 `getLanguage(userId)`에서 받으므로 두 경로가 섞여선 안 되고, 같은 번들에 넣으면 `ErrorCode`가 아닌 키가 섞여 **ADR-0030의 키 범위·커버리지 불변식이 깨진다**. 별도 basename은 §2 `user` 협력이 이미 요구하는 **"에러 i18n과 콘텐츠 i18n 분리"** 를 번들 배치로 그대로 인코딩한다.
+>
+> ⚠️ **`Locale`은 `getLanguage(userId)`가 회신한 코드에서 만든다** — `LocaleContextHolder`/`Accept-Language`에서 만들지 않는다. §2 `user` 협력이 두 경로를 명시적으로 분리해 뒀다: `getLanguage`는 **본문 콘텐츠 번역에만** 쓰이고, **에러 메시지**는 `Accept-Language`/`LocaleContextHolder` 경로를 그대로 쓴다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)). 사유 `label`은 본문 콘텐츠라 전자를 따르며, 번들 basename(`content`)과 `Locale` 산출 경로 **둘 다** 에러 경로와 섞지 않는다.
+>
+> ⚠️ **구현 시 항목 — 일본어 라벨은 #169 구현 범위다:** 현재 리소스 번들은 `messages.properties`(기본=`en`)·`messages_ko.properties` 둘뿐이고 일본어 파일이 없으나, 라벨은 위와 같이 별도 basename `content`에 두므로 **`content.properties`(en)·`content_ko.properties`·`content_ja.properties` 3종을 이번 구현에서 모두 신설한다**. 지원 언어 `EN`·`KO`·`JA` 전부에 라벨이 있어야 US-4-9의 정상 AC(사용자 표시 언어로 번역된 `label`)를 만족한다 — **`ja` 사용자에게 `en` 라벨이 나가는 것은 허용 상태가 아니라 `content_ja.properties` 미구현 시의 실패 양상**이다.
+>
 > `contractPeriod`는 enum이 아니라 **정수(개월수, 양의 정수)** 다 — `1`·`3`·`6`·`12`·`24` 등 자유 입력.
 
-**협력 / 이벤트:** 세입자는 `user`, 매물·방 상품은 `listing`을 식별자로만 참조한다(ADR-0002, 엔티티 비공유). **생성 시점**에는 매물 존재·공개 검증과 입주 가능일 조회를 `listing` 공개 쿼리(`listing::api`)로 받는다(부재/비공개 `404 LISTING_NOT_FOUND`; 예약은 세입자 전용이라 소유자 조회는 불요). **조회 시점**(목록·상세)에는 **스냅샷 없이 실시간 조인**한다 — 매물 요약·가격(`title`·`thumbnailUrl`·주소·`RoomOffer` name·`deposit`·`monthlyRent`)은 `listing::api`로 `(listingId, roomOfferId)`를 조회하고, 예약자 성명(`tenantName`)은 `user::api`(`getUserName(tenantId)`)로 조회해 애플리케이션 레벨에서 조합한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md); 가격 변경 시 상세는 현재가 기준). 총 금액은 조회 시점 계산값(`deposit + monthlyRent × contractPeriod`, 관리비 제외)이다. 두 조회 메서드(`listing::api`의 가격·매물요약 조회, `user::api`의 성명 조회)는 신규 공개 조회로 노출되며 이에 따라 `booking`의 `allowedDependencies`는 `{common, listing, user}`다. **임대인 조회 분기**(`userType=LANDLORD`)는 소유권을 `Booking.landlordId`로 판정하므로 `listing::api` 소유권 조회 메서드가 **불필요**하다 — 대신 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId`를 추가 노출하고, 임대인 **상세** 분기의 신청자 프로필 조회를 위해 `user::api`에 `getApplicantProfile`(성명·성별·국적·이메일)를 신규 공개 조회로 추가한다. 임대인에게 신청자 PII(이메일·성별·국적)는 **마스킹 없이 평문으로 노출**한다(제품 결정).
+**협력 / 이벤트:** 세입자는 `user`, 매물·방 상품은 `listing`을 식별자로만 참조한다(ADR-0002, 엔티티 비공유). **생성 시점**에는 매물 존재·공개 검증과 입주 가능일 조회를 `listing` 공개 쿼리(`listing::api`)로 받는다(부재/비공개 `404 LISTING_NOT_FOUND`; 예약은 세입자 전용이라 소유자 조회는 불요). **조회 시점**(목록·상세)에는 **스냅샷 없이 실시간 조인**한다 — 매물 요약·가격(`title`·`thumbnailUrl`·주소·`RoomOffer` name·`deposit`·`monthlyRent`)은 `listing::api`로 `(listingId, roomOfferId)`를 조회하고, 예약자 성명(`tenantName`)은 `user::api`(`getUserName(tenantId)`)로 조회해 애플리케이션 레벨에서 조합한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md); 가격 변경 시 상세는 현재가 기준). 총 금액은 조회 시점 계산값(`deposit + monthlyRent × contractPeriod`, 관리비 제외)이다. 두 조회 메서드(`listing::api`의 가격·매물요약 조회, `user::api`의 성명 조회)는 신규 공개 조회로 노출되며 이에 따라 `booking`의 `allowedDependencies`는 `{common, listing, user}`다. **임대인 조회 분기**(`userType=LANDLORD`)는 소유권을 `Booking.landlordId`로 판정하므로 `listing::api` 소유권 조회 메서드가 **불필요**하다 — 대신 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId`를 추가 노출하고, 임대인 **상세** 분기의 신청자 프로필 조회를 위해 `user::api`에 `getApplicantProfile`(성명·성별·국적·이메일)를 신규 공개 조회로 추가한다. 임대인에게 신청자 PII(이메일·성별·국적)는 **마스킹 없이 평문으로 노출**한다(제품 결정). **차단**은 `user`가 소유하는 `UserBlock`(§2)에 위임한다 — 목록·상세 필터가 쓸 차단 상대 식별자 집합은 `user::api`의 `findBlockedUserIds(요청자)`로, 신규 신청 가드의 양방향 판정은 `isBlockedBetween(요청자, 임대인)`으로 동기 조회해 **애플리케이션 레벨에서** 적용한다(차단 기록을 직접 조인하지 않는다, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 차단 **생성**만은 경로가 `POST /bookings/{bookingId}/block`이라 상대를 예약에서 도출해야 하므로(`요청자 == tenantId ? landlordId : tenantId` — 클라이언트가 상대 식별자를 보내지 않는다) 엔드포인트는 `booking`에 두되 저장은 `user::api` 공개 명령으로 `user`에 위임한다 — `user`가 생성을 소유하면 상대를 도출하려 `user → booking`이 생기고 `booking → user :: api`가 이미 있어 **순환이 나 `ApplicationModules.verify()`가 깨진다**. 차단 목록·해제(`/api/v1/users/me/blocks`)는 예약과 무관하게 `user`가 제공한다(차단하면 그 예약이 목록에서 사라져 `bookingId`를 다시 얻을 수 없으므로 해제 경로가 예약에 매일 수 없다). 세 협력 모두 기존 `user :: api`를 쓰므로 `allowedDependencies`는 **`{common, listing, user}` 그대로**이고 새 의존 엣지가 없다. **예약 신고 접수**(`BookingReport`)는 대상 존재·참여자 검증이 예약 내부 정보라 모듈 안에서 완결되며 `report`(§9)를 호출하지 않는다(대상이 겹치지 않는다 — 위 `BookingReport` 참조).
 
 **후속·이연(1차 MVP 제외):** 신청 성공 시 **`BookingCreatedEvent`** 를 발행해(페이로드: `bookingId`·`listingId`·`tenantId`·`landlordId`·`moveInDate`·`contractPeriod`·첫 인사 메시지) `chat`이 구독하고 임대인 채팅방 보장·예약 카드(`BOOKING_CARD`) 고정·첫 인사 전송을 처리하는 채팅 연동 설계는 **1차 MVP 범위 밖으로 이연**한다(설계 보존, 삭제 아님). `booking`은 `chat`을 알지 못한다(단방향).
 
@@ -781,7 +845,7 @@
 | `BoardType` | `FREE` | 자유게시판 |
 | | `NEIGHBORHOOD` | 동네생활 |
 
-**협력 / 이벤트:** 타 애그리거트는 식별자(`authorId`·`userId`)로만 참조한다(ADR-0002). 작성자 표시정보(닉네임·국적)는 `user` 공개 쿼리로 조립하며, 탈퇴 작성자는 닉네임 `(탈퇴한 사용자)`·국적 비움으로 마스킹. 동네친구 1:1 채팅 시작은 `chat`의 `NEIGHBOR` 방 보장에 위임(게시글 작성자를 상대로 전달, 기존 방이면 멱등 반환). 본인 글 채팅 불가(`422 POST_CHAT_SELF_NOT_ALLOWED`), 작성자 불가(`422 POST_CHAT_AUTHOR_UNAVAILABLE`), 차단 관계(`403 POST_CHAT_BLOCKED`, `report` 차단 모델 의존)는 차단한다.
+**협력 / 이벤트:** 타 애그리거트는 식별자(`authorId`·`userId`)로만 참조한다(ADR-0002). 작성자 표시정보(닉네임·국적)는 `user` 공개 쿼리로 조립하며, 탈퇴 작성자는 닉네임 `(탈퇴한 사용자)`·국적 비움으로 마스킹. 동네친구 1:1 채팅 시작은 `chat`의 `NEIGHBOR` 방 보장에 위임(게시글 작성자를 상대로 전달, 기존 방이면 멱등 반환). 본인 글 채팅 불가(`422 POST_CHAT_SELF_NOT_ALLOWED`), 작성자 불가(`422 POST_CHAT_AUTHOR_UNAVAILABLE`), 차단 관계(`403 POST_CHAT_BLOCKED`)는 차단한다 — 이때 볼 차단 모델은 `user`가 소유하는 `user_blocks`(**사용자 단위 전역 차단**, §2 `UserBlock`)다. 다만 **이 채팅 시작 가드는 아직 배선되지 않았다(후속·이연)** — `community`의 `allowedDependencies`는 `{common}`이라 차단을 조회할 수 없고, §2 `UserBlock` 협력이 지금 열어 둔 소비자는 `booking` 하나뿐이다. 구현하려면 **`community → user :: api` 의존 신설(미도입)** 이 선행한다(어떤 공개 쿼리를 쓸지 — `isBlockedBetween(요청자, 작성자)` 양방향 판정 여부 — 는 확인 필요).
 
 ---
 

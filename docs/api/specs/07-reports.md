@@ -5,6 +5,8 @@
 
 게시글(POST)·댓글(COMMENT)·채팅 메시지(MESSAGE)에 대한 신고를 접수·저장하고, 신고 사유 enum 메타를 노출한다. MVP 범위는 신고 접수/저장 및 사유 메타 조회까지이며, 운영자(관리자 액터)의 검토·제재·상태 전이 흐름은 **(확인 필요)** 로 본 스펙에 포함하지 않는다. 신고는 접수 시 `status=RECEIVED` 로 고정 저장한다.
 
+> **예약(Booking) 신고는 본 스펙이 아니라 [04-booking-inquiry-chat](04-booking-inquiry-chat.md)이 접수한다** — 신고 접수는 대상 존재·참여자 권한 검증이 필요해 대상을 아는 모듈이 담당하며, 본 스펙의 대상(`POST`/`COMMENT`/`MESSAGE`)과 겹치지 않는다.
+
 ## 엔드포인트 요약
 
 | Method | Path | 설명 | 인증 | 성공 status |

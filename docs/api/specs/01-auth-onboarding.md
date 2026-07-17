@@ -5,7 +5,7 @@
 
 ## 개요
 
-소셜 로그인(Apple/Google) 검증 후 서버 자체 JWT(access+refresh)를 발급하고, 신규 회원의 **온보딩 중 본인 확인**(세입자 이메일 인증 · 임대인 연락처 SMS 인증 — 인증번호 발송·확인), 온보딩 필수정보 수집·약관 동의, 토큰 재발급/로그아웃, 회원 탈퇴, 내 프로필 조회·수정을 다룬다. 인증 헤더는 `Authorization: Bearer <accessToken>`, 토큰 갱신은 `POST /api/v1/auth/reissue`다.
+소셜 로그인(Apple/Google) 검증 후 서버 자체 JWT(access+refresh)를 발급하고, 신규 회원의 **온보딩 중 본인 확인**(세입자 이메일 인증 · 임대인 연락처 SMS 인증 — 인증번호 발송·확인), 온보딩 필수정보 수집·약관 동의, 토큰 재발급/로그아웃, 회원 탈퇴, 내 프로필 조회·수정, **내 차단 목록 조회·해제**를 다룬다. 인증 헤더는 `Authorization: Bearer <accessToken>`, 토큰 갱신은 `POST /api/v1/auth/reissue`다.
 
 상태 모델: 사용자는 `PENDING`(소셜 검증만 완료) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`(탈퇴)로 전이한다. **약관 동의와 온보딩은 분리된 단계**로, 약관 동의(`POST /auth/terms`)가 온보딩 제출(`POST /auth/onboarding`)을 선행한다.
 
@@ -57,7 +57,10 @@
 | GET | `/api/v1/users/me` | 내 프로필 조회 | 필수 | 200 |
 | PATCH | `/api/v1/users/me` | 내 프로필 부분 수정 | 필수 | 200 |
 | DELETE | `/api/v1/users/me` | 회원 탈퇴(WITHDRAWN 전이, 토큰 일괄 무효화) | 필수 | 204 |
+| GET | `/api/v1/users/me/blocks` | 내가 차단한 사용자 목록(해제용) | 필수 | 200 |
+| DELETE | `/api/v1/users/me/blocks/{userId}` | 차단 해제(멱등) | 필수 | 204 |
 
+> 차단 **생성**은 이 문서에 없다 — 예약 문맥 전용 `POST /api/v1/bookings/{bookingId}/block`([04-booking-inquiry-chat](04-booking-inquiry-chat.md))이 유일한 생성 경로이고, 목록 조회(§11)·해제(§12)만 `user` 모듈이 맡는다(§11 근거 블록쿼트 참조).
 > `auth/onboarding`은 신규 리소스 생성이 아니라 약관 동의를 마친 `TERMS_AGREED` 사용자를 `ACTIVE`로 전이하는 상태 액션이므로 `200`을 쓴다(api-design-guide §1 — "생성 아닌 액션").
 > 인증 "필수" 엔드포인트는 access 토큰 만료 시 `401 TOKEN_EXPIRED`로 재발급을 유도한다. **온보딩 토큰**(`ROLE_ONBOARDING` — `onboardingCompleted=false`, 상태 `PENDING`/`TERMS_AGREED` 공통)으로 `GET`/`PATCH /users/me`·`POST /auth/logout`(모두 `ROLE_USER` 필요) 보호 API에 접근하면 `403 AUTH_ONBOARDING_REQUIRED`를 반환한다(단, `DELETE /users/me`(탈퇴)·`POST /auth/terms`(약관 동의)·`POST /auth/email/verification-code`·`POST /auth/email/verify`(세입자 이메일 인증)·`POST /auth/phone/verification-code`·`POST /auth/phone/verify`(임대인 연락처 인증)·`POST /auth/onboarding`·`POST /auth/landlord/onboarding`(임대인 온보딩)은 온보딩 흐름이라 온보딩 토큰도 허용). 단 `/auth/phone/**`(연락처 인증)는 프로필 연락처 변경(US-1-5)을 위해 **정식 토큰(`ROLE_USER`)도 함께 허용**한다(온보딩 토큰·정식 토큰 양쪽 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) §6·§8). 반대로 `POST /auth/business/verify`(사업자번호 검증)는 온보딩 흐름이 아니라 **온보딩을 완료한(ACTIVE) 임대인이 정식 토큰(`ROLE_USER`)으로만 호출**하는 무상태 검증 API로, 온보딩 토큰으로 접근하면 `403 AUTH_ONBOARDING_REQUIRED`다(§5-1). 상태 전이 순서는 `POST /auth/terms`(PENDING→TERMS_AGREED) → `POST /auth/onboarding`(TERMS_AGREED→ACTIVE)이며, 약관 미동의 상태(`PENDING`)에서 온보딩을 제출하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`다.
 
@@ -860,6 +863,111 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `USER_ALREADY_WITHDRAWN` | 이미 `WITHDRAWN`된 사용자의 탈퇴 재요청 |
 | 404 | `USER_NOT_FOUND` | 사용자가 삭제되어 없음 |
+
+---
+
+### 11. GET `/api/v1/users/me/blocks` — 내 차단 목록
+
+본인이 차단한 사용자 목록을 조회한다. **차단 해제(§12)를 위한 조회 경로**로, 차단한 시각(`blockedAt`) 내림차순 **오프셋 페이지네이션**(api-design-guide §4-1)이다. 차단은 `user_blocks(blocker_id, blocked_user_id)` 한 행으로 표현하며 `user` 모듈이 소유한다.
+
+> **왜 사용자 단위 차단인가**: 차단 대상은 **예약이 아니라 사용자**다. 한 임대인은 **매물(`Listing.landlordId`)을 여러 개** 소유하고, 한 매물은 **방 상품(`Listing.roomOffers`)을 여러 개** 갖는다. 그래서 예약(방) 단위로 차단하면 상대는 **자기 다른 방 상품에 신청**하는 것만으로 새 예약 = 새 채팅방을 만들어 차단을 우회한다. 차단은 본질적으로 **사람**에 대한 것이라, 대상이 예약이면 상대가 방을 하나 더 가진 순간 무력해진다. 사용자 단위여야 상대의 모든 매물·방으로 효력이 미친다.
+> — 보조 근거(현행 사실): `V9__bookings.sql:2`는 예약 중복을 허용한다("MVP의 예약은 '신청' 성격이라 중복 방지 유니크 제약을 두지 않는다"). 그래서 지금은 **같은 방으로 재신청해도** 우회가 된다 — 우회 비용이 더 낮아질 뿐이다. 이 사실은 [#177](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/177)로 바뀔 수 있으며, **이 결정의 전제는 아니다**(위 구조적 근거는 중복 제한 여부와 무관하게 성립).
+> **왜 해제가 예약이 아니라 여기 있는가**: 차단하면 그 상대와의 예약이 내 목록에서 전부 사라져(아래 의미론) **`bookingId`를 다시 얻을 수 없다**. `bookingId`를 경로에 요구하는 해제 API는 성립하지 않으므로, 해제 경로는 예약과 무관한 `/users/me/blocks`여야 한다. 목록(§11)이 해제(§12)의 유일한 대상 공급원이다.
+> **왜 `is_active` 컬럼이 없는가**: **행의 존재가 곧 차단**이고 해제는 행 삭제다. 상태 플래그를 두면 "행은 있는데 차단이 아닌" 상태가 생겨 목록·필터 술어가 두 갈래로 갈린다.
+
+**차단 의미론**(생성은 §04, 효과는 두 방향이 다르다 — 반드시 구분한다):
+
+| 효과 | 방향 | 동작 |
+| --- | --- | --- |
+| 예약 목록·상세 숨김 | **단방향(차단자 기준)** | 내가 A를 차단하면 **A와의 모든 예약**이 내 목록·상세에서 사라진다(상세는 `404 BOOKING_NOT_FOUND`). **A의 목록은 그대로**라 A에게는 예약이 계속 보인다 |
+| 신규 예약 신청 | **양방향** | 어느 한쪽이라도 차단 관계면 `POST /api/v1/listings/{listingId}/bookings`가 `403 FORBIDDEN`이다. 단방향으로 두면 상대가 신청은 성공(`201`)하는데 내 목록엔 영영 보이지 않는 **블랙홀 예약**이 생긴다 |
+
+- **인증**: 필수. `ACTIVE` 사용자 전용(세입자·임대인 공통, 역할 `403` 없음).
+- Path 파라미터: 없음.
+
+> **차단 생성 경로는 여기에 없다** — 생성은 예약 문맥 전용 `POST /api/v1/bookings/{bookingId}/block`([04-booking-inquiry-chat](04-booking-inquiry-chat.md))뿐이고, **`userId`로 차단을 만드는 엔드포인트는 두지 않는다**. 차단 상대는 클라이언트가 보내지 않고 **서버가 예약에서 도출**(`요청자 == tenantId ? landlordId : tenantId`)하기 때문이다. 앱에는 임의의 사용자를 지목해 차단하는 화면 자체가 없다(차단은 예약으로 맺어진 상대에게만 성립).
+
+#### Query 파라미터
+
+| 이름 | 타입 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| `page` | int | 선택 | 0 | 0-base 페이지 번호 |
+| `size` | int | 선택 | 20 | 페이지 크기(최대 100). 범위 초과는 `INVALID_INPUT`(400) |
+
+> 정렬은 `blockedAt,desc` 고정(쿼리로 변경 불가). 상대 표시명(`name`)은 `user` 모듈 내부 조회로 채운다 — 노출은 확정이고 **마스킹 수준만 (확인 필요)**(아래 필드 표).
+
+#### 성공 Response — 200 OK
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "userId": 2048,
+        "name": "Kim Minsu",
+        "blockedAt": "2026-06-15T08:30:00Z"
+      }
+    ],
+    "page": {
+      "number": 0,
+      "size": 20,
+      "totalElements": 1,
+      "totalPages": 1,
+      "hasNext": false
+    }
+  },
+  "error": null
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `userId` | number | 차단한 상대의 사용자 ID. §12의 경로 변수로 그대로 쓴다 |
+| `name` | string | 차단한 상대의 표시명(세입자는 성·이름을 합친 값, 임대인은 `name`). 해제 UI(§12)가 대상을 식별해야 하므로 **노출한다** — 다만 타 사용자 정보(PII)라 **마스킹 수준은 (확인 필요)**(원문 그대로 vs 부분 마스킹) |
+| `blockedAt` | string(date-time) | 차단 시각(ISO-8601 UTC) |
+
+> 차단이 하나도 없으면 `content: []` + `page.totalElements: 0` + `page.hasNext: false`(에러 아님). 차단한 상대가 탈퇴(`WITHDRAWN`)해도 행은 남으므로 목록에 나타난다 — 표시명 익명화는 탈퇴 시 익명화 정책([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md))을 따른다.
+
+> **SecurityConfig 매처 주의**: 현행 `/api/v1/users/me` 매처(`SecurityConfig.java:61`)는 `**`가 아닌 **정확 경로**라 `/api/v1/users/me/blocks`·`/api/v1/users/me/blocks/*`를 **덮지 않는다**. 두 경로용 매처를 `hasRole("USER")`로 **명시 추가**해야 하며, 빠뜨리면 `anyRequest().authenticated()`로 떨어져 **온보딩 토큰(`ROLE_ONBOARDING`)이 그대로 통과**한다(`403 AUTH_ONBOARDING_REQUIRED`가 나가지 않는다). 같은 이유로 `DELETE /api/v1/users/me` 매처(`SecurityConfig.java:58`, 온보딩 토큰 허용 — 탈퇴)도 `/me/blocks/*`에는 적용되지 않는다.
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `page`/`size` 범위 위반(음수 `page`, `size` 1 미만·100 초과) |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(PENDING·TERMS_AGREED) 토큰으로 접근 |
+
+---
+
+### 12. DELETE `/api/v1/users/me/blocks/{userId}` — 차단 해제
+
+`{userId}`에 대한 내 차단을 해제한다. `user_blocks`에서 `(blocker_id=요청자, blocked_user_id={userId})` **행을 삭제**한다(`is_active` 플래그를 내리는 게 아니다 — §11 근거). 해제 즉시 그 상대와의 예약이 내 목록·상세에 다시 나타난다 — 단 내가 [04 §4](04-booking-inquiry-chat.md)로 **직접 삭제한 예약은 `*_deleted_at`이 남아 계속 숨겨진다**(차단과 삭제는 독립된 숨김 사유다). 신규 예약 신청은 **역방향 차단이 없을 때만** 다시 가능해진다 — 가드는 양방향이라 상대가 나를 차단한 행이 남아 있으면 여전히 `403 FORBIDDEN`이다(차단은 방향별로 별개 행이다 — §11 의미론).
+
+- **인증**: 필수. `ACTIVE` 사용자 전용(세입자·임대인 공통).
+
+#### Path 파라미터
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `userId` | number | 필수 | 해제할 상대의 사용자 ID. §11 목록의 `userId`를 그대로 쓴다 |
+
+- Request Body: 없음.
+
+#### 성공 Response — 204 No Content
+
+본문 없음. **멱등** — 차단한 적이 없거나 이미 해제한 `userId`로 호출해도 `404`가 아니라 `204`다(삭제할 행이 없으면 아무것도 하지 않는다). "차단 아님"이라는 목표 상태가 이미 성립하므로 재시도·중복 탭이 실패로 보이지 않게 한다.
+
+> 존재하지 않는 `userId`·탈퇴한 사용자에게도 `204`다 — 차단 여부는 **내 `user_blocks` 행의 유무**로만 판정하며, 상대 사용자의 실재 여부를 확인하지 않는다(확인하면 임의 `userId`를 넣어 계정 존재를 탐지할 수 있다). 같은 이유로 `USER_NOT_FOUND`(404)를 내지 않는다.
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `MALFORMED_REQUEST` | `userId`가 숫자가 아님(경로 변수 타입 불일치) |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(PENDING·TERMS_AGREED) 토큰으로 접근(§11의 SecurityConfig 매처 주의 참조) |
 
 ---
 
