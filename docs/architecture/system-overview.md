@@ -38,6 +38,7 @@ flowchart LR
       BIZNO["비즈노(Bizno) API<br/>(국세청 사업자등록 진위·상태 · 임대인 사업자번호 검증)"]
       SOLAPI["SOLAPI<br/>(임대인 연락처 SMS 인증번호)"]
       MAIL["Gmail SMTP<br/>(세입자 이메일 인증번호)"]
+      NAVER["네이버 지역 검색 API<br/>(매물 장소 키워드 검색 · listing places)"]
     end
 
     subgraph Cloud["AWS — 백엔드"]
@@ -59,6 +60,7 @@ flowchart LR
     SRV -- "사업자번호 검증(임대인 전용·온보딩 후 무상태)" --> BIZNO
     SRV -- "임대인 연락처 SMS 인증번호 발송" --> SOLAPI
     SRV -- "세입자 이메일 인증번호 발송(SMTP)" --> MAIL
+    SRV -- "장소 키워드 검색(네이버 지역검색)" --> NAVER
     SRV --> MYSQL
     SRV --> MONGO
     SRV --> REDIS
@@ -156,17 +158,17 @@ flowchart TB
       REDIS[("redis · :6379<br/>refresh token (TTL)")]
     end
 
-    EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS)"]
+    EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · 네이버(장소검색)"]
 
     DEV -- "REST /api/v1<br/>localhost:8080" --> APP
     CFG -. "DB 접속·시크릿 주입" .-> APP
     APP -- "JDBC  mysql:3306" --> MYSQL
     APP -- "mongo:27017" --> MONGO
     APP -- "redis:6379" --> REDIS
-    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS" .-> EXT
+    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·장소검색" .-> EXT
 ```
 
-> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)** 는 제3자 외부 실호출이다. 이메일 인증 메일은 **로컬은 MailHog**, dev/prod는 **Gmail SMTP**다. 콘텐츠 이미지(매물·생활팁·국기 등)는 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
+> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·네이버 지역검색(장소) 는 제3자 외부 실호출이다. 이메일 인증 메일은 **로컬은 MailHog**, dev/prod는 **Gmail SMTP**다. 콘텐츠 이미지(매물·생활팁·국기 등)는 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
 
 #### 1-3-2. prod 클라우드 배포 아키텍처 (운영 시 배포 예정, AWS)
 
@@ -195,7 +197,7 @@ AWS 배포 토폴로지 — GitHub Actions가 빌드한 **동일 이미지**가 
 ```mermaid
 flowchart TB
     APP["모바일 앱<br/>(iOS / Android · 클라이언트)"]
-    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일)"]
+    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색)"]
     DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
@@ -234,7 +236,7 @@ flowchart TB
     R53 --> IGW
     IGW --> ALB
     ALB --> FARGATE
-    FARGATE -- "outbound(ECR·OIDC·Apple·비즈노·SOLAPI·SMTP)" --> NAT
+    FARGATE -- "outbound(ECR·OIDC·Apple·비즈노·SOLAPI·SMTP·네이버)" --> NAT
     NAT -- "egress" --> IGW
     SSM -. "시크릿 주입(태스크 시작 시·task exec role)" .-> FARGATE
     FARGATE -- "JDBC :3306" --> RDS
@@ -244,14 +246,14 @@ flowchart TB
     CF -. "오리진" .-> S3IMG
     APP -. "이미지 GET(cdn.kohere.app)" .-> R53
     R53 -. "alias → CloudFront" .-> CF
-    FARGATE -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)" .-> EXT
+    FARGATE -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)·장소검색" .-> EXT
     CW -. "지표 감시(ALB·ECS·RDS·DocDB·Redis)" .-> FARGATE
     CW -- "알람 발동" --> SNS
     SNS -- "lambda 구독" --> LMBD
     LMBD -. "알람 임베드 POST(웹훅)" .-> DISCORD
 ```
 
-> 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·Gmail SMTP(메일)는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
+> 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·Gmail SMTP(메일)·네이버 지역검색(장소)는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
 
 #### 1-3-3. dev 배포 아키텍처 (비용 최소화 — 단일 EC2 compose)
 
@@ -275,7 +277,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     DEV["개발자 / 테스터"]
-    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일)"]
+    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색)"]
     DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
@@ -312,7 +314,7 @@ flowchart TB
     DEV -- "HTTPS 443" --> R53
     R53 --> IGW
     IGW -- "공인 IP(EIP)" --> CADDY
-    EC2 -- "egress(ECR·ACME·OIDC·비즈노·SOLAPI·SMTP)" --> IGW
+    EC2 -- "egress(ECR·ACME·OIDC·비즈노·SOLAPI·SMTP·네이버)" --> IGW
     CADDY -- "내부 :8080" --> APP
     APP --> MYSQL
     APP --> MONGO
@@ -324,7 +326,7 @@ flowchart TB
     DEV -. "이미지 GET(cdn.dev.kohere.app)" .-> R53
     R53 -. "alias → CloudFront" .-> CF
     APP -. "시크릿(.env, 부팅·배포 refresh)" .-> SSM
-    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)" .-> EXT
+    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)·장소검색" .-> EXT
 ```
 
 > dev는 클라우드 EC2 한 대에 각 서비스를 **컨테이너 박스**로 올린 구성이라 로컬↔dev 엔진이 일치한다(`SPRING_PROFILES_ACTIVE=dev`). MailHog는 로컬 전용이라 dev는 실 SMTP를 쓰고, HTTPS는 Caddy([ADR-0022](../adr/0022-dev-https-caddy.md))가, 시크릿은 SSM Parameter Store SecureString(무료·SM 미사용, [ADR-0023](../adr/0023-secrets-in-ssm-parameter-store.md))이 담당하며, **변경 반영은 배포(`refresh-env` + app recreate)** 경로로 한다([ADR-0024](../adr/0024-secret-change-propagation.md)). 단일 호스트 SPOF·인터넷 노출은 SG(80/443)·SSM 전용·IMDSv2·EBS 암호화로 통제하며 dev 단계에서 수용한다. 상태(state)는 prod·dev 공통 S3 + native lockfile([ADR-0020](../adr/0020-terraform-remote-state-s3-dynamodb.md)), `key`로 분리한다.
@@ -338,7 +340,7 @@ flowchart TB
 | application         | 유스케이스 조율, 트랜잭션 경계, 이벤트 발행                                                               | —                              | `@Service`, `@Transactional`                       |
 | domain              | Aggregate·VO·도메인 규칙,**Repository 인터페이스**                                                | —                              | POJO, enum                                             |
 | infrastructure      | **Repository 구현**, 외부 어댑터(OIDC)                                                              | 모듈별 저장소                   | Spring Data JPA / Data MongoDB / Data Redis            |
-| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본,**지도 bbox 마커 + 거리순** | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회                          |
+| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본,**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`)                          |
 | diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학(그룹, 6개)/지역선택·주거조건·월세 범위(min/max)·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 국가 기반 번역; ③ 대학은 6개 그룹 단일선택, ⑤ 월세는 NUMBER_RANGE 자유입력), 결과 생성, 추천 criteria 발행(③ 그룹→멤버 대학코드 집합, ⑤ monthlyRentMin/Max), **v2 서버 주도 흐름**(`POST /api/v2/diagnoses/start` + `POST /api/v2/diagnoses/next` + `GET /api/v2/diagnoses/{id}/recommendations` — 서버는 다음 질문·분기·확정 시점만 판단하고 시작·매물 조회 시점은 클라가 결정, ① 지역 0건이면 카탈로그의 `regionRetry` 문항을 일반 질문으로 내고 예=`RESTART`/아니오=`TERMINATED`, 확정은 매칭을 조회하지 않고 `diagnosisId`만 반환하며 0건은 추천 조회의 빈 목록으로 드러남(제안 없음), 진행 세션 `diagnosisFlowSessions` 별도 저장, issue #157·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
 | booking(매물 예약)  | 매물 예약(신청) 저장 + 내 예약 목록·상세 조회(독립). 조회 시 `listing`·`user` 공개 쿼리 실시간 조인. `BookingCreatedEvent` 발행은 (후속·이연) | (저장소 추후 결정)              | REST 조회 조인 / Application Events(후속)              |
 | chat(채팅)          | (후속·이연, 1차 MVP 제외) F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                      | (저장소 추후 결정)              | 이벤트 리스너                                          |
@@ -397,6 +399,7 @@ flowchart TB
 | 사업자등록번호 검증          | **비즈노(Bizno) API**(국세청 사업자등록정보 진위·상태 기반), 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터)                                                            | 도입   | **임대인 전용·온보딩 후 무상태 검증**(`POST /api/v1/auth/business/verify`, 정식 토큰 `ROLE_USER`·`ACTIVE`). 정상(계속) 사업자면 `verified:true` 응답(결과 미저장). 미등록/휴폐업/진위실패 **422**(`AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`), 외부 장애 **502**(공통 `UPSTREAM_ERROR` 재사용). 타임아웃·재시도 정책은 ADR-0033 |
 | 연락처 SMS 인증(임대인)      | **SOLAPI**(국내 SMS API SDK), 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터)                                                                                                | 도입   | 임대인 온보딩·프로필 연락처 변경 선행(`POST /api/v1/auth/phone/verification-code`·`/verify`). 인증번호 6자리·5분·재발송 60초(이메일과 통일), 발송 실패 **502**(`UPSTREAM_ERROR`). [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)                                                                              |
 | 이메일 인증(세입자)          | **Gmail SMTP**(dev/prod 실 SMTP · 로컬은 MailHog), 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터)                                                                       | 도입   | 세입자 온보딩 선행(`POST /api/v1/auth/email/verification-code`·`/verify`). 발송 실패 **502**(`UPSTREAM_ERROR`)                                                                                                                                                                                                              |
+| 장소 키워드 검색(매물)       | **네이버 지역 검색 API**(`/v1/search/local.json`), 아웃바운드 포트 `PlaceSearchClient`(인프라 어댑터 `NaverPlaceSearchClient`)                                                    | 도입   | listing 지도 검색창 키워드→장소 후보(`GET /api/v1/listings/places?keyword`, 정식 토큰·인증 필수). 최대 5개(`title`[`<b>` 유지]·`address`·`roadAddress`·`lng`·`lat`, 네이버 `mapx/mapy`→WGS84 변환), **무상태**(매물 미조회·미저장). 키워드 누락·공백·50자 초과 **400**(`INVALID_INPUT`), 네이버 4xx/5xx·타임아웃·인증정보 누락·응답/좌표 형식 이상 **502**(공통 `UPSTREAM_ERROR` 재사용). 설정 `app.naver.search`(`NaverSearchProperties`), 시크릿 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`(SSM SecureString) |
 | 임대인 연락                  | **F-03 매물 예약(신청) 저장 + 내 예약 조회**(booking 독립; 조회 시 `listing`·`user` 공개 쿼리 실시간 조인). 신청→인앱 채팅방 기록(booking→chat, `BookingCreatedEvent`)은 **후속·이연**                                                        | 도입(예약)   | 인앱 채팅 기록·실시간 WebSocket·푸시는 추후. booking 저장소 추후 결정                                                                                                                                                                                                                                                                            |
 | 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                                                                                                                              | 도입   | 콘텐츠 이미지 호스팅(매물·생활팁·국기 등, 키 프리픽스로 구분) — 클라이언트는`cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖                                                                                                                                                                    |
 | 푸시 알림(FCM/APNs)          | —                                                                                                                                                                                         | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                                                                                                                                                                                                                                |
