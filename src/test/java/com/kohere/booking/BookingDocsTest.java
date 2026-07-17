@@ -44,6 +44,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
@@ -57,6 +58,7 @@ import org.springframework.web.context.WebApplicationContext;
 @ExtendWith(RestDocumentationExtension.class)
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
+@Transactional // 동일 (tenant, roomOffer) 중복 방지 유니크 도입 후, 테스트 간 예약 누적을 롤백으로 격리
 class BookingDocsTest {
 
   private static final long TENANT_ID = 1L;
@@ -170,6 +172,24 @@ class BookingDocsTest {
                     field("data.contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
                     field("data.createdAt", JsonFieldType.STRING, "예약 일시(UTC)"),
                     errorNull())));
+  }
+
+  @Test
+  void createBooking_duplicate_conflict() throws Exception {
+    createBooking(); // 동일 (tenant, roomOffer) 첫 신청
+    given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
+    given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+
+    perform(
+        post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, tenantToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(createRequestJson(ROOM_OFFER_ID, "2030-01-01", 6)),
+        status().isConflict(),
+        "BOOKING_ALREADY_EXISTS",
+        "booking-create-duplicate",
+        "동일 세입자가 동일 방 상품에 재신청하면 409 BOOKING_ALREADY_EXISTS");
   }
 
   // ── §2 내 예약 목록 ───────────────────────────────────────────

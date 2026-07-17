@@ -4,13 +4,16 @@
 
 ## [1차 MVP] 매물 예약(신청)
 
-인앱 채팅과 분리된 독립 기능. 예약을 저장하고(US-4-1), 예약 조회 엔드포인트는 요청자 `userType`으로 분기해 세입자는 내 예약을(US-4-2), 임대인은 자기 소유 매물에 신청된 예약을(US-4-6) 목록·상세로 조회한다. US-4-2·US-4-6은 **같은 엔드포인트**(`GET /api/v1/bookings`·`/{bookingId}`)의 두 `userType` 분기다.
+인앱 채팅과 분리된 독립 기능. 예약을 저장하고(US-4-1), 예약 조회 엔드포인트는 요청자 `userType`으로 분기해 세입자는 내 예약을(US-4-2), 임대인은 자기 소유 매물에 신청된 예약을(US-4-6) 목록·상세로 조회한다. US-4-2·US-4-6은 **같은 엔드포인트**(`GET /api/v1/bookings`·`/{bookingId}`)의 두 `userType` 분기다. 여기에 예약 내역의 삭제(US-4-7)·상대 차단(US-4-8)·신고 접수(US-4-9)가 붙는다 — 삭제·차단은 **조회 경로의 필터**(US-4-2·US-4-6)로만 관측되고, 신고는 그 필터를 타지 않는다.
 
 | 스토리 | 제목 | 다이어그램 |
 | --- | --- | --- |
 | US-4-1 | 매물 예약 생성(신청 저장) | [us-4-1-booking-create](us-4-1-booking-create.md) |
 | US-4-2 | 내 예약 조회(목록·단건 상세, 세입자 분기) | [us-4-2-booking-retrieve](us-4-2-booking-retrieve.md) |
 | US-4-6 | 임대인 받은 신청 조회(내 매물, 임대인 분기) | [us-4-6-landlord-booking-retrieve](us-4-6-landlord-booking-retrieve.md) |
+| US-4-7 | 예약 내역 삭제(참여자별 숨김) | [us-4-7-booking-delete](us-4-7-booking-delete.md) |
+| US-4-8 | 예약 상대 차단(사용자 단위) | [us-4-8-booking-block](us-4-8-booking-block.md) |
+| US-4-9 | 예약 신고(접수) | [us-4-9-booking-report](us-4-9-booking-report.md) |
 
 ## [후속·이연] 문의 · 인앱 채팅
 
