@@ -626,11 +626,11 @@
 
 > 스토어: **MongoDB** (문서형·가변 스키마·언어-키 맵 임베드. [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 · [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). **1차 MVP 이후**(홈 부가 기능·읽기 전용). domain-model `LifeTipTopic`·`LifeTip`(US-8-1·US-8-2·US-8-3).
 >
-> 온보딩을 마친 세입자(외국인)가 한국 생활 정보를 **주제(topic)** 별로 조회하는 읽기 전용 큐레이션이다. 주제·팁은 운영이 시드로 적재하는 큐레이션 콘텐츠라 사용자 작성·수정·좋아요·신고가 없다(발행/구독 도메인 이벤트 없음). 표시 문자열(주제명·제목·내용)은 별도 메시지 컬렉션 없이 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하며, 진단 i18n(§4-4 `diagnosisQuestions`, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md)·US-2-6)과 **완전히 동일한 전략**을 재사용한다 — 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키(없으면 `en` 폴백, 에러 아님)로 문자열을 골라 조립하고, 식별자(`code`/`id`)·`imageUrl`은 언어 무관 불변이다. `Accept-Language`·토큰 클레임은 쓰지 않는다. 모듈 의존 `lifetip → {common, user}`(진단과 동일 근거 — [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 주제 : 팁 = **1 : N**.
+> 온보딩을 마친 세입자(외국인)가 한국 생활 정보를 **주제(topic)** 별로 조회하는 읽기 전용 큐레이션이다. 주제·팁은 운영이 시드로 적재하는 큐레이션 콘텐츠라 사용자 작성·수정·좋아요·신고가 없다(발행/구독 도메인 이벤트 없음). 표시 문자열(주제명·주제 짧은/긴 설명·팁 제목·내용)은 별도 메시지 컬렉션 없이 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하며, 진단 i18n(§4-4 `diagnosisQuestions`, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md)·US-2-6)과 **완전히 동일한 전략**을 재사용한다 — 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키(없으면 `en` 폴백, 에러 아님)로 문자열을 골라 조립하고, 식별자(`code`/`id`)·이미지 URL(주제 `imageUrl`·`backgroundImageUrl`, 팁 `imageUrl`)은 언어 무관 불변이다. `Accept-Language`·토큰 클레임은 쓰지 않는다. 모듈 의존 `lifetip → {common, user}`(진단과 동일 근거 — [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 주제 : 팁 = **1 : N**.
 
 #### 주제 카탈로그 — `lifeTipTopics`
 
-생활 팁을 묶는 **주제(topic)** 카탈로그다(US-8-1). 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE, `_id`)와 노출 순서(`order`)를 가지며, 표시명(`name`)은 **인라인 언어-키 맵**으로 임베드한다. `GET /api/v1/life-tips/topics`가 (이 카탈로그 + 사용자 언어 키)으로 노출 순서대로 전체 배열을 조립해 내려준다(고정·소규모라 비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). `_id`(주제 코드)는 US-8-2에서 특정 주제의 팁을 지정하는 path 키(`{topicCode}`)로 쓰인다. 시드/마이그레이션으로 적재, 운영 중 갱신 가능.
+생활 팁을 묶는 **주제(topic)** 카탈로그다(US-8-1). 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE, `_id`)와 노출 순서(`order`)를 가지며, 표시명(`name`)·짧은 설명(`shortDescription`)·긴 설명(`longDescription`)은 **인라인 언어-키 맵**으로 임베드하고, 홈 카드 이미지(`imageUrl`)·상세 상단 배경 이미지(`backgroundImageUrl`)는 언어 무관 절대 CDN URL로 둔다. 홈 화면 주제 카드는 `imageUrl`+`shortDescription`으로, 주제 상세 상단은 `backgroundImageUrl`+`longDescription`으로 그린다 — 앱이 목록에서 받은 주제 객체를 상세 화면까지 들고 가므로 이 6필드(`code`·`name`·`shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`)를 **한 응답에 함께 싣는다**(주제는 5건 고정·소규모라 과다 전송 부담이 없다). `GET /api/v1/life-tips/topics`가 (이 카탈로그 + 사용자 언어 키)으로 노출 순서대로 전체 배열을 조립해 내려준다(고정·소규모라 비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). `_id`(주제 코드)는 US-8-2에서 특정 주제의 팁을 지정하는 path 키(`{topicCode}`)로 쓰인다. 시드/마이그레이션으로 적재, 운영 중 갱신 가능.
 
 `lifeTipTopics`
 
@@ -638,19 +638,38 @@
 | --- | --- | --- |
 | `_id` | string | PK · 주제 코드(UPPER_SNAKE, 언어 무관 불변 식별자, 예 `MOVING_IN`·`ADMINISTRATION`·`TRANSPORT`·`FINANCE`·`HOUSING`) · `GET /topics/{topicCode}/tips` path 키 |
 | `name` | object | NOT NULL · 주제 표시명(번역 대상)의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 사용자 언어 키 선택, 없으면 `en` 폴백 |
+| `shortDescription` | object | NOT NULL · 주제 짧은 설명(홈 카드용, 번역 대상)의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 사용자 언어 키 선택, 없으면 `en` 폴백 |
+| `longDescription` | object | NOT NULL · 주제 긴 설명(상세 상단용, 번역 대상)의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 사용자 언어 키 선택, 없으면 `en` 폴백 |
+| `imageUrl` | string | NOT NULL · 홈 카드 이미지 URL(`LifeTipTopic.imageUrl`) · 언어 무관 불변 절대 CDN URL · 팁 사진 `LifeTip.imageUrl`(nullable)과는 다른 리소스 |
+| `backgroundImageUrl` | string | NOT NULL · 주제 상세 상단 배경 이미지 URL · 언어 무관 불변 절대 CDN URL |
 | `order` | int | NOT NULL · 노출 순서(오름차순) |
 
 **인덱스**: PK `_id` / INDEX `{ order: 1 }`(노출 순서 정렬 조회).
 
-- **번역**: 표시 문자열은 도큐먼트 내부 `name`의 **인라인 언어-키 맵**(`{ lang → message }`)에 임베드한다 — 서버가 `getLanguage(userId)`로 취득한 표시 언어 키를 골라 조립하고, 해당 키가 없으면 `en` 폴백(에러 아님, `Accept-Language` 비의존). 등록 국가→언어 매핑은 `user`의 `countries.lang`이 보유하며 교차 모듈 **값 참조**(no-FK). `_id`(주제 코드)는 언어와 무관하게 동일하다.
+- **번역**: 표시 문자열은 도큐먼트 내부 `name`·`shortDescription`·`longDescription`의 **인라인 언어-키 맵**(`{ lang → message }`)에 임베드한다 — 서버가 `getLanguage(userId)`로 취득한 표시 언어 키를 골라 조립하고, 해당 키가 없으면 `en` 폴백(에러 아님, `Accept-Language` 비의존). 등록 국가→언어 매핑은 `user`의 `countries.lang`이 보유하며 교차 모듈 **값 참조**(no-FK). `_id`(주제 코드)와 이미지 URL(`imageUrl`·`backgroundImageUrl`, 절대 CDN URL)은 언어와 무관하게 동일하다 — 언어 키 선택을 거치지 않는다.
 - **비페이지**: 주제 수는 고정·소규모라 페이지네이션 없이 `order` 오름차순 전체 배열을 한 번에 반환한다(페이지 객체 없음).
+- **필수(NOT NULL)**: 주제의 `shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`은 모두 필수다 — 홈 카드와 상세 상단이 항상 이미지·설명을 그리므로 "이미지 없는 주제" 경계 케이스를 두지 않는다(사진이 없을 수 있어 nullable인 팁 사진 `LifeTip.imageUrl`과 대비된다).
+- **인덱스 불변**: 신설 4필드는 조회 필터·정렬 키가 아니라 인덱스를 추가하지 않는다 — `{ order: 1 }`(노출 순서 정렬) 인덱스만 그대로 유지한다.
+- **마이그레이션(2단)**: 신설 4필드는 두 갈래로 적재해 모든 환경을 수렴시킨다 — (a) **신규 환경**: baseline 시드 `@ChangeUnit(id="lifetip-catalog-seed", order="0000")`가 처음부터 4필드를 **예시 기본값**(모든 주제 공통)으로 포함해 주제를 적재한다. (b) **기배포(dev/prod)**: 이미 order 0000을 실행해 changelog에 기록한 환경은 Mongock이 **같은 id의 changeUnit을 재실행하지 않고 건너뛰므로** 0000 시드 본문만 고쳐서는 4필드가 채워지지 않는다 → 신규 백필 `@ChangeUnit(id="lifetip-topic-media-and-descriptions", order="0001")`이 **주제 코드로 찾지 않고** 컬렉션 **전체를 `updateMulti`**로 갱신해 모든 주제에 예시 기본값 4필드를 채운다 — 배포 환경의 실제 주제 `code`가 시드의 예시 코드와 다를 수 있어 코드 매칭을 쓰지 않는다(신규 환경은 0000이 이미 같은 값을 넣었고 재-set 하므로 멱등). 4필드의 실제 이미지·설명은 **운영이 DB에서 갱신**한다(예시 기본값은 계약 형태를 만족시키는 자리표시자). (a)만 하면 기배포 환경은 4필드가 없어 위 NOT NULL 계약이 깨진다. 변경 관리 러너·order 순서 규약은 진단 카탈로그(§4-4)와 동일하다([ADR-0032](../adr/0032-mongodb-migration-runner.md) · [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)). 팁 카탈로그(`lifeTips`)는 변경하지 않는다.
 
 **예시 도큐먼트** (`lifeTipTopics`)
 
 ```json
 {
   "_id": "MOVING_IN",
-  "name": { "en": "Moving In", "ja": "入居", "ko": "입주" },
+  "name": { "en": "Moving In", "ja": "入居・引っ越し", "ko": "입주·이사" },
+  "shortDescription": {
+    "en": "Registration, utilities, and the first steps after you move in.",
+    "ja": "転入届や公共料金など、入居後にまず必要な手続き。",
+    "ko": "전입신고·공과금 등 입주 후 가장 먼저 필요한 절차."
+  },
+  "longDescription": {
+    "en": "Everything you need to settle in after moving into your new home in Korea — resident registration, setting up electricity, water, and gas, and other first tasks.",
+    "ja": "転入届や電気・水道・ガスの開通など、韓国での新生活を始めるために入居後に必要な手続きをまとめました。",
+    "ko": "전입신고, 전기·수도·가스 개통 등 한국에서 새 보금자리에 정착하기 위해 입주 후 처리해야 할 일들을 모았습니다."
+  },
+  "imageUrl": "https://cdn.kohere.app/life-tips/topics/moving-in/card.png",
+  "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/moving-in/background.png",
   "order": 1
 }
 ```
