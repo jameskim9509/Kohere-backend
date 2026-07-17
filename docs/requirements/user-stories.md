@@ -17,7 +17,7 @@
 - 5. 커뮤니티 (게시판 · 동네친구) — [API 스펙](../api/specs/05-community.md)
 - 6. 게이미피케이션 (퀴즈) — [API 스펙](../api/specs/06-gamification.md)
 - 7. 신고 처리 — [API 스펙](../api/specs/07-reports.md)
-- 8. 생활 팁 (주제별 생활 정보) — [API 스펙](../api/specs/08-life-tips.md) *(스펙 작성 예정 · 이슈 #79)*
+- 8. 생활 팁 (주제별 생활 정보) — [API 스펙](../api/specs/08-life-tips.md)
 
 ---
 
@@ -837,33 +837,43 @@
   When 검색을 호출하면
   Then 결과 수가 상한을 초과하는 경우 `400 Bad Request`, `error.code=LISTING_AREA_TOO_LARGE`로 범위 축소를 유도한다
 
-### US-3-3 — 키워드 검색(학교명·지역명·지하철역명)
+### US-3-3 — 네이버 장소 검색 및 주변 매물 조회
 
-**As a** 다닐 학교·동네·역 이름만 아는 외국인 사용자
-**I want** 키워드 하나로 학교명/지역명/지하철역명을 검색해 해당 위치 주변 매물을 받기
-**So that** 좌표를 몰라도 익숙한 장소 이름으로 매물을 찾을 수 있다
+**As a** 학교·동네·시설 이름만 아는 외국인 사용자
+**I want** 키워드로 장소 후보를 검색하고 원하는 장소를 선택해 주변 매물을 조회하기
+**So that** 정확한 주소나 좌표를 몰라도 익숙한 장소 이름을 기준으로 집을 찾을 수 있다
 
-- 메타: 우선순위 **Mid**, 관련 NFR — 검색 인덱싱/오타 허용 범위(NFR 미정)
-- 데이터 관점: `keyword`는 학교/지역/역 사전(POI)에 매칭해 좌표로 변환 후 매물 조회, 매칭 0건과 매칭은 됐으나 주변 매물 0건을 구분(`matchedPlace`로 표현)
+- 메타: 우선순위 **Mid**, 관련 NFR — 네이버 지역 검색 API 응답시간·가용성, 외부 API 인증정보 보호
+- 데이터 관점: `GET /api/v1/listings/places`는 네이버 장소 후보만 최대 5개 반환하고 MongoDB 매물은 조회하지 않는다. 백엔드는 `mapx/mapy`를 WGS84 `lng/lat`으로 변환하며, 사용자가 후보를 선택한 뒤 앱이 계산한 bounds로 기존 `/api/v1/listings`와 `/api/v1/listings/map`을 호출한다.
 
 **AC (Given / When / Then)**
 
-- 시나리오: 정상 키워드 검색
-  Given "연세대학교"가 POI 사전에 존재하고
-  When `GET /api/v1/listings/search?keyword=연세대학교&page=0&size=20`을 호출하면
-  Then `200 OK`로 매칭된 위치 정보(`data.matchedPlace`)와 주변 매물 목록(`data.content[]`, 오프셋 페이지)을 반환한다
+- 시나리오: 정상 장소 후보 검색
+  Given 유효한 access token을 가진 사용자가 "경희대"를 입력하고
+  When `GET /api/v1/listings/places?keyword=경희대`를 Bearer access token과 함께 호출하면
+  Then `200 OK`로 `data.items[]`에 `title`·`address`·`roadAddress`·`lat`·`lng`를 포함한 장소 후보를 최대 5개 반환한다
+- 시나리오: 장소 선택 후 주변 매물 조회
+  Given 사용자가 장소 후보 하나를 선택해 앱이 해당 `lat/lng`로 지도를 이동하고 현재 bounds를 계산하면
+  When 같은 `swLat`·`swLng`·`neLat`·`neLng`를 `/api/v1/listings`와 `/api/v1/listings/map`에 전달하면
+  Then 매물 목록(`data.content[]`)과 지도 마커(`data.markers[]`)를 각각 `200 OK`로 반환한다
 - 시나리오: 입력 검증 실패(빈/과도 키워드)
   Given 클라이언트가
-  When `keyword`를 누락하거나 공백만, 또는 허용 길이(1~50자)를 벗어나게 보내면
+  When `keyword`를 누락하거나 공백만, 또는 50자를 초과해 보내면
   Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다
-- 시나리오: 매칭 없음(경계)
-  Given POI 사전에 없는 키워드가 주어지면
-  When 검색을 호출하면
-  Then `200 OK`로 `data.matchedPlace=null`이며 `data.content`는 빈 배열을 반환한다(404 아님)
-- 시나리오: 인증 선택
-  Given 비로그인 사용자가
-  When 키워드 검색을 호출하면
-  Then `200 OK`로 정상 조회되며 각 항목 `favorited=false`로 내려간다
+- 시나리오: 장소 후보 없음(경계)
+  Given 네이버 지역 검색 결과가 없는 키워드가 주어지고
+  When 장소 검색 API를 호출하면
+  Then 에러가 아닌 `200 OK`로 `data.items=[]`를 반환한다
+- 시나리오: 인증 실패
+  Given access token이 누락·위조 또는 만료되었고
+  When 장소 검색 API를 호출하면
+  Then 누락·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`를 반환한다
+- 시나리오: 네이버 연동 실패
+  Given 네이버 API가 4xx/5xx를 반환하거나 타임아웃·인증정보 누락·응답 형식 이상이 발생하고
+  When 장소 검색 API를 호출하면
+  Then `502 Bad Gateway`, `error.code=UPSTREAM_ERROR`를 반환한다
+
+> 기존 `GET /api/v1/listings/search`는 호환성을 위해 유지하지만, 본 사용자 스토리의 신규 지도 검색 흐름에서는 사용하지 않는다.
 
 ### US-3-4 — 매물 상세 조회 + 최근 본 매물 기록
 
@@ -1309,7 +1319,7 @@
 
 > 관련 API 스펙: [06-gamification](../api/specs/06-gamification.md)
 
-외국인 세입자(임차인)가 한국 주거 관련 지식을 **요청할 때마다 무작위로 제공되는 4지선다 퀴즈**로 반복 학습하는 기능이다. 사용자는 문항·보기를 조회하고, 고른 보기를 제출하면 서버가 저장된 정답과 대조해 **정답 여부**를 즉시 돌려준다 — 정답이면 정답 안내만, 오답이면 **정답 보기와 해설(오답 사유)** 을 함께 반환한다. 정답 판정은 전적으로 서버가 수행하며(클라이언트 응답값 신뢰 금지), 채점은 **무상태(stateless)** 다 — 제출 기록·포인트 적립·하루 1회 제한·`(userId, quizDate)` 유니크 제약이 없고, 사용자는 횟수 제한 없이 반복해 풀 수 있다.
+외국인 세입자(임차인)가 한국 주거 관련 지식을 **요청할 때마다 무작위로 제공되는 4지선다 퀴즈**로 반복 학습하는 기능이다. 사용자는 문항·보기를 조회하고, 고른 보기를 제출하면 서버가 저장된 정답과 대조해 **정답 여부**를 즉시 돌려준다 — 정답·오답 모두 **해설**을 함께 반환하고, 오답이면 **정답 보기**를 추가로 반환한다. 정답 판정은 전적으로 서버가 수행하며(클라이언트 응답값 신뢰 금지), 채점은 **무상태(stateless)** 다 — 제출 기록·포인트 적립·하루 1회 제한·`(userId, quizDate)` 유니크 제약이 없고, 사용자는 횟수 제한 없이 반복해 풀 수 있다.
 
 > **범위 변경(이전 모델 대체)**: 이전 범위의 "오늘의 퀴즈(하루 1개)"·포인트 적립(`QUIZ_CORRECT`)·`/points` 합계·내역 조회 모델은 본 범위에서 **랜덤·무상태·다국어 학습 퀴즈로 대체**된다. 따라서 포인트 관련 스토리·엔드포인트는 제외되고, `QUIZ_NOT_TODAY`·`QUIZ_ALREADY_SUBMITTED` 도메인 에러는 발생하지 않는다. 이 대체 모델은 API 스펙([06-gamification](../api/specs/06-gamification.md))·시퀀스 다이어그램(`sequence-diagrams/06-gamification/`)·도메인 모델·DB 설계·[ADR-0035](../adr/0035-gamification-quiz-random-stateless-catalog.md)에 반영 완료됐다("한 도메인 = 네 곳" 정합, [CLAUDE.md](../../CLAUDE.md)). 남은 후속은 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`) 재구현이다.
 >
@@ -1357,24 +1367,24 @@
 ### US-6-2 — 퀴즈 정답 제출 및 즉시 피드백
 
 **As a** 로그인한 외국인 세입자(온보딩 완료, `ACTIVE`·`userType=TENANT`)
-**I want** 내가 고른 보기(A~D)를 제출해 서버가 채점한 정답 여부를 즉시 받고, 오답이면 정답 보기와 해설(오답 사유)을 함께 받기
+**I want** 내가 고른 보기(A~D)를 제출해 서버가 채점한 정답 여부와 해설을 즉시 받고, 오답이면 정답 보기도 함께 받기
 **So that** 바로 학습 피드백을 얻는다 (정답 판정은 서버가 저장된 정답과 대조해 수행하며 클라가 보낸 정답 여부는 신뢰하지 않는다; 제출 기록·포인트 적립을 남기지 않는 무상태 채점이다)
 
 - 우선순위: High
-- 관련 NFR: 보안(정답 서버 판정, 정답·해설은 채점 응답에서만 공개), 국제화(정답 해설도 사용자 언어로 번역, 영어 폴백), 신뢰성(무상태 채점 — 반복 호출에도 부작용 없음)
+- 관련 NFR: 보안(정답 서버 판정, 정답 보기·해설은 채점 응답에서만 공개), 국제화(해설은 정답·오답 모두 사용자 언어로 번역, 영어 폴백), 신뢰성(무상태 채점 — 반복 호출에도 부작용 없음)
 
 **AC (Given/When/Then)**
 
-- 시나리오: 정상 채점 — 정답
+- 시나리오: 정상 채점 — 정답 (해설 반환)
 
   - Given `ACTIVE` 세입자(`userType=TENANT`)가 조회한 퀴즈에서 정답 보기를 골랐다
   - When `POST /api/v1/quizzes/{quizId}/answer`에 `{ "selectedChoice": "B" }`를 보낸다
-  - Then `200 OK` 와 함께 `correct=true`(정답 안내)를 받고, 적립·기록 등 부작용이 없다 (정답 시 해설 동반 여부는 정책 — 현재 미노출, 확인 필요)
+  - Then `200 OK` 와 함께 `correct=true`와 `explanation`(해설, 사용자 언어로 번역)을 받고, `correctChoice`는 포함되지 않으며 적립·기록 등 부작용이 없다
 - 시나리오: 정상 채점 — 오답 (정답 보기·해설 반환)
 
   - Given `ACTIVE` 세입자(`userType=TENANT`)가 오답 보기를 골랐다
   - When `POST /api/v1/quizzes/{quizId}/answer`에 `{ "selectedChoice": "A" }`를 보낸다
-  - Then `200 OK` 와 함께 `correct=false`, `correctChoice`(정답 보기 키), `explanation`(오답 사유·해설, 사용자 언어로 번역)을 받고, 부작용이 없다
+  - Then `200 OK` 와 함께 `correct=false`, `correctChoice`(정답 보기 키), `explanation`(해설, 사용자 언어로 번역)을 받고, 부작용이 없다
 - 시나리오: 입력 검증 실패 — 허용되지 않은 보기 값
 
   - Given 세입자가 `selectedChoice`에 `E`(또는 빈 값/누락)를 보낸다
@@ -1404,7 +1414,7 @@
 ### US-6-3 — 사용자 표시 언어 기반 퀴즈 문항·해설 번역 제공
 
 **As a** 한국어가 익숙하지 않은 외국인 세입자(`ACTIVE`·`userType=TENANT`)
-**I want** 퀴즈 문항·보기·해설(오답 사유)을 내 표시 언어에 맞게 번역된 텍스트로 받기
+**I want** 퀴즈 문항·보기·해설을 내 표시 언어에 맞게 번역된 텍스트로 받기
 **So that** 모국어 또는 영어로 문제를 이해하고 정확히 답할 수 있다 (번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이며 `user` 공개 query `getLanguage`로 취득([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 미지원 언어는 영어로 폴백, 보기 키 A~D는 언어와 무관하게 불변)
 
 - 우선순위: High
@@ -1422,11 +1432,11 @@
   - Given 번역이 준비되지 않은 국가/언어의 세입자다
   - When 퀴즈를 조회하거나 채점을 요청한다
   - Then 기본 언어(영어)로 폴백해 반환한다(에러 아님)
-- 시나리오: 오답 해설도 번역 제공
+- 시나리오: 채점 해설도 번역 제공 (정답·오답 공통)
 
-  - Given 표시 언어가 `ja`인 세입자가 오답을 제출한다
+  - Given 표시 언어가 `ja`인 세입자가 정답 또는 오답을 제출한다
   - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
-  - Then `correctChoice`와 함께 `explanation`(오답 사유·해설)이 사용자 언어로 번역되어 반환된다
+  - Then 정답·오답 모두 `explanation`(해설)이 사용자 언어로 번역되어 반환되고(번역이 없으면 영어 폴백), 오답이면 `correctChoice`가 함께 반환된다
 - 시나리오: 키 불변 — 번역과 무관한 채점
 
   - Given 번역된 라벨로 표시된 보기를 골라 그 키(A~D)로 제출한다
@@ -1591,11 +1601,11 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 
 ## 8. 생활 팁 (주제별 생활 정보)
 
-> 관련 API 스펙: [08-life-tips](../api/specs/08-life-tips.md) *(작성 예정 · 이슈 #79)*
+> 관련 API 스펙: [08-life-tips](../api/specs/08-life-tips.md)
 
 온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 읽기 전용 큐레이션 기능이다. 홈 화면 진입점([project-brief §4](../project/project-brief.md))에서 시작하며, 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(5절)와 구분된다).
 
-**번역이 이 기능의 바탕이다** — 주제명·제목·내용 표시 텍스트는 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한 언어로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 사진 `imageUrl`은 언어 무관 불변이고, 표시 텍스트만 언어별이다.
+**번역이 이 기능의 바탕이다** — 주제명·주제 설명(짧은·긴)·제목·내용 표시 텍스트는 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한 언어로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 이미지 URL(주제의 카드 이미지 `LifeTipTopic.imageUrl`·배경 이미지 `backgroundImageUrl`, 팁의 사진 `LifeTip.imageUrl`)은 언어 무관 불변이고, 표시 텍스트(주제명·주제 설명·제목·내용)만 언어별이다.
 
 > **인증·상태 게이트 기준**: 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자**이고, 모든 조회는 **정식 인증(ROLE_USER)** 을 요구한다. **한국 생활 정보가 필요한 외국인 세입자를 위한 기능이라 임대인은 대상이 아니며**, 온보딩 미완료 사용자는 표시 언어를 정할 프로필 자체가 확정되지 않아 대상이 아니다 — 임대인도 `country`·`lang`(`'KR'`/`'ko'` 고정)을 갖게 되었으므로([ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) "임대인은 등록 국가가 없어서"가 아니라 **대상 액터 정의**가 게이트의 근거다. 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트). 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
 >
@@ -1606,12 +1616,12 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 ### US-8-1 — 생활 팁 주제 목록 조회
 
 **As a** 온보딩을 마친(ACTIVE) 세입자(외국인) 사용자
-**I want** 생활 팁이 어떤 주제로 나뉘어 있는지 주제 목록을 내 언어로 조회하고
-**So that** 관심 있는 주제를 골라 관련 생활 정보를 찾아 들어갈 수 있다
+**I want** 생활 팁이 어떤 주제로 나뉘어 있는지 주제 목록을 내 언어로 조회하되, 각 주제의 이름·짧은 설명·긴 설명과 카드 이미지·배경 이미지까지 한 응답에 함께 받고
+**So that** 홈 화면에서 주제 카드(이미지 + 짧은 설명)를 훑어보고, 관심 있는 주제를 골라 상세 상단(배경 이미지 + 긴 설명)과 관련 생활 정보로 들어갈 수 있다
 
 - **우선순위**: Mid (홈 진입 콘텐츠, 보호 핵심(진단·추천) 아님)
 - **관련 NFR**: 국제화(i18n — `users.lang`이 있으면 그 값, 없으면 `en` 폴백), 성능(소규모 고정 카탈로그 조회), 유지보수성(주제 카탈로그 단일 출처)
-- **백엔드 관점**: 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그다. 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며, 표시명(`name`)은 언어-키 맵으로 임베드된다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`을 채워 노출 순서대로 반환한다. 주제 수는 고정·소규모라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 메타 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). `code`는 US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다.
+- **백엔드 관점**: 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그다. 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며, 표시명(`name`)·짧은 설명(`shortDescription`)·긴 설명(`longDescription`)은 언어-키 맵으로 임베드되고, 카드 이미지(`LifeTipTopic.imageUrl`)·배경 이미지(`backgroundImageUrl`)는 언어 무관 절대 CDN URL이다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`·`shortDescription`·`longDescription`을 채우며 두 이미지 URL은 그대로 실어, 노출 순서대로 주제당 6필드(`code`·`name`·`shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`)를 한 응답에 반환한다. 설명 2종·이미지 2종은 **모두 필수(값 없는 주제 없음)** 라 홈 카드·상세 상단이 항상 이미지·설명을 그린다(팁의 `LifeTip.imageUrl`은 '사진 없는 팁'이 있어 nullable이지만 주제의 이 4필드는 이와 구분된다). `order` 자체는 응답에 노출하지 않는다. 주제 수는 고정·소규모라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 메타 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). 앱은 목록에서 받은 주제 객체를 상세 화면까지 그대로 들고 가므로(주제는 소규모 고정, 과다 전송 부담 없음) 6필드가 이 한 응답에 함께 실린다. `code`는 US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다.
 
 **AC (Given / When / Then)**
 
@@ -1619,12 +1629,22 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 
   - **Given** 표시 언어가 일본어(`ja`)인 ACTIVE 세입자가 유효한 access token(ROLE_USER)을 보유한다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
-  - **Then** `200 OK`와 함께 `topics[]`(각 `code`(UPPER_SNAKE), 노출 순서대로의 `name` — 일본어로 번역된 표시명)를 공통 래퍼로 반환하며, 페이지 객체 없이 전체 배열을 한 번에 준다
+  - **Then** `200 OK`와 함께 `topics[]`를 공통 래퍼로 반환한다 — 각 주제에 `code`(UPPER_SNAKE), 일본어로 번역된 `name`·`shortDescription`·`longDescription`, 언어 무관 절대 CDN URL `imageUrl`·`backgroundImageUrl`가 실려 **6필드가 한 응답에 함께** 담기며, `order` 오름차순 노출 순서대로·페이지 객체 없이 전체 배열을 한 번에 준다
+- 시나리오: 화면 구성 — 홈 카드·상세 상단
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 위 주제 목록을 받았다
+  - **When** 홈 화면에서 주제 카드를 그리고, 한 주제를 골라 주제 상세 화면으로 들어간다
+  - **Then** 홈 카드는 목록에서 받은 `imageUrl`(카드 이미지)과 `shortDescription`(짧은 설명)으로, 주제 상세 상단은 같은 주제 객체의 `backgroundImageUrl`(배경 이미지)과 `longDescription`(긴 설명)으로 구성된다(앱이 목록 응답의 주제 객체를 상세 화면까지 그대로 들고 가 추가 조회가 없다)
+- 시나리오: 필수 — 값 없는 주제 없음
+
+  - **Given** 주제 카탈로그의 모든 주제가 4개 신규 필드를 갖춰 적재되어 있다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** 반환된 모든 주제에서 `shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`이 값으로 채워져 온다(4필드 모두 필수 — '이미지·설명 없는 주제' 경계 케이스는 존재하지 않는다. 팁의 `LifeTip.imageUrl`이 nullable인 것과 구분된다)
 - 시나리오: 폴백 — 미지원 언어
 
   - **Given** 번역이 준비되지 않은 국가/언어의 ACTIVE 세입자다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
-  - **Then** 주제 표시명이 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님), `code`는 언어와 무관하게 동일하다
+  - **Then** 주제 표시명(`name`)과 짧은/긴 설명(`shortDescription`·`longDescription`)이 모두 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님, US-8-3과 동일 전략), `code`와 이미지 2종(`imageUrl`·`backgroundImageUrl`)은 언어와 무관하게 동일하다
 - 시나리오: 상태 게이트 — 온보딩 미완료
 
   - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다

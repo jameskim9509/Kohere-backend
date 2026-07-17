@@ -1,4 +1,4 @@
-# US-2-5 · US-2-6 — 진단 문항·선택지 단계별 server-driven 제공 + 국가 기반 번역
+# US-2-5 · US-2-6 — 진단 문항·선택지 단계별 server-driven 제공 + 표시 언어 기반 번역
 
 > 모듈: 맞춤 진단 & 매물 추천 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/02-diagnosis-recommendation.md)
 
