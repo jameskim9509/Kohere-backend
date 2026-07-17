@@ -579,7 +579,7 @@
 
 #### 학습 퀴즈 카탈로그 — `quizzes`
 
-외국인 세입자(`userType=TENANT`·`status=ACTIVE`) 전용 학습 퀴즈의 문항·선택지·정답·오답 사유를 영속하는 카탈로그 컬렉션이다(US-6-1·US-6-2·US-6-3). 매 요청은 활성 문항 중 **무작위 4지선다** 1개를 서빙하고, 사용자가 보기를 클릭하면 서버가 채점한다 — **무제한 반복·무상태 채점**(제출·포인트 비영속, 멱등·재플레이). 표시 문자열(번역)은 별도 컬렉션 없이 도큐먼트 내부 `question`·`choices[].text`·`explanation`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 시드/마이그레이션으로 적재, 운영 중 `active`로 가변.
+외국인 세입자(`userType=TENANT`·`status=ACTIVE`) 전용 학습 퀴즈의 문항·선택지·정답·해설(오답 사유)을 영속하는 카탈로그 컬렉션이다(US-6-1·US-6-2·US-6-3). 매 요청은 활성 문항 중 **무작위 4지선다** 1개를 서빙하고, 사용자가 보기를 클릭하면 서버가 채점한다 — **무제한 반복·무상태 채점**(제출·포인트 비영속, 멱등·재플레이). 표시 문자열(번역)은 별도 컬렉션 없이 도큐먼트 내부 `question`·`choices[].text`·`explanation`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 시드/마이그레이션으로 적재, 운영 중 `active`로 가변.
 
 `quizzes`
 
@@ -589,15 +589,15 @@
 | `question` | object | NOT NULL · 문항 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 `getLanguage` 표시 언어 키 선택, 없으면 `en` 폴백 |
 | `choices` | object[] | NOT NULL · 선택지 배열 · 각 항목은 `key`(`A`\|`B`\|`C`\|`D`, 언어 불변·채점 키)와 `text`(표시 문자열의 **인라인 언어-키 맵**)를 보유 |
 | `correctChoice` | string | NOT NULL · enum `ChoiceKey`(`A`~`D`) · 서버 채점용 · `GET /quizzes/random` 비노출 |
-| `explanation` | object | NOT NULL · 오답 사유 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 오답 시 노출 |
+| `explanation` | object | NOT NULL · 오답 사유·해설 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 채점 응답에 노출(정답·오답 모두) |
 | `active` | bool | NOT NULL DEFAULT true · 비활성 문항은 랜덤 풀에서 제외 |
 
 **인덱스**: PK `_id` / INDEX `(active)`(활성 문항 랜덤 풀 선택).
 
-- **무상태 채점**: 제출·포인트를 영속하지 않는다(멱등·재플레이 가능). `GET /api/v1/quizzes/random`이 활성 문서 1개를 무작위로 골라 `{ quizId, question, choices:[{key,text}] }`(번역)로 내려주고(`correctChoice`·`explanation` 비노출), `POST /api/v1/quizzes/{quizId}/answer`가 `selectedChoice`를 저장된 `correctChoice`와 대조해 채점한다 — 정답 `{ correct:true }`, 오답 `{ correct:false, correctChoice, explanation }`(오답 사유 번역). 제출 기록·포인트·`201 Created`/`Location` 없음.
+- **무상태 채점**: 제출·포인트를 영속하지 않는다(멱등·재플레이 가능). `GET /api/v1/quizzes/random`이 활성 문서 1개를 무작위로 골라 `{ quizId, question, choices:[{key,text}] }`(번역)로 내려주고(`correctChoice`·`explanation` 비노출), `POST /api/v1/quizzes/{quizId}/answer`가 `selectedChoice`를 저장된 `correctChoice`와 대조해 채점한다 — 정답 `{ correct:true, explanation }`, 오답 `{ correct:false, correctChoice, explanation }`(해설 번역). 제출 기록·포인트·`201 Created`/`Location` 없음.
 - **교차 모듈 no-FK**: 표시 언어는 **user 모듈 공개 query(`getLanguage(userId)`)로 취득**하고 `user`가 등록 국가→언어(`countries.lang`)로 도출한다(값 참조, 없으면 `en` 폴백) → 모듈 의존 `gamification`→`user`.
 - **대상자 게이트**: 외국인 세입자(`TENANT`·`ACTIVE`) 전용. `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅하고, 응용 계층(`GamificationService`)에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`(`TenantOnlyException`).
-- **`QUIZ_NOT_FOUND`(404)**: `quizId`가 없거나(잘못된 식별자) 활성 풀이 공백일 때. (**확인 필요**) 정답 시 `explanation` 반환 여부(현재 미반환), `random`=활성 풀 무작위 **SELECTION**(동적 생성 아님).
+- **`QUIZ_NOT_FOUND`(404)**: `quizId`가 없거나(잘못된 식별자) 활성 풀이 공백일 때. (**확인 필요**) `random`=활성 풀 무작위 **SELECTION**(동적 생성 아님).
 
 ### 4-9. `report`
 
