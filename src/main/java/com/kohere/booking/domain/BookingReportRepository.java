@@ -6,11 +6,6 @@ package com.kohere.booking.domain;
  */
 public interface BookingReportRepository {
 
-  /**
-   * 신고를 저장한다. 동일 신고자·동일 예약 중복(유니크 {@code (reporter_id, booking_id)} 위반)은 {@link
-   * BookingReportAlreadyExistsException}으로 변환한다(동시성 경합 포함).
-   */
+  /** 신고 1건을 저장한다. 동일 신고자·동일 예약을 여러 번 신고할 수 있다(다건 허용 · 도배 방지는 후속 레이트리밋). */
   BookingReport save(BookingReport report);
-
-  boolean existsByReporterIdAndBookingId(long reporterId, long bookingId);
 }

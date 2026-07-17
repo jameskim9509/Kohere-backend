@@ -46,7 +46,7 @@
 - **신청자 프로필 조인(임대인 상세)**: 임대인 상세 분기는 신청자(세입자) 프로필 — 성명·**성별**·**국적**·**이메일** — 을 `user::api`(신규 `getApplicantProfile(tenantId)`)로 조회해 조합한다(목록 분기는 신청자 성명 `getUserName`만, 경량). 신청자는 세입자라 프로필이 존재하며, 탈퇴 회원은 PII 익명화([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md))로 값이 비어 있을 수 있다. 임대인에게 세입자 이메일·성별·국적은 **마스킹 없이 평문으로 노출**한다(제품 결정).
 - **표시 상태(참여자별 삭제) 저장 필드**: `tenantDeletedAt`·`landlordDeletedAt`(`Instant`, nullable — NULL = 미삭제). 예약은 `tenantId`·`landlordId`가 **공유하는 1행**이라 삭제 플래그를 하나만 두면 한쪽이 지울 때 상대 기록까지 사라진다. 그래서 **참여자별로 2컬럼**을 둔다(§4). 두 필드는 예약 응답 DTO에 노출하지 않는다 — 삭제·차단은 "내 목록에서 사라짐"으로만 관측된다.
 - **차단 저장 위치**: 차단은 예약이 아니라 **사용자 단위**이며 `user` 모듈이 `user_blocks(blocker_id, blocked_user_id)`를 소유한다. `booking`은 `user :: api`의 신규 공개 표면 **3개** — 조회 경로 필터용 **공개 쿼리** `findBlockedUserIds(blockerId)`·신규 신청 가드용 **공개 쿼리** `isBlockedBetween(a, b)`, 그리고 예약에서 도출한 상대 식별자를 받는 **차단 생성 공개 명령**(§5) — 호출로만 접근하며 `user_blocks`를 직접 조인하지 않는다(모듈 경계·**애플리케이션 레벨 조인**, [ADR-0002](../../adr/0002-inter-module-communication-via-events.md)·[ADR-0005](../../adr/0005-polyglot-persistence.md)). 차단 목록·해제 엔드포인트는 [01-auth-onboarding](01-auth-onboarding.md)(`/api/v1/users/me/blocks`)에 있다.
-- **예약 신고 저장 필드**: `booking` 모듈이 `booking_reports`를 소유한다 — `id`(`Long`, PK) · `reporterId`(`Long`) · `bookingId`(`Long`) · `reason`(신고 사유 카탈로그 `booking_report_reasons`의 **code 문자열 값 참조**, **nullable** · FK 없음) · `detail`(자유 텍스트, nullable) · `createdAt`(`Instant`) + 유니크 `(reporterId, bookingId)`. **`status` 컬럼이 없다** — 본 스펙의 범위는 **접수(capture)까지**이고 운영자 검토·제재·상태 전이는 범위 밖이라 전이할 상태가 없는 **불변 기록**이기 때문이다. 이 표는 [07-reports](07-reports.md)가 예약한 `reports` 테이블과 **별개**다.
+- **예약 신고 저장 필드**: `booking` 모듈이 `booking_reports`를 소유한다 — `id`(`Long`, PK) · `reporterId`(`Long`) · `bookingId`(`Long`) · `reason`(신고 사유 카탈로그 `booking_report_reasons`의 **code 문자열 값 참조**, **nullable** · FK 없음) · `detail`(자유 텍스트, nullable) · `createdAt`(`Instant`). **유일성 제약이 없다** — 동일 신고자가 동일 예약을 여러 번 신고할 수 있고(다건 허용; 새 사유·지속 문제 재신고), 도배 방지는 후속 레이트리밋(`429`)으로 이연한다(현재 미구현). 대신 운영 조회·향후 레이트리밋 집계용 보조 인덱스 `idx_booking_reports_booking (booking_id)`·`idx_booking_reports_reporter_created (reporter_id, created_at)`를 둔다. **`status` 컬럼이 없다** — 본 스펙의 범위는 **접수(capture)까지**이고 운영자 검토·제재·상태 전이는 범위 밖이라 전이할 상태가 없는 **불변 기록**이기 때문이다. 이 표는 [07-reports](07-reports.md)가 예약한 `reports` 테이블과 **별개**다.
 - **모듈 의존**: `booking → { listing::api, user::api }` — `booking/package-info.java` 의존 화이트리스트에 이미 선언돼 있다. 삭제·차단·신고(§4~§7)도 **새 모듈 의존 엣지를 만들지 않는다** — 삭제·신고는 booking 모듈 내부이고, 차단 저장은 이미 화이트리스트에 있는 `user::api` 호출이다. 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId`를 추가 노출하고, 임대인 **상세** 분기의 신청자 프로필 조회를 위해 `user::api`에 `getApplicantProfile` 공개 메서드가 신규로 필요하다. 임대인 조회에 listing::api 소유권 조회 메서드는 **불필요**하다 — 소유권은 booking 행(`landlord_id`)에서 판정한다.
 - **인증·상태 게이트**: 예약 조회(§2·§3)는 온보딩을 마친 `ACTIVE` 사용자 전용이다(세입자·임대인 공통 — `userType`으로 결과만 분기하며 역할 `403`은 없다). 예약 **생성**(§1)은 세입자 전용(`userType=TENANT`)이라 임대인은 `403 FORBIDDEN`이다. 두 경우 모두 비 `ACTIVE`(온보딩 미완료)는 다른 보호 엔드포인트와 **동일한 온보딩 상태 게이트**(`403 AUTH_ONBOARDING_REQUIRED`)로 검사한다. 삭제·차단·신고(§4~§7)도 같은 게이트를 따른다 — 세입자·임대인 공통이라 역할 `403`은 없다.
 - **URL 티어 매처 신설 필요(§4~§7)**: 현행 booking의 SecurityConfig 매처는 `HttpMethod.GET` + 단일 세그먼트(`/api/v1/bookings/*`)만 `hasRole("USER")`로 잡는다. 신규 경로(`DELETE /api/v1/bookings/*`, `POST /api/v1/bookings/*/block`, `POST /api/v1/bookings/*/report`)는 그 매처에 걸리지 않아 `anyRequest().authenticated()`로 떨어지고, 그러면 **온보딩용 `ROLE_ONBOARDING` 토큰까지 통과**한다. 따라서 신규 경로는 **명시 매처로 전부 `hasRole("USER")`** 를 선언한다. `GET /api/v1/bookings/report-reasons`는 기존 `GET /api/v1/bookings/*`가 이미 커버하지만 의도를 드러내기 위해 더 구체적인 경로를 앞에 둔다. 차단 목록·해제(`/api/v1/users/me/blocks`)도 마찬가지로 명시가 필요하다 — 기존 `/api/v1/users/me` 매처는 **정확 경로**라 하위 경로를 덮지 않는다([01-auth-onboarding](01-auth-onboarding.md) 참조).
@@ -430,11 +430,11 @@
 
 ### 6. POST `/api/v1/bookings/{bookingId}/report` — 예약 신고 접수
 
-예약 1건에 대한 신고를 **접수·저장**한다. 신고자는 JWT subject로 식별하며, 요청자는 해당 예약의 참여자여야 한다. 동일 사용자의 동일 예약 중복 신고는 거부한다.
+예약 1건에 대한 신고를 **접수·저장**한다. 신고자는 JWT subject로 식별하며, 요청자는 해당 예약의 참여자여야 한다. 동일 예약을 **여러 번 신고할 수 있다(다건 허용)** — 새 사유·지속되는 문제를 다시 신고할 수 있어야 하기 때문이다. 신고 도배 방지는 레이트리밋(`429`)으로 다루며 **후속·이연**이다(현재 미구현).
 
 - **인증**: 필수. `ACTIVE` 사용자 전용(세입자·임대인 공통, 역할 `403` 없음).
 - **권한**: 요청자가 해당 예약의 참여자(세입자 또는 임대인)가 아니거나 예약이 없으면 `404 BOOKING_NOT_FOUND`. **`403`이 아니다** — 예약의 존재 여부를 노출하지 않는 기존 booking 규약(§3)과 통일한다.
-- **중복 방지**: 유니크 `(reporterId, bookingId)`로 1건만 허용한다. 중복이면 신규 생성 없이 `409 BOOKING_REPORT_ALREADY_EXISTS`. 두 참여자가 서로를 신고하는 것은 `reporterId`가 달라 각각 접수된다.
+- **다건 신고 허용**: 동일 신고자–동일 예약 신고에 **유일성 제약을 두지 않는다** — 같은 예약을 여러 번 신고할 수 있다(새 사유·지속되는 문제를 다시 신고). 접수는 `409`를 반환하지 않으며, `BookingReport`는 **별도 비즈니스 키가 없다**. 신고 도배 방지는 **레이트리밋(`429`)** 으로 다루며 **후속·이연**이다(현재 미구현). 두 참여자가 서로를 신고하는 것은 `reporterId`가 달라 각각 접수된다.
 - **범위는 접수까지**: 접수 사실만 기록한다. 운영자 검토·제재·상태 전이는 본 스펙 범위 밖이다.
 - **자기 신고 차단 코드 없음**: 예약 **생성이 세입자 전용**(§1)이고 `userType`은 온보딩 확정 후 불변이라 `tenantId != landlordId`가 **구조적으로 보장**된다 — 자기 자신이 상대인 예약이 애초에 만들어질 수 없어 판정할 상황이 없다. 그래서 별도 에러 코드를 두지 않는다.
 
@@ -488,9 +488,10 @@
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 | 404 | `BOOKING_NOT_FOUND` | 예약이 없거나 요청자가 해당 예약의 참여자가 아님 — 404로 통일(존재 비노출) |
-| 409 | `BOOKING_REPORT_ALREADY_EXISTS` | 동일 사용자가 동일 예약을 이미 신고함(중복) |
 
-> 검증·권한 평가 순서: 인증(401) → 온보딩 게이트(403) → 입력 검증(400) → 예약 존재·참여자(404) → 중복(409).
+> 신고 접수는 중복 거부(`409`)가 없다 — 동일 예약 다건 신고를 허용하며(위 [다건 신고 허용]), 도배 방지는 후속 레이트리밋(`429`)으로 이연한다(현재 미구현).
+>
+> 검증·권한 평가 순서: 인증(401) → 온보딩 게이트(403) → 입력 검증(400) → 예약 존재·참여자(404).
 >
 > **왜 예약 신고가 [07-reports](07-reports.md)가 아니라 여기인가**: 신고 **접수**는 "대상이 실재하는가 / 요청자가 그 대상의 참여자인가"를 반드시 검증해야 하는데, 그건 **예약만 아는 정보**다(참여자 판정은 `bookings` 행의 `tenant_id`·`landlord_id`에 있다). 접수를 `report` 모듈에 두면 그 판정을 위해 `report → booking` 포트를 새로 뚫어야 하지만, `booking`이 접수하면 **모듈 내부 호출**이라 새 의존 엣지가 0개다. 그리고 `report` 모듈은 **게시글(`POST`)·댓글(`COMMENT`)·채팅 메시지(`MESSAGE`)** 신고를 담당하므로(미구현) **본 스펙의 예약과 대상이 겹치지 않는다** — 두 곳이 공존해도 같은 대상을 두고 충돌하지 않는다. `booking_reports`도 07이 예약한 `reports` 테이블과 별개 테이블이다.
 
@@ -914,7 +915,6 @@
 | `BOOKING_INVALID_MOVE_IN_DATE` | 422 | 타겟 입주일이 과거이거나 매물의 입주 가능일 이전 | 1차 MVP |
 | `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함. DB 유니크 제약 `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)` 위반. ErrorCode·messages 번들에 이미 선언돼 있던 코드가 본 결정으로 실사용된다 | 1차 MVP |
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물의 신청 아님), 또는 삭제(§4)·차단(§5)으로 요청자에게 숨겨짐 — 존재 여부를 노출하지 않도록 404로 통일. 삭제·차단·신고(§4~§6)에서 요청자가 참여자가 아닌 경우도 이 코드다(`403`이 아니다) | 1차 MVP |
-| `BOOKING_REPORT_ALREADY_EXISTS` | 409 | 동일 신고자가 동일 예약을 이미 신고함. DB 유니크 제약 `(reporterId, bookingId)` 위반 | 1차 MVP |
 | `CHAT_ROOM_NOT_FOUND` | 404 | 채팅방이 존재하지 않음 | 후속·이연 |
 | `CHAT_SELF_INQUIRY_NOT_ALLOWED` | 422 | 본인 소유 매물에 문의 시도 | 후속·이연 |
 | `CHAT_ROOM_INACTIVE` | 422 | 비활성(차단/나간) 채팅방에 메시지 전송. 차단·나가기 기능 도입 시 활성화되는 예약 코드 | 후속·이연 |
@@ -922,4 +922,4 @@
 
 > 매물·방 상품 부재(`404`)는 listing 모듈의 `LISTING_NOT_FOUND` 코드를 참조해 응답한다. 해당 코드는 listing 스펙이 카탈로그에 등록하는 것을 원칙으로 하며, 본 기능에서는 재정의하지 않는다.
 >
-> 삭제(§4)·차단(§5)에는 **신설 코드가 없다** — 둘 다 성공은 `204`, 실패는 기존 `BOOKING_NOT_FOUND`뿐이고 멱등이라 "이미 삭제됨"·"이미 차단됨" 상태를 에러로 표현하지 않는다. `BLOCK_*` prefix도 만들지 않는다. §1의 차단 가드 위반은 공통 코드 `FORBIDDEN`(403)을 쓴다(error-response-guide §3 인가 매핑 준수). 예약 신고 중복만 `BOOKING_*` prefix로 코드 1개를 신설한다 — 예약 맥락의 코드라 `REPORT_*` prefix(=[07-reports](07-reports.md) 소유)를 쓰지 않는다.
+> 삭제(§4)·차단(§5)에는 **신설 코드가 없다** — 둘 다 성공은 `204`, 실패는 기존 `BOOKING_NOT_FOUND`뿐이고 멱등이라 "이미 삭제됨"·"이미 차단됨" 상태를 에러로 표현하지 않는다. `BLOCK_*` prefix도 만들지 않는다. §1의 차단 가드 위반은 공통 코드 `FORBIDDEN`(403)을 쓴다(error-response-guide §3 인가 매핑 준수). 신고 접수(§6)에도 **신설 코드가 없다** — 동일 예약 다건 신고를 허용해 중복 거부(`409`)가 없고, 도배 방지는 후속 레이트리밋(공통 `TOO_MANY_REQUESTS`, `429`)으로 이연한다(현재 미구현).

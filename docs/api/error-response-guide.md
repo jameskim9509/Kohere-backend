@@ -42,8 +42,8 @@
 | 인증(Authentication) | 누구인지 모름 | 401 | 토큰 없음/만료/위조 |
 | 인가(Authorization) | 권한 없음 | 403 | 남의 리소스 수정, 차단 사용자 |
 | 리소스 없음 | 대상 부재 | 404 | 존재하지 않는 매물/게시글 |
-| 충돌/상태 | 비즈니스 규칙 위반 | 409 / 422 | 중복 가입, 이미 신청한 예약(`BOOKING_ALREADY_EXISTS`)·이미 신고한 예약(`BOOKING_REPORT_ALREADY_EXISTS`) |
-| 레이트리밋 | 과다 호출 | 429 | 신고/메시지 도배 |
+| 충돌/상태 | 비즈니스 규칙 위반 | 409 / 422 | 중복 가입, 이미 신청한 예약(`BOOKING_ALREADY_EXISTS`) |
+| 레이트리밋 | 과다 호출 | 429 | 신고/메시지 도배(예약 신고 도배 방지 포함 — 후속) |
 | 시스템 | 서버/외부 연동 실패 | 500 / 502 / 503 | DB 오류, 외부 API 연동 실패·타임아웃 |
 
 - **도메인/비즈니스 예외**는 의미가 드러나는 커스텀 예외로 던지고(`~Exception`), 전역 핸들러가 status·code로 변환한다.
@@ -114,7 +114,6 @@
 | `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거이거나 매물의 입주 가능일 이전 |
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물 신청 아님), 요청자가 삭제·차단으로 숨긴 예약, 또는 삭제·차단·신고 요청자가 참여자가 아님(404로 통일) |
 | `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함 (UNIQUE `(tenant_id, room_offer_id)` 위반) |
-| `BOOKING_REPORT_ALREADY_EXISTS` | 409 | 동일 신고자가 동일 예약을 이미 신고함(UNIQUE `(reporter_id, booking_id)` 위반) |
 
 > 예약 신고는 `booking` 모듈이 접수를 소유하므로 `BOOKING_*` prefix를 쓴다. `REPORT_*`는 게시글·댓글·메시지 신고를 담당하는 `report` 모듈의 것으로 그대로 남는다 — 두 곳은 신고 **대상이 겹치지 않아** 코드가 충돌하지 않는다.
 
@@ -122,6 +121,7 @@
 > - **예약 삭제·차단·신고의 참여자 위반**: 기존 `BOOKING_NOT_FOUND`(404)를 재사용한다. 존재를 노출하지 않는 기존 booking 규약과 통일한다.
 > - **차단 상대의 예약 신청 거부**: 공통 `FORBIDDEN`(403)을 쓴다. `BLOCK_*` prefix는 신설하지 않는다 — §4의 모듈 prefix 표에 없다.
 > - **자기 신고**: 예약 생성이 TENANT 전용이고 `userType`은 온보딩 확정 후 불변이라 `tenant_id != landlord_id`가 구조적으로 보장된다. 발생할 수 없는 상황이므로 코드를 두지 않는다.
+> - **동일 예약 중복 신고 거부**: 코드를 두지 않는다. 동일 신고자가 동일 예약을 **여러 번 신고할 수 있다(다건 허용)** — 새 사유·지속 문제를 다시 접수해야 하기 때문이다. 예전 `(reporter_id, booking_id)` 유일성·`BOOKING_REPORT_ALREADY_EXISTS`(409)는 제거됐다. 신고 도배 방지는 **레이트리밋(`TOO_MANY_REQUESTS`, 429)** 으로 다루며 **후속·이연**이다(현재 미구현).
 
 > `CHAT_*` 코드(`CHAT_ROOM_NOT_FOUND`·`CHAT_SELF_INQUIRY_NOT_ALLOWED` 등)는 **후속·이연**된 매물 문의·채팅 기능용이며 1차 MVP 예약 범위 밖이다. 상세는 [04-booking-inquiry-chat](./specs/04-booking-inquiry-chat.md) 참조.
 

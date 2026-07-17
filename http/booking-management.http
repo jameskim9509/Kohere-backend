@@ -21,7 +21,7 @@
 
 # 3번(매물 목록)에서 확인한 실제 값으로 교체 (형식 예시 — ObjectId 24자리 hex)
 @listingId = 6858e2000000000000000001
-@roomOfferId = 6858e2000000000000000abc
+@roomOfferId = 6858e2000000000000000101
 
 ### 0. 헬스 체크 (인증 불필요) — 200 UP 이면 앱 + 인프라(MySQL·Redis·Mongo) 정상
 GET {{baseUrl}}/actuator/health
@@ -93,7 +93,7 @@ Content-Type: application/json
   "detail": "부적절한 언행이 있었습니다"
 }
 
-### 6-b. 중복 신고 (같은 예약) → 409 BOOKING_REPORT_ALREADY_EXISTS
+### 6-b. 동일 예약 재신고 (같은 예약) → 201 (다건 허용 · 도배 방지는 후속 레이트리밋)
 POST {{baseUrl}}/api/v1/bookings/{{createBooking.response.body.$.data.bookingId}}/report
 Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 Content-Type: application/json
@@ -160,8 +160,8 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 GET {{baseUrl}}/api/v1/bookings?page=0&size=20
 Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 
-### 12-b. 삭제한 예약도 신고는 가능 (증거 보존 — 비필터 조회) → 다른 예약이면 201
-#     주의: 위 6번에서 이미 신고했으면 같은 예약은 409 다. 신규 예약을 만들어 확인하거나 참고만 한다.
+### 12-b. 삭제한 예약도 신고는 가능 (증거 보존 — 비필터 조회) → 201
+#     동일 예약 재신고도 201(다건 허용). 삭제·차단 상태와 무관하게 접수된다(도배 방지는 후속 레이트리밋).
 
 # ═══════════════ 에러·경계 ═══════════════
 

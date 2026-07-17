@@ -71,7 +71,7 @@
 ### 2-4. 제약·무결성 (공통)
 
 - **FK는 같은 모듈 안에서만.** 교차 모듈 참조는 **store가 같아도 FK 금지** — 식별자 값만 보유한다(Modulith 독립성·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 교차 스토어 조인·FK·분산 트랜잭션 금지([ADR-0005](../adr/0005-polyglot-persistence.md) D5·D6) → 애플리케이션 레벨 조인/이벤트.
-- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_reports(reporter_id,booking_id)` · `booking_report_reasons(code,lang)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
+- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_report_reasons(code,lang)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
 - **카운트 정합**(`community` like/comment/share, `listings.favoriteCount`)은 단일 store 트랜잭션 또는 원자적 증감 + 배치 재계산으로 유지(음수 방지).
 - **민감정보**(비자·이메일·토큰 원문·인증번호 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
 
@@ -593,26 +593,26 @@
 
 **범위는 접수(capture)까지다** — 운영자 검토·제재·처리 결과는 이 이슈 범위 밖이라 상태 전이가 없고, 따라서 **`status` 컬럼을 두지 않는다**(§4-9 `reports`의 `ReportStatus`와 대비). 접수된 행은 생성 후 바뀌지 않는 **불변 기록**이라 `updated_at`·소프트삭제도 없다. 운영 흐름이 정의되면 그때 상태 컬럼을 추가한다(확장 변경).
 
-**왜 `report` 모듈이 아니라 `booking`인가**: 신고 접수는 "대상 예약이 실재하는가 / 요청자가 그 예약의 참여자인가"를 검증해야 하는데 그건 **예약만 아는 정보**다. 불변식(참여자만 신고 가능·같은 예약 중복 신고 불가)이 예약 상태에 의존하므로 소유자도 예약이며, `booking`이 접수하면 모듈 내부 호출이라 **새 모듈 의존 엣지가 0개**다(`report`가 접수하면 `report → booking :: api` 포트를 새로 뚫어야 한다). §4-9 `report`는 게시글·댓글·채팅 메시지 신고를 담당하며(미구현) **예약과 신고 대상이 겹치지 않으므로** 두 곳이 공존해도 충돌이 없다.
+**왜 `report` 모듈이 아니라 `booking`인가**: 신고 접수는 "대상 예약이 실재하는가 / 요청자가 그 예약의 참여자인가"를 검증해야 하는데 그건 **예약만 아는 정보**다. 불변식(참여자만 신고 가능)이 예약 상태에 의존하므로 소유자도 예약이며, `booking`이 접수하면 모듈 내부 호출이라 **새 모듈 의존 엣지가 0개**다(`report`가 접수하면 `report → booking :: api` 포트를 새로 뚫어야 한다). §4-9 `report`는 게시글·댓글·채팅 메시지 신고를 담당하며(미구현) **예약과 신고 대상이 겹치지 않으므로** 두 곳이 공존해도 충돌이 없다.
 
 `booking_reports` — 불변(immutable). §4-9 `reports`와 **별개 테이블**이다(테이블명·대상 모두 겹치지 않는다).
 
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
 | `id` | BIGINT | PK, AUTO_INCREMENT · API `reportId` |
-| `reporter_id` | BIGINT | NOT NULL · UNIQUE(복합) · 신고자 → user `users.id`(값 참조). **응답 비노출** |
-| `booking_id` | BIGINT | NOT NULL · UNIQUE(복합) · 신고 대상 예약 → `bookings.id`(같은 모듈이지만 FK 없음 — 아래 註) |
+| `reporter_id` | BIGINT | NOT NULL · INDEX(복합 `reporter_id, created_at`) · 신고자 → user `users.id`(값 참조). **응답 비노출** |
+| `booking_id` | BIGINT | NOT NULL · INDEX(`booking_id`) · 신고 대상 예약 → `bookings.id`(같은 모듈이지만 FK 없음 — 아래 註) |
 | `reason` | VARCHAR(32) | **NULL 허용** · 신고 사유 · 카탈로그(`booking_report_reasons`) `code` 값 참조(FK 없음) · 보내면 활성 code 검증 후 저장, 안 보내면 NULL |
 | `detail` | TEXT | NULL, ≤500 · 신고 상세(자유 입력) · **원문 응답 비노출** |
 | `created_at` | DATETIME(6) | NOT NULL · 접수 시각(UTC) |
 
-**인덱스**: PK `id` / **UNIQUE `(reporter_id, booking_id)`**(같은 예약 중복 신고 차단 — `BOOKING_REPORT_ALREADY_EXISTS` 409).
+**인덱스**: PK `id` / INDEX `idx_booking_reports_booking (booking_id)`(예약별 신고 조회 — 운영자 검토) / INDEX `idx_booking_reports_reporter_created (reporter_id, created_at)`(신고자별 이력 — 향후 레이트리밋 집계용). **유니크 제약은 없다 — 동일 신고자·동일 예약 다건 신고를 허용한다**(새 사유·지속되는 문제를 다시 신고할 수 있어야 하기 때문 · 도배 방지는 후속 레이트리밋으로 다룬다, 아래 註).
 
 - **`status` 없음**: 위 참조 — 접수까지만이라 상태 전이가 없다. §4-9 `reports`가 `status`(default `RECEIVED`)를 갖는 것과 의도적으로 다르다.
 - **`reason` nullable**: 사유는 **선택 입력**이라 NOT NULL이 아니다(§4-9 `reports.reason`이 NOT NULL인 것과 다름). 저장값은 카탈로그 `booking_report_reasons`(아래)의 **`code` 문자열**(UPPER_SNAKE)이며 네이티브 `ENUM`을 쓰지 않는다(§2-3). 접수 시 reason이 있으면 **활성 카탈로그 code인지 검증**하고(아니면 `400 INVALID_INPUT`), 없으면 검증 없이 `201`이다. §4-9의 `ReportReason`과 값이 같아도 **예약 맥락 전용 별개 카탈로그**다 — 카탈로그를 공유하면 `booking → report` 모듈 의존이 생긴다.
 - **표시 라벨은 `booking_reports`가 아니라 카탈로그(`booking_report_reasons`)에 있다(`reason`은 언어 무관 코드)**: `booking_reports.reason`은 UPPER_SNAKE 코드만 저장하는 **언어 무관 불변 키**이고, `GET /api/v1/bookings/report-reasons`가 내려주는 **표시 라벨은 카탈로그 `booking_report_reasons`**(아래)에서 온다 — 서버가 `user :: api` 공개 쿼리 `getLanguage(userId)`로 얻은 사용자 표시 언어(`en`·`ko`·`ja`, 미설정·미지원은 `en` 폴백)로 해당 언어의 `(code, lang)` 행 `label`을 골라 계약 `{ code, label }`로 조립하고, 그 언어 행이 없으면 **`en` 폴백**한다. 리소스 번들(`messages`)이 아니라 **MySQL 카탈로그 테이블**에 두는 이유는 신고 사유를 **코드 배포·스키마 변경 없이 행 INSERT만으로 동적 관리**하기 위해서다(사유 추가도, 언어 추가도 `(code, lang)` 행 추가). `messages` 번들은 다시 **에러 메시지 전용**이다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)). 진단(§4-4 `diagnosisQuestions`)·생활 팁(§4-10)의 **MongoDB 인라인 언어-키 맵**을 쓰지 않는 이유는 `booking`이 MySQL 모듈이라 사유 라벨만을 위해 **cross-store 컬렉션을 만들 이유가 없기** 때문이다(§2-4 교차 스토어 금지). `code`는 언어 무관 불변이고 `label`만 언어별이라는 원칙은 [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) Decision 6과 같다.
 - **FK 없음(`booking_id`)**: `booking_id`는 같은 `booking` 모듈의 `bookings.id`라 §2-4상 FK가 **허용되지만** 걸지 않는다 — 레포의 마이그레이션 전체에 `FOREIGN KEY`/`REFERENCES`가 **0건**이라 전례를 따른다(대상 예약 존재·참여자 검증은 접수 시 응용 계층이 한다). `reporter_id`는 `user` 모듈 참조라 **FK 금지**(교차 모듈, §2-4).
-- **`idx_booking_reports_booking (booking_id)` 미도입**: "이 예약에 신고가 몇 건인가"를 묻는 **운영자 조회 흐름이 현재 없어** 불필요하다 — 유일한 읽기 경로인 중복 검사는 UNIQUE `(reporter_id, booking_id)`가 이미 처리한다. 운영자 검토 화면이 생기면 그때 추가한다(§4-9 `reports`가 `(target_type, target_id)` 인덱스를 "흐름 확정 후"로 미룬 것과 같은 판단).
+- **동일 예약 다건 신고 허용(유니크 제약 없음)**: 같은 신고자가 같은 예약을 **여러 번 신고할 수 있다** — 새 사유·지속되는 문제를 다시 접수할 수 있어야 하기 때문이다. 그래서 `(reporter_id, booking_id)` 유니크로 중복을 막지 않으며 접수는 더 이상 `409`를 반환하지 않는다(옛 `BOOKING_REPORT_ALREADY_EXISTS` 코드·예외·i18n 키는 제거됨). **신고 도배 방지는 레이트리밋(`429`)으로 다루며 이는 후속·이연 항목이다(현재 미구현)** — 향후 신고자별 접수 빈도 집계를 위해 `idx_booking_reports_reporter_created (reporter_id, created_at)` 보조 인덱스를 미리 둔다. `idx_booking_reports_booking (booking_id)`는 "이 예약에 신고가 몇 건인가"를 묻는 운영자 조회용 보조 인덱스다.
 - **삭제·차단과 무관하게 접수**: 신고 대상 판정은 `*_deleted_at`·차단 상태를 보지 않는다 — 이미 삭제·차단한 예약도 신고할 수 있어야 **증거가 보존**된다. 그래서 접수는 필터되지 않은 조회를 쓰며, 같은 행이 상세 조회에선 `404`인데 신고는 `201`이 되는 **의도된 비대칭**이 생긴다.
 - **자기 신고 차단 컬럼 없음**: `tenant_id != landlord_id`가 구조적으로 보장돼(예약 생성은 세입자만 가능하고 `user_type`은 온보딩 확정 후 불변) 자기 신고가 성립하지 않는다 — 별도 제약·에러코드를 두지 않는다(§4-9 `reports`가 자기 신고를 `422`로 막는 것과 대비).
 - **프라이버시**: `reporter_id`·`detail` 원문은 저장하되 응답에 노출하지 않는다([error-response-guide §6](../api/error-response-guide.md)) — §4-9 `reports`와 동일 원칙.
@@ -631,10 +631,14 @@
         reason      VARCHAR(32) NULL,
         detail      TEXT        NULL,
         created_at  DATETIME(6) NOT NULL,
-        PRIMARY KEY (id),
-        CONSTRAINT uq_booking_reports_reporter_booking UNIQUE (reporter_id, booking_id)
+        PRIMARY KEY (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
-    -- idx_booking_reports_booking(booking_id)은 두지 않는다 — 운영자 조회 흐름이 없고 중복 검사는 위 유니크가 처리한다.
+
+    -- 유니크 제약을 두지 않는다 — 동일 신고자·동일 예약 다건 신고 허용(새 사유·지속 문제 재신고). 도배 방지는 후속 레이트리밋(429).
+    -- 예약별 신고 조회(운영자 검토)용 보조 인덱스.
+    CREATE INDEX idx_booking_reports_booking ON booking_reports (booking_id);
+    -- 신고자별 접수 이력 조회 — 향후 레이트리밋 집계용 보조 인덱스.
+    CREATE INDEX idx_booking_reports_reporter_created ON booking_reports (reporter_id, created_at);
     ```
 
 #### 예약 신고 사유 카탈로그 — `booking_report_reasons`

@@ -11,7 +11,6 @@ import com.kohere.booking.domain.Booking;
 import com.kohere.booking.domain.BookingAlreadyExistsException;
 import com.kohere.booking.domain.BookingNotFoundException;
 import com.kohere.booking.domain.BookingReport;
-import com.kohere.booking.domain.BookingReportAlreadyExistsException;
 import com.kohere.booking.domain.BookingReportRepository;
 import com.kohere.booking.domain.BookingRepository;
 import com.kohere.booking.domain.BookingStatus;
@@ -184,8 +183,8 @@ public class BookingService {
   }
 
   /**
-   * 예약 신고 접수 — 참여자만 신고할 수 있고, 동일 예약 중복 신고는 거부한다(409). 신고 대상 판정은 삭제·차단 상태와 무관하다(비필터 조회 · 증거 보존).
-   * reason은 선택이며 응답에 {@code reporterId}·{@code detail} 원문은 노출하지 않는다.
+   * 예약 신고 접수 — 참여자만 신고할 수 있다. 동일 예약을 여러 번 신고할 수 있다(다건 허용 · 도배 방지는 후속 레이트리밋). 신고 대상 판정은 삭제·차단 상태와
+   * 무관하다(비필터 조회 · 증거 보존). reason은 선택이며 응답에 {@code reporterId}·{@code detail} 원문은 노출하지 않는다.
    */
   @Transactional
   public BookingReportResponse reportBooking(
@@ -194,9 +193,6 @@ public class BookingService {
         bookingRepository.findByIdForMutation(bookingId).orElseThrow(BookingNotFoundException::new);
     if (!isParticipant(booking, userId)) {
       throw new BookingNotFoundException();
-    }
-    if (bookingReportRepository.existsByReporterIdAndBookingId(userId, bookingId)) {
-      throw new BookingReportAlreadyExistsException();
     }
     String reason = request.reason();
     validateReason(reason);

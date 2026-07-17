@@ -289,25 +289,18 @@ class BookingManagementDocsTest {
   }
 
   @Test
-  void reportBooking_duplicate_conflict() throws Exception {
+  void reportBooking_multipleAllowed() throws Exception {
     long bookingId = createBooking();
-    mockMvc
-        .perform(
-            post("/api/v1/bookings/{bookingId}/report", bookingId)
-                .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"reason\":\"SPAM\"}"))
-        .andExpect(status().isCreated());
-
-    perform(
-        post("/api/v1/bookings/{bookingId}/report", bookingId)
-            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"reason\":\"SPAM\"}"),
-        status().isConflict(),
-        "BOOKING_REPORT_ALREADY_EXISTS",
-        "booking-report-duplicate",
-        "동일 신고자가 동일 예약을 다시 신고하면 409 BOOKING_REPORT_ALREADY_EXISTS");
+    // 동일 신고자가 동일 예약을 여러 번 신고할 수 있다(다건 허용 · 도배 방지는 후속 레이트리밋).
+    for (String reason : new String[] {"SPAM", "ABUSE"}) {
+      mockMvc
+          .perform(
+              post("/api/v1/bookings/{bookingId}/report", bookingId)
+                  .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content("{\"reason\":\"" + reason + "\"}"))
+          .andExpect(status().isCreated());
+    }
   }
 
   @Test
