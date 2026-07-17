@@ -17,7 +17,7 @@
 | [`user`](#4-2-user) | **MySQL** | `users`·`user_blocks`(사용자 차단, US-4-8)·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안)·`diagnosisFlowSessions`(v2 서버 주도 진행 세션) — 인라인 언어-키 맵 번역, US-2-5·US-2-6·US-2-7 | ✅ |
-| [`booking`](#4-5-booking) | **MySQL** — `V9`/`V11`로 이미 배포됨([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표에는 아직 미반영 — 확인 필요) | `bookings`·`booking_reports`(예약 신고 접수, US-4-9) | ✅ |
+| [`booking`](#4-5-booking) | **MySQL** — `V9`/`V11`로 이미 배포됨([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표에는 아직 미반영 — 확인 필요) | `bookings`·`booking_reports`(예약 신고 접수, US-4-9)·`booking_report_reasons`(신고 사유 카탈로그) | ✅ |
 | [`chat`](#4-6-chat) | **저장소(추후 결정)** | `chat_rooms`·`messages`·`chat_room_members` | ✅ |
 | [`community`](#4-7-community) | **MySQL** | `posts`·`comments`·`post_likes`·`post_hashtags` | 이후 |
 | [`gamification`](#4-8-gamification) | **MongoDB** | `quizzes`(문항·선택지 카탈로그 — 인라인 언어-키 맵·무상태 채점) | 이후 |
@@ -71,7 +71,7 @@
 ### 2-4. 제약·무결성 (공통)
 
 - **FK는 같은 모듈 안에서만.** 교차 모듈 참조는 **store가 같아도 FK 금지** — 식별자 값만 보유한다(Modulith 독립성·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 교차 스토어 조인·FK·분산 트랜잭션 금지([ADR-0005](../adr/0005-polyglot-persistence.md) D5·D6) → 애플리케이션 레벨 조인/이벤트.
-- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_reports(reporter_id,booking_id)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
+- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_reports(reporter_id,booking_id)` · `booking_report_reasons(code,lang)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
 - **카운트 정합**(`community` like/comment/share, `listings.favoriteCount`)은 단일 store 트랜잭션 또는 원자적 증감 + 배치 재계산으로 유지(음수 방지).
 - **민감정보**(비자·이메일·토큰 원문·인증번호 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
 
@@ -528,7 +528,7 @@
 
 ### 4-5. `booking`
 
-> 스토어: **MySQL** — `bookings`는 이미 [`V9__bookings.sql`](../../src/main/resources/db/migration/V9__bookings.sql)·[`V11__add_bookings_landlord_id.sql`](../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 **MySQL에 배포된 사실**이다. 아래 물리 타입·DDL은 논리 스키마가 아니라 실제 MySQL 스키마이며, 신규 DDL(`V14`·`V16`·`V17`)도 공유 Flyway 시퀀스의 버전 번호를 예약하는 실행 가능한 마이그레이션이다. 다만 [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표엔 `booking` 매핑이 **아직 미반영**(추후 결정)이라 ADR 차원의 결정은 열려 있다(확인 필요). domain-model `Booking`(동일 세입자–동일 방 상품 활성 1건 — 중복 방지 UNIQUE).
+> 스토어: **MySQL** — `bookings`는 이미 [`V9__bookings.sql`](../../src/main/resources/db/migration/V9__bookings.sql)·[`V11__add_bookings_landlord_id.sql`](../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 **MySQL에 배포된 사실**이다. 아래 물리 타입·DDL은 논리 스키마가 아니라 실제 MySQL 스키마이며, 신규 DDL(`V14`·`V16`·`V17`·`V18`)도 공유 Flyway 시퀀스의 버전 번호를 예약하는 실행 가능한 마이그레이션이다. 다만 [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표엔 `booking` 매핑이 **아직 미반영**(추후 결정)이라 ADR 차원의 결정은 열려 있다(확인 필요). domain-model `Booking`(동일 세입자–동일 방 상품 활성 1건 — 중복 방지 UNIQUE).
 >
 > **스코프(1차 MVP)**: 매물 예약(= 신청, `Booking`)은 인앱 채팅과 분리된 독립 기능이다(user-stories US-4-1·US-4-2, 그리고 조회 엔드포인트를 `userType`으로 분기하는 임대인 받은 신청 조회 US-4-6). 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 **후속·이연**(chat 결합, §4-6)이라 본 스키마에 관련 필드가 없다.
 
@@ -573,7 +573,7 @@
     ALTER TABLE bookings ADD COLUMN landlord_deleted_at DATETIME(6) NULL;
     ```
 
-- **중복 방지 UNIQUE 추가 — 전진 마이그레이션 V17 예정**(`V14`=`bookings` 컬럼 추가, `V15`=`user_blocks` 신설, `V16`=`booking_reports` 신설이라 다음 번호는 `V17__add_bookings_unique_tenant_room_offer.sql`, [migration-policy](migration-policy.md)): `bookings`는 이미 배포된 `V9__bookings.sql`이라 유니크 제약도 **별도 신규 마이그레이션**으로 넣으며, 이는 `V9`의 "중복 방지 유니크 제약을 두지 않는다(다건 신청 허용)" 결정을 되돌린다. 제약 강화라 [migration-policy §3](migration-policy.md)상 **비호환 변경**이므로 기존 중복 행 정리가 선행돼야 하나, `bookings`는 신규 테이블이라 사실상 비어 있어 정리 대상이 없다. #169 삭제·차단·신고용 `V14`~`V16`과는 별개의 제약 변경이라 그 번호와 겹치지 않게 `V17`로 둔다.
+- **중복 방지 UNIQUE 추가 — 전진 마이그레이션 V18 예정**(`V14`=`bookings` 컬럼 추가, `V15`=`user_blocks` 신설, `V16`=`booking_reports` 신설, `V17`=`booking_report_reasons` 신설이라 다음 번호는 `V18__add_bookings_unique_tenant_room_offer.sql`, [migration-policy](migration-policy.md)): `bookings`는 이미 배포된 `V9__bookings.sql`이라 유니크 제약도 **별도 신규 마이그레이션**으로 넣으며, 이는 `V9`의 "중복 방지 유니크 제약을 두지 않는다(다건 신청 허용)" 결정을 되돌린다. 제약 강화라 [migration-policy §3](migration-policy.md)상 **비호환 변경**이므로 기존 중복 행 정리가 선행돼야 하나, `bookings`는 신규 테이블이라 사실상 비어 있어 정리 대상이 없다. #169 삭제·차단·신고·사유 카탈로그용 `V14`~`V17`과는 별개의 제약 변경이라 그 번호와 겹치지 않게 `V18`로 둔다.
 
     ```sql
     -- bookings에 동일 세입자–동일 방 상품 예약 중복 방지 UNIQUE를 추가한다. 재신청은 409 BOOKING_ALREADY_EXISTS("이미 신청한 매물입니다").
@@ -582,14 +582,14 @@
     --   ⚠️ 상태 전이 도입 시 REJECTED·CANCELED 건이 같은 방 재신청을 영구 차단하므로 활성 상태만 대상으로 하는 부분 유니크로 교체 필요 —
     --      MySQL은 부분 유니크 인덱스를 미지원(active_room_offer_id nullable 컬럼 + UNIQUE 트릭 또는 앱 레벨 검사)이라 표현 방식은 그때 정한다.
     -- migration-policy §3상 제약 강화 = 비호환이라 기존 중복 행 정리가 선행돼야 하나 bookings는 신규 테이블이라 사실상 비어 있다.
-    -- 삭제·차단·신고용 V14~V16과 별개의 제약 변경이라 V17로 둔다(그 번호는 건드리지 않는다).
+    -- 삭제·차단·신고·사유 카탈로그용 V14~V17과 별개의 제약 변경이라 V18로 둔다(그 번호는 건드리지 않는다).
     -- #169 · docs/database/database-design.md §2-4·§4-5 · docs/api/specs/04-booking-inquiry-chat.md.
     ALTER TABLE bookings ADD CONSTRAINT uq_bookings_tenant_room_offer UNIQUE (tenant_id, room_offer_id);
     ```
 
 #### 예약 신고 접수 — `booking_reports`
 
-예약 상대를 신고한 **접수 기록**을 담는다(#169 · US-4-9). domain-model `BookingReport`(+enum `BookingReportReason`).
+예약 상대를 신고한 **접수 기록**을 담는다(#169 · US-4-9). domain-model `BookingReport`(신고 사유는 JVM enum이 아니라 카탈로그 `booking_report_reasons` 행의 `code` 문자열 값 참조 — 아래).
 
 **범위는 접수(capture)까지다** — 운영자 검토·제재·처리 결과는 이 이슈 범위 밖이라 상태 전이가 없고, 따라서 **`status` 컬럼을 두지 않는다**(§4-9 `reports`의 `ReportStatus`와 대비). 접수된 행은 생성 후 바뀌지 않는 **불변 기록**이라 `updated_at`·소프트삭제도 없다. 운영 흐름이 정의되면 그때 상태 컬럼을 추가한다(확장 변경).
 
@@ -602,15 +602,15 @@
 | `id` | BIGINT | PK, AUTO_INCREMENT · API `reportId` |
 | `reporter_id` | BIGINT | NOT NULL · UNIQUE(복합) · 신고자 → user `users.id`(값 참조). **응답 비노출** |
 | `booking_id` | BIGINT | NOT NULL · UNIQUE(복합) · 신고 대상 예약 → `bookings.id`(같은 모듈이지만 FK 없음 — 아래 註) |
-| `reason` | VARCHAR(32) (enum `BookingReportReason`) | **NULL 허용** · 신고 사유 · 보내면 저장, 안 보내면 NULL |
+| `reason` | VARCHAR(32) | **NULL 허용** · 신고 사유 · 카탈로그(`booking_report_reasons`) `code` 값 참조(FK 없음) · 보내면 활성 code 검증 후 저장, 안 보내면 NULL |
 | `detail` | TEXT | NULL, ≤500 · 신고 상세(자유 입력) · **원문 응답 비노출** |
 | `created_at` | DATETIME(6) | NOT NULL · 접수 시각(UTC) |
 
 **인덱스**: PK `id` / **UNIQUE `(reporter_id, booking_id)`**(같은 예약 중복 신고 차단 — `BOOKING_REPORT_ALREADY_EXISTS` 409).
 
 - **`status` 없음**: 위 참조 — 접수까지만이라 상태 전이가 없다. §4-9 `reports`가 `status`(default `RECEIVED`)를 갖는 것과 의도적으로 다르다.
-- **`reason` nullable**: 사유는 **선택 입력**이라 NOT NULL이 아니다(§4-9 `reports.reason`이 NOT NULL인 것과 다름). 값 카탈로그(6종)는 [domain-model](../architecture/domain-model.md)이 정본이며, 문자열 UPPER_SNAKE로 저장하고 네이티브 `ENUM`을 쓰지 않는다(§2-3). §4-9의 `ReportReason`과 값이 같아도 **예약 맥락 전용 별개 enum**이다 — 카탈로그를 공유하면 `booking → report` 모듈 의존이 생긴다.
-- **표시 라벨 컬럼 없음(`reason`은 언어 무관 코드)**: `reason`은 UPPER_SNAKE 코드만 저장하는 **언어 무관 불변 키**이고, `GET /api/v1/bookings/report-reasons`가 내려주는 **표시 라벨은 이 테이블에 두지 않는다** — 서버가 `user :: api` 공개 쿼리 `getLanguage(userId)`로 얻은 사용자 표시 언어(`en`·`ko`·`ja`, 미설정·미지원은 `en` 폴백)로 **리소스 번들(Spring `MessageSource`)** 에서 조립한다. 진단(§4-4 `diagnosisQuestions`)·생활 팁(§4-10)의 **MongoDB 인라인 언어-키 맵**을 쓰지 않는 이유는 신고 사유 6종이 **배포 없이 바뀔 필요가 없는 코드 레벨 상수**이기 때문이다(인라인 언어-키 맵은 배포 없이 바뀌어야 하는 *콘텐츠*를 위한 방식이라 과하다). `booking`은 MySQL이라 사유 6종 라벨만을 위해 **cross-store 컬렉션을 만들 이유도 없다**(§2-4 교차 스토어 금지). `code`는 언어 무관 불변이고 `label`만 언어별이라는 원칙은 [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) Decision 6과 같다.
+- **`reason` nullable**: 사유는 **선택 입력**이라 NOT NULL이 아니다(§4-9 `reports.reason`이 NOT NULL인 것과 다름). 저장값은 카탈로그 `booking_report_reasons`(아래)의 **`code` 문자열**(UPPER_SNAKE)이며 네이티브 `ENUM`을 쓰지 않는다(§2-3). 접수 시 reason이 있으면 **활성 카탈로그 code인지 검증**하고(아니면 `400 INVALID_INPUT`), 없으면 검증 없이 `201`이다. §4-9의 `ReportReason`과 값이 같아도 **예약 맥락 전용 별개 카탈로그**다 — 카탈로그를 공유하면 `booking → report` 모듈 의존이 생긴다.
+- **표시 라벨은 `booking_reports`가 아니라 카탈로그(`booking_report_reasons`)에 있다(`reason`은 언어 무관 코드)**: `booking_reports.reason`은 UPPER_SNAKE 코드만 저장하는 **언어 무관 불변 키**이고, `GET /api/v1/bookings/report-reasons`가 내려주는 **표시 라벨은 카탈로그 `booking_report_reasons`**(아래)에서 온다 — 서버가 `user :: api` 공개 쿼리 `getLanguage(userId)`로 얻은 사용자 표시 언어(`en`·`ko`·`ja`, 미설정·미지원은 `en` 폴백)로 해당 언어의 `(code, lang)` 행 `label`을 골라 계약 `{ code, label }`로 조립하고, 그 언어 행이 없으면 **`en` 폴백**한다. 리소스 번들(`messages`)이 아니라 **MySQL 카탈로그 테이블**에 두는 이유는 신고 사유를 **코드 배포·스키마 변경 없이 행 INSERT만으로 동적 관리**하기 위해서다(사유 추가도, 언어 추가도 `(code, lang)` 행 추가). `messages` 번들은 다시 **에러 메시지 전용**이다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)). 진단(§4-4 `diagnosisQuestions`)·생활 팁(§4-10)의 **MongoDB 인라인 언어-키 맵**을 쓰지 않는 이유는 `booking`이 MySQL 모듈이라 사유 라벨만을 위해 **cross-store 컬렉션을 만들 이유가 없기** 때문이다(§2-4 교차 스토어 금지). `code`는 언어 무관 불변이고 `label`만 언어별이라는 원칙은 [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) Decision 6과 같다.
 - **FK 없음(`booking_id`)**: `booking_id`는 같은 `booking` 모듈의 `bookings.id`라 §2-4상 FK가 **허용되지만** 걸지 않는다 — 레포의 마이그레이션 전체에 `FOREIGN KEY`/`REFERENCES`가 **0건**이라 전례를 따른다(대상 예약 존재·참여자 검증은 접수 시 응용 계층이 한다). `reporter_id`는 `user` 모듈 참조라 **FK 금지**(교차 모듈, §2-4).
 - **`idx_booking_reports_booking (booking_id)` 미도입**: "이 예약에 신고가 몇 건인가"를 묻는 **운영자 조회 흐름이 현재 없어** 불필요하다 — 유일한 읽기 경로인 중복 검사는 UNIQUE `(reporter_id, booking_id)`가 이미 처리한다. 운영자 검토 화면이 생기면 그때 추가한다(§4-9 `reports`가 `(target_type, target_id)` 인덱스를 "흐름 확정 후"로 미룬 것과 같은 판단).
 - **삭제·차단과 무관하게 접수**: 신고 대상 판정은 `*_deleted_at`·차단 상태를 보지 않는다 — 이미 삭제·차단한 예약도 신고할 수 있어야 **증거가 보존**된다. 그래서 접수는 필터되지 않은 조회를 쓰며, 같은 행이 상세 조회에선 `404`인데 신고는 `201`이 되는 **의도된 비대칭**이 생긴다.
@@ -635,6 +635,48 @@
         CONSTRAINT uq_booking_reports_reporter_booking UNIQUE (reporter_id, booking_id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
     -- idx_booking_reports_booking(booking_id)은 두지 않는다 — 운영자 조회 흐름이 없고 중복 검사는 위 유니크가 처리한다.
+    ```
+
+#### 예약 신고 사유 카탈로그 — `booking_report_reasons`
+
+신고 사유의 **코드·언어별 표시 라벨**을 담는 reference 카탈로그다(#169 · US-4-9). `booking` 모듈이 소유하며, `GET /api/v1/bookings/report-reasons`가 사용자 표시 언어의 라벨을 골라 `{ code, label }`로 내려주는 단일 출처다. **enum·리소스 번들 대신 DB 카탈로그에 두는 이유**는 신고 사유를 **코드 배포·스키마 변경 없이 행 INSERT만으로 동적 관리**하기 위해서다 — **사유 추가도, 언어 추가도 모두 `(code, lang)` 행 하나를 INSERT**한다(사유는 JVM enum이 아니라 카탈로그 행). MongoDB 인라인 언어-키 맵(§4-4·§4-10)을 쓰지 않는 이유는 `booking`이 MySQL 모듈이라 cross-store 컬렉션을 만들 이유가 없기 때문이다(§2-4).
+
+`booking_report_reasons` — reference(운영 중 행 추가·비활성 가능).
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `id` | BIGINT | PK, AUTO_INCREMENT |
+| `code` | VARCHAR(32) | NOT NULL · UNIQUE(복합) · 언어 무관 불변 키(UPPER_SNAKE) · `booking_reports.reason`이 값 참조 |
+| `lang` | VARCHAR(8) | NOT NULL · UNIQUE(복합) · 표시 언어(ISO 639-1 소문자 `en`·`ko`·`ja`) |
+| `label` | VARCHAR(100) | NOT NULL · 해당 언어의 표시 라벨 |
+| `display_order` | INT | NOT NULL · 목록 정렬 순서 |
+| `active` | BIT | NOT NULL DEFAULT `b'1'` · 비활성 사유는 목록·검증에서 제외(Hibernate `boolean`↔`BIT` 매핑) |
+
+**인덱스**: PK `id` / **UNIQUE `(code, lang)`**(한 사유·한 언어당 라벨 1개 — 중복 시드·중복 언어 방지). `(code, lang)` 한 쌍이 곧 한 라벨이다.
+
+- **`(code, lang)` = 한 라벨**: 사유 6종 × 언어 3종(`en`·`ko`·`ja`)이 각각 한 행이다. 사유를 늘리려면 새 `code`의 언어별 행들을, 언어를 늘리려면 기존 code들의 새 `lang` 행들을 **INSERT**한다(코드·스키마 불변).
+- **목록·폴백**: `GET /api/v1/bookings/report-reasons`는 `user :: api` `getLanguage(userId)`로 얻은 표시 언어의 `active=TRUE` 행을 `display_order`로 정렬해 `{ code, label }`로 내려주고, 그 언어 행이 없으면 **`en` 행으로 폴백**한다.
+- **`booking_reports.reason` 값 참조(FK 없음)**: 접수된 신고의 `reason`은 이 카탈로그의 `code` 문자열을 **값으로만** 담는다(§4-2·§4-5 전례대로 FK 미설정 — 레포 전체 FK 0건). 접수 시 reason이 있으면 **활성 code인지 검증**하고(아니면 `400 INVALID_INPUT`), 없으면 검증 없이 `201`이다.
+- **표준 컬럼 없음**: 코드·라벨을 담는 순수 reference라 `created_at`/`updated_at`·소프트삭제를 두지 않는다(비활성은 `active`로 표현 — `nickname_adjectives`·`countries`와 같은 취급).
+- **신설 — 전진 마이그레이션 V17 예정**(`V14`=`bookings` 컬럼 추가, `V15`=`user_blocks` 신설, `V16`=`booking_reports` 신설이므로 다음 번호는 `V17__create_booking_report_reasons.sql`, [migration-policy](./migration-policy.md)): 테이블 생성 + 6종 × 3언어(`en`·`ko`·`ja`) 시드로, 백필 없는 순수 확장 변경이다(중복 방지 UNIQUE는 별개 제약 변경이라 그 뒤 `V18` — 위).
+
+    ```sql
+    -- 예약 신고 사유 카탈로그(booking_report_reasons) 테이블 + 6종 × 3언어(en/ko/ja) 시드.
+    -- enum·리소스 번들 대신 DB 카탈로그에 둔다 — 사유 추가도 언어 추가도 코드 배포 없이 (code, lang) 행 INSERT로 한다.
+    -- booking_reports.reason은 이 카탈로그의 code 문자열을 값 참조(FK 없음 · 레포 전체 FK 0건 전례).
+    -- 목록 API는 사용자 표시 언어(user::api getLanguage) 라벨을 고르고 없으면 en 폴백. 접수 시 reason은 활성 code인지 검증(아니면 400).
+    -- #169 · US-4-9 · docs/database/database-design.md §2-4·§4-5 · docs/api/specs/04-booking-inquiry-chat.md.
+    CREATE TABLE booking_report_reasons (
+        id            BIGINT       NOT NULL AUTO_INCREMENT,
+        code          VARCHAR(32)  NOT NULL,
+        lang          VARCHAR(8)   NOT NULL,
+        label         VARCHAR(100) NOT NULL,
+        display_order INT          NOT NULL,
+        active        BIT(1)       NOT NULL DEFAULT b'1',
+        PRIMARY KEY (id),
+        CONSTRAINT uq_booking_report_reasons_code_lang UNIQUE (code, lang)
+    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+    -- 이어서 6종 × 3언어(en/ko/ja) = 18행을 INSERT로 시드한다(사유·언어 추가는 이후 행 INSERT).
     ```
 
 ### 4-6. `chat`

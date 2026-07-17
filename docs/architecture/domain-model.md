@@ -623,17 +623,17 @@
 | `id` | 식별자 | 애그리거트 식별자(숫자 PK, API에서 `reportId`로 노출) |
 | `reporterId` | 식별자 | 신고자 → `User` 식별자 참조(대상 예약의 참여자 본인). **응답 비노출** |
 | `bookingId` | 식별자 | 신고 대상 예약 → `Booking` 식별자 참조(같은 모듈) |
-| `reason` | enum `BookingReportReason`, nullable | 신고 사유(**선택** — 전송하면 저장하고 미전송이면 `null`) |
+| `reason` | String, nullable | 신고 사유 — 사유 카탈로그(`booking_report_reasons`)의 **`code` 문자열을 값 참조**로 저장(**선택** — 전송하면 활성 `code` 검증 후 저장하고 미전송이면 `null`). enum·FK 아님 |
 | `detail` | String, nullable | 신고에 덧붙이는 자유 텍스트(선택, 최대 500자). **원문 응답 비노출** |
 | `createdAt` | Instant | 접수 시각(UTC) |
 
-**불변식:** `(reporterId, bookingId)`는 유일 → 같은 신고자의 같은 예약 재접수는 거부(`409 BOOKING_REPORT_ALREADY_EXISTS`), 동시 접수도 1건만; **접수 후 상태 전이가 없다** — 생성 시점에 확정되는 불변 기록이라 어떤 필드도 갱신되지 않는다(수정·철회 경로 없음); 신고자는 대상 예약의 참여자(`tenantId` 또는 `landlordId`)여야 하며, 참여자가 아니거나 없는 예약이면 `404 BOOKING_NOT_FOUND`(존재 비노출 — 조회·삭제와 동일 규약); **자기 신고는 구조적으로 성립하지 않는다** — 예약 생성이 `userType=TENANT` 전용이고 `userType`은 온보딩 확정 후 불변이라 `tenantId != landlordId`가 항상 참이다(그래서 자기 신고 전용 에러코드를 두지 않는다); **신고 가능 여부는 삭제·차단 상태와 무관하다** — 내가 삭제했거나 상대를 차단한 예약도 신고할 수 있다(증거 보존). 따라서 같은 예약이 `GET /bookings/{id}`에선 `404`인데 신고는 `201`이 되는 **의도된 비대칭**이 생기며, 이를 위해 신고 경로는 삭제·차단으로 **필터되지 않은** 조회로 대상을 찾는다; `reason`은 `BookingReportReason` 카탈로그의 값이거나 미전송(`null`), `detail`은 선택·500자 초과 불가(`400 INVALID_INPUT`); `reporterId`·`detail` 원문은 응답 비노출(프라이버시 — 응답은 `reportId`·`bookingId`·`reason`·`createdAt`).
+**불변식:** `(reporterId, bookingId)`는 유일 → 같은 신고자의 같은 예약 재접수는 거부(`409 BOOKING_REPORT_ALREADY_EXISTS`), 동시 접수도 1건만; **접수 후 상태 전이가 없다** — 생성 시점에 확정되는 불변 기록이라 어떤 필드도 갱신되지 않는다(수정·철회 경로 없음); 신고자는 대상 예약의 참여자(`tenantId` 또는 `landlordId`)여야 하며, 참여자가 아니거나 없는 예약이면 `404 BOOKING_NOT_FOUND`(존재 비노출 — 조회·삭제와 동일 규약); **자기 신고는 구조적으로 성립하지 않는다** — 예약 생성이 `userType=TENANT` 전용이고 `userType`은 온보딩 확정 후 불변이라 `tenantId != landlordId`가 항상 참이다(그래서 자기 신고 전용 에러코드를 두지 않는다); **신고 가능 여부는 삭제·차단 상태와 무관하다** — 내가 삭제했거나 상대를 차단한 예약도 신고할 수 있다(증거 보존). 따라서 같은 예약이 `GET /bookings/{id}`에선 `404`인데 신고는 `201`이 되는 **의도된 비대칭**이 생기며, 이를 위해 신고 경로는 삭제·차단으로 **필터되지 않은** 조회로 대상을 찾는다; `reason`은 전송 시 **활성 사유 카탈로그 `code`인지 검증**하고(비활성·미등록 code면 `400 INVALID_INPUT`) 그 `code` 문자열을 저장하거나 미전송(`null`), `detail`은 선택·500자 초과 불가(`400 INVALID_INPUT`); `reporterId`·`detail` 원문은 응답 비노출(프라이버시 — 응답은 `reportId`·`bookingId`·`reason`·`createdAt`).
 
 > **왜 예약 신고를 `booking`이 소유하나(§9 `report`가 아니라):** 신고 **접수**는 "대상 예약이 실재하는가 / 신고자가 그 예약의 참여자인가"를 검증해야 하는데 그건 **예약만 아는 정보**이고, 불변식(참여자만 신고 가능·같은 예약 중복 접수 불가)이 예약 상태에 의존하므로 소유자도 예약이다. `report`가 접수하면 `report → booking :: api` 포트를 새로 뚫어야 하지만, `booking`이 접수하면 모듈 내부 호출이라 **새 의존 엣지가 0개**다. §9 `report`의 `Report`는 **게시글(`POST`)·댓글(`COMMENT`)·채팅 메시지(`MESSAGE`)** 를 대상으로 하고 `BookingReport`는 **예약**을 대상으로 해 **신고 대상이 겹치지 않는 별개 애그리거트**다 — `ReportTargetType`에 `BOOKING`을 두지 않는 것이 이 무충돌의 전제다.
 >
 > **왜 `status`가 없나:** 이 애그리거트의 범위는 **접수(capture)까지**다 — 운영자 검토·제재·처리 상태 전이는 범위 밖이라 실을 전이가 없다. 그래서 §9 `Report`의 `ReportStatus`(`RECEIVED` 단일 값)에 해당하는 필드를 아예 두지 않는다(접수됐다는 사실은 기록의 존재가 말한다).
 >
-> **왜 사유 enum이 별개인가:** `BookingReportReason`은 §9 `ReportReason`과 **값이 같지만 별개 enum**이다 — 사유 카탈로그를 공유하면 `booking → report` 모듈 의존이 생긴다. 각 모듈이 동일 이름의 자기 enum을 소유하는 선례(`diagnosis`의 `DiagnosisCondition` ↔ `listing`의 `ConditionTag`)를 따라 예약 맥락 전용 카탈로그로 둔다.
+> **왜 사유 카탈로그가 별개인가:** 예약 신고 사유는 `booking`이 소유하는 **DB 카탈로그**(`booking_report_reasons` — 아래 참조)이고 §9 `report`의 `ReportReason`과 **값이 겹치지만 별개 저장소**다 — 사유 카탈로그를 공유하면 `booking → report` 모듈 의존이 생긴다. 각 모듈이 자기 사유 목록을 소유하는 선례(`diagnosis`의 `DiagnosisCondition` ↔ `listing`의 `ConditionTag`)를 따라 예약 맥락 전용 카탈로그로 둔다.
 
 **값 객체(VO):** 1차 MVP의 예약·예약 신고 애그리거트에는 값 객체가 없다(`BookingReport.detail`은 제약이 "선택·최대 500자"뿐이라 §9 `report`의 `ReportDetail`과 달리 VO로 감싸지 않고 nullable 문자열 속성으로 둔다).
 
@@ -647,24 +647,29 @@
 | | `ACCEPTED` | 임대인 수락(**후속·이연** — 상태전이 미구현) |
 | | `REJECTED` | 임대인 거절(**후속·이연** — 상태전이 미구현) |
 | | `CANCELED` | 세입자 취소(**후속·이연** — 상태전이 미구현) |
-| `BookingReportReason` | `SPAM` | 스팸/광고(예약 신고 사유 카탈로그 — §9 `report`의 `ReportReason`과 값이 같지만 **별개 enum**이다: 예약 맥락 전용) |
-| | `ABUSE` | 욕설/괴롭힘 |
-| | `SEXUAL_CONTENT` | 성적 콘텐츠 |
-| | `EXTERNAL_CONTACT` | 외부 연락처 유도 |
-| | `FALSE_INFO` | 허위 정보 |
-| | `ETC` | 기타 |
 
-> `BookingReportReason`은 **선택 입력**이라 `BookingReport.reason`이 nullable이다(미전송이면 `null`) — enum 값 자체에 "미선택"을 뜻하는 항목을 두지 않는다(`ETC`는 사용자가 고른 "기타"이지 미선택이 아니다). 고정·소규모 집합이라 사유 목록 조회는 페이지네이션 없이 전체를 한 번에 반환한다.
+**신고 사유 카탈로그(`booking_report_reasons`):** 신고 사유는 JVM enum이 아니라 **`booking`이 소유하는 MySQL 카탈로그 테이블**의 행이다 — 사유든 언어든 **행 INSERT만으로**(코드 배포·스키마 변경 없이) 동적으로 늘릴 수 있게 enum·리소스 번들 대신 카탈로그로 둔다. **`(code, lang)` 한 쌍이 한 라벨**이며, `code`는 언어 무관 불변이고 라벨은 언어별 행이다(사유 6종 × 언어 3종(en/ko/ja) = 시드 행). `BookingReport.reason`은 이 카탈로그의 **`code` 문자열을 값 참조**로 저장한다(선택 · nullable · FK 없음). 물리 스키마·시드 마이그레이션은 [database-design](../database/database-design.md) 소관.
+
+| `code` | 의미 |
+| --- | --- |
+| `SPAM` | 스팸/광고(§9 `report`의 `ReportReason`과 값이 겹치지만 별개 카탈로그: 예약 맥락 전용) |
+| `ABUSE` | 욕설/괴롭힘 |
+| `SEXUAL_CONTENT` | 성적 콘텐츠 |
+| `EXTERNAL_CONTACT` | 외부 연락처 유도 |
+| `FALSE_INFO` | 허위 정보 |
+| `ETC` | 기타 |
+
+> 사유는 **선택 입력**이라 `BookingReport.reason`이 nullable이다(미전송이면 `null`) — 카탈로그 자체에 "미선택"을 뜻하는 `code`를 두지 않는다(`ETC`는 사용자가 고른 "기타"이지 미선택이 아니다). 소규모 집합이라 사유 목록 조회는 페이지네이션 없이 활성 사유 전체를 한 번에 반환한다.
 >
-> **사유 라벨 번역** — 사유 목록 조회(`GET /api/v1/bookings/report-reasons`)의 표시 `label`은 **서버가 사용자 표시 언어로 번역해** 내려준다. 표시 언어는 `user` 공개 쿼리(`user :: api`의 `getLanguage(userId)`)로 동기 취득하며(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`을 언어 코드 문자열로 회신 — `booking`은 폴백 규칙을 알지 못한다), `diagnosis`·`gamification`·`lifetip`이 이미 쓰는 것과 **같은 경로**다. `user :: api`는 이미 `allowedDependencies`에 있으므로 **새 모듈 의존 엣지가 생기지 않는다**. 지원 언어는 `Language` enum의 `EN`·`KO`·`JA` 3종이고 미지원·미설정은 `en` 폴백이다. **`code`는 언어 무관 불변이고 `label`만 언어별**이다(§4 `diagnosis` 문항 카탈로그가 `code`(UPPER_SNAKE)를 언어 무관으로 고정하고 표시 문자열만 언어별로 두는 것과 같은 원칙 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) Decision 6). 클라이언트는 언제나 `code`로 신고를 제출하고 `label`은 표시에만 쓴다.
+> **사유 라벨 번역** — 사유 목록 조회(`GET /api/v1/bookings/report-reasons`)의 표시 `label`은 **서버가 사용자 표시 언어의 카탈로그 라벨 행을 골라** 내려준다. 표시 언어는 `user` 공개 쿼리(`user :: api`의 `getLanguage(userId)`)로 동기 취득하며(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`을 언어 코드 문자열로 회신 — `booking`은 폴백 규칙을 알지 못한다), `diagnosis`·`gamification`·`lifetip`이 이미 쓰는 것과 **같은 경로**다. `user :: api`는 이미 `allowedDependencies`에 있으므로 **새 모듈 의존 엣지가 생기지 않는다**. 시드 언어는 `en`·`ko`·`ja` 3종이고, 사용자 표시 언어의 `(code, lang)` 행이 없으면 **`en` 행으로 폴백**한다. **`code`는 언어 무관 불변이고 `label`(행)만 언어별**이다(§4 `diagnosis` 문항 카탈로그가 `code`(UPPER_SNAKE)를 언어 무관으로 고정하고 표시 문자열만 언어별로 두는 것과 같은 원칙 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) Decision 6). 클라이언트는 언제나 `code`로 신고를 제출하고 `label`은 표시에만 쓴다. 계약은 그대로 `{ code, label }`이다.
 >
-> **왜 리소스 번들인가(MongoDB 인라인 언어-키 맵이 아니라):** 번역 라벨은 **리소스 번들(Spring `MessageSource`)** 에 둔다. 신고 사유 6종은 `BookingReportReason` enum과 1:1인 **코드 레벨 상수**라 값이 늘거나 바뀌면 어차피 배포가 따르고, **배포 없이 바뀔 필요가 없다** — 배포 없이 운영 중 바뀌어야 하는 콘텐츠(§4 `diagnosis`의 문항·선택지, §10 `lifetip`의 주제)를 위한 **MongoDB 인라인 언어-키 맵 방식은 이 6종에 과하다**. 게다가 `booking`은 MySQL 저장소라(polyglot, [ADR-0005](../adr/0005-polyglot-persistence.md)) 사유 6종의 라벨만을 위해 cross-store 컬렉션을 새로 만들 이유가 없다.
+> **왜 DB 카탈로그인가(enum·리소스 번들이 아니라):** 사유와 그 라벨은 `booking`이 소유하는 **MySQL 카탈로그 테이블 `booking_report_reasons`**(행: `code`·`lang`·`label`·표시순서·활성 플래그, `(code, lang)` 유니크)에 둔다. JVM enum·리소스 번들이 아니라 카탈로그에 두는 이유는 **코드 배포 없이 행 추가만으로** 사유든 언어든 동적으로 늘리기 위해서다 — 사유 6종이 늘거나 새 언어가 필요해도 스키마 변경 없이 행을 INSERT하면 된다(§4 `diagnosis`의 문항·선택지, §10 `lifetip`의 주제가 운영 중 콘텐츠를 저장소에 두는 것과 같은 결). `booking`이 이미 MySQL 저장소라(polyglot, [ADR-0005](../adr/0005-polyglot-persistence.md)) 별도 store를 추가하지 않고 같은 DB의 카탈로그 테이블로 처리한다.
 >
-> **어느 번들인가 — 기존 `messages`가 아니라 별도 basename `content`:** 라벨 키는 `messages` 번들에 넣지 않고 **별도 리소스 번들 basename `content`**(`content.properties`(기본=`en`)·`content_ko.properties`·`content_ja.properties`)에 두며, `spring.messages.basename`을 `messages,content`로 확장한다(**구현 시 항목** — 코드·설정 변경은 이번 문서 작업 범위 밖). 근거: 기존 `messages` 번들은 [ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)이 **에러 메시지 전용**으로 규정한다 — "키는 `ErrorCode` 이름"이고 검증 불변식이 "`messages.properties`의 키 집합 == `ErrorCode` 전체 상수"이며, 그 경로는 `Accept-Language`/`LocaleContextHolder`로 `Locale`을 정한다. 신고 사유 라벨은 **본문 콘텐츠**라 `Locale`을 `getLanguage(userId)`에서 받으므로 두 경로가 섞여선 안 되고, 같은 번들에 넣으면 `ErrorCode`가 아닌 키가 섞여 **ADR-0030의 키 범위·커버리지 불변식이 깨진다**. 별도 basename은 §2 `user` 협력이 이미 요구하는 **"에러 i18n과 콘텐츠 i18n 분리"** 를 번들 배치로 그대로 인코딩한다.
+> **에러 메시지 번들(`messages`)과 섞지 않는다:** 사유 라벨은 리소스 번들(`messages`)에 넣지 않는다 — `messages` 번들은 [ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)이 **에러 메시지 전용**으로 규정한다("키는 `ErrorCode` 이름", 검증 불변식은 "`messages.properties`의 키 집합 == `ErrorCode` 전체 상수", `Locale`은 `Accept-Language`/`LocaleContextHolder`로 결정). 신고 사유 라벨은 **본문 콘텐츠**라 표시 언어를 `getLanguage(userId)`에서 받으므로 두 경로가 섞여선 안 되고, `messages`에 넣으면 `ErrorCode`가 아닌 키가 섞여 **ADR-0030의 키 범위·커버리지 불변식이 깨진다**. 라벨을 카탈로그 테이블에 두는 것은 §2 `user` 협력이 이미 요구하는 **"에러 i18n과 콘텐츠 i18n 분리"** 를 저장 위치로 그대로 인코딩한다.
 >
-> ⚠️ **`Locale`은 `getLanguage(userId)`가 회신한 코드에서 만든다** — `LocaleContextHolder`/`Accept-Language`에서 만들지 않는다. §2 `user` 협력이 두 경로를 명시적으로 분리해 뒀다: `getLanguage`는 **본문 콘텐츠 번역에만** 쓰이고, **에러 메시지**는 `Accept-Language`/`LocaleContextHolder` 경로를 그대로 쓴다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)). 사유 `label`은 본문 콘텐츠라 전자를 따르며, 번들 basename(`content`)과 `Locale` 산출 경로 **둘 다** 에러 경로와 섞지 않는다.
+> ⚠️ **표시 언어는 `getLanguage(userId)`가 회신한 코드로 고른다** — `LocaleContextHolder`/`Accept-Language`가 아니다. §2 `user` 협력이 두 경로를 명시적으로 분리해 뒀다: `getLanguage`는 **본문 콘텐츠 번역에만** 쓰이고, **에러 메시지**는 `Accept-Language`/`LocaleContextHolder` 경로를 그대로 쓴다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)). 사유 `label` 행 선택은 본문 콘텐츠라 전자를 따르며(그 언어 행이 없으면 `en` 행 폴백), 에러 경로와 섞지 않는다.
 >
-> ⚠️ **구현 시 항목 — 일본어 라벨은 #169 구현 범위다:** 현재 리소스 번들은 `messages.properties`(기본=`en`)·`messages_ko.properties` 둘뿐이고 일본어 파일이 없으나, 라벨은 위와 같이 별도 basename `content`에 두므로 **`content.properties`(en)·`content_ko.properties`·`content_ja.properties` 3종을 이번 구현에서 모두 신설한다**. 지원 언어 `EN`·`KO`·`JA` 전부에 라벨이 있어야 US-4-9의 정상 AC(사용자 표시 언어로 번역된 `label`)를 만족한다 — **`ja` 사용자에게 `en` 라벨이 나가는 것은 허용 상태가 아니라 `content_ja.properties` 미구현 시의 실패 양상**이다.
+> **일본어 라벨은 #169 구현 범위다:** 사유 6종 × `en`·`ko`·`ja` 3언어 = 시드 행을 카탈로그에 채운다(마이그레이션). 지원 언어 3종 전부에 라벨 행이 있어야 US-4-9의 정상 AC(사용자 표시 언어로 번역된 `label`)를 만족한다 — **`ja` 사용자에게 `en` 라벨이 나가는 것은 허용 상태가 아니라 `ja` 행 미시드 시의 실패 양상**이다. 물리 스키마·시드 마이그레이션은 [database-design](../database/database-design.md) 소관.
 >
 > `contractPeriod`는 enum이 아니라 **정수(개월수, 양의 정수)** 다 — `1`·`3`·`6`·`12`·`24` 등 자유 입력.
 
