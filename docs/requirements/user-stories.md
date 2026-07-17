@@ -17,7 +17,7 @@
 - 5. 커뮤니티 (게시판 · 동네친구) — [API 스펙](../api/specs/05-community.md)
 - 6. 게이미피케이션 (퀴즈) — [API 스펙](../api/specs/06-gamification.md)
 - 7. 신고 처리 — [API 스펙](../api/specs/07-reports.md)
-- 8. 생활 팁 (주제별 생활 정보) — [API 스펙](../api/specs/08-life-tips.md) *(스펙 작성 예정 · 이슈 #79)*
+- 8. 생활 팁 (주제별 생활 정보) — [API 스펙](../api/specs/08-life-tips.md)
 
 ---
 
@@ -1587,11 +1587,11 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 
 ## 8. 생활 팁 (주제별 생활 정보)
 
-> 관련 API 스펙: [08-life-tips](../api/specs/08-life-tips.md) *(작성 예정 · 이슈 #79)*
+> 관련 API 스펙: [08-life-tips](../api/specs/08-life-tips.md)
 
 온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 읽기 전용 큐레이션 기능이다. 홈 화면 진입점([project-brief §4](../project/project-brief.md))에서 시작하며, 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(5절)와 구분된다).
 
-**번역이 이 기능의 바탕이다** — 주제명·제목·내용 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 사진 `imageUrl`은 언어 무관 불변이고, 표시 텍스트만 언어별이다.
+**번역이 이 기능의 바탕이다** — 주제명·주제 설명(짧은·긴)·제목·내용 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 이미지 URL(주제의 카드 이미지 `LifeTipTopic.imageUrl`·배경 이미지 `backgroundImageUrl`, 팁의 사진 `LifeTip.imageUrl`)은 언어 무관 불변이고, 표시 텍스트(주제명·주제 설명·제목·내용)만 언어별이다.
 
 > **인증·상태 게이트 기준**: 표시 언어를 **등록 국가에서 도출**하려면 온보딩으로 국가·언어가 확정된 사용자여야 한다. 따라서 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자**이고, 모든 조회는 **정식 인증(ROLE_USER)** 을 요구한다(임대인·온보딩 미완료 사용자는 등록 국가가 없어 대상이 아니다) — 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트). 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
 
@@ -1600,12 +1600,12 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 ### US-8-1 — 생활 팁 주제 목록 조회
 
 **As a** 온보딩을 마친(ACTIVE) 세입자(외국인) 사용자
-**I want** 생활 팁이 어떤 주제로 나뉘어 있는지 주제 목록을 내 언어로 조회하고
-**So that** 관심 있는 주제를 골라 관련 생활 정보를 찾아 들어갈 수 있다
+**I want** 생활 팁이 어떤 주제로 나뉘어 있는지 주제 목록을 내 언어로 조회하되, 각 주제의 이름·짧은 설명·긴 설명과 카드 이미지·배경 이미지까지 한 응답에 함께 받고
+**So that** 홈 화면에서 주제 카드(이미지 + 짧은 설명)를 훑어보고, 관심 있는 주제를 골라 상세 상단(배경 이미지 + 긴 설명)과 관련 생활 정보로 들어갈 수 있다
 
 - **우선순위**: Mid (홈 진입 콘텐츠, 보호 핵심(진단·추천) 아님)
 - **관련 NFR**: 국제화(i18n — 등록 국가 기반 번역·`en` 폴백), 성능(소규모 고정 카탈로그 조회), 유지보수성(주제 카탈로그 단일 출처)
-- **백엔드 관점**: 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그다. 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며, 표시명(`name`)은 언어-키 맵으로 임베드된다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`을 채워 노출 순서대로 반환한다. 주제 수는 고정·소규모라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 메타 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). `code`는 US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다.
+- **백엔드 관점**: 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그다. 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며, 표시명(`name`)·짧은 설명(`shortDescription`)·긴 설명(`longDescription`)은 언어-키 맵으로 임베드되고, 카드 이미지(`LifeTipTopic.imageUrl`)·배경 이미지(`backgroundImageUrl`)는 언어 무관 절대 CDN URL이다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`·`shortDescription`·`longDescription`을 채우며 두 이미지 URL은 그대로 실어, 노출 순서대로 주제당 6필드(`code`·`name`·`shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`)를 한 응답에 반환한다. 설명 2종·이미지 2종은 **모두 필수(값 없는 주제 없음)** 라 홈 카드·상세 상단이 항상 이미지·설명을 그린다(팁의 `LifeTip.imageUrl`은 '사진 없는 팁'이 있어 nullable이지만 주제의 이 4필드는 이와 구분된다). `order` 자체는 응답에 노출하지 않는다. 주제 수는 고정·소규모라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 메타 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). 앱은 목록에서 받은 주제 객체를 상세 화면까지 그대로 들고 가므로(주제는 소규모 고정, 과다 전송 부담 없음) 6필드가 이 한 응답에 함께 실린다. `code`는 US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다.
 
 **AC (Given / When / Then)**
 
@@ -1613,12 +1613,22 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 
   - **Given** 등록 국가가 일본인 ACTIVE 세입자가 유효한 access token(ROLE_USER)을 보유한다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
-  - **Then** `200 OK`와 함께 `topics[]`(각 `code`(UPPER_SNAKE), 노출 순서대로의 `name` — 일본어로 번역된 표시명)를 공통 래퍼로 반환하며, 페이지 객체 없이 전체 배열을 한 번에 준다
+  - **Then** `200 OK`와 함께 `topics[]`를 공통 래퍼로 반환한다 — 각 주제에 `code`(UPPER_SNAKE), 일본어로 번역된 `name`·`shortDescription`·`longDescription`, 언어 무관 절대 CDN URL `imageUrl`·`backgroundImageUrl`가 실려 **6필드가 한 응답에 함께** 담기며, `order` 오름차순 노출 순서대로·페이지 객체 없이 전체 배열을 한 번에 준다
+- 시나리오: 화면 구성 — 홈 카드·상세 상단
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 위 주제 목록을 받았다
+  - **When** 홈 화면에서 주제 카드를 그리고, 한 주제를 골라 주제 상세 화면으로 들어간다
+  - **Then** 홈 카드는 목록에서 받은 `imageUrl`(카드 이미지)과 `shortDescription`(짧은 설명)으로, 주제 상세 상단은 같은 주제 객체의 `backgroundImageUrl`(배경 이미지)과 `longDescription`(긴 설명)으로 구성된다(앱이 목록 응답의 주제 객체를 상세 화면까지 그대로 들고 가 추가 조회가 없다)
+- 시나리오: 필수 — 값 없는 주제 없음
+
+  - **Given** 주제 카탈로그의 모든 주제가 4개 신규 필드를 갖춰 적재되어 있다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** 반환된 모든 주제에서 `shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`이 값으로 채워져 온다(4필드 모두 필수 — '이미지·설명 없는 주제' 경계 케이스는 존재하지 않는다. 팁의 `LifeTip.imageUrl`이 nullable인 것과 구분된다)
 - 시나리오: 폴백 — 미지원 언어
 
   - **Given** 번역이 준비되지 않은 국가/언어의 ACTIVE 세입자다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
-  - **Then** 주제 표시명이 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님), `code`는 언어와 무관하게 동일하다
+  - **Then** 주제 표시명(`name`)과 짧은/긴 설명(`shortDescription`·`longDescription`)이 모두 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님, US-8-3과 동일 전략), `code`와 이미지 2종(`imageUrl`·`backgroundImageUrl`)은 언어와 무관하게 동일하다
 - 시나리오: 상태 게이트 — 온보딩 미완료
 
   - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다

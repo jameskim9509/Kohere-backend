@@ -880,9 +880,9 @@
 
 > [API 스펙](../api/specs/08-life-tips.md) · [시퀀스](sequence-diagrams/08-life-tips/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`) · **1차 MVP 이후**
 
-온보딩을 마친(ACTIVE) 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용** 큐레이션 컨텍스트다(홈 부가 기능). 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 `community`(7절)와 구분). 주제·팁의 표시 텍스트(주제명·제목·내용)는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6) — 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며 해당 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. 문서형·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏; 진단 카탈로그 저장 방식([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))과 정합).
+온보딩을 마친(ACTIVE) 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용** 큐레이션 컨텍스트다(홈 부가 기능). 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 `community`(7절)와 구분). 주제·팁의 표시 텍스트(주제명·주제 설명·제목·내용)는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6) — 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며 해당 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)와 이미지 URL(주제의 `LifeTipTopic.imageUrl`·`backgroundImageUrl`, 팁의 `LifeTip.imageUrl` 사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. 문서형·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏; 진단 카탈로그 저장 방식([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))과 정합).
 
-**`LifeTipTopic`** — 생활 팁을 묶는 주제(애그리거트 루트). 운영이 적재한 큐레이션 카탈로그로, 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며 표시명(`name`)은 언어-키 맵으로 임베드된다. 식별자 `code`(주제 코드, 언어 무관 불변).
+**`LifeTipTopic`** — 생활 팁을 묶는 주제(애그리거트 루트). 운영이 적재한 큐레이션 카탈로그로, 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며 표시 텍스트(표시명 `name`·짧은 설명 `shortDescription`·긴 설명 `longDescription`)는 언어-키 맵으로 임베드되고, 화면에 그릴 이미지(홈 카드용 `imageUrl`·상세 상단 배경용 `backgroundImageUrl`)는 언어 무관 절대 CDN URL이다. 식별자 `code`(주제 코드, 언어 무관 불변).
 
 **속성:**
 
@@ -890,9 +890,13 @@
 | --- | --- | --- |
 | `code` | 식별자(String) | 주제 코드(UPPER_SNAKE, 언어 무관 불변 식별자). 예: `MOVING_IN`·`ADMINISTRATION`·`TRANSPORT`·`FINANCE`·`HOUSING`. US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다 |
 | `name` | 언어-키 맵 | 표시명(번역 대상). `{ "en": …, "ja": …, "ko": … }` 인라인 언어-키 맵 — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백) |
-| `order` | int | 노출 순서(오름차순) |
+| `shortDescription` | 언어-키 맵 | 짧은 설명(번역 대상). `{ "en": …, "ja": …, "ko": … }` 인라인 언어-키 맵 — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백). 홈 화면 주제 카드 문구, **필수(NOT NULL)** |
+| `longDescription` | 언어-키 맵 | 긴 설명(번역 대상). 인라인 언어-키 맵(서버가 사용자 언어 키로 선택, 부재 시 `en` 폴백). 주제 상세 상단 문구, **필수(NOT NULL)** |
+| `imageUrl` | String | 주제 카드 이미지 URL(언어 무관 절대 CDN URL, 불변). 홈 화면 카드에 그린다. 팁 사진(`LifeTip.imageUrl`, nullable)과 **다른 리소스**이며 **필수(NOT NULL)** |
+| `backgroundImageUrl` | String | 주제 상세 상단 배경 이미지 URL(언어 무관 절대 CDN URL, 불변). 상세 화면 상단에 그린다. **필수(NOT NULL)** |
+| `order` | int | 노출 순서(오름차순, 내부 정렬값 — 응답에 노출하지 않음) |
 
-**불변식:** `code`는 전 주제에 걸쳐 유일(UPPER_SNAKE, 언어 무관 불변); 목록은 `order` 오름차순으로 노출하고 고정·소규모 카탈로그라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3 신고 사유 카탈로그와 동일 성격); `name`은 표시 문자열만 언어별이고 `code`·`order`는 언어 무관; 존재하지 않는 주제 `code`로 팁을 조회하면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약).
+**불변식:** `code`는 전 주제에 걸쳐 유일(UPPER_SNAKE, 언어 무관 불변); 목록은 `order` 오름차순으로 노출하고 고정·소규모 카탈로그라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3 신고 사유 카탈로그와 동일 성격); `name`·`shortDescription`·`longDescription`은 표시 문자열만 언어별이고 `code`·`order`·`imageUrl`·`backgroundImageUrl`는 언어 무관; 표시 텍스트 3종(`name`·`shortDescription`·`longDescription`)과 이미지 2종(`imageUrl`·`backgroundImageUrl`)은 모두 **필수(NOT NULL)** — 홈 카드는 `imageUrl`+`shortDescription`, 상세 상단은 `backgroundImageUrl`+`longDescription`을 항상 그리므로 팁의 `LifeTip.imageUrl`(nullable, "사진 없는 팁" 허용)과 달리 "이미지·설명 없는 주제" 경계 케이스를 두지 않는다; 존재하지 않는 주제 `code`로 팁을 조회하면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약).
 
 **`LifeTip`** — 하나의 주제에 속한 생활 팁 항목(애그리거트 루트). 주제 : 팁 = **1 : N**. `title`·`content`는 언어-키 맵으로 임베드되고 `imageUrl`은 언어 무관(사진)이다. 식별자 `id`, 소속 주제 참조 `topicCode`(→ `LifeTipTopic.code`, 애플리케이션 레벨 조인·DB 조인 없음).
 
