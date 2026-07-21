@@ -138,3 +138,45 @@ variable "test_login_enabled" {
   type        = bool
   default     = false
 }
+
+variable "fixed_verification_enabled" {
+  description = "앱스토어 심사 계정 고정 인증번호(앱 app.auth.fixed-verification.enabled, #180). 심사 기간에만 켠다. 기본 false"
+  type        = bool
+  default     = false
+}
+
+# 고정 인증번호와 심사 계정 식별자는 SecureString으로 저장한다 — 코드는 우회 자격이고, 계정·연락처는 실제 인물의 PII다.
+variable "fixed_verification_code" {
+  description = "심사 계정에 발급할 고정 인증번호(숫자, app.email/phone.code-length와 자릿수 일치). enabled=true인데 비면 앱 기동 실패"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_tenant_google_emails" {
+  description = "임차인 심사자의 Google 로그인 계정 이메일(콤마 구분). 이 계정들은 이메일 인증만 고정 인증번호를 받는다"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_tenant_emails" {
+  description = "임차인 심사에서 고정 인증번호가 적용되는 인증 대상 이메일(콤마 구분)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_landlord_google_emails" {
+  description = "임대인 심사자의 Google 로그인 계정 이메일(콤마 구분). 이 계정들은 SMS 인증만 고정 인증번호를 받는다"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_landlord_phones" {
+  description = "임대인 심사에서 고정 인증번호가 적용되는 인증 대상 휴대폰 번호(콤마 구분)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
