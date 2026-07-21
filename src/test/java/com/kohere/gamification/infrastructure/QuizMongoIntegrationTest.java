@@ -4,12 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.kohere.gamification.application.GamificationService;
 import com.kohere.gamification.application.dto.AnswerResultResponse;
 import com.kohere.gamification.application.dto.RandomQuizResponse;
 import com.kohere.gamification.domain.QuizNotFoundException;
-import com.kohere.gamification.domain.TenantOnlyException;
 import com.kohere.gamification.infrastructure.QuizDocument.ChoiceSpec;
 import com.kohere.gamification.presentation.dto.AnswerQuizRequest;
 import com.kohere.user.api.UserAccountService;
@@ -48,7 +49,6 @@ class QuizMongoIntegrationTest {
   @BeforeEach
   void setUp() {
     quizMongoRepository.deleteAll();
-    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
   }
 
   @Test
@@ -106,12 +106,48 @@ class QuizMongoIntegrationTest {
   }
 
   @Test
-  @DisplayName("세입자가 아니면 403(TenantOnly)로 거부한다")
-  void nonTenantRejected() {
+  @DisplayName("임대인도 퀴즈를 푼다 — 역할 게이트가 사라졌다(#181)")
+  void landlordAllowed() {
+    // 게이트를 되살리면 이 테스트가 깨진다. 로그아웃하면 그대로 보이는 자원이라 로그인 임대인만 막는 것은
+    // 실효가 없어 assertTenant를 제거했다 — userType은 이제 조회조차 하지 않는다.
     seedQuiz();
-    given(userAccountService.getUserType(20L)).willReturn("LANDLORD");
-    assertThatThrownBy(() -> gamificationService.getRandomQuiz(20L))
-        .isInstanceOf(TenantOnlyException.class);
+    given(userAccountService.getLanguage(20L)).willReturn("ko");
+
+    RandomQuizResponse res = gamificationService.getRandomQuiz(20L);
+
+    assertThat(res.quizId()).isEqualTo(4001L);
+    assertThat(res.question()).isEqualTo("전세 임차인 보호 제도는?");
+    verify(userAccountService, never()).getUserType(anyLong());
+  }
+
+  @Test
+  @DisplayName("게스트(userId=null)는 en으로 풀고 user 모듈을 한 번도 호출하지 않는다")
+  void guestUsesEnglishWithoutCallingUser() {
+    // 요점은 "기본값이 en"이 아니라 "호출 회피"다 — 게스트는 users 행이 없어 getLanguage 자체가 404다.
+    // 기본값만 단정하면 getLanguage를 부르고 예외를 삼키는 구현도 통과해버린다.
+    seedQuiz();
+
+    RandomQuizResponse res = gamificationService.getRandomQuiz(null);
+
+    assertThat(res.question()).isEqualTo("Which protects a jeonse tenant?");
+    assertThat(res.choices().get(0).text()).isEqualTo("Fixed date");
+    verify(userAccountService, never()).getLanguage(anyLong());
+    verify(userAccountService, never()).getUserType(anyLong());
+  }
+
+  @Test
+  @DisplayName("게스트도 채점받는다 — 해설은 en, user 모듈 미호출")
+  void guestGradesAnswer() {
+    seedQuiz();
+
+    AnswerResultResponse wrong =
+        gamificationService.gradeAnswer(null, 4001L, new AnswerQuizRequest("B"));
+
+    assertThat(wrong.correct()).isFalse();
+    assertThat(wrong.correctChoice()).isEqualTo("A");
+    assertThat(wrong.explanation()).isEqualTo("A fixed date protects your deposit.");
+    verify(userAccountService, never()).getLanguage(anyLong());
+    verify(userAccountService, never()).getUserType(anyLong());
   }
 
   private void seedQuiz() {

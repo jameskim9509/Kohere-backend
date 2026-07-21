@@ -1,0 +1,48 @@
+package com.kohere.common.security;
+
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.util.AntPathMatcher;
+
+/**
+ * 토큰을 아예 보지 않는 공개 티어 경로 정본(#181). {@link SecurityConfig}의 (1) 공개 티어와 같은 경로 집합이다 — 로그인·재발급·상태
+ * 점검·문서처럼 <b>신원이 무관</b>한 경로다.
+ *
+ * <p><b>용도</b>: {@link JwtAuthenticationFilter}가 만료 토큰을 만났을 때, 기본은 401 {@code TOKEN_EXPIRED}로
+ * 끊고(게스트 강등 금지) <b>여기 해당하는 경로만 예외로 통과</b>시킨다. 클라이언트가 모든 요청에 access 토큰을 붙이는 구조라 <b>재발급 요청에 만료된
+ * access 토큰이 실려 올 수 있는데</b>, 이때 401로 막으면 재발급 자체가 불가능해져 교착이 된다 — 그래서 공개 티어는 만료 토큰이 실려 와도 무시하고 통과시킨다.
+ *
+ * <p>게스트 허용 경로(퀴즈·생활 팁·v2 진단)를 <b>열거하지 않는다</b> — 판정 방향이 "공개 경로인가"라, 게스트 허용 경로가 늘어도 이 목록은 그대로다. 목록에서
+ * 빠진 경로는 만료 토큰이 401이 되어(fail-closed) <b>조용한 게스트 강등이 아니라 눈에 띄는 실패</b>가 된다.
+ */
+final class PublicPaths {
+
+  private static final String[] ALL = {
+    "/api/v1/auth/social-login",
+    "/api/v1/auth/reissue",
+    "/actuator/health",
+    "/docs/**",
+    "/swagger-ui/**"
+  };
+
+  private static final AntPathMatcher MATCHER = new AntPathMatcher();
+
+  private PublicPaths() {}
+
+  /**
+   * 요청이 공개 티어 경로에 해당하는지 판정한다.
+   *
+   * <p>보안 필터는 {@code DispatcherServlet} 앞에서 돌아 파싱된 경로 속성이 아직 없으므로 요청 URI에서 컨텍스트 경로를 걷어내고 직접 매칭한다.
+   *
+   * @param request 현재 요청
+   * @return 공개 티어 경로면 {@code true}
+   */
+  static boolean matches(HttpServletRequest request) {
+    String path = request.getRequestURI().substring(request.getContextPath().length());
+    for (String pattern : ALL) {
+      if (MATCHER.match(pattern, path)) {
+        return true;
+      }
+    }
+    return false;
+  }
+}

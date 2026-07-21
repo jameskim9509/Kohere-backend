@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -47,6 +48,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.PartialIndexFilter;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.MongoDBContainer;
@@ -93,7 +96,7 @@ class DiagnosisFlowServiceIntegrationTest {
     diagnosisMongoRepository.deleteAll();
     questionMongoRepository.deleteAll();
     flowSessionMongoRepository.deleteAll();
-    ensureUserIdUniqueIndex();
+    ensureSessionUniqueIndexes();
     seedCatalog();
     given(userAccountService.getLanguage(anyLong())).willReturn("en");
     given(listingRecommendationService.recommendByCriteria(any(), anyString()))
@@ -103,14 +106,29 @@ class DiagnosisFlowServiceIntegrationTest {
   }
 
   /**
-   * 프로덕션의 "사용자당 1 세션" UNIQUE 인덱스를 테스트 Mongo에도 만든다. 인덱스 생성 러너는 {@code @Profile("!test")}라 이 슬라이스에 뜨지
-   * 않는데, 그러면 세션 교체가 유니크 제약과 경합하는지를 테스트가 아예 볼 수 없다.
+   * 프로덕션의 세션 UNIQUE 인덱스를 테스트 Mongo에도 만든다. 인덱스 생성 러너는 {@code @Profile("!test")}라 이 슬라이스에 뜨지 않는데, 그러면
+   * 세션 교체가 유니크 제약과 경합하는지를 테스트가 아예 볼 수 없다.
+   *
+   * <p>정의는 {@link DiagnosisFlowSessionIndexInitializer}와 <b>같아야</b> 한다 — 신원별 partial 둘이다(#181).
+   * 비-partial 로 만들면 게스트 세션들의 {@code userId} 부재가 서로 충돌해, 프로덕션에는 없는 실패를 테스트만 재현하게 된다.
    */
-  private void ensureUserIdUniqueIndex() {
+  private void ensureSessionUniqueIndexes() {
     mongoTemplate
         .indexOps("diagnosisFlowSessions")
         .createIndex(
-            new Index().on("userId", Sort.Direction.ASC).unique().named("userId_unique_idx"));
+            new Index()
+                .on("userId", Sort.Direction.ASC)
+                .unique()
+                .named("userId_partial_unique_idx")
+                .partial(PartialIndexFilter.of(Criteria.where("userId").exists(true))));
+    mongoTemplate
+        .indexOps("diagnosisFlowSessions")
+        .createIndex(
+            new Index()
+                .on("guestSessionId", Sort.Direction.ASC)
+                .unique()
+                .named("guestSessionId_partial_unique_idx")
+                .partial(PartialIndexFilter.of(Criteria.where("guestSessionId").exists(true))));
   }
 
   /** 프로덕션의 "문항 field 유일" UNIQUE 인덱스({@code DiagnosisQuestionIndexInitializer})를 테스트 Mongo에도 만든다. */
@@ -176,7 +194,7 @@ class DiagnosisFlowServiceIntegrationTest {
     Long id = onlyDiagnosisOf(90L).getId();
 
     // id는 순차 발급이라 추측 가능하다 — 소유권만으로는 자기 폐기 기록을 막지 못한다.
-    assertThatThrownBy(() -> flowService.getRecommendations(90L, id, 0, 20, null))
+    assertThatThrownBy(() -> flowService.getRecommendations(90L, null, id, 0, 20, null))
         .isInstanceOf(DiagnosisNotFoundException.class);
   }
 
@@ -345,7 +363,7 @@ class DiagnosisFlowServiceIntegrationTest {
     // 그 진단으로 추천을 조회하면 0건 — 사유는 resultCode로 오고 조정 제안(문구·액션)은 없다.
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(emptyPage());
     V2RecommendationResponse rec =
-        flowService.getRecommendations(11L, res.diagnosisId(), 0, 20, null);
+        flowService.getRecommendations(11L, null, res.diagnosisId(), 0, 20, null);
 
     assertThat(rec.resultCode()).isEqualTo(RecommendationResultCode.NO_MATCH);
     assertThat(rec.content()).isEmpty();
@@ -359,7 +377,7 @@ class DiagnosisFlowServiceIntegrationTest {
     DiagnosisFlowResponse res = runStudyFlow(12L);
 
     V2RecommendationResponse rec =
-        flowService.getRecommendations(12L, res.diagnosisId(), 0, 20, null);
+        flowService.getRecommendations(12L, null, res.diagnosisId(), 0, 20, null);
 
     assertThat(rec.resultCode()).isEqualTo(RecommendationResultCode.MATCHED);
     assertThat(rec.content()).hasSize(1);
@@ -373,7 +391,8 @@ class DiagnosisFlowServiceIntegrationTest {
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(view()));
     DiagnosisFlowResponse res = runStudyFlow(13L);
 
-    assertThatThrownBy(() -> flowService.getRecommendations(999L, res.diagnosisId(), 0, 20, null))
+    assertThatThrownBy(
+            () -> flowService.getRecommendations(999L, null, res.diagnosisId(), 0, 20, null))
         .isInstanceOf(DiagnosisAccessDeniedException.class);
   }
 
@@ -466,7 +485,8 @@ class DiagnosisFlowServiceIntegrationTest {
   @DisplayName("next에 답(field)이 없으면 INVALID_INPUT(진행은 답으로만)")
   void nextWithoutAnswerRejected() {
     flowService.start(12L);
-    assertThatThrownBy(() -> flowService.next(12L, null)).isInstanceOf(InvalidInputException.class);
+    assertThatThrownBy(() -> flowService.next(12L, null, null))
+        .isInstanceOf(InvalidInputException.class);
   }
 
   @Test
@@ -479,10 +499,118 @@ class DiagnosisFlowServiceIntegrationTest {
         .isInstanceOf(InvalidInputException.class);
   }
 
+  // --- 비회원(게스트) 경로(#181) ---
+
+  @Test
+  @DisplayName("게스트 start는 세션 키를 발급하고 user 모듈을 한 번도 호출하지 않는다")
+  void guestStartIssuesKeyWithoutCallingUser() {
+    DiagnosisFlowResponse res = flowService.start(null);
+
+    assertThat(res.resultCode()).isEqualTo(FlowResultCode.NEXT_QUESTION);
+    assertThat(res.question().field()).isEqualTo("region");
+    assertThat(res.guestSessionId()).startsWith("anonymous");
+    // 요점은 "기본값이 en"이 아니라 "호출 회피"다 — 게스트는 users 행이 없어 getLanguage가 곧 404다.
+    verify(userAccountService, never()).getLanguage(anyLong());
+  }
+
+  @Test
+  @DisplayName("게스트 세션 둘이 나란히 존재한다(userId 부재가 서로 충돌하지 않는다 — partial UNIQUE)")
+  void twoGuestSessionsCoexist() {
+    // userId UNIQUE가 partial이 아니거나 게스트 문서에 userId:null이 실제로 기록되면, 두 번째 게스트의
+    // start가 중복 키로 깨진다. 이 테스트가 그 실패 모드를 잡는다.
+    String keyA = flowService.start(null).guestSessionId();
+    String keyB = flowService.start(null).guestSessionId();
+
+    assertThat(keyA).isNotEqualTo(keyB);
+    assertThat(flowSessionMongoRepository.count()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("게스트 세션 키가 없거나 남의 키면 세션을 찾지 못한다(남의 세션에 닿지 않는다)")
+  void guestNextRequiresOwnKey() {
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(view()));
+    String keyA = flowService.start(null).guestSessionId();
+
+    // 키 없이 → 서버가 임의의 세션을 골라 주지 않는다.
+    assertThatThrownBy(() -> guestAnswer(null, "region", "SEOUL"))
+        .isInstanceOf(DiagnosisFlowSessionNotFoundException.class);
+    // 존재하지 않는 키 → 남의 세션으로 폴백하지 않는다.
+    assertThatThrownBy(() -> guestAnswer("anonymous-nope", "region", "SEOUL"))
+        .isInstanceOf(DiagnosisFlowSessionNotFoundException.class);
+    // 본인 키로는 정상 진행.
+    assertThat(guestAnswer(keyA, "region", "SEOUL").question().field()).isEqualTo("purpose");
+  }
+
+  @Test
+  @DisplayName("게스트도 6단계를 완주해 확정하고, 그 진단을 본인 키로 조회한다(신원이 세션→진단으로 전파된다)")
+  void guestCompletesAndReadsOwnRecommendations() {
+    // 세션→진단으로 guestSessionId를 옮기지 않으면 확정 진단의 소유자가 증발해 본인도 403이 된다.
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(view()));
+    String key = flowService.start(null).guestSessionId();
+    DiagnosisFlowResponse completed = runGuestStudyFlow(key);
+
+    assertThat(completed.resultCode()).isEqualTo(FlowResultCode.COMPLETED);
+
+    V2RecommendationResponse rec =
+        flowService.getRecommendations(null, key, completed.diagnosisId(), 0, 20, null);
+
+    assertThat(rec.resultCode()).isEqualTo(RecommendationResultCode.MATCHED);
+    assertThat(rec.content()).hasSize(1);
+    verify(userAccountService, never()).getLanguage(anyLong());
+  }
+
+  @Test
+  @DisplayName("소유권은 신원 종류가 같고 값이 같을 때만 통과한다(게스트↛게스트·게스트↛회원·회원↛게스트)")
+  void crossIdentityRecommendationsRejected() {
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(view()));
+    String keyA = flowService.start(null).guestSessionId();
+    Long guestDiagnosisId = runGuestStudyFlow(keyA).diagnosisId();
+    String keyB = flowService.start(null).guestSessionId();
+    Long memberDiagnosisId = runStudyFlow(700L).diagnosisId();
+
+    // 게스트 A ↛ 게스트 B
+    assertThatThrownBy(
+            () -> flowService.getRecommendations(null, keyB, guestDiagnosisId, 0, 20, null))
+        .isInstanceOf(DiagnosisAccessDeniedException.class);
+    // 게스트 ↛ 회원
+    assertThatThrownBy(
+            () -> flowService.getRecommendations(null, keyA, memberDiagnosisId, 0, 20, null))
+        .isInstanceOf(DiagnosisAccessDeniedException.class);
+    // 회원 ↛ 게스트 — 회원 요청은 게스트 키를 아예 보지 않는다(키를 훔쳐도 통하지 않는다).
+    assertThatThrownBy(
+            () -> flowService.getRecommendations(700L, keyA, guestDiagnosisId, 0, 20, null))
+        .isInstanceOf(DiagnosisAccessDeniedException.class);
+    // 신원 없는 요청(토큰도 키도 없음)은 어떤 진단도 소유하지 않는다.
+    assertThatThrownBy(
+            () -> flowService.getRecommendations(null, null, guestDiagnosisId, 0, 20, null))
+        .isInstanceOf(DiagnosisAccessDeniedException.class);
+
+    // 회원 무회귀 — 본인 진단은 그대로 조회된다.
+    assertThat(flowService.getRecommendations(700L, null, memberDiagnosisId, 0, 20, null).content())
+        .hasSize(1);
+  }
+
   // --- helpers ---
 
+  /** 게스트 경로의 답 1건 — 회원 자리({@code userId})가 비고 세션 키가 신원이다. */
+  private DiagnosisFlowResponse guestAnswer(String guestKey, String field, String code) {
+    return flowService.next(null, guestKey, new AnswerRequest(field, code, null, null, null));
+  }
+
+  /** 이미 start한 게스트 세션을 ① 지역부터 끝까지 진행해 자동 확정 결과를 반환한다. */
+  private DiagnosisFlowResponse runGuestStudyFlow(String guestKey) {
+    guestAnswer(guestKey, "region", "SEOUL");
+    guestAnswer(guestKey, "purpose", "STUDY");
+    guestAnswer(guestKey, "university", "SNU_CAU_SOONGSIL");
+    flowService.next(
+        null, guestKey, new AnswerRequest("conditions", null, Set.of("FEMALE_ONLY"), null, null));
+    flowService.next(null, guestKey, new AnswerRequest("monthlyRent", null, null, 200000, 500000));
+    return guestAnswer(guestKey, "arcStatus", "ARC_ISSUED");
+  }
+
+  /** 회원 경로의 답 1건. 게스트 세션 키 자리는 {@code null}이다 — 회원은 그 헤더를 보내지 않는다(#181). */
   private DiagnosisFlowResponse answer(long userId, String field, String code) {
-    return flowService.next(userId, new AnswerRequest(field, code, null, null, null));
+    return flowService.next(userId, null, new AnswerRequest(field, code, null, null, null));
   }
 
   /** ① 지역부터 ⑥ ARC까지 순서대로 답해 마지막 답(자동 확정)의 결과를 반환한다. */
@@ -492,8 +620,8 @@ class DiagnosisFlowServiceIntegrationTest {
     answer(userId, "purpose", "STUDY");
     answer(userId, "university", "SNU_CAU_SOONGSIL");
     flowService.next(
-        userId, new AnswerRequest("conditions", null, Set.of("FEMALE_ONLY"), null, null));
-    flowService.next(userId, new AnswerRequest("monthlyRent", null, null, 200000, 500000));
+        userId, null, new AnswerRequest("conditions", null, Set.of("FEMALE_ONLY"), null, null));
+    flowService.next(userId, null, new AnswerRequest("monthlyRent", null, null, 200000, 500000));
     return answer(userId, "arcStatus", "ARC_ISSUED");
   }
 

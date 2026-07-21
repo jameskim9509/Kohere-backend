@@ -13,15 +13,18 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
  * v2 진행 세션 MongoDB 영속 도큐먼트({@code diagnosisFlowSessions}, issue #157·ADR-0036). 도메인 {@code
  * DiagnosisFlowSession}과 분리된 영속 전용 타입이며 어댑터가 도메인↔도큐먼트를 매핑한다. enum은 이름 문자열로 저장된다.
  *
- * <p>{@code userId} UNIQUE 인덱스(사용자당 1 세션)는 {@link DiagnosisFlowSessionIndexInitializer}가 기동 시 멱등
- * 생성한다(Spring Boot 3.5 자동 인덱스 비활성, migration-policy §8).
+ * <p>신원은 {@code userId}(회원)와 {@code guestSessionId}(게스트) 중 <b>정확히 하나</b>만 채워진다(#181). 이 불변식은 앱 레벨로만
+ * 강제한다 — 이 컬렉션에는 {@code $jsonSchema} validator가 없다(ADR-0005 D7).
+ *
+ * <p>UNIQUE 인덱스는 신원별 <b>partial</b> 둘로 나뉜다("사용자당 1 세션" / "게스트 키당 1 세션"). 하나로 합치면 게스트 문서들의 {@code
+ * userId} 부재가 서로 충돌해 두 번째 게스트부터 세션을 만들 수 없다. 생성은 {@link DiagnosisFlowSessionIndexInitializer}가 기동 시
+ * 담당한다(Spring Boot 3.5 자동 인덱스 비활성, migration-policy §8).
  */
 @Getter
 @Setter
@@ -33,8 +36,14 @@ public class DiagnosisFlowSessionDocument {
 
   @Id private String id;
 
-  @Indexed(unique = true)
+  /**
+   * 회원 세션의 신원(게스트 세션은 null). UNIQUE는 {@code @Indexed}로 선언하지 않는다 — 실제 인덱스가 partial이라 어노테이션으로 표현할 수
+   * 없고, 선언과 실물이 어긋나면 안 된다. 정본은 {@link DiagnosisFlowSessionIndexInitializer}다.
+   */
   private Long userId;
+
+  /** 게스트 세션의 신원({@code anonymous<uuid>}, 회원 세션은 null). partial UNIQUE는 initializer가 만든다. */
+  private String guestSessionId;
 
   private DraftDocument draft;
 
