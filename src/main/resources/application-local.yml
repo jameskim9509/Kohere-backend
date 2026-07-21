@@ -49,22 +49,15 @@ app:
       enabled: ${TEST_LOGIN_ENABLED:true}
       secret: ${TEST_LOGIN_SECRET:local-dev-test-login-secret}
     fixed-verification:
-      # 앱스토어 심사 계정 고정 인증번호(이슈 #180). 기본 off — 켜면 아래 계정으로 실발송 없이 인증 흐름을 재현할 수 있다.
-      # localhost 전용이라 폴백값 무해(TEST_LOGIN_SECRET과 동일 논리). 실제 심사 계정으로 시험하려면 env로 덮어쓴다.
+      # 앱스토어 심사 계정 고정 인증번호(이슈 #180). 기본 off, 심사 계정은 env로 주입한다.
       enabled: ${FIXED_VERIFICATION_ENABLED:false}
       code: ${FIXED_VERIFICATION_CODE:000000}
-      # 역할별로 채널을 가둔다 — 임차인 계정은 이메일 인증만, 임대인 계정은 SMS 인증만 고정 인증번호를 받고
-      # 반대 채널은 실발송 대신 거절된다. 목록은 콤마 구분.
-      #
-      # 로컬 폴백은 test-login이 시드하는 마스터 계정(TestMasterAccount)에 맞춰 둔다 — 로컬엔 실제 Google
-      # 로그인 수단이 없으므로, master:<role>:<secret> 우회 로그인으로 얻은 신원이 그대로 심사 계정 역할을 한다.
-      # (dev·운영 심사에서는 실제 Google 계정을 쓰므로 마스터 계정과 무관하다.)
       tenant:
-        google-emails: ${FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS:master-tenant@kohere.test}
-        emails: ${FIXED_VERIFICATION_TENANT_EMAILS:master-tenant@kohere.test}
+        google-emails: ${FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS:}
+        emails: ${FIXED_VERIFICATION_TENANT_EMAILS:}
       landlord:
-        google-emails: ${FIXED_VERIFICATION_LANDLORD_GOOGLE_EMAILS:master-landlord@kohere.test}
-        phone-numbers: ${FIXED_VERIFICATION_LANDLORD_PHONES:01000000000}
+        google-emails: ${FIXED_VERIFICATION_LANDLORD_GOOGLE_EMAILS:}
+        phone-numbers: ${FIXED_VERIFICATION_LANDLORD_PHONES:}
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID:}
