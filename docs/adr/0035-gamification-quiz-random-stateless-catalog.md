@@ -11,6 +11,8 @@
 
 Proposed (2026-07-02)
 
+> **이후 변경됨(#181)** — 아래 **Decision 1의 "외국인 임차인 전용"(세입자 `userType=TENANT` 게이트)은 더 이상 유효하지 않다.** #181로 `/api/v1/quizzes/**`가 `permitAll`이 되어 **비로그인 게스트가 조회·채점할 수 있게 되면서**, 로그인한 임대인만 `403 FORBIDDEN`으로 막는 것이 앞뒤가 맞지 않고 실효도 없어졌기 때문이다(임대인이 로그아웃하면 그대로 볼 수 있다). 이에 응용 계층 세입자 게이트(`GamificationService.assertTenant` → `TenantOnlyException`)를 제거했고, `hasRole("USER")`가 하던 비활성 차단(`403 AUTH_ONBOARDING_REQUIRED`)도 함께 사라져 **퀴즈에는 역할·상태 게이트가 남지 않는다** — 게스트·세입자·임대인·온보딩 미완료가 모두 `200`이다(게스트는 표시 언어 `en` 고정, 회원은 `users.lang` — 임대인은 서버가 심는 `ko` 고정이라 퀴즈를 한국어로 본다). 나머지 결정(무상태 랜덤 4지선다·MongoDB 인라인 언어-키 맵 카탈로그·i18n·에러코드)은 그대로 유효하며, 아래 원 결정 서술은 이력 보존을 위해 지우지 않는다. 상세는 [domain-model §8](../architecture/domain-model.md) 게스트 노트·[error-response-guide §4](../api/error-response-guide.md).
+>
 > 기존 스캐폴드(specs/06-gamification.md, [domain-model](../architecture/domain-model.md) 8절, us-6-* 시퀀스 다이어그램)는 **오늘의 퀴즈(daily) + 포인트 + 제출 기록** 모델로 초안이 작성돼 있었다. 본 ADR은 그 스캐폴드된 설계·스펙을 **무상태 랜덤 학습 퀴즈**로 대체한다. 이는 선행 ADR을 뒤집는 것이 아니라 **설계/스펙 수준의 supersede**(스캐폴드 초안 교체)다 — 별도 ADR로 확정된 적 없던 스캐폴드를 정본화한다. 정본 요구는 [user-stories.md 6절(US-6-1/2/3)](../requirements/user-stories.md)이며, 본 ADR·스펙·도메인 모델·시퀀스가 여기에 정확히 정렬한다.
 
 ## Context
@@ -59,7 +61,7 @@ Proposed (2026-07-02)
   - (완료) 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`)를 무상태 랜덤 채점·`quizzes` 카탈로그 조회로 **재구현**(오늘의 퀴즈·포인트·제출 코드 제거).
   - (완료) `quizzes` 컬렉션 스키마 확정 + Mongock `@ChangeUnit` 시드(`question`·`choices[].text`·`explanation`을 언어-키 맵으로, `correctChoice`·`active` 포함).
   - (완료) `user` 모듈 표시 언어 조회 공개 query(`getLanguage`, `@NamedInterface`) 재사용 + `gamification` `allowedDependencies`에 `user :: api` 등록.
-  - (완료) `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅 + 응용 계층 `userType=TENANT` 검사(`TenantOnlyException` → `403 FORBIDDEN`).
+  - (완료 → **#181로 철회**) `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅 + 응용 계층 `userType=TENANT` 검사(`TenantOnlyException` → `403 FORBIDDEN`). 현재는 `permitAll` + 게이트 없음(위 Status 註).
   - 이슈 #78 본문을 무상태 랜덤 학습 퀴즈로 갱신(미완).
 
 ## Validation
@@ -69,7 +71,7 @@ Proposed (2026-07-02)
 - **i18n·폴백·키 불변**: 지원 언어 사용자는 해당 언어를, 미지원·미매핑 사용자는 `en`을 받는지(에러 아님), 보기 키 `A`~`D`가 언어 무관 동일하고 채점이 키로 수행되는지 검증한다([ADR-0029](./0029-diagnosis-i18n-strategy.md) 정합).
 - **에러코드**: `selectedChoice`가 A~D가 아니면 `INVALID_INPUT(400)`, 본문 파손은 `MALFORMED_REQUEST(400)`, 미인증·만료는 `UNAUTHENTICATED`/`TOKEN_EXPIRED(401)`, 비활성(온보딩 미완)은 `AUTH_ONBOARDING_REQUIRED(403)`, `quizId` 부재는 `QUIZ_NOT_FOUND(404)`인지 검증하고, `QUIZ_NOT_TODAY`·`QUIZ_ALREADY_SUBMITTED`가 더는 반환되지 않는지 확인한다.
 - **모듈 경계**: `gamification → user` 동기 의존이 `allowedDependencies`에 등록돼 `ApplicationModules.verify()`([ModularityTest](../../src/test/java/com/kohere/ModularityTest.java)) green을 유지하는지 검증한다.
-- **게이트(구현됨)**: `SecurityConfig`가 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅하고, `GamificationService`가 `userType=TENANT`를 검사한다(비-세입자 `403 FORBIDDEN`). 비-ACTIVE(온보딩 미완)는 `403 AUTH_ONBOARDING_REQUIRED`.
+- **게이트(~~구현됨~~ → #181로 제거)**: 종전에는 `SecurityConfig`가 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅하고 `GamificationService`가 `userType=TENANT`를 검사했으나(비-세입자 `403 FORBIDDEN`, 비-ACTIVE `403 AUTH_ONBOARDING_REQUIRED`), 지금은 `permitAll`이라 **두 403이 모두 나오지 않는다**. 게스트·세입자·임대인·온보딩 미완료가 모두 `200`인지, 표시 언어가 게스트 `en` 고정·회원 `users.lang`인지를 대신 검증한다(위 Status 註).
 - **(확정 · #148)**: (1) 정답 시에도 `explanation`을 **반환한다** — 정답·오답 모두 해설을 사용자 언어로 번역해 내려준다(`correctChoice`만 오답 한정 유지).
 - **(확인 필요)**: (2) "random"의 정의 — **활성 풀에서의 무작위 SELECTION**이며 동적 생성이 아님.
 - **재검토 시점**: 게이미피케이션(포인트·랭킹)을 1차 MVP 이후 도입할 때, 무상태 채점 위에 제출/집계 저장(대안 A의 관계형 제출·포인트)을 어떻게 얹을지 재검토한다. 학습 이력·정답률 요구가 커지면 무상태 전제를 재검토한다.

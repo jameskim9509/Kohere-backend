@@ -43,7 +43,7 @@
 
 | 컬럼 | 적용 | 비고 |
 | --- | --- | --- |
-| 식별자 | MySQL `id BIGINT PK AUTO_INCREMENT` · Mongo `_id ObjectId` · Redis 키 자체 | 외부 노출 식별자는 store별 네이티브 타입을 따른다 |
+| 식별자 | MySQL `id BIGINT PK AUTO_INCREMENT` · Mongo `_id ObjectId` · Redis 키 자체 | 외부 노출 식별자는 store별 네이티브 타입을 따른다. **예외: `diagnoses._id`는 ObjectId가 아니라 Long 순번**(`diagnosisSequences` 카운터 채번 — §4-4) |
 | 생성시각 | 전 애그리거트 `created_at`/`createdAt`(또는 의미상 `submitted_at` 등) (UTC) | MySQL `DATETIME(6)` / Mongo ISODate |
 | 수정시각 | **가변** 애그리거트 `updated_at`/`updatedAt` | `user`·`listings`·`posts` 등 |
 | 소프트삭제 | **`community`만** `deleted`+`deleted_at` · **예외: `booking`은 참여자별** `tenant_deleted_at`+`landlord_deleted_at`(아래 註) | 그 외는 상태 enum으로 표현(`user.status=WITHDRAWN`, `listing.status=DELETED/PAUSED`, `booking.status=CANCELED`=취소 — 단 취소는 **삭제가 아니다**, 아래 註) |
@@ -460,8 +460,9 @@
 
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
-| `_id` | ObjectId | PK |
-| `userId` | long | 필수, 인덱스 · → user(값 참조) |
+| `_id` | long | PK · **ObjectId가 아니라 Long 순번**이다 — 별도 카운터 컬렉션 `diagnosisSequences`(`_id`=`"diagnoses"`·`seq`)를 원자적 `$inc`로 올려 채번한다(스펙의 숫자 `diagnosisId` 계약 유지, §2-2 식별자 규약의 예외) |
+| `userId` | long | nullable, 인덱스 · → user(값 참조) · **회원 진단만 채운다** — 게스트 진단은 null이고 `guestSessionId`가 대신 채워진다(아래 註) |
+| `guestSessionId` | string | nullable · **게스트 진단만 채운다**(회원 진단은 null) · 값 형식 `anonymous<uuid>` · 클라이언트가 `X-Guest-Session-Id` 헤더로 에코하는 게스트 세션 키 · **채워지는 경로는 v2 흐름뿐**(아래 註) |
 | `region` | string (enum `Region`) | 필수 · ① 지역 |
 | `purpose` | string (enum `Purpose`) | 필수 · ② 입국 목적·유학 여부 — 단일 enum `STUDY`\|`NON_STUDY`. ③ 대학/지역 조건부 필수의 분기 키(`STUDY`→`university` / `NON_STUDY`→`district`) |
 | `university` | string (enum `UniversityGroup`) | nullable · ③ 대학 그룹(입국 목적 `purpose=STUDY`일 때 **필수**·`NON_STUDY`이면 없음 — 앱 레벨 조건부 필수 불변식) · 단일 그룹 코드를 UPPER_SNAKE로 저장 · 값(6개 그룹): `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC` · 추천 시 그룹은 멤버 대학 코드 집합으로 전개(`SNU_CAU_SOONGSIL`→`{SNU,CAU,SOONGSIL}` 등, `ETC`→`{}` 빈 집합으로 대학 필터 없이 지역 기반 매칭만), 멤버 코드는 listing `nearbyUniversityCodes`(개별 코드 저장 불변)와 1:1 — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) |
@@ -475,12 +476,19 @@
 
 > 위 답 필드의 **필수는 `COMPLETED` 기준**이다 — `DISCARDED` 문서는 6단계를 못 채우고 끝난 시도라 `region`을 뺀 나머지가 비어 있을 수 있다(부분 답 그대로 보존). 아래 "미완주 시도 보존" 참조.
 
-**인덱스**: PK `_id` / 복합 `(userId, submittedAt desc)`(이력 목록·최신 단건).
+**인덱스**: PK `_id` / 복합 `(userId, submittedAt desc)`(이력 목록·최신 단건 — 부트스트랩 initializer `DiagnosisIndexInitializer`가 `userId_submittedAt_idx`로 멱등 생성). **TTL 인덱스는 없다** — 이 컬렉션은 회원 진단도 만료 없이 영구 보존하며, 게스트 문서 때문에 TTL을 **새로 도입할지 자체가 미확정**이다(아래 註·§6-11).
 
 - **진행 중 저장(server-stateful)**: 진단 답은 서버가 단계별로 저장한다 — 사용자당 진행 중(`status=IN_PROGRESS`) 진단 1건을 draft로 두고 `POST /api/v1/diagnoses/answers`(body `{ field, code }`, `conditions`처럼 다중은 `codes` 배열)가 현재 step 답을 그 draft에 채운다(누적 답 재전송 없음). 문항은 `GET /api/v1/diagnoses/questions/{step}`로 step별 1개씩 받는다(다음 step 번호는 클라가 정한다). 모든 단계 답이 채워지면 `POST /api/v1/diagnoses`가 저장된 답을 재검증해 `COMPLETED`로 확정(`submittedAt` 설정, `201` + `Location` 헤더)한다. **이력·목록·최근 단건 조회는 `COMPLETED`만 노출**하고 `IN_PROGRESS`는 제외한다.
 - **재진단=새 진행 중 진단 시작**(수정 아님) → 새 `IN_PROGRESS` draft를 시작해 채운 뒤 `COMPLETED`로 확정. 기존 진단을 덮어쓰지 않으므로 `updatedAt`/소프트삭제 없이 단계별 답 채움과 확정 전이만 둔다.
 - **지역 수요 보존(`DISCARDED`, v2)**: v2 ① 지역 0건 예외질문에 답이 오면 그때까지의 부분 답(`region`만)을 `status=DISCARDED`로 이 컬렉션에 남긴다 — **"어느 지역을 원했는데 매물이 없었나"를 수요 신호로 쓰기 위해서**다. **"예"(재시도)·"아니오"(종료) 양쪽 모두** 남긴다(재시도를 빼면 사용자가 다른 지역으로 완주했을 때 원래 원했던 지역이 증발한다). **그 외 이탈(답하다 앱을 닫음)은 남기지 않는다** — 이탈은 요청으로 오지 않아 다음 `POST /start` 때에야 알 수 있고, 그러면 영영 안 돌아온 사용자가 누락되고 시각도 재시작 시각이라 집계가 편향된다. **사용자 노출 경로를 두지 않는다** — 목록(이력·최근)은 `COMPLETED`만, v1 진행 중 초안 조회는 `IN_PROGRESS`만 보므로 자동으로 빠져 v1 흐름을 오염시키지 않는다. 다만 **id로 직접 오는 상세·추천은 소유권만 보므로 응용 계층이 명시적으로 404로 거절**한다(폐기 기록은 본인 것이고 진단 id가 순차 발급이라 추측 가능하다 — 이 가드가 없으면 내부 기록이 API로 샌다). 확정과 달리 **완결성 검증을 하지 않는다**(부분 답이 정상). 집계는 `status=DISCARDED` + `region`으로 지역별 미충족 수요를 센다(포기/재시도 구분은 없다 — `reason`을 담지 않는다). 상세 [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md).
 - **소유권**: 조회는 `userId` 일치 필수, 타인 `403`, 없으면 `DIAGNOSIS_NOT_FOUND`(404).
+- **신원 표현(회원 `userId` | 게스트 `guestSessionId`) — 정확히 하나만 채워진다**: 비회원(게스트) 진단이 열리면서(#181) 이 컬렉션은 신원 필드를 둘 갖는다 — **회원 문서는 `userId` 채움·`guestSessionId` null**, **게스트 문서는 `userId` null·`guestSessionId` 채움**이며 둘 다 채워지거나 둘 다 비는 문서는 없다. 게스트 신원을 `userId`에 합성 문자열(`anonymous`+uuid)로 담지 않는 이유는 이 컬렉션의 기존 `userId`가 **BSON Int64**라 String으로 넓히면 기존 회원 문서가 조용히 매치되지 않기 때문이다 — 그래서 `userId`는 `long` 그대로 두고 **데이터 마이그레이션 없이** 필드만 하나 추가한다. 이 "정확히 하나" 불변식은 `$jsonSchema` validator가 아니라 **앱 레벨**로만 강제된다 — Mongo 컬렉션은 스키마리스가 기본이고(§3) `$jsonSchema` validator를 두는 것은 `listings`뿐이라 이 컬렉션에는 없다([ADR-0005](../adr/0005-polyglot-persistence.md) D7). 조회는 신원 종류에 따라 키를 고르고, 소유권 검사는 **신원 종류가 같고 값이 같을 때만** 통과한다(한쪽이 null이면 무조건 거절 — 진단 `_id`가 전역 순차 채번이라 열거가 쉬워 이 검사가 게스트 경로의 유일한 IDOR 방어선이다).
+- **게스트 문서를 만드는 경로는 v2 흐름뿐**: **v1 진단(`/api/v1/diagnoses/**`)은 회원 전용으로 유지한다** — SecurityConfig에 v1 진단용 permitAll 매처를 두지 않아 v1 7개 엔드포인트는 현행대로 `.anyRequest().authenticated()`에 남고(토큰 없으면 401), 따라서 **v1 경로로는 `guestSessionId`가 채워진 문서가 생기지 않는다**. 게스트 진단의 정본 경로는 v2뿐이고(`POST /api/v2/diagnoses/start` → `POST /api/v2/diagnoses/next` → `GET /api/v2/diagnoses/{id}/recommendations`), 신규 permitAll 매처의 대상도 `/api/v2/diagnoses/**`뿐이다. 귀결로 **게스트용 v1 이력(`GET /api/v1/diagnoses`)·최근 단건(`GET /api/v1/diagnoses/latest`) 시맨틱을 정의할 필요가 없고**(게스트는 401이라 도달하지 못한다), v1 답 저장(`POST /api/v1/diagnoses/answers`) 응답으로 세션 키를 발급하는 계약 변경도 없다. 이 컬렉션의 게스트 문서는 v2가 **종료 상태로만** 쓴다 — 확정(`COMPLETED`)과 지역 0건 폐기(`DISCARDED`)뿐이라 게스트 문서에는 `IN_PROGRESS`가 없다(v2 진행 중 상태는 `diagnosisFlowSessions`에 있다, 아래).
+- **게스트 문서 만료(TTL) — 도입 여부부터 결정 필요**: 게스트 진단은 `userId` 키로 덮어써지지 않아 요청마다 새 문서로 누적되고 전역 순차 채번(`diagnosisSequences`)도 함께 소모하므로 만료를 검토한다. 다만 **현재 진단 컬렉션에는 TTL 인덱스가 하나도 없다** — 부트스트랩 `DiagnosisIndexInitializer`가 만드는 것은 `userId_submittedAt_idx`와 `diagnosisQuestions`의 `active_step_idx`뿐이고, `DiagnosisFlowSessionIndexInitializer`가 만드는 것은 `userId` UNIQUE뿐이다(회원 진단도 만료 없이 영구 보존한다). 따라서 **게스트 때문에 TTL을 새로 도입할지가 첫 결정**이며(도입하지 않고 회원과 동일하게 영구 보존하는 것도 선택지다), 도입한다면 다음이 따라온다.
+  - **범위는 partial이어야 한다**: 회원 문서는 이력이라 만료 대상이 아니므로 TTL은 `guestSessionId`가 존재하는 문서로 좁힌 **partial TTL**(`expireAfterSeconds` + `partialFilterExpression: { guestSessionId: { $exists: true } }`)이어야 한다 — 전역 TTL은 회원 이력을 지운다. 인덱스는 Mongock이 아니라 부트스트랩 소관이라 `DiagnosisIndexInitializer`에 신규 작성이 필요하다([migration-policy §8](./migration-policy.md) — 인덱스=부트스트랩).
+  - **보존 기간 후보**: 설계 검토에서 제안된 후보는 **30일**(`diagnosisFlowSessions` 게스트 세션 후보는 **24시간** — 아래)이나 확정값은 제품 결정이다.
+  - **부수 결정 ①(이 컬렉션의 기준 필드)**: TTL 기준 시각 필드 후보는 `submittedAt`인데, 이 값은 **`IN_PROGRESS` 문서엔 없어 그런 문서는 만료되지 않는다**(Mongo TTL은 기준 필드가 없는 문서를 건너뛴다). 게스트 문서는 v2가 종료 상태(`COMPLETED`·`DISCARDED`)로만 써서 항상 값이 있지만, v1 회원 draft가 영구히 남는 셈이므로 기준 필드를 `submittedAt`으로 둘지 별도 생성 시각을 둘지 명시해야 한다.
+  - **부수 결정 ②(`diagnosisFlowSessions`의 기준 필드)**: 그 컬렉션엔 **시각 필드가 아예 없어** TTL을 걸려면 기준 필드부터 신설해야 한다(아래 §`diagnosisFlowSessions`).
 - **교차 모듈 no-FK**: `userId` 값만. 추천은 `listing` 공개 쿼리(매물 데이터 비영속·런타임 계산) — diagnosis가 `RecommendationCriteria`(지역·조건·대학 멤버 코드 집합·월세 min-max 범위·지역) 값객체로 `listing` 공개 query를 동기 호출해 `ListingSummaryResponse`+좌표를 수신([ADR-0002](../adr/0002-inter-module-communication-via-events.md) D5). `RecommendationCriteria.university`는 선택 그룹을 전개한 **멤버 대학 코드 집합**(`Set<String>`, `ETC`는 빈 집합)이고, 월세는 **`monthlyRentMin`/`monthlyRentMax` 범위**(nullable, null=해당 경계 무한)다. listing은 `nearbyUniversityCodes`를 멤버 코드 집합 `$in`(멤버 중 하나라도, 빈 집합이면 대학 필터 생략)으로, `pricing.monthlyRent`를 `>= min` AND `<= max`(각 경계 존재 시 별도 조건)로 매칭한다. listing 컬렉션 스키마(§4-3)는 변경하지 않는다 — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md).
 - **3단계 대학/지역 조건부 필수**: `university`/`district`는 **두 필드로 분리**하며 NOT NULL 제약이 아니라 **앱 레벨 조건부 필수 불변식**으로 강제한다 — 입국 목적(`purpose`)에 맞는 하나만 채워진다: `purpose=STUDY`면 `university` 필수·`district` 없음, `purpose=NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `400 INVALID_INPUT`+`errors[]`(신규 도메인 코드 없음). enum 값 목록은 위 필드 표(`UniversityGroup`: `HUFS_KHU_KOREA`·…·`ETC` 6개 그룹 / `District`: `GURO_GU`·…·`ETC`)대로.
 - **문항·선택지 출처(US-2-5)**: 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)를 호출하면 서버가 (카탈로그 + 진행 중 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question(사용자 언어 라벨 문자열), select{type,max}, options[{code,label}] }`로 내려준다(한 번에 다 주지 않음, 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열)로 보내면 서버가 진행 중(`IN_PROGRESS`) 진단에 저장한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`가 진행 중 진단을 `COMPLETED`로 확정한다. 반환 선택지 `code`는 **확정 검증 enum과 1:1 동일 출처**다(언어 무관 단일 키). 문항·선택지 카탈로그는 **MongoDB `diagnosisQuestions` 컬렉션**(아래)에 데이터로만 영속한다. **분기는 서버 비즈니스 로직(diagnosis 서비스 코드)이 결정한다(클라 로컬 분기·카탈로그 분기 메타 아님)** — ③(step 3)은 저장된 `purpose`에 따라 서비스가 알맞은 질문만 담는다(`STUDY`→대학 질문 `university`, `NON_STUDY`→지역구 질문 `district`; 한 응답에 두 목록을 함께 주지 않음). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`.
@@ -534,11 +542,16 @@
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
 | `_id` | ObjectId | PK |
-| `userId` | long | 필수 · UNIQUE(사용자당 1 세션) · → user(값 참조) |
+| `userId` | long | nullable · **회원 세션만 채운다** · partial UNIQUE(사용자당 1 세션 — 아래 인덱스 註) · → user(값 참조) |
+| `guestSessionId` | string | nullable · **게스트 세션만 채운다**(회원 세션은 null) · partial UNIQUE(세션 키당 1 세션) · 값 형식 `anonymous<uuid>` · 클라이언트가 `X-Guest-Session-Id` 헤더로 에코한다 · **이 컬렉션 자체가 v2 전용**이라 게스트 세션은 `POST /api/v2/diagnoses/start`에서만 생긴다(v1은 회원 전용 — 위 §`diagnoses`) |
 | `draft` | object | 누적 답 스냅샷 — `diagnoses`의 criteria와 동형(`region`·`purpose`·`university`/`district`·`conditions`·`monthlyRentMin`/`monthlyRentMax`·`arcStatus`)의 **부분 값**(단계별로 채워짐) |
 | `pendingField` | string | 서버가 직전에 낸 문항의 `field`(예: `region`·`purpose`·`regionRetry`) — 다음 답의 기대값이자 **진행의 단일 정본** |
 
-**인덱스**: PK `_id` / UNIQUE `(userId)`(사용자당 1 세션). 기동 시 부트스트랩 initializer(`DiagnosisFlowSessionIndexInitializer`, `@Profile("!test")`)가 멱등 생성한다 — 인덱스는 Mongock이 아니라 부트스트랩으로 만든다([migration-policy §8](./migration-policy.md) — 인덱스=부트스트랩, 시드·데이터 진화=Mongock).
+**인덱스**: PK `_id` / **partial UNIQUE `(userId)`**(사용자당 1 세션 — `userId` 존재 시로 좁힘) / **partial UNIQUE `(guestSessionId)`**(게스트 세션 키당 1 세션). **TTL 인덱스는 없다** — 게스트 세션 만료를 도입할지 자체가 미확정이고, 도입 시엔 기준 시각 필드부터 신설해야 한다(아래 註·§6-11). 기동 시 부트스트랩 initializer(`DiagnosisFlowSessionIndexInitializer`, `@Profile("!test")`)가 멱등 생성한다 — 인덱스는 Mongock이 아니라 부트스트랩으로 만든다([migration-policy §8](./migration-policy.md) — 인덱스=부트스트랩, 시드·데이터 진화=Mongock). **현행 코드가 실제로 만드는 것은 비-partial UNIQUE `userId_unique_idx` 하나뿐**이라 위 두 partial UNIQUE는 아직 전환 대상이다(아래 註).
+
+- **왜 UNIQUE를 partial로 좁히고 게스트용을 따로 두는가(#181)**: 기존 `userId` UNIQUE를 그대로 두면 **게스트 세션 문서들의 `userId=null`이 서로 충돌**해 두 번째 게스트부터 세션을 만들 수 없다(단일 UNIQUE 인덱스에서 null도 하나의 값으로 취급된다). 그래서 (a) 회원용 인덱스는 `partialFilterExpression: { userId: { $exists: true } }`로 좁혀 **"사용자당 1 세션"만 남기고**, (b) 게스트용은 `partialFilterExpression: { guestSessionId: { $exists: true } }`인 **별도** UNIQUE 인덱스로 둔다. 한 인덱스에 두 신원을 섞지 않는다. 회원 경로의 제약(사용자당 1 세션)은 그대로다.
+  - **기존 인덱스 교체가 선행돼야 한다(주의)**: 이미 배포된 환경에는 partial이 **아닌** UNIQUE 인덱스 `userId_unique_idx`가 있고, MongoDB는 **같은 이름에 다른 옵션으로 `createIndex`를 하면 `IndexOptionsConflict`로 거절**한다. 현행 initializer는 그 예외를 `catch (RuntimeException)` + `log.warn`으로 삼키므로 인덱스가 **조용히 옛 정의로 남고**, 그러면 두 번째 게스트 세션 삽입이 `userId=null` 중복으로 실패한다(기동은 정상, 실패는 런타임에만 보인다). 따라서 partial 전환은 **기존 인덱스 drop 후 재생성**이 필요하며, 이 drop이 부트스트랩 initializer 소관인지 Mongock `@ChangeUnit` 소관인지도 함께 정한다(§6-11 · [migration-policy §8](./migration-policy.md)).
+- **게스트 세션 만료(TTL) — 도입 여부부터 결정 필요**: 회원 세션은 `userId` 키 upsert로 덮어써지지만 **게스트 세션은 키가 매번 달라 절대 덮어써지지 않아** 누적된다(터미널에서 삭제되지 않고 이탈한 세션이 남는다). 다만 **이 컬렉션에도 TTL 인덱스가 없다** — `DiagnosisFlowSessionIndexInitializer`가 만드는 것은 `userId` UNIQUE 하나뿐이다. 도입할지 자체가 미확정이며, 도입한다면 `guestSessionId`가 존재하는 문서로 좁힌 **partial TTL**이어야 하고(회원 세션은 upsert로 1건 유지라 만료 대상이 아니다) 보존 기간 후보는 **24시간**이다(위 `diagnoses` 게스트 문서 후보는 30일). 위 §`diagnoses`의 **부수 결정 ②**가 여기에 걸린다 — 이 컬렉션에는 **시각 필드가 아예 없어 TTL 기준 필드(생성 시각)를 신설**해야 한다(Mongo TTL은 BSON 날짜 필드를 요구하므로 `_id`의 ObjectId 내장 시각으로는 대체할 수 없다 — §6-11).
 
 - **정본 순서**: `REGION → PURPOSE → UNIVERSITY_OR_DISTRICT(purpose로 university|district) → CONDITIONS → MONTHLY_RENT → ARC_STATUS`를 **`pendingField`가 강제**한다(직전에 낸 문항과 일치하는 답만 받고, 다음 문항은 `ofField(답한 field).next()`) — `Diagnosis`의 확정 검증(`validateComplete`)이 `conditions`를 필수로 보지 않아(비어도 통과) 답 필드 null로 진행을 추론하지 않는다. **순서의 정본은 코드**(`DiagnosisFlowStep`의 선언 순서)이고 이 컬렉션은 진행 슬롯 수를 세지 않는다 — 6슬롯에 없는 `regionRetry`가 끼어들면 "몇 개 답했나"와 "무엇을 물었나"가 어긋나기 때문이다([domain-model §4](../architecture/domain-model.md)·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md) 결정 2).
 - **자동 확정·재시도·종료**: 마지막 슬롯(⑥ `arcStatus`)을 답하면 서버가 `draft`를 `Diagnosis.complete()`로 확정해 `diagnoses`에 저장하고 세션을 삭제한 뒤 결과코드 `COMPLETED`와 `diagnosisId`를 내려준다 — **이때 매칭을 조회하지 않는다**(매칭 0건이어도 `COMPLETED`다). **추천 매물은 클라이언트가 결정해 `GET /api/v2/diagnoses/{id}/recommendations`로 별도 조회**하며(응답 인라인 없음), 0건이면 그 응답의 `resultCode=NO_MATCH`가 알려준다(조정 제안 문구·액션은 없음 — `diagnosisSuggestions` 미참조). ① 지역 답 직후 지역 기준 매칭이 0건이면 카탈로그의 `regionRetry` 문항을 일반 질문으로 내려주고 `pendingField=regionRetry`로 기록하며(정본 슬롯은 전진하지 않는다), 그 응답은 **둘 다 터미널이라 세션을 삭제**한다 — "예"=`RESTART`(클라가 `/start`로 새 세션을 만들어 처음부터 재시도), "아니오"=`TERMINATED`(진단 종료). **세션을 지우기 전에 그 시도는 `diagnoses`에 `DISCARDED`로 남긴다**(재시도·종료 양쪽 — 위 §`diagnoses` "지역 수요 보존"). 그 외 이탈은 `/start`가 세션을 그냥 덮어쓰며 기록하지 않는다. 진행 중 세션을 되돌리는 전이(`draft.region`만 비우고 처음으로 되감기)는 두지 않는다. 상세 [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md).
@@ -790,7 +803,7 @@
 
 #### 학습 퀴즈 카탈로그 — `quizzes`
 
-외국인 세입자(`userType=TENANT`·`status=ACTIVE`) 전용 학습 퀴즈의 문항·선택지·정답·해설(오답 사유)을 영속하는 카탈로그 컬렉션이다(US-6-1·US-6-2·US-6-3). 매 요청은 활성 문항 중 **무작위 4지선다** 1개를 서빙하고, 사용자가 보기를 클릭하면 서버가 채점한다 — **무제한 반복·무상태 채점**(제출·포인트 비영속, 멱등·재플레이). 표시 문자열(번역)은 별도 컬렉션 없이 도큐먼트 내부 `question`·`choices[].text`·`explanation`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 시드/마이그레이션으로 적재, 운영 중 `active`로 가변.
+외국인의 한국 생활 학습 퀴즈의 문항·선택지·정답·해설(오답 사유)을 영속하는 카탈로그 컬렉션이다(US-6-1·US-6-2·US-6-3). **호출에 인증·역할 제한이 없다**(아래 "대상자 게이트" 註 — #181). 매 요청은 활성 문항 중 **무작위 4지선다** 1개를 서빙하고, 사용자가 보기를 클릭하면 서버가 채점한다 — **무제한 반복·무상태 채점**(제출·포인트 비영속, 멱등·재플레이). 표시 문자열(번역)은 별도 컬렉션 없이 도큐먼트 내부 `question`·`choices[].text`·`explanation`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 시드/마이그레이션으로 적재, 운영 중 `active`로 가변.
 
 `quizzes`
 
@@ -807,7 +820,7 @@
 
 - **무상태 채점**: 제출·포인트를 영속하지 않는다(멱등·재플레이 가능). `GET /api/v1/quizzes/random`이 활성 문서 1개를 무작위로 골라 `{ quizId, question, choices:[{key,text}] }`(번역)로 내려주고(`correctChoice`·`explanation` 비노출), `POST /api/v1/quizzes/{quizId}/answer`가 `selectedChoice`를 저장된 `correctChoice`와 대조해 채점한다 — 정답 `{ correct:true, explanation }`, 오답 `{ correct:false, correctChoice, explanation }`(해설 번역). 제출 기록·포인트·`201 Created`/`Location` 없음.
 - **교차 모듈 no-FK**: 표시 언어는 **user 모듈 공개 query(`getLanguage(userId)`)로 취득**하고 `user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`으로 폴백한다(값 참조, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) → 모듈 의존 `gamification`→`user`.
-- **대상자 게이트**: 외국인 세입자(`TENANT`·`ACTIVE`) 전용. `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅하고, 응용 계층(`GamificationService`)에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`(`TenantOnlyException`).
+- **대상자 게이트 — 없다(#181)**: `SecurityConfig`의 `/api/v1/quizzes/**`는 `permitAll`이라 비로그인 게스트도 호출하고, 응용 계층(`GamificationService`)의 `userType=TENANT` 검사(`assertTenant` → `TenantOnlyException`)도 제거한다 — 게스트에게 열린 콘텐츠를 로그인한 임대인에게만 `403`으로 막는 것은 실효가 없기 때문이다(임대인이 로그아웃하면 그대로 볼 수 있다). 따라서 `403 FORBIDDEN`(세입자 아님)·`403 AUTH_ONBOARDING_REQUIRED`(비-ACTIVE)·`401 UNAUTHENTICATED`는 이 경로에서 발생하지 않는다(만료 토큰만 `401 TOKEN_EXPIRED` 유지). 표시 언어만 호출자별로 갈린다 — 게스트는 `getLanguage` 미호출로 `en` 고정, 회원은 `users.lang`(임대인은 온보딩 때 서버가 `ko`를 고정 부여하므로 한국어). 스펙 [06-gamification](../api/specs/06-gamification.md) "호출자별 결과" 표가 정본. 이 컬렉션 스키마는 게이트 변경과 무관하게 그대로다(신원 필드 없음 — 무상태 채점).
 - **`QUIZ_NOT_FOUND`(404)**: `quizId`가 없거나(잘못된 식별자) 활성 풀이 공백일 때. (**확인 필요**) `random`=활성 풀 무작위 **SELECTION**(동적 생성 아님).
 
 ### 4-9. `report`
@@ -837,7 +850,7 @@
 
 > 스토어: **MongoDB** (문서형·가변 스키마·언어-키 맵 임베드. [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 · [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). **1차 MVP 이후**(홈 부가 기능·읽기 전용). domain-model `LifeTipTopic`·`LifeTip`(US-8-1·US-8-2·US-8-3).
 >
-> 온보딩을 마친 세입자(외국인)가 한국 생활 정보를 **주제(topic)** 별로 조회하는 읽기 전용 큐레이션이다. 주제·팁은 운영이 시드로 적재하는 큐레이션 콘텐츠라 사용자 작성·수정·좋아요·신고가 없다(발행/구독 도메인 이벤트 없음). 표시 문자열(주제명·주제 짧은/긴 설명·팁 제목·내용)은 별도 메시지 컬렉션 없이 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하며, 진단 i18n(§4-4 `diagnosisQuestions`, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md)·US-2-6)과 **완전히 동일한 전략**을 재사용한다 — 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키(없으면 `en` 폴백, 에러 아님)로 문자열을 골라 조립하고, 식별자(`code`/`id`)·이미지 URL(주제 `imageUrl`·`backgroundImageUrl`, 팁 `imageUrl`)은 언어 무관 불변이다. `Accept-Language`·토큰 클레임은 쓰지 않는다. 모듈 의존 `lifetip → {common, user}`(진단과 동일 근거 — [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 주제 : 팁 = **1 : N**.
+> 외국인이 한국 생활 정보를 **주제(topic)** 별로 조회하는 읽기 전용 큐레이션이다. **호출에 인증·역할 제한이 없다** — `/api/v1/life-tips/**`는 `permitAll`이고 응용 계층 세입자 게이트(`LifeTipService.assertTenant` → `TenantOnlyException`)도 제거하므로(#181) 게스트·세입자·임대인·온보딩 미완료가 모두 200이다(퀴즈 §4-8과 동일 근거). 주제·팁은 운영이 시드로 적재하는 큐레이션 콘텐츠라 사용자 작성·수정·좋아요·신고가 없다(발행/구독 도메인 이벤트 없음). 표시 문자열(주제명·주제 짧은/긴 설명·팁 제목·내용)은 별도 메시지 컬렉션 없이 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하며, 진단 i18n(§4-4 `diagnosisQuestions`, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md)·US-2-6)과 **완전히 동일한 전략**을 재사용한다 — 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키(없으면 `en` 폴백, 에러 아님)로 문자열을 골라 조립하고, 식별자(`code`/`id`)·이미지 URL(주제 `imageUrl`·`backgroundImageUrl`, 팁 `imageUrl`)은 언어 무관 불변이다. `Accept-Language`·토큰 클레임은 쓰지 않는다. 모듈 의존 `lifetip → {common, user}`(진단과 동일 근거 — [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 주제 : 팁 = **1 : N**.
 
 #### 주제 카탈로그 — `lifeTipTopics`
 
@@ -906,7 +919,7 @@
 - **번역**: 표시 문자열은 도큐먼트 내부 `title`·`content`의 **인라인 언어-키 맵**에 임베드한다 — 서버가 사용자 언어 키를 골라 조립하고, 없으면 `en` 폴백(에러 아님, `Accept-Language` 비의존). 식별자(`_id`)·`imageUrl`은 언어 무관 불변이라 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
 - **사진 nullable**: `imageUrl`은 언어 무관이며 사진이 없는 팁은 `null`(또는 필드 생략)로 두고, 이때도 `title`·`content`는 정상 노출한다(US-8-2 "사진 없는 팁").
 - **비페이지**: 주제당 팁 수가 제한적이라 `order` 오름차순 전체 리스트를 한 번에 반환한다(페이지 객체 없음).
-- **교차 모듈 no-FK**: `lifetip`은 표시 언어 도출을 위해 `user` 공개 query(`getLanguage`)만 값 참조로 동기 호출하고(`user`가 `users.lang`이 있으면 그 값, 없으면 `en`으로 폴백 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 자체 컬렉션 외 다른 모듈을 참조하지 않는다. 읽기 전용이라 발행/구독 도메인 이벤트가 없다.
+- **교차 모듈 no-FK**: `lifetip`은 표시 언어 도출을 위해 `user` 공개 query(`getLanguage`)만 값 참조로 동기 호출하고(`user`가 `users.lang`이 있으면 그 값, 없으면 `en`으로 폴백 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 자체 컬렉션 외 다른 모듈을 참조하지 않는다. **게스트는 이 호출조차 하지 않고 `en` 고정**이며, 세입자 게이트 제거(#181)로 `getUserType` 호출은 사라져 `user` 의존은 `getLanguage` 하나만 남는다(임대인은 `users.lang='ko'`라 한국어). 읽기 전용이라 발행/구독 도메인 이벤트가 없다.
 
 **예시 도큐먼트** (`lifeTips`)
 
@@ -964,6 +977,13 @@
 8. **직업(`Occupation`) 분류값**: ~~요구사항 정의서 드롭다운 항목 잘림 → 임시값, 실제 선택지 확정 필요~~ → **해결됨(#93, #138 개편)** — 확정 7종(`UNDERGRADUATE_STUDENT`/`GRADUATE_STUDENT`/`EXCHANGE_STUDENT`/`LANGUAGE_TEACHING`/`MANUFACTURING_PRODUCTION`/`BUSINESS_TRADE`/`ETC`) 반영.
 9. **닉네임 풀**: `nickname_adjectives`·`nickname_nouns` 단어 시딩·로케일(언어)·조합 포맷(연결/구분자), 재조합 재시도 상한·fallback 규칙, 무작위 선택 전략(앱 로드 vs `RAND()`) 미확정.
 10. **국가(`countries`)**: 표시명 다국어(단일 vs `name_en`/`name_ko`), 시드 출처(ISO 3166-1·전체 국가 확장), `users.country`→`countries.code` FK 적용 여부. (`flag`는 국기 이미지 URL(flagcdn.com SVG)로 확정 — 외부 CDN 의존, 자체 호스팅 전환은 후속 검토.)
+11. **게스트 진단 데이터 보존(#181)**: 범위는 **v2 진단 컬렉션 한정**이다 — v1 진단(`/api/v1/diagnoses/**`)은 **회원 전용으로 유지**하기로 확정돼 게스트 문서는 v2 흐름에서만 생성된다(§4-4). 따라서 v1 게스트 세션 키 발급 지점·v1 이력/최근 조회의 게스트 시맨틱은 **결정 필요 항목이 아니다**(게스트는 v1에 401로 막힌다).
+    - **TTL 도입 여부 자체가 미확정**: **현재 진단 컬렉션에 TTL 인덱스가 하나도 없다** — `DiagnosisIndexInitializer`가 만드는 것은 `userId_submittedAt_idx`와 `active_step_idx`뿐, `DiagnosisFlowSessionIndexInitializer`가 만드는 것은 `userId` UNIQUE뿐이며 회원 진단도 만료 없이 영구 보존한다. 게스트 문서 누적(및 전역 순차 채번 `diagnosisSequences` 소모) 때문에 TTL을 **새로 도입할지부터** 정해야 하고, 도입 시엔 부트스트랩 initializer에 신규 작성이 필요하다([migration-policy §8](./migration-policy.md) — 인덱스=부트스트랩).
+    - **도입 시 보존 기간(후보)**: 설계 검토에서 제안된 후보는 `diagnosisFlowSessions` 게스트 세션 **24시간** / `diagnoses` 게스트 문서 **30일**이나 **제품 결정이 필요**하다. 회원 문서를 지우지 않도록 `guestSessionId` 존재로 좁힌 **partial TTL**이어야 한다.
+    - **도입 시 부수 결정 2건**: ① `diagnoses`의 TTL 기준 필드 후보 `submittedAt`은 **`IN_PROGRESS` 문서에 값이 없어 그런 문서가 만료되지 않는다**(게스트 문서는 v2가 종료 상태로만 써서 항상 값이 있지만, v1 회원 draft는 영구히 남는다) → 기준 필드를 `submittedAt`으로 둘지 별도 생성 시각을 둘지 확정. ② `diagnosisFlowSessions`엔 **시각 필드가 아예 없어 TTL 기준 필드(생성 시각) 신설**이 선행돼야 한다.
+    - **partial UNIQUE 전환 시 기존 인덱스 drop 주체 미확정**: `diagnosisFlowSessions`의 기존 비-partial UNIQUE 인덱스(`userId_unique_idx`)를 partial로 바꾸려면 **drop 후 재생성**이 필요하다(같은 이름·다른 옵션은 `IndexOptionsConflict`). 현행 initializer는 그 예외를 `catch (RuntimeException)`+`log.warn`으로 **삼켜** 인덱스가 조용히 옛 정의로 남고, 그러면 두 번째 게스트 세션 삽입이 `userId=null` 중복으로 런타임에만 실패한다. drop을 부트스트랩 initializer가 할지 Mongock `@ChangeUnit`이 할지 **미확정**이다(§4-4).
+    - **테스트 전략**: 두 initializer가 `@Profile("!test")`라 **테스트 환경엔 인덱스가 없어**(현행 스위트로 partial UNIQUE·TTL이 검증되지 않는다) 별도 통합 테스트 전략을 함께 정한다.
+    - **비인증 rate limiting 미확정**: 게스트가 `POST /api/v2/diagnoses/start`를 무제한 호출해 문서·전역 시퀀스를 소모할 수 있다 — 저장소가 아니라 앱 계층 또는 ALB/WAF 소관이라 §6-3의 레이트리밋 항목과 함께 본다.
 
 > refresh 토큰 저장(Redis)·회전·재사용 탐지·TTL(=만료)은 [ADR-0006](../adr/0006-refresh-token-store-redis.md)으로 **확정**돼 결정 필요 항목이 아니다(§4-1 참조).
 

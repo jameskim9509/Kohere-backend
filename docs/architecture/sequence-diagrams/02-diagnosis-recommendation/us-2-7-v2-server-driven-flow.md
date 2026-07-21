@@ -20,33 +20,70 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     Note over C,DB: ── ⓪ 진단 시작(클라 주도) — 언제나 처음부터 ──
-    C->>SEC: POST /api/v2/diagnoses/start (요청 본문 없음)<br/>Authorization: Bearer accessToken
-    Note over SEC: JWT 검증 (서명·만료·클레임)
-    SEC->>DIAG: 인증된 요청 전달 (userId)
+    C->>SEC: POST /api/v2/diagnoses/start (요청 본문 없음)<br/>Authorization: Bearer accessToken<br/>(게스트는 Authorization 헤더 없음)
+    Note over SEC: Authorization 헤더가 있을 때만 JWT 검증 (서명·만료·클레임)<br/>/api/v2/diagnoses/** 에만 permitAll 매처를 신규 추가해 연다<br/>(전용 매처가 없으면 anyRequest().authenticated()로 떨어져 401)<br/>v1 진단은 회원 전용으로 남는다
+
+    alt access token 만료 (토큰을 보냈는데 만료)
+        SEC-->>C: 401 TOKEN_EXPIRED
+        C-->>U: 재로그인·토큰 재발급 유도
+        Note over U,DB: ↑ 에러 응답 — 이후 단계는 수행하지 않음<br/>(게스트 강등 아님)
+    else 토큰 없음 · 위조/형식 오류 → 게스트
+        Note over SEC: SecurityContext 비움 → principal null<br/>(합성 userId도 게스트 JWT도 발급하지 않는다)
+        SEC->>DIAG: 게스트 요청 전달 (userId = null)
+    else 유효 토큰 (ROLE_USER 또는 ROLE_ONBOARDING)
+        SEC->>DIAG: 인증된 요청 전달 (userId)
+    end
+
     Note over DIAG,FS: 진행 중 세션이 있어도 무조건 덮어쓴다(원자적 upsert)<br/>(진단하다 홈으로 갔다 다시 시작해도 서버는<br/>기존 진행 정보를 보지 않는다 — 언제나 처음부터)
-    DIAG->>FS: 새 세션 저장 upsertByUserId(DiagnosisFlowSession.start(userId))<br/>draft=빈 초안, pendingField=region
-    FS-->>DIAG: 새 세션
+    alt 회원 (userId != null)
+        DIAG->>FS: 새 세션 저장 upsertByUserId(DiagnosisFlowSession.start(userId))<br/>draft=빈 초안, pendingField=region, guestSessionId=null
+        FS-->>DIAG: 새 세션
+    else 게스트 (userId == null)
+        Note over DIAG: 게스트 세션 키 발급 — 값 형식 anonymous&lt;uuid&gt;<br/>요청자마다 다른 값(공용·상수 키 금지 — 진단 id가 전역 순차 채번이라<br/>소유권 검사가 유일한 IDOR 방어선)
+        DIAG->>FS: 새 세션 저장 (guestSessionId 키, userId=null)<br/>draft=빈 초안, pendingField=region
+        FS-->>DIAG: 새 세션
+        Note over DIAG,FS: userId UNIQUE 인덱스는 partial(userId 존재 시)로 좁히고<br/>guestSessionId partial UNIQUE 인덱스를 따로 둔다<br/>(한 인덱스에 섞으면 게스트 문서의 userId=null이 서로 충돌)
+    end
     Note over DIAG,FS: 덮어쓰는 이전 세션은 기록하지 않고 버린다 —<br/>이탈은 돌아왔을 때에야 알 수 있어(영영 안 오면 누락,<br/>시각도 재시작 시각) 집계가 편향되기 때문
-    DIAG->>USER: getLanguage(userId) (표시 언어)
-    USER-->>DIAG: lang
+
+    alt 회원 (userId != null)
+        DIAG->>USER: getLanguage(userId) (표시 언어)
+        USER-->>DIAG: lang
+    else 게스트 (userId == null)
+        Note over DIAG,USER: getLanguage를 호출하지 않는다 — lang=en 고정<br/>(users 행이 없어 호출하면 첫 요청부터 404 USER_NOT_FOUND<br/>— 4xx라 로그도 남지 않는다)
+    end
     DIAG->>DB: diagnosisQuestions에서 field=region 문항 조회(findByField)
     DB-->>DIAG: ① 지역 문항(카탈로그)
-    DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>question(step=1, field=region, select, options)
+    alt 회원 (userId != null)
+        DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>question(step=1, field=region, select, options)
+    else 게스트 (userId == null)
+        DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>data.guestSessionId=anonymous&lt;uuid&gt; (회원 응답에서는 생략, NON_NULL)<br/>question(step=1, field=region, select, options)
+        Note over C: 클라이언트는 이 키를 보관했다가 이후 next·추천 요청에<br/>X-Guest-Session-Id 헤더로 에코한다 — 잃어버리면 처음부터 다시<br/>(서버가 매 요청 새 키를 만들면 next가 세션 미스로 죽는다)
+    end
     C-->>U: ① 지역 질문·선택지 표시
     end
 
     loop 대화 루프 — 매 호출이 resultCode 중 정확히 하나로 응답
         U->>C: 현재 문항 답 선택
-        C->>SEC: POST /api/v2/diagnoses/next<br/>body: AnswerRequest (현재 문항 답 1개 — 필수)<br/>Authorization: Bearer accessToken
-        Note over SEC: JWT 검증 (서명·만료·클레임)
-        SEC->>DIAG: 인증된 요청 전달 (userId, answer)
+        C->>SEC: POST /api/v2/diagnoses/next<br/>body: AnswerRequest (현재 문항 답 1개 — 필수)<br/>Authorization: Bearer accessToken<br/>(게스트는 대신 X-Guest-Session-Id: anonymous&lt;uuid&gt; 에코)
+        Note over SEC: Authorization 헤더가 있을 때만 JWT 검증 (서명·만료·클레임)<br/>인가는 permitAll — 인증 없이도 통과
+        alt 토큰 없음 · 위조/형식 오류 → 게스트
+            SEC->>DIAG: 게스트 요청 전달 (userId = null, guestSessionId, answer)
+        else 유효 토큰
+            SEC->>DIAG: 인증된 요청 전달 (userId, answer)
+        end
 
-        DIAG->>FS: 진행 세션 조회 findByUserId(userId)
+        alt 회원 (userId != null)
+            DIAG->>FS: 진행 세션 조회 findByUserId(userId)
+        else 게스트 (userId == null)
+            DIAG->>FS: 진행 세션 조회 (에코된 guestSessionId 키)
+            Note over DIAG,FS: 신원 종류에 따라 조회 키를 고른다 — 헤더를 빠뜨렸거나<br/>남의 키를 보내면 자기 세션에 닿지 않는다
+        end
         FS-->>DIAG: 세션(draft, pendingField) 또는 없음
 
         rect rgb(245,245,245)
         Note over DIAG: ── ① 세션 확인 + 답 디스패치(상태별) ──
-        alt 진행 중 세션 없음 (앱 재시작·터미널 후 재전송·만료)
+        alt 진행 중 세션 없음 (앱 재시작·터미널 후 재전송·만료<br/>·게스트가 X-Guest-Session-Id를 빠뜨림/분실)
             DIAG-->>C: 400 DIAGNOSIS_SESSION_NOT_FOUND<br/>"진행 중인 진단이 없습니다. 진단을 다시 시작해 주세요."
             Note over DIAG: 서버가 임의로 흐름을 되살리지 않는다<br/>(재개·암묵적 새 시작 없음 — 시작은 클라 주도)
             C->>SEC: POST /api/v2/diagnoses/start (클라가 복구 → ⓪로)
@@ -58,15 +95,16 @@ sequenceDiagram
         else pendingField = regionRetry — ① 지역 예외질문에 답함
             Note over DIAG: 입력 검증 — field=regionRetry & code∈{YES,NO}만 허용<br/>(그 외 = 400 INVALID_INPUT)
             Note over DIAG,DB: 예/아니오 어느 쪽이든 이 시도는 끝난다 —<br/>세션을 지우기 전에 부분 답을 DISCARDED 진단으로 남긴다<br/>("이 지역을 원했는데 매물이 없었다" 수요 신호)
-            DIAG->>DB: draft.discard(now) 저장(diagnoses, status=DISCARDED)
+            DIAG->>DB: draft.discard(now) 저장(diagnoses, status=DISCARDED)<br/>(회원=userId 채움 / 게스트=guestSessionId 채움 — 정확히 하나만)
             alt code = YES (다른 지역으로 재시도)
-                DIAG->>FS: 세션 삭제 deleteByUserId(userId)
+                DIAG->>FS: 세션 삭제 (회원=userId 키 / 게스트=guestSessionId 키)
                 DIAG-->>C: 200 OK, resultCode=RESTART<br/>(코드만 — 프론트가 행할 행위=재시도)
                 C-->>U: 다시 시작 안내
                 C->>SEC: POST /api/v2/diagnoses/start (클라가 처음부터 재시도 → ⓪로)
+                Note over C: 게스트는 재시도 시 ⓪에서 새 세션 키를 발급받는다<br/>(이전 키는 더 이상 쓰지 않는다 — 그 세션 문서는 위에서 이미 삭제됐고<br/>DISCARDED 진단 문서는 이전 키로 남는다)
                 Note over U,DB: ↑ 터미널 응답 — 이번 루프의 이후 단계는 수행하지 않음
             else code = NO (진단 종료)
-                DIAG->>FS: 세션 삭제 deleteByUserId(userId)
+                DIAG->>FS: 세션 삭제 (회원=userId 키 / 게스트=guestSessionId 키)
                 DIAG-->>C: 200 OK, resultCode=TERMINATED<br/>(코드만 — 프론트가 행할 행위=진단종료, question 없음)
                 C-->>U: 진단 종료 화면
                 Note over U,DB: ↑ 터미널 응답 — 이번 루프의 이후 단계는 수행하지 않음
@@ -87,8 +125,12 @@ sequenceDiagram
             LIST-->>DIAG: 매칭 존재 여부
             opt region 매칭 0건 (있으면 그대로 ③으로)
                 DIAG->>FS: pendingField=regionRetry 저장(정본 슬롯 전진 없음)
-                DIAG->>USER: getLanguage(userId) (표시 언어)
-                USER-->>DIAG: lang
+                alt 회원 (userId != null)
+                    DIAG->>USER: getLanguage(userId) (표시 언어)
+                    USER-->>DIAG: lang
+                else 게스트 (userId == null)
+                    Note over DIAG,USER: getLanguage 호출 없음 — lang=en 고정
+                end
                 DIAG->>DB: diagnosisQuestions에서 field=regionRetry 문항 조회(findByField)
                 DB-->>DIAG: 예외질문(카탈로그의 일반 문항, SINGLE·max 1, options YES/NO)
                 DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>question(step=1, field=regionRetry) — 별도 결과코드 아님
@@ -102,17 +144,21 @@ sequenceDiagram
         Note over DIAG: ── ③ 다음 질문 vs 자동 확정 (위에서 응답하지 않은 경우) ──
         DIAG->>FS: 세션 저장 (pendingField=낸 문항의 field)
         alt 다음 슬롯 있음 — ofField(답한 field).next()
-            DIAG->>USER: getLanguage(userId) (표시 언어)
-            USER-->>DIAG: lang
+            alt 회원 (userId != null)
+                DIAG->>USER: getLanguage(userId) (표시 언어)
+                USER-->>DIAG: lang
+            else 게스트 (userId == null)
+                Note over DIAG,USER: getLanguage 호출 없음 — lang=en 고정<br/>게스트는 대화 전 구간에서 user 모듈을 한 번도 부르지 않는다
+            end
             DIAG->>DB: diagnosisQuestions에서 다음 슬롯의 field 문항 조회(findByField)
             Note over DIAG: 카탈로그는 field로 문항을 식별한다(순서는 코드)<br/>UNIVERSITY_OR_DISTRICT(step 3)는 저장된 purpose로 university|district 택일<br/>lang으로 표시 라벨 조립 (없으면 en 폴백, US-2-6 동일)
             DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>question(step, field, select, options)
             C-->>U: 다음 질문/선택지 표시 → 다음 루프로
         else 다음 슬롯 없음(⑥ arcStatus 답함) — 빌더 완성 → 자동 확정
             Note over DIAG: draft.complete(now) — 저장된 답 재검증 후<br/>IN_PROGRESS → COMPLETED (확정 시점은 서버가 판단)<br/>재검증 실패 = 400 INVALID_INPUT
-            DIAG->>DB: 확정 진단 저장(diagnoses 컬렉션, v1과 동일 저장/이력 경로 재사용)
+            DIAG->>DB: 확정 진단 저장(diagnoses 컬렉션, v1과 동일 저장/이력 경로 재사용)<br/>(회원=userId 채움·guestSessionId null / 게스트=그 반대)
             DB-->>DIAG: diagnosisId
-            DIAG->>FS: 세션 삭제 (흐름 종료)
+            DIAG->>FS: 세션 삭제 (회원=userId 키 / 게스트=guestSessionId 키, 흐름 종료)
             Note over DIAG,LIST: 여기서 listing을 부르지 않는다 — 매칭 0건인지는<br/>추천을 조회해야 알 수 있고, 그 조회는 클라가 요청한 적 없다<br/>(no-match를 미리 주려면 요청 없는 쿼리를 돌려야 함)
             DIAG-->>C: 200 OK, resultCode=COMPLETED<br/>diagnosisId (매칭 유무와 무관·추천 인라인 없음)
             C-->>U: 진단 완료 안내
@@ -124,12 +170,24 @@ sequenceDiagram
     Note over C,DB: ── ④ 매물 조회는 클라이언트가 결정한다(여기서 처음 추천 쿼리가 돈다) ──
     opt COMPLETED를 받은 뒤 — 조회 시점은 클라가 정함
         U->>C: 진단 결과 화면 진입
-        C->>SEC: GET /api/v2/diagnoses/{diagnosisId}/recommendations<br/>?page=0&size=20<br/>Authorization: Bearer accessToken
+        C->>SEC: GET /api/v2/diagnoses/{diagnosisId}/recommendations<br/>?page=0&size=20<br/>Authorization: Bearer accessToken<br/>(게스트는 대신 X-Guest-Session-Id: anonymous&lt;uuid&gt; 에코)
         Note over C,DIAG: 이 호출 자체가 "매물을 받겠다"는 클라의 결정<br/>v1 §7과 같은 조회지만 suggestions 필드가 없다
-        SEC->>DIAG: 인증된 요청 전달 (userId, diagnosisId)
+        alt 토큰 없음 · 위조/형식 오류 → 게스트
+            SEC->>DIAG: 게스트 요청 전달 (userId = null, guestSessionId, diagnosisId)
+        else 유효 토큰
+            SEC->>DIAG: 인증된 요청 전달 (userId, diagnosisId)
+        end
         DIAG->>DB: 확정 진단 조회(소유권 검증 — 타인 403·미존재 404)
         DB-->>DIAG: 저장된 진단 조건
-        DIAG->>LIST: recommendByCriteria(전체 진단 조건, page/size) 동기 호출
+        Note over DIAG: requireOwner — 신원 종류가 같고 값이 같을 때만 통과<br/>회원=userId 일치 / 게스트=guestSessionId 일치,<br/>한쪽이 null이면 무조건 거절(게스트↔회원 교차 조회 불가)<br/>진단 id가 전역 순차 채번이라 이 검사가 유일한 IDOR 방어선
+        alt 회원 (userId != null)
+            DIAG->>USER: getLanguage(userId) (표시 언어 — 매물 라벨 번역용, ADR-0037)
+            USER-->>DIAG: lang
+        else 게스트 (userId == null)
+            Note over DIAG,USER: getLanguage 호출 없음 — lang=en 고정<br/>이 호출은 공유 DiagnosisRecommendationReader가 매 추천 요청마다 타므로<br/>분기는 그 공유 코드에 들어가지만, v1은 회원 전용이라<br/>실제로 게스트 분기를 타는 것은 v2 요청뿐이다
+        end
+        DIAG->>LIST: recommendByCriteria(전체 진단 조건, page/size, lang) 동기 호출
+        Note over DIAG,LIST: 추천 경로는 신원을 받지 않는다 — RecommendationCriteria에<br/>userId가 없고 favorite·recentListing 쓰기도 0건<br/>→ listing 모듈 코드 변경 0건
         LIST-->>DIAG: 매칭 매물 요약 + 지도 좌표
         alt 매칭 있음
             DIAG-->>C: 200 OK, content[]·markers[]·page
@@ -162,7 +220,22 @@ sequenceDiagram
 - **① 지역 예외질문은 서버가 합성하지 않고 카탈로그 문항으로 관리한다** — `diagnosisQuestions`의 `field: "regionRetry"`, `select: { type: "SINGLE", max: 1 }`, `options: [{ code: "YES" }, { code: "NO" }]` 문항이다(예외질문도 채팅 질문의 일부라 문항·번역 정본을 다른 6단계와 같은 곳에 둔다). 따라서 **별도 결과코드가 아니라 일반 `NEXT_QUESTION`** 으로 내려가고, 그 예/아니오 응답에만 **프론트가 행할 행위**를 코드로 알린다(예=`RESTART` 재시도 / 아니오=`TERMINATED` 진단종료). `regionRetry`는 진단 답 필드가 아니라 흐름 제어 응답이므로 `Diagnosis`에 저장되지 않는다. 적재는 `DiagnosisCatalogSeedChangeUnit`(order 0000) 시드와 기배포 환경용 `DiagnosisRegionRetryQuestionChangeUnit`(order 0005, 멱등)이 담당한다. 카탈로그는 **순서를 담지 않고 `field`로 문항을 식별**하므로(ADR-0036 결정 6) 조회는 `findByField(field)` 단건이고, 이 문항이 정본 6슬롯 밖(흐름 제어)이라는 사실은 코드에만 있다(`DiagnosisFlowStep`에 없음).
 - **③ 자동 확정**은 마지막 슬롯(⑥ `arcStatus`, 다음 슬롯 없음)을 답했을 때 서버가 `draft.complete(now)`로 정본 진단을 확정(`IN_PROGRESS → COMPLETED`, 재검증 실패 시 `400 INVALID_INPUT`)해 `diagnoses`에 저장하고 세션을 삭제한 뒤 **`COMPLETED` + `diagnosisId`만** 반환한다 — **여기서 listing을 호출하지 않는다.** 확정 **시점**은 v1처럼 클라이언트가 요청하지 않고 서버가 빌더 완성 시점에 판단하지만, **매물을 받을 시점은 클라가 정한다**. 그래서 6단계 흐름 전 구간에서 listing 호출은 ② 지역 게이트 1회뿐이다(`autoConfirmDoesNotQueryRecommendations`가 `verify(times(1))`로 고정).
 - **④ 추천 조회**는 클라이언트가 `GET /api/v2/diagnoses/{id}/recommendations`를 부를 때 비로소 일어난다 — 이 호출이 곧 "매물을 받겠다"는 결정이고 페이지·정렬도 클라가 고른다. v1 §7(US-2-2)과 필터·매핑·페이지 계약이 같고 **차이는 `suggestions`가 없다는 것 하나**이며, 검증·소유권·조건 매핑·listing 호출은 v1과 공유 컴포넌트(`DiagnosisRecommendationReader`)로 단일화했다. 본인 소유만 조회 가능하다(타인 `403`·미존재 `404 DIAGNOSIS_NOT_FOUND`).
-- **④ 매물 조회는 클라이언트가 결정한다** — v2 확정 응답에는 추천 매물이 인라인으로 실리지 않는다(전용 뷰 없음). 클라이언트는 받은 `diagnosisId`로 원하는 시점에 **v1 `GET /api/v1/diagnoses/{diagnosisId}/recommendations?page=0&size=20`** 를 호출해 목록·마커·페이지를 받는다(US-2-2 계약 그대로 — [us-2-2-recommendations](us-2-2-recommendations.md)).
+- **④ 매물 조회는 클라이언트가 결정한다** — v2 확정 응답에는 추천 매물이 인라인으로 실리지 않는다(전용 뷰 없음). 클라이언트는 받은 `diagnosisId`로 원하는 시점에 **v2 `GET /api/v2/diagnoses/{diagnosisId}/recommendations?page=0&size=20`** 를 호출해 목록·마커·페이지를 받는다(필터·매핑·페이지 계약은 v1 §7(US-2-2)과 같고 `suggestions`만 없다 — [us-2-2-recommendations](us-2-2-recommendations.md)). **게스트는 v1을 호출할 수 없으므로 이 v2 엔드포인트가 유일한 추천 경로다**.
 - **재시작·종료 의미**: 지역 예외질문의 "예"(`RESTART`)와 "아니오"(`TERMINATED`)는 **둘 다 세션을 삭제하는 터미널**이다. 재시작은 서버가 진행 세션을 되돌리는 것이 아니라 **클라이언트가 `POST /start`를 다시 걸어** 새 세션으로 처음부터 시작한다(고아 세션 없음). 같은 0건 지역을 다시 고르면 게이트가 매 REGION 응답마다 재확인해 예외질문이 다시 뜬다(서버 무한 루프 아님 — 사용자 주도).
 - **번역(US-2-6 일관)**: `NEXT_QUESTION`의 표시 문자열(`question`·`label`)만 사용자 표시 언어로 조립하고(지역 예외질문 포함), `code`는 언어 무관 UPPER_SNAKE 불변이다. 표시 언어는 `user` 공개 query(`getLanguage`)를 동기 호출해 취득하며 미지원 언어는 영어로 폴백한다(US-2-5·US-2-6과 동일 i18n 경로).
-- **에러 경계**: `resultCode`는 정상 흐름 신호이며 에러가 아니다 — `RESTART`·`TERMINATED`도 `200 OK`이고, 추천 0건도 `200 OK` + 빈 목록이다. 진행 중 세션 없이 온 `/next`는 진단 도메인 전용 `400 DIAGNOSIS_SESSION_NOT_FOUND`, 입력 위반(답 누락·잘못된 단계 답·미정의 enum·`regionRetry` 규칙 위반·자동 확정 재검증 실패)은 `400 INVALID_INPUT` + `errors[]`, JSON 파싱 불가·타입 불일치는 `400 MALFORMED_REQUEST`로 공통 처리한다. 토큰 무효/누락·만료는 SEC가 `401`(`UNAUTHENTICATED`/`TOKEN_EXPIRED`)로 막는다.
+- **에러 경계**: `resultCode`는 정상 흐름 신호이며 에러가 아니다 — `RESTART`·`TERMINATED`도 `200 OK`이고, 추천 0건도 `200 OK` + 빈 목록이다. 진행 중 세션 없이 온 `/next`는 진단 도메인 전용 `400 DIAGNOSIS_SESSION_NOT_FOUND`, 입력 위반(답 누락·잘못된 단계 답·미정의 enum·`regionRetry` 규칙 위반·자동 확정 재검증 실패)은 `400 INVALID_INPUT` + `errors[]`, JSON 파싱 불가·타입 불일치는 `400 MALFORMED_REQUEST`로 공통 처리한다. **만료된 access token은 `401 TOKEN_EXPIRED`** 로 막는다(permitAll 경로에서도 게스트로 강등하지 않는다). 반면 **토큰 미전송·위조/형식 오류는 401이 아니라 게스트로 처리**되므로 이 흐름에서 `401 UNAUTHENTICATED`는 발생하지 않는다.
+
+### 게스트(비회원) 흐름 (#181)
+
+- **v2 챗봇 진단은 비회원에게 열리고, 여기가 게스트 진단의 정본 경로다** — **`permitAll` 매처를 신규 추가하는 대상은 `/api/v2/diagnoses/**` 하나뿐**이며 **v1 진단(`/api/v1/diagnoses/**`) 7개는 회원 전용으로 유지**한다. 퀴즈·생활팁과 달리 진단에는 전용 매처가 **아예 없어** `.anyRequest().authenticated()`로 떨어지므로 기존 줄을 고치는 것이 아니라 줄을 새로 넣어야 하고, 빠뜨리면 게스트 진단이 계속 `401`이다. 그 결과 **게스트 흐름은 `POST /api/v2/diagnoses/start` → `POST /api/v2/diagnoses/next` → `GET /api/v2/diagnoses/{diagnosisId}/recommendations` 셋으로 닫히며**, 비로그인 상태로 v1 7개를 호출하면 그대로 `401`이다(클라이언트는 로그인 여부에 따라 진단 API 버전을 고른다). v1을 열지 않으므로 v1 응답 계약(`AnswerSavedResponse` 등)과 그 RestDocs 테스트는 한 줄도 바뀌지 않고, 게스트용 이력·최근 시맨틱도 새로 정의하지 않는다.
+- **게스트 신원은 `userId == null`(부재)이다** — 합성 userId(`anonymous`+uuid)를 신원으로 흘리는 안은 채택하지 않았다. 기존 `diagnoses`·`diagnosisFlowSessions` 문서의 `userId`가 BSON Int64라 타입을 String으로 넓히면 **기존 회원의 진단 이력이 조용히 매치되지 않기** 때문이다. 저장소의 `userId` 타입은 `Long` 그대로이므로 **데이터 마이그레이션이 없다.**
+- **대화 연속성은 클라이언트가 에코하는 게스트 세션 키로 잇는다** — `POST /api/v2/diagnoses/start`에 인증이 없으면 서버가 키를 발급해 응답에 실어 보내고, 클라이언트는 이후 `/next`·추천 조회에 **`X-Guest-Session-Id` 헤더**로 되돌려보낸다. 값 형식은 **`anonymous<uuid>`** 이며 요청자마다 다르다. 필터가 매 요청 새 키를 만드는 설계는 `/start`는 `200`을 주지만 `/next`가 세션 미스로 `400 DIAGNOSIS_SESSION_NOT_FOUND`가 되어 **단발 요청 테스트로는 잡히지 않는 파손**이 되고, 게스트에게 JWT를 발급하는 설계는 `JwtTokenService`가 subject를 `Long.parseLong` 하므로 불가하다. **클라이언트에 새 의무가 생긴다** — 키를 잃어버리면 진단을 처음부터 다시 해야 한다.
+- **게스트 진단 문서는 `userId=null` + `guestSessionId`로 저장한다** — `Diagnosis`·`DiagnosisFlowSession`에 `guestSessionId`(nullable String)를 추가하며 회원/게스트 문서는 두 필드 중 **정확히 하나만** 채운다(validator 없이 코드 규약으로만 유지되는 불변식). `diagnosisFlowSessions`의 기존 `userId` UNIQUE 인덱스는 **partial(`userId` 존재 시)로 좁히고** `guestSessionId` partial UNIQUE를 **따로** 만든다 — 한 인덱스에 두 신원을 섞으면 게스트 문서들의 `userId=null`이 서로 충돌한다.
+- **소유권 검사가 유일한 IDOR 방어선이다** — 진단 id가 전역 순차 채번(`SequenceGenerator`)이라 열거가 쉽다. `requireOwner`는 **신원 종류가 같고 값이 같을 때만** 통과하며 한쪽이 null이면 무조건 거절한다(게스트가 회원 진단을, 회원이 게스트 진단을 읽지 못한다). `DiagnosisService`와 `DiagnosisRecommendationReader` 두 사본을 함께 고친다.
+- **게스트 경로에서는 `user` 모듈을 한 번도 호출하지 않는다** — 표시 언어는 `getLanguage`를 부르지 않고 `en`으로 고정한다. `getLanguage`는 `users` 행이 없으면 `404 USER_NOT_FOUND`를 던지고 그중 `DiagnosisFlowService.start()`가 이를 타므로, 호출을 남겨두면 **게스트의 첫 요청부터** 실패한다(4xx라 로그도 남지 않는다). 이 흐름의 호출 지점은 `DiagnosisFlowService`(문항 번역 — ⓪ 시작·② 예외질문·③ 다음 질문)와 ④ 추천이 타는 공유 `DiagnosisRecommendationReader`(매물 라벨 번역용 표시 언어를 `recommendByCriteria(criteria, language)`로 넘김 — [ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)) **둘**이며, 후자는 매칭 유무와 무관하게 매 추천 요청이 탄다. 온보딩 미완료(`ROLE_ONBOARDING`) 토큰은 `userId != null`이라 게스트가 아니며 `users.lang`을 따른다.
+- **`listing` 모듈 코드 변경은 0건이다** — ② 지역 게이트와 ④ 추천 조회가 부르는 `recommendByCriteria`는 애초에 userId 인자가 없고 `RecommendationCriteria`에도 신원 컴포넌트가 없으며, 추천 요청당 `favorite`·`recentListing` 쓰기도 0건이라 게스트 트래픽이 정크를 남기지 않는다.
+- **게스트→회원 결과 이관은 #181 범위 밖이다** — 게스트가 나중에 로그인해도 진단 결과를 옮기지 않는다. `guestSessionId`를 문서에 남겨 후속 이슈에서 배치 claim으로 처리할 수 있게만 열어둔다.
+- **결정 필요(미확정)** 셋:
+  - 게스트 진단 데이터의 **TTL 수치** — 회원 세션은 `userId` 키 upsert로 덮어써지지만 게스트 세션은 키가 매번 달라 **절대 덮어써지지 않고** 무한 누적되며 전역 순차 채번도 함께 소모된다. **현재 저장소에는 TTL 인덱스가 하나도 없어**(회원 진단도 영구 보존) 도입 여부부터가 결정 사항이며, 도입한다면 초기화 코드를 신규 작성해야 한다(검토 중인 제안값은 `diagnosisFlowSessions` 게스트 문서 24시간·`diagnoses` 게스트 문서 30일이나 **제품 결정 전**).
+  - `userId_unique_idx`를 partial로 좁힐 때의 **drop 주체** — 배포 환경에 이미 비-partial 인덱스가 있어 같은 이름·다른 옵션의 재생성이 `IndexOptionsConflict`로 거절되므로 drop이 선행돼야 하는데, 그것을 부트스트랩 initializer가 할지 Mongock changeUnit으로 둘지가 미정이다.
+  - 비인증 요청 **rate limiting** — 게스트가 `POST /api/v2/diagnoses/start`를 무제한 호출할 수 있고 저장소에 관련 코드가 없다.
