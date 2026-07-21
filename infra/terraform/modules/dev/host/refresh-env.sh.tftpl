@@ -35,6 +35,14 @@ BIZNO_ENABLED=$(get_opt "${ssm_prefix}/BIZNO_ENABLED")
 # dev 테스트 마스터 로그인 기능(운영 미사용) — ENABLED 하나로 시드+우회 로그인을 켠다. SECRET은 자동 생성(항상 존재), 기본 off는 tfvars→apply→재배포로 반영(ADR-0024).
 TEST_LOGIN_SECRET=$(get_opt "${ssm_prefix}/TEST_LOGIN_SECRET")
 TEST_LOGIN_ENABLED=$(get_opt "${ssm_prefix}/TEST_LOGIN_ENABLED")
+# 앱스토어 심사 계정 고정 인증번호(#180, 운영 미사용) — 심사 기간에만 ENABLED=true. 목록은 콤마 구분.
+# 미설정이면 SSM에 없음 → 빈 값 → 앱 기본(enabled=false). ENABLED=true인데 코드·계정이 비면 앱이 기동을 거부한다.
+FIXED_VERIFICATION_ENABLED=$(get_opt "${ssm_prefix}/FIXED_VERIFICATION_ENABLED")
+FIXED_VERIFICATION_CODE=$(get_opt "${ssm_prefix}/FIXED_VERIFICATION_CODE")
+FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS=$(get_opt "${ssm_prefix}/FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS")
+FIXED_VERIFICATION_TENANT_EMAILS=$(get_opt "${ssm_prefix}/FIXED_VERIFICATION_TENANT_EMAILS")
+FIXED_VERIFICATION_LANDLORD_GOOGLE_EMAILS=$(get_opt "${ssm_prefix}/FIXED_VERIFICATION_LANDLORD_GOOGLE_EMAILS")
+FIXED_VERIFICATION_LANDLORD_PHONES=$(get_opt "${ssm_prefix}/FIXED_VERIFICATION_LANDLORD_PHONES")
 MYSQL_PASSWORD=$(get "${ssm_prefix}/MYSQL_PASSWORD")
 MYSQL_ROOT_PASSWORD=$(get "${ssm_prefix}/MYSQL_ROOT_PASSWORD")
 MONGO_PASSWORD=$(get "${ssm_prefix}/MONGO_PASSWORD")

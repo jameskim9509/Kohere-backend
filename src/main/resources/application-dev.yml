@@ -40,6 +40,17 @@ app:
       # 켜려면 SSM(TEST_LOGIN_ENABLED=true·TEST_LOGIN_SECRET=<랜덤>)을 refresh-env로 주입한다(ADR-0024). secret 정본은 repo에 없다.
       enabled: ${TEST_LOGIN_ENABLED:false}
       secret: ${TEST_LOGIN_SECRET:}
+    fixed-verification:
+      # 앱스토어 심사 계정 고정 인증번호(이슈 #180). 심사 기간에만 켠다 — SSM(FIXED_VERIFICATION_*)을 refresh-env로 주입한다(ADR-0024).
+      # 옵션 기능이라 기본 off + 빈 폴백 — 미주입이어도 dev는 정상 기동한다(test-login과 동일 방식). 목록은 콤마 구분.
+      enabled: ${FIXED_VERIFICATION_ENABLED:false}
+      code: ${FIXED_VERIFICATION_CODE:}
+      tenant:
+        google-emails: ${FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS:}
+        emails: ${FIXED_VERIFICATION_TENANT_EMAILS:}
+      landlord:
+        google-emails: ${FIXED_VERIFICATION_LANDLORD_GOOGLE_EMAILS:}
+        phone-numbers: ${FIXED_VERIFICATION_LANDLORD_PHONES:}
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID}

@@ -48,6 +48,16 @@ app:
       # localhost 전용이라 폴백 시크릿 무해(JWT_SECRET 로컬 폴백과 동일 논리).
       enabled: ${TEST_LOGIN_ENABLED:true}
       secret: ${TEST_LOGIN_SECRET:local-dev-test-login-secret}
+    fixed-verification:
+      # 앱스토어 심사 계정 고정 인증번호(이슈 #180). 기본 off, 심사 계정은 env로 주입한다.
+      enabled: ${FIXED_VERIFICATION_ENABLED:false}
+      code: ${FIXED_VERIFICATION_CODE:000000}
+      tenant:
+        google-emails: ${FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS:}
+        emails: ${FIXED_VERIFICATION_TENANT_EMAILS:}
+      landlord:
+        google-emails: ${FIXED_VERIFICATION_LANDLORD_GOOGLE_EMAILS:}
+        phone-numbers: ${FIXED_VERIFICATION_LANDLORD_PHONES:}
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID:}

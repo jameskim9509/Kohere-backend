@@ -233,6 +233,52 @@ variable "test_login_enabled" {
   default     = false
 }
 
+# ----- 앱스토어 심사 계정 고정 인증번호 (dev 전용, 운영 미사용 — #180) -----
+# 심사자가 실제 SMS·이메일을 수신할 수 없어, 등록된 심사 계정에 한해 인증번호를 고정값으로 발급하고 외부 발송을 생략한다.
+# 역할별로 채널이 갈린다 — tenant 계정은 이메일 인증만, landlord 계정은 SMS 인증만 고정 인증번호를 받고
+# 반대 채널·미등록 값은 실제 발송 없이 거절된다. 그룹은 통째로 비거나 통째로 채워야 하며(반쪽이면 앱 기동 실패),
+# 같은 Google 계정을 양쪽에 넣으면 역할이 모호해 기동이 막힌다. 한쪽 트랙만 쓰는 운용은 허용.
+variable "fixed_verification_enabled" {
+  description = "심사 계정 고정 인증번호 활성화(앱 app.auth.fixed-verification.enabled). 심사 기간에만 켠다. 기본 false"
+  type        = bool
+  default     = false
+}
+
+variable "fixed_verification_code" {
+  description = "심사 계정에 발급할 고정 인증번호(숫자, app.email/phone.code-length와 자릿수 일치). enabled=true인데 비면 앱 기동 실패"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_tenant_google_emails" {
+  description = "임차인 심사자의 Google 로그인 계정 이메일(콤마 구분) — 이메일 인증만 허용"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_tenant_emails" {
+  description = "임차인 심사에서 고정 인증번호가 적용되는 인증 대상 이메일(콤마 구분)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_landlord_google_emails" {
+  description = "임대인 심사자의 Google 로그인 계정 이메일(콤마 구분) — SMS 인증만 허용"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fixed_verification_landlord_phones" {
+  description = "임대인 심사에서 고정 인증번호가 적용되는 인증 대상 휴대폰 번호(콤마 구분)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # ----- 알람 / 이미지 -----
 variable "discord_webhook_url" {
   description = "Discord 웹훅 URL — 채우면 CloudWatch 알람을 Discord로 통보(SNS→Lambda). 빈 값이면 미구성"

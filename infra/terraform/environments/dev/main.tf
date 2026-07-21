@@ -101,6 +101,13 @@ module "secrets" {
   bizno_enabled  = var.bizno_enabled
   # dev 테스트 마스터 로그인 토글(비밀 아님) — 시드+우회 로그인을 함께 켠다. 시크릿(TEST_LOGIN_SECRET)은 secrets 모듈이 자동 생성한다.
   test_login_enabled = var.test_login_enabled
+  # 앱스토어 심사 계정 고정 인증번호(#180) — 심사 기간에만 켠다. 코드·계정 식별자는 SecureString.
+  fixed_verification_enabled                = var.fixed_verification_enabled
+  fixed_verification_code                   = var.fixed_verification_code
+  fixed_verification_tenant_google_emails   = var.fixed_verification_tenant_google_emails
+  fixed_verification_tenant_emails          = var.fixed_verification_tenant_emails
+  fixed_verification_landlord_google_emails = var.fixed_verification_landlord_google_emails
+  fixed_verification_landlord_phones        = var.fixed_verification_landlord_phones
 }
 
 # ===== 데이터 EBS (mysql/mongo 영속) =====

@@ -4,10 +4,9 @@ import com.kohere.auth.domain.PhoneNotVerifiedException;
 import com.kohere.auth.domain.PhoneRateLimitException;
 import com.kohere.auth.domain.PhoneVerification;
 import com.kohere.auth.domain.PhoneVerificationCodeHasher;
+import com.kohere.auth.domain.PhoneVerificationCodeIssuer;
 import com.kohere.auth.domain.PhoneVerificationFailedException;
 import com.kohere.auth.domain.PhoneVerificationRepository;
-import com.kohere.auth.domain.VerificationSmsSender;
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -22,15 +21,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PhoneVerificationService {
 
-  private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
   private final PhoneVerificationRepository repository;
   private final PhoneVerificationCodeHasher codeHasher;
-  private final VerificationSmsSender smsSender;
+  private final PhoneVerificationCodeIssuer codeIssuer;
   private final PhoneVerificationProperties properties;
 
   /**
-   * 인증번호 발송. 재발송 간격 미달이면 429. 인증번호를 생성·해시하고 <b>동기 발송에 성공한 뒤에만</b> 챌린지를 저장한다(발송 실패는 502, 챌린지 미저장).
+   * 인증번호 발송. 재발송 간격 미달이면 429. 인증번호 생성·발송은 발급 포트가 함께 맡고, <b>발급에 성공한 뒤에만</b> 해시해 챌린지를 저장한다(발송 실패는
+   * 502, 챌린지 미저장).
    *
    * @return 인증번호 만료까지의 초(expiresIn)
    */
@@ -45,8 +43,7 @@ public class PhoneVerificationService {
             .isAfter(now)) {
       throw new PhoneRateLimitException();
     }
-    String code = generateNumericCode(properties.getCodeLength());
-    smsSender.send(phoneNumber, code); // 발송 실패 시 SmsDispatchException(502) — 챌린지 미저장
+    String code = codeIssuer.issue(userId, phoneNumber); // 발송 실패 시 502 전파 — 챌린지 미저장
     repository.saveChallenge(
         PhoneVerification.issue(
             userId, phoneNumber, codeHasher.hash(code), now, properties.getCodeTtlSeconds()));
@@ -86,13 +83,5 @@ public class PhoneVerificationService {
     if (!verified.equals(phoneNumber)) {
       throw new PhoneNotVerifiedException();
     }
-  }
-
-  private static String generateNumericCode(int length) {
-    StringBuilder sb = new StringBuilder(length);
-    for (int i = 0; i < length; i++) {
-      sb.append(SECURE_RANDOM.nextInt(10));
-    }
-    return sb.toString();
   }
 }
