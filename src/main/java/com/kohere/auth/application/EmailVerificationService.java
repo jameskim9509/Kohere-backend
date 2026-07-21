@@ -4,10 +4,9 @@ import com.kohere.auth.domain.EmailNotVerifiedException;
 import com.kohere.auth.domain.EmailRateLimitException;
 import com.kohere.auth.domain.EmailVerification;
 import com.kohere.auth.domain.EmailVerificationCodeHasher;
+import com.kohere.auth.domain.EmailVerificationCodeIssuer;
 import com.kohere.auth.domain.EmailVerificationFailedException;
 import com.kohere.auth.domain.EmailVerificationRepository;
-import com.kohere.auth.domain.VerificationEmailSender;
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -21,15 +20,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class EmailVerificationService {
 
-  private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
   private final EmailVerificationRepository repository;
   private final EmailVerificationCodeHasher codeHasher;
-  private final VerificationEmailSender emailSender;
+  private final EmailVerificationCodeIssuer codeIssuer;
   private final EmailVerificationProperties properties;
 
   /**
-   * 인증번호 발송. 재발송 간격 미달이면 429. 인증번호를 생성·해시하고 <b>동기 발송에 성공한 뒤에만</b> 챌린지를 저장한다(발송 실패는 502, 챌린지 미저장).
+   * 인증번호 발송. 재발송 간격 미달이면 429. 인증번호 생성·발송은 발급 포트가 함께 맡고, <b>발급에 성공한 뒤에만</b> 해시해 챌린지를 저장한다(발송 실패는
+   * 502, 챌린지 미저장).
    *
    * @return 인증번호 만료까지의 초(expiresIn)
    */
@@ -44,8 +42,7 @@ public class EmailVerificationService {
             .isAfter(now)) {
       throw new EmailRateLimitException();
     }
-    String code = generateNumericCode(properties.getCodeLength());
-    emailSender.send(email, code); // 발송 실패 시 EmailDispatchException(502) — 챌린지 미저장
+    String code = codeIssuer.issue(userId, email); // 발송 실패 시 502 전파 — 챌린지 미저장
     repository.saveChallenge(
         EmailVerification.issue(
             userId, email, codeHasher.hash(code), now, properties.getCodeTtlSeconds()));
@@ -85,13 +82,5 @@ public class EmailVerificationService {
     if (!verified.equals(email)) {
       throw new EmailNotVerifiedException();
     }
-  }
-
-  private static String generateNumericCode(int length) {
-    StringBuilder sb = new StringBuilder(length);
-    for (int i = 0; i < length; i++) {
-      sb.append(SECURE_RANDOM.nextInt(10));
-    }
-    return sb.toString();
   }
 }
