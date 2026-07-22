@@ -25,7 +25,7 @@
 
 > 관련 API 스펙: [01-auth-onboarding](../api/specs/01-auth-onboarding.md)
 
-외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 본인 확인 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(본인 확인은 세입자 이메일 인증·임대인 연락처 SMS 인증으로 갈린다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
+외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 본인 확인 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(본인 확인은 세입자 이메일 인증·임대인 연락처 SMS 인증으로 갈린다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·이메일·비자정보이며(직업은 **선택** — 매물 추천·탐색에 쓰지 않아 미입력을 허용한다, #187), 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
 
 사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 이메일 인증(US-1-6)을 거쳐 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 이름(성·이름을 합친 단일 `name`)·생년월일·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·직업·비자정보와 **이메일을 수집하지 않으며(생년월일은 세입자와 동일하게 수집), 사업자등록번호도 온보딩에서 수집하지 않는다** — 단 국적(`country`=`KR`)·표시 언어(`lang`=`ko`)는 클라이언트가 보내지 않고 **서버가 온보딩 시 고정 부여**한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 `country` 미수집" 결정을 개정). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**다.
 
@@ -74,7 +74,7 @@
 ### US-1-2 — 필수 온보딩 정보 제출하기 (세입자 전용)
 
 **As a** 약관 동의·이메일 인증을 마친(TERMS_AGREED) 세입자(외국인) 사용자
-**I want** 이름·성·성별·생년월일·국적·직업·이메일·비자정보를 한 번에 제출하기를(이메일은 사전 인증, 닉네임은 서버 자동 배정)
+**I want** 이름·성·성별·생년월일·국적·이메일·비자정보(+선택 직업)를 한 번에 제출하기를(이메일은 사전 인증, 닉네임은 서버 자동 배정)
 **So that** 회원 가입을 완료하고 정식 access/refresh 토큰으로 보호 기능을 이용할 수 있다.
 
 - 우선순위: **High**
@@ -85,10 +85,14 @@
 
 - **정상 — 온보딩 완료**
   Given 약관 동의를 마친(`TERMS_AGREED`) 사용자의 유효한 온보딩 토큰을 보유하고 제출 `email`이 사전 인증(US-1-6)되어 있으며
-  When 모든 필수 필드(`firstName`·`lastName`·`gender`·`birthDate`·`country`·`occupation`·`email`·`visaType`)를 담아(표시 언어 `lang`은 **선택** — 보내면 그 값으로, 안 보내면 미설정으로 두어 표시 시 `en` 폴백) `POST /api/v1/auth/onboarding`을 호출하면(약관 필드는 담지 않음 — 이미 US-1-7에서 동의·기록)
+  When 모든 필수 필드(`firstName`·`lastName`·`gender`·`birthDate`·`country`·`email`·`visaType`)를 담아(표시 언어 `lang`과 직업 `occupation`은 **선택** — `lang`은 보내면 그 값으로, 안 보내면 미설정으로 두어 표시 시 `en` 폴백, `occupation`은 안 보내면 저장하지 않음(NULL) — #187) `POST /api/v1/auth/onboarding`을 호출하면(약관 필드는 담지 않음 — 이미 US-1-7에서 동의·기록)
   Then `200 OK` + `data`에 완성된 프로필(서버가 자동 배정한 `nickname` 포함)과 정식 `accessToken`/`refreshToken`을 내려주고, 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이한다. (상태 전이 액션이므로 신규 리소스 생성이 아닌 `200`을 쓴다. `nickname`은 서버가 형용사 풀·사물 풀에서 골라 `형용사 + 사물`로 조합하고 전역 유니크 충돌 시 재조합해 배정하며 요청 본문에 담지 않는다)
+- **정상 — 직업 없이 온보딩 완료**
+  Given 위 정상 조건을 갖춘(`TERMS_AGREED`·이메일 사전 인증) 사용자가
+  When `occupation`을 담지 않고(미전송 또는 `null`) `POST /api/v1/auth/onboarding`을 호출하면
+  Then `200 OK`로 온보딩이 완료되고(`ACTIVE` 전이·토큰 발급 동일) 직업은 저장하지 않으며(NULL), 프로필 응답에서 `occupation` 필드가 생략된다(`lang` 미설정과 동일 정책 — 매물 추천·탐색에 직업을 쓰지 않아 선택 입력, #187).
 - **입력 검증 실패**
-  Given `firstName`/`lastName`/`country`가 비었거나(`country`가 `countries`에 없는 ISO 코드이거나), `gender`가 `MALE`/`FEMALE` 외 값이거나, `occupation`이 정의된 enum(`UNDERGRADUATE_STUDENT`·`GRADUATE_STUDENT`·`EXCHANGE_STUDENT`·`LANGUAGE_TEACHING`·`MANUFACTURING_PRODUCTION`·`BUSINESS_TRADE`·`ETC`) 외 값이거나, `birthDate`가 `YYYY-MM-DD` 형식 위반/미래 날짜이거나, `visaType`이 정의된 enum(상수명: `SHORT_TERM_VISIT`·`STUDENTS_TRAINEES`·`NON_PROFESSIONAL_WORKERS`·`WORKING_HOLIDAY_WORK_AND_VISIT`·`OVERSEAS_KOREANS`·`FAMILY_MARRIAGE_MIGRANTS`·`PERMANENT_RESIDENTS`·`PROFESSIONALS`·`DIPLOMATIC_OFFICIAL_AND_OTHERS`·`ETC`) 외 값이거나, `email` 형식이 어긋나면
+  Given `firstName`/`lastName`/`country`가 비었거나(`country`가 `countries`에 없는 ISO 코드이거나), `gender`가 `MALE`/`FEMALE` 외 값이거나, `occupation` 값을 보낸 경우 정의된 enum(`UNDERGRADUATE_STUDENT`·`GRADUATE_STUDENT`·`EXCHANGE_STUDENT`·`LANGUAGE_TEACHING`·`MANUFACTURING_PRODUCTION`·`BUSINESS_TRADE`·`ETC`) 외 값이거나(미전송·`null`은 선택이라 허용 — #187), `birthDate`가 `YYYY-MM-DD` 형식 위반/미래 날짜이거나, `visaType`이 정의된 enum(상수명: `SHORT_TERM_VISIT`·`STUDENTS_TRAINEES`·`NON_PROFESSIONAL_WORKERS`·`WORKING_HOLIDAY_WORK_AND_VISIT`·`OVERSEAS_KOREANS`·`FAMILY_MARRIAGE_MIGRANTS`·`PERMANENT_RESIDENTS`·`PROFESSIONALS`·`DIPLOMATIC_OFFICIAL_AND_OTHERS`·`ETC`) 외 값이거나, `email` 형식이 어긋나면
   When `POST /api/v1/auth/onboarding`을 호출하면
   Then `400` + `error.code=INVALID_INPUT` + `errors[]`로 위반 필드를 반환한다.
 - **비즈니스 규칙 — 약관 미동의 상태(우선 판정)**
@@ -196,7 +200,7 @@
 - **정상 — 조회(세입자)**
   Given 유효한 access 토큰을 보유한 `ACTIVE` 세입자(`userType=TENANT`)가
   When `GET /api/v1/users/me`를 호출하면
-  Then `200 OK` + `data`에 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드)+서버 resolve `countryName`·`countryFlag`·`occupation`·`email`·`visaType`·`lang`(표시 언어 — 미설정이면 응답에서 생략)·약관 동의 상태)을 반환한다.
+  Then `200 OK` + `data`에 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드)+서버 resolve `countryName`·`countryFlag`·`occupation`(온보딩 선택 — 미설정이면 응답에서 생략, #187)·`email`·`visaType`·`lang`(표시 언어 — 미설정이면 응답에서 생략)·약관 동의 상태)을 반환한다.
 - **정상 — 부분 수정(세입자)**
   Given 유효한 access 토큰을 보유한 세입자(`userType=TENANT`)가
   When `PATCH /api/v1/users/me`에 변경할 필드(예: `country`, `occupation`, `visaType`, `lang`, `marketingAgreed`)만 담아 호출하면

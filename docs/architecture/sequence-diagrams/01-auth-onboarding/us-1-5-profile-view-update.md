@@ -26,7 +26,7 @@ sequenceDiagram
         Note over USER: 응답 필드는 userType에 따라 분기
         Note over USER: ResponseBodyAdvice가 공통 래퍼 자동 래핑<br/>(컨트롤러는 DTO만)
         alt userType=TENANT (세입자)
-            Note over USER: country(코드)로 countries 조회 → countryName·countryFlag resolve<br/>countryFlag=국기 이미지 URL(flagcdn.com)<br/>lang은 저장값 그대로 반환(미설정이면 응답에서 생략 — NON_NULL)
+            Note over USER: country(코드)로 countries 조회 → countryName·countryFlag resolve<br/>countryFlag=국기 이미지 URL(flagcdn.com)<br/>lang은 저장값 그대로 반환·occupation은 온보딩 선택(#187)<br/>— 둘 다 미설정이면 응답에서 생략(NON_NULL)
             USER-->>C: 200 OK<br/>{ success, data: { id, firstName, lastName, nickname, gender, birthDate,<br/>country, countryName, countryFlag, lang, occupation, email, visaType, status,<br/>termsOfServiceAgreed, privacyPolicyAgreed, marketingAgreed }, error }
         else userType=LANDLORD (임대인)
             Note over USER: name=FullName.firstName(전체 이름, lastName 미사용)<br/>country='KR'·lang='ko' 고정(온보딩 시 서버 부여) → countryName·countryFlag resolve<br/>세입자 전용 필드(gender/occupation/visaType)·email 미포함(임대인 이메일 미수집)<br/>birthDate 포함(임대인도 온보딩 수집)·businessRegistrationNumber 미포함(원문 비저장)
@@ -73,7 +73,7 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- 정식 인증 토큰(ROLE_USER) 사용자가 `user 모듈`의 `GET /api/v1/users/me`로 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드) + 서버 resolve `countryName`·`countryFlag`·표시 언어 `lang`·`occupation`·`email`·`visaType`·약관 동의 상태)을 MySQL에서 **프로필 조회**해 `200 OK`로 반환하며, 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증(매 요청 stateless·status 무조회)한 뒤 모듈로 전달한다. 본인 프로필이라 `email`은 평문, 성공 응답은 ResponseBodyAdvice가 공통 래퍼(`{ success, data, error }`)로 자동 래핑하며 컨트롤러는 DTO만 반환한다.
+- 정식 인증 토큰(ROLE_USER) 사용자가 `user 모듈`의 `GET /api/v1/users/me`로 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드) + 서버 resolve `countryName`·`countryFlag`·표시 언어 `lang`·`occupation`(온보딩 **선택** 필드(#187) — `lang`처럼 미설정이면 응답에서 생략)·`email`·`visaType`·약관 동의 상태)을 MySQL에서 **프로필 조회**해 `200 OK`로 반환하며, 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증(매 요청 stateless·status 무조회)한 뒤 모듈로 전달한다. 본인 프로필이라 `email`은 평문, 성공 응답은 ResponseBodyAdvice가 공통 래퍼(`{ success, data, error }`)로 자동 래핑하며 컨트롤러는 DTO만 반환한다.
 - 응답 필드는 `userType`에 따라 갈린다 — **세입자(TENANT)** 는 위의 성별·국적·표시 언어·직업·비자 등 세입자 전용 필드를 포함하고, **임대인(LANDLORD)** 은 `userType=LANDLORD`·`name`(=`FullName.firstName`, `lastName` 미사용)·`birthDate`·`country`(`KR` 고정)·`countryName`·`countryFlag`·`lang`(`ko` 고정)·`phoneNumber`·`status`·약관 동의·`createdAt`을 포함한다(세입자 전용 필드 `gender`/`occupation`/`visaType` 및 `email`(임대인 미수집)·`businessRegistrationNumber`는 미포함이나 `birthDate`는 임대인도 수집·반환, 사업자 검증은 원문 비저장). 임대인의 `country`·`lang`은 온보딩 시 서버가 `KR`·`ko`로 고정 부여한다([ADR-0034](../../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 country 미수집" 결정을 개정(#141)).
 - 온보딩 스코프 토큰(ROLE_ONBOARDING)으로 접근하면 SEC가 보호경로 인가 단계에서(모듈 도달 전 `AccessDeniedHandler`) `403 AUTH_ONBOARDING_REQUIRED`를 반환한다.
 - `user 모듈`의 `PATCH /api/v1/users/me`에 변경 필드만 담아 보내면 미전송 필드는 유지한 채 MySQL에서 **프로필을 부분 수정**한 뒤 `200 OK`로 수정된 프로필을 반환한다. 조회와 동일하게 온보딩 스코프 토큰은 SEC가 `403 AUTH_ONBOARDING_REQUIRED`로 차단한다.

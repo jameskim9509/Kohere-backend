@@ -1070,10 +1070,10 @@ class AuthOnboardingDocsTest {
         field("gender", JsonFieldType.STRING, "성별: MALE | FEMALE(필수)"),
         field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(필수)"),
         field("country", JsonFieldType.STRING, "국적 ISO 3166-1 alpha-2 코드 예: KR(필수)"),
-        field(
+        optField(
             "occupation",
             JsonFieldType.STRING,
-            "직업 enum(필수): UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC"),
+            "직업 enum(선택 — 미전송·null이면 저장하지 않고 응답에서 생략, 값이 있으면 목록 검증 — #187): UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC"),
         field("email", JsonFieldType.STRING, "사전 인증된 이메일과 일치(필수)"),
         field(
             "visaType",
@@ -1129,7 +1129,7 @@ class AuthOnboardingDocsTest {
         field(prefix + "countryName", JsonFieldType.STRING, "국가 표시명(countries resolve)"),
         field(prefix + "countryFlag", JsonFieldType.STRING, "국기 이미지 URL(countries resolve)"),
         optField(prefix + "lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(세입자 선택 시 — 미선택이면 생략)"),
-        field(prefix + "occupation", JsonFieldType.STRING, "직업 enum"),
+        optField(prefix + "occupation", JsonFieldType.STRING, "직업 enum(온보딩 선택 — 미설정이면 생략, #187)"),
         field(prefix + "email", JsonFieldType.STRING, "인증된 연락 이메일"),
         field(prefix + "visaType", JsonFieldType.STRING, "비자유형 enum"));
   }
@@ -1149,7 +1149,7 @@ class AuthOnboardingDocsTest {
         field("data.countryName", JsonFieldType.STRING, "국가 표시명(countries resolve)"),
         field("data.countryFlag", JsonFieldType.STRING, "국기 이미지 URL(countries resolve)"),
         optField("data.lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(세입자 선택 시 — 미선택이면 생략)"),
-        field("data.occupation", JsonFieldType.STRING, "직업 enum"),
+        optField("data.occupation", JsonFieldType.STRING, "직업 enum(온보딩 선택 — 미설정이면 생략, #187)"),
         field("data.email", JsonFieldType.STRING, "인증된 연락 이메일"),
         field("data.visaType", JsonFieldType.STRING, "비자유형 enum"),
         optField("data.phoneNumber", JsonFieldType.STRING, "연락처(임대인만·본인 조회 평문 — 세입자는 생략)"),

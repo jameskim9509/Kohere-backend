@@ -21,7 +21,7 @@
 | provider | `APPLE`, `GOOGLE` | 소셜 로그인 제공자 |
 | 성별 `gender` | `MALE`, `FEMALE` | 온보딩 필수(세입자만) |
 | 생년월일 `birthDate` | 날짜 문자열(`YYYY-MM-DD`) | 온보딩 필수(세입자·임대인 공통) · 과거 날짜만 허용(미래 불가) |
-| 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `LANGUAGE_TEACHING`(어학·교육), `MANUFACTURING_PRODUCTION`(제조·생산), `BUSINESS_TRADE`(사업·무역), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편) |
+| 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `LANGUAGE_TEACHING`(어학·교육), `MANUFACTURING_PRODUCTION`(제조·생산), `BUSINESS_TRADE`(사업·무역), `ETC`(기타) | **온보딩 선택**(#187에서 필수→선택 완화 — 매물 추천·탐색에서 활용하지 않음) · 미전송이면 저장하지 않고(NULL) 응답에서 생략 · 요구사항 확정값(#93, #138 개편) |
 | 비자정보 `visaType` | `SHORT_TERM_VISIT`(단기방문), `STUDENTS_TRAINEES`(유학·연수), `NON_PROFESSIONAL_WORKERS`(비전문취업), `WORKING_HOLIDAY_WORK_AND_VISIT`(워킹홀리데이·방문취업), `OVERSEAS_KOREANS`(재외동포), `FAMILY_MARRIAGE_MIGRANTS`(방문동거·거주·결혼이민), `PERMANENT_RESIDENTS`(영주), `PROFESSIONALS`(전문인력), `DIPLOMATIC_OFFICIAL_AND_OTHERS`(외교·공무·기타), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). API는 상수명, DB 저장은 표시 라벨 |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
 | 표시 언어 `lang` | ISO 639-1 소문자 코드 — 지원값 `en`, `ko`, `ja` | **세입자 온보딩·프로필 수정 모두 선택** · 사용자가 앱 지구본 아이콘에서 직접 고른다. `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`이다. 지원 목록(`en`·`ko`·`ja`)으로 서버가 검증하고 목록 밖 값은 `INVALID_INPUT`이다(값은 소문자 코드로 주고받되 서버는 내부적으로 `Language` enum으로 모델링한다). **임대인은 서버가 `ko`로 고정 부여하며 변경할 수 없다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) |
@@ -416,7 +416,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 `TERMS_AGREED` 세입자가 필수 프로필을 제출해 가입을 완료한다. **약관 동의(§2)와 이메일 인증(§3·§4)이 선행**되어야 한다 — 약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`, 제출 `email`이 미검증·불일치면 `422 AUTH_EMAIL_NOT_VERIFIED`. 성공 시 `ACTIVE`로 전이하고, 닉네임을 자동 배정하며 정식 access/refresh 토큰을 발급한다. 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다.
 
-> 약관 동의·`termsVersion`은 §2(약관 동의)에서 이미 기록되므로 이 요청 본문에는 약관 필드를 담지 않는다. `nickname`은 서버가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 조합하고 전역 유니크를 보장(충돌 시 재조합 재시도, 상한 초과 시 fallback 예: 숫자 접미사)해 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가). `email`은 §3·§4로 검증 완료된 값과 일치해야 한다. 응답의 `countryName`·`countryFlag`는 서버가 `country`(코드)로 `countries`에서 resolve한 값이다(저장은 `country` 코드만). `countryFlag`는 **국기 이미지 URL**(flagcdn.com SVG)이다. `lang`은 **선택** 필드로, 보내면 그 값을 그대로 저장하고 보내지 않으면 저장하지 않으며(NULL) 표시 시 `en`으로 폴백한다 — `lang`을 모르는 기존 클라이언트는 `en`으로 보인다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
+> 약관 동의·`termsVersion`은 §2(약관 동의)에서 이미 기록되므로 이 요청 본문에는 약관 필드를 담지 않는다. `nickname`은 서버가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 조합하고 전역 유니크를 보장(충돌 시 재조합 재시도, 상한 초과 시 fallback 예: 숫자 접미사)해 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가). `email`은 §3·§4로 검증 완료된 값과 일치해야 한다. 응답의 `countryName`·`countryFlag`는 서버가 `country`(코드)로 `countries`에서 resolve한 값이다(저장은 `country` 코드만). `countryFlag`는 **국기 이미지 URL**(flagcdn.com SVG)이다. `lang`은 **선택** 필드로, 보내면 그 값을 그대로 저장하고 보내지 않으면 저장하지 않으며(NULL) 표시 시 `en`으로 폴백한다 — `lang`을 모르는 기존 클라이언트는 `en`으로 보인다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). `occupation`도 **선택** 필드다(#187에서 필수→선택 완화 — 매물 추천·탐색에서 직업 정보를 활용하지 않는다) — 보내면 enum 검증 후 저장하고, 보내지 않으면 저장하지 않는다(NULL). **필수→선택 완화는 하위호환**이다: `occupation`을 보내던 기존 클라이언트의 요청은 그대로 유효하고, 값을 보낸 경우의 enum 검증도 종전과 동일하다.
 
 - **인증**: 필수 — 소셜 로그인 단계에서 받은 온보딩 토큰(`onboardingCompleted=false`). 상태는 `TERMS_AGREED`여야 한다.
 - Path/Query 파라미터: 없음.
@@ -445,7 +445,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) |
 | `country` | string | 필수 | 국적 ISO 3166-1 alpha-2 코드(예: `VN`). `countries`에 존재해야 함(없으면 `INVALID_INPUT`) |
 | `lang` | string | 선택 | 표시 언어 ISO 639-1 소문자 코드. 지원 목록 `en` \| `ko` \| `ja` 중 하나여야 함(목록 밖 값은 `INVALID_INPUT`). **미전송이면 저장하지 않고(NULL) 표시 시 `en`으로 폴백**한다(`lang`을 보내지 않는 앱은 `en`으로 보인다) |
-| `occupation` | string(enum) | 필수 | `UNDERGRADUATE_STUDENT` \| `GRADUATE_STUDENT` \| `EXCHANGE_STUDENT` \| `LANGUAGE_TEACHING` \| `MANUFACTURING_PRODUCTION` \| `BUSINESS_TRADE` \| `ETC` |
+| `occupation` | string(enum) | 선택 | `UNDERGRADUATE_STUDENT` \| `GRADUATE_STUDENT` \| `EXCHANGE_STUDENT` \| `LANGUAGE_TEACHING` \| `MANUFACTURING_PRODUCTION` \| `BUSINESS_TRADE` \| `ETC` 중 하나여야 함(목록 밖 값은 `INVALID_INPUT` — 값을 보낸 경우의 enum 검증은 종전과 동일, 빈 문자열 `""`도 목록 밖 값이라 `INVALID_INPUT`). **미전송 또는 `null` 명시 전송이면(동일 취급) 저장하지 않고(NULL) 응답에서 생략**한다(#187) |
 | `email` | string | 필수 | 이메일 형식. **§3·§4로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_EMAIL_NOT_VERIFIED` 422) |
 | `visaType` | string(enum) | 필수 | `SHORT_TERM_VISIT` \| `STUDENTS_TRAINEES` \| `NON_PROFESSIONAL_WORKERS` \| `WORKING_HOLIDAY_WORK_AND_VISIT` \| `OVERSEAS_KOREANS` \| `FAMILY_MARRIAGE_MIGRANTS` \| `PERMANENT_RESIDENTS` \| `PROFESSIONALS` \| `DIPLOMATIC_OFFICIAL_AND_OTHERS` \| `ETC` |
 
@@ -485,11 +485,13 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
+> 응답의 `occupation`은 **미설정(NULL)이면 필드 자체가 생략**된다(응답 뷰가 null 필드를 직렬화하지 않음 — 프로필 조회 §8도 동일). 따라서 REST Docs의 응답 필드 `occupation`은 **optional**로 선언한다(`lang`과 동일 — #187).
+
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필드 누락/형식·enum·날짜 위반(`gender`/`visaType`/`occupation` 불일치, `birthDate` 형식·미래, `firstName`/`lastName`/`country`/`email` 빈값·형식, **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드** 등) |
+| 400 | `INVALID_INPUT` | 필드 누락/형식·enum·날짜 위반(`gender`/`visaType` 불일치, **`occupation`은 선택이라 누락은 에러가 아니고 값을 보낸 경우 enum 목록 밖일 때만 해당**(#187), `birthDate` 형식·미래, `firstName`/`lastName`/`country`/`email` 빈값·형식, **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드** 등) |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 `ACTIVE`인 사용자의 온보딩 재요청(동시 요청 포함) |
@@ -762,7 +764,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 본인 프로필이므로 `phoneNumber`는 평문으로 반환한다(로그·타 사용자 노출 시에만 마스킹). 임대인 응답의 `name`은 저장된 `FullName.firstName`(전체 이름)을 매핑한 값이다.
+> 본인 프로필이므로 `phoneNumber`는 평문으로 반환한다(로그·타 사용자 노출 시에만 마스킹). 임대인 응답의 `name`은 저장된 `FullName.firstName`(전체 이름)을 매핑한 값이다. 세입자 응답의 `occupation`은 온보딩에서 **선택**(#187)이라 **미설정이면 필드가 생략**된다(온보딩 응답 §5와 동일 — REST Docs 응답 필드는 optional로 선언).
 > 임대인 응답은 세입자 전용 필드(`gender`·`occupation`·`visaType`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 임대인 응답에도 포함한다** — 온보딩에서 서버가 `KR`·`ko`로 고정 부여하기 때문이며(클라이언트가 보내지 않는다), 이는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 국적 미수집" 결정을 개정한 것이다. **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
 
 #### 발생 가능한 에러
