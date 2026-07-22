@@ -310,6 +310,22 @@ class AuthOnboardingDocsTest {
             .getContentAsString();
     String newRefreshToken = read(reissue, "data", "refreshToken");
 
+    // 재발급 교착 방지(#181) — 클라이언트가 모든 요청에 access 토큰을 붙이는 구조라 재발급 요청에도 만료된 access
+    // 토큰이 실려 온다. reissue는 공개 티어(PublicPaths)라 이때 만료 토큰을 401로 막지 않고 통과시켜야 재발급이
+    // 가능하다. 스니펫은 만들지 않는다(auth-reissue가 계약 문서). 회전된 refresh 토큰을 로그아웃으로 잇는다.
+    String staleAccessReissue =
+        mockMvc
+            .perform(
+                post("/api/v1/auth/reissue")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"refreshToken\":\"" + newRefreshToken + "\"}"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    newRefreshToken = read(staleAccessReissue, "data", "refreshToken");
+
     // 로그아웃
     mockMvc
         .perform(

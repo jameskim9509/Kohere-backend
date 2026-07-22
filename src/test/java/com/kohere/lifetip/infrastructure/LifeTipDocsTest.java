@@ -5,6 +5,8 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resour
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
@@ -51,9 +53,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 생활 팁 REST Docs 스니펫 생성 테스트(ADR-0007·0016). 성공(주제 목록·주제별 팁)과 스펙(08-life-tips.md) 에러(404·401·403)를
- * 실제 HTTP 스택으로 생성한다. 표시 언어(user getLanguage)는 {@code @MockitoBean}, MongoDB는 실제 컨테이너로 구동하며 시더는 test
+ * 생활 팁 REST Docs 스니펫 생성 테스트(ADR-0007·0016). 성공(주제 목록·주제별 팁)과 스펙(08-life-tips.md) 에러(404·401)를 실제
+ * HTTP 스택으로 생성한다. 표시 언어(user getLanguage)는 {@code @MockitoBean}, MongoDB는 실제 컨테이너로 구동하며 시더는 test
  * 프로파일에서 비활성이라 이 테스트가 직접 시드한다.
+ *
+ * <p><b>#181로 인가 계약이 바뀌었다</b> — 생활 팁은 {@code permitAll}이라 토큰 없이도 2xx이고 세입자 게이트가 없다. 401
+ * UNAUTHENTICATED·403 AUTH_ONBOARDING_REQUIRED 스니펫은 도달 불가라 제거했고, 그 자리를 {@link
+ * #guestAccessWithoutToken}·{@link #onboardingTokenIsTreatedAsMemberNotGuest}·{@link
+ * #landlordGetsKoreanLabels}가 2xx 계약으로 고정한다. 401은 <b>만료 토큰</b>에만 남는다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -96,9 +103,8 @@ class LifeTipDocsTest {
     topicRepository.deleteAll();
     tipRepository.deleteAll();
     seed();
-    // 생활 팁은 세입자 전용(US-8) — 조회 진입 게이트가 userType을 확인한다.
-    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
     // 표시 언어는 user 공개 query로 취득 — 사용자가 고른 ko(users.lang)를 가정해 한국어 라벨을 내려받는다.
+    // userType은 더 이상 조회하지 않는다(#181로 세입자 게이트 제거) — 스텁을 두면 죽은 코드다.
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
   }
 
@@ -118,7 +124,7 @@ class LifeTipDocsTest {
         .andDo(
             document(
                 "life-tips-topics",
-                resourceDetails().summary("생활 팁 주제 목록 — 노출 순서, 사용자 표시 언어로 번역(비페이지, ROLE_USER)"),
+                resourceDetails().summary("생활 팁 주제 목록 — 노출 순서, 사용자 표시 언어로 번역(비페이지, 비회원 허용)"),
                 responseFields(topicsResponseFields())));
 
     mockMvc
@@ -130,7 +136,7 @@ class LifeTipDocsTest {
         .andDo(
             document(
                 "life-tips-topic-tips",
-                resourceDetails().summary("특정 주제의 생활 팁(제목·내용·사진) — 노출 순서, 번역(비페이지, ROLE_USER)"),
+                resourceDetails().summary("특정 주제의 생활 팁(제목·내용·사진) — 노출 순서, 번역(비페이지, 비회원 허용)"),
                 pathParameters(parameterWithName("topicCode").description("주제 코드(UPPER_SNAKE)")),
                 responseFields(tipsResponseFields())));
   }
@@ -138,7 +144,6 @@ class LifeTipDocsTest {
   @Test
   void generatesLifeTipErrorSnippets() throws Exception {
     String token = jwtTokenService.issueAccessToken(200L);
-    String onboardingToken = jwtTokenService.issueOnboardingToken(201L);
 
     // 404 — 존재하지 않는 주제
     perform(
@@ -149,30 +154,79 @@ class LifeTipDocsTest {
         "life-tips-topic-tips-not-found",
         "주제별 팁 — 존재하지 않는 주제 코드 (404 LIFE_TIP_TOPIC_NOT_FOUND)");
 
-    // 403 — 온보딩 미완료(ROLE_ONBOARDING) 토큰으로 ROLE_USER 자원 접근
-    perform(
-        get("/api/v1/life-tips/topics").header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)),
-        status().isForbidden(),
-        "AUTH_ONBOARDING_REQUIRED",
-        "life-tips-topics-onboarding-required",
-        "주제 목록 — 온보딩 미완료 토큰(정식 인증 ROLE_USER=ACTIVE만) (403 AUTH_ONBOARDING_REQUIRED)");
-
-    // 401 — 인증 누락/위조
-    perform(
-        get("/api/v1/life-tips/topics").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
-        status().isUnauthorized(),
-        "UNAUTHENTICATED",
-        "life-tips-topics-unauthenticated",
-        "주제 목록 — 인증 누락/위조 (401 UNAUTHENTICATED)");
-
-    // 401 — 액세스 토큰 만료
+    // #181로 생활 팁이 permitAll이 되면서 401 UNAUTHENTICATED(누락·위조)와 403
+    // AUTH_ONBOARDING_REQUIRED는 도달 불가가 됐다 — guestAccessWithoutToken이 그 자리를
+    // 2xx 계약으로 대신 고정한다. 401은 만료 토큰에만 남는다.
     perform(
         get("/api/v1/life-tips/topics/{topicCode}/tips", "MOVING_IN")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken())),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "life-tips-topic-tips-token-expired",
-        "주제별 팁 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        "주제별 팁 — 액세스 토큰 만료 (401 TOKEN_EXPIRED, 게스트로 강등하지 않고 재발급을 유도한다)");
+  }
+
+  /**
+   * 게이트 해제 계약(#181) — {@code Authorization} 헤더 <b>없이</b> 생활 팁 두 엔드포인트가 2xx다.
+   *
+   * <p>기본 언어 {@code en}만 확인하면 부족하다 — {@code getLanguage}를 부르고 예외를 삼키는 구현도 통과한다. 게스트는 {@code users}
+   * 행이 없어 호출 자체가 404이므로 <b>한 번도 부르지 않음</b>을 함께 못 박는다. 위조 토큰도 신원 없는 요청과 같은 취급이다.
+   */
+  @Test
+  void guestAccessWithoutToken() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/life-tips/topics"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.topics[0].code").value("MOVING_IN"))
+        .andExpect(jsonPath("$.data.topics[0].name").value("Moving In"));
+
+    mockMvc
+        .perform(get("/api/v1/life-tips/topics/{topicCode}/tips", "MOVING_IN"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.tips[0].title").value("Resident registration"));
+
+    mockMvc
+        .perform(
+            get("/api/v1/life-tips/topics").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.topics[0].name").value("Moving In"));
+
+    verify(userAccountService, never()).getLanguage(anyLong());
+    verify(userAccountService, never()).getUserType(anyLong());
+  }
+
+  /**
+   * 온보딩 미완료(ROLE_ONBOARDING) 토큰은 게스트가 아니라 회원 취급이다(결정 6) — 200이면서 언어는 {@code users.lang}(ko)이다.
+   * {@code userId != null}이므로 {@code getLanguage}를 정상적으로 부른다.
+   */
+  @Test
+  void onboardingTokenIsTreatedAsMemberNotGuest() throws Exception {
+    String onboardingToken = jwtTokenService.issueOnboardingToken(201L);
+
+    mockMvc
+        .perform(
+            get("/api/v1/life-tips/topics")
+                .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.topics[0].name").value("입주·이사"));
+  }
+
+  /**
+   * 임대인도 200이며 응답 언어는 본인 {@code users.lang}(ko)이다 — 세입자 게이트가 사라졌음을 HTTP 계약으로 고정한다(#181). 게이트를 되살리면
+   * 여기서 403으로 깨진다.
+   */
+  @Test
+  void landlordGetsKoreanLabels() throws Exception {
+    String landlordToken = jwtTokenService.issueAccessToken(300L);
+
+    mockMvc
+        .perform(
+            get("/api/v1/life-tips/topics")
+                .header(HttpHeaders.AUTHORIZATION, bearer(landlordToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.topics[0].name").value("입주·이사"));
+
+    verify(userAccountService, never()).getUserType(anyLong());
   }
 
   // --- field descriptors ---

@@ -21,6 +21,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>매핑 결과 DTO만 버전별로 다르다 — v1은 0건일 때 조정 제안({@code suggestions})을 덧붙이고, v2는 붙이지 않는다. 그 차이는 호출자가 정하고
  * 여기서는 listing이 준 페이지를 그대로 돌려준다.
+ *
+ * <p><b>게스트가 닿는 유일한 소유권 검사 지점</b>이다(#181) — v2 추천 조회만 비회원에게 열려 있고 v1은 회원 전용이라 토큰 없는 요청이 여기까지 오지
+ * 못한다. 그래서 신원을 둘(회원 {@code userId} / 게스트 세션 키) 받으며, v1 호출자는 게스트 키 자리에 {@code null}을 넘긴다.
  */
 @Component
 @RequiredArgsConstructor
@@ -29,23 +32,38 @@ public class DiagnosisRecommendationReader {
   /** 추천 정렬 허용 키(스펙 §7). */
   private static final Set<String> SORT_KEYS = Set.of("recommended", "price", "distance");
 
+  /** 게스트 표시 언어(#181). users 행이 없어 조회할 수 없으므로 고정한다. */
+  private static final String GUEST_LANGUAGE = "en";
+
   private final DiagnosisRepository diagnosisRepository;
   private final ListingRecommendationService listingRecommendationService;
   private final DiagnosisCriteriaMapper criteriaMapper;
   private final UserAccountService userAccountService;
 
-  /** 본인 소유 확정 진단의 추천 매물 페이지를 조회한다(0건이면 빈 {@code content} — 에러 아님). */
+  /**
+   * 본인 소유 확정 진단의 추천 매물 페이지를 조회한다(0건이면 빈 {@code content} — 에러 아님).
+   *
+   * @param userId 회원이면 userId, 게스트면 {@code null}
+   * @param guestSessionId 게스트 세션 키(회원·v1 호출자는 {@code null})
+   */
   PageResponse<RecommendedListingView> read(
-      long userId, Long diagnosisId, int page, int size, String sort) {
+      Long userId, String guestSessionId, Long diagnosisId, int page, int size, String sort) {
     validatePage(page, size);
     validateSort(sort);
     Diagnosis diagnosis =
         diagnosisRepository.findById(diagnosisId).orElseThrow(DiagnosisNotFoundException::new);
     requireNotDiscarded(diagnosis);
-    requireOwner(diagnosis, userId);
+    requireOwner(diagnosis, userId, guestSessionId);
     return listingRecommendationService.recommendByCriteria(
-        criteriaMapper.toCriteria(diagnosis, page, size, sort),
-        userAccountService.getLanguage(userId));
+        criteriaMapper.toCriteria(diagnosis, page, size, sort), resolveLanguage(userId));
+  }
+
+  /**
+   * 매물 라벨의 표시 언어. <b>게스트는 {@code en} 고정이며 {@code user} 모듈을 호출하지 않는다</b>(#181) — {@code users} 행이 없어
+   * 호출 자체가 {@code 404 USER_NOT_FOUND}가 되기 때문이다.
+   */
+  private String resolveLanguage(Long userId) {
+    return userId == null ? GUEST_LANGUAGE : userAccountService.getLanguage(userId);
   }
 
   /**
@@ -60,8 +78,12 @@ public class DiagnosisRecommendationReader {
     }
   }
 
-  private static void requireOwner(Diagnosis diagnosis, long userId) {
-    if (diagnosis.getUserId() == null || diagnosis.getUserId() != userId) {
+  /**
+   * 소유권 판정은 {@link Diagnosis#isOwnedBy(Long, String)} 하나에 위임한다 — 같은 규칙이 {@link
+   * DiagnosisService#getDetail}에도 필요한데, 규칙을 두 벌 두면 한쪽만 고쳐져 다른 경로가 뚫린다(#181).
+   */
+  private static void requireOwner(Diagnosis diagnosis, Long userId, String guestSessionId) {
+    if (!diagnosis.isOwnedBy(userId, guestSessionId)) {
       throw new DiagnosisAccessDeniedException();
     }
   }

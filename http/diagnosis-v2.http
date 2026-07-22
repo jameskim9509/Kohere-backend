@@ -6,6 +6,9 @@
 #   - 시작·매물 조회 시점은 클라가 정한다. 확정 응답은 diagnosisId 만 주고 매물을 싣지 않는다.
 #   - 매 응답이 정상 200 이고 data.resultCode(태그드 유니온)가 다음에 할 일을 말해준다:
 #       NEXT_QUESTION(질문 있음) / RESTART(클라가 /start 로 재시도) / COMPLETED(확정) / TERMINATED(종료)
+#   - (#181) 비회원(게스트)도 이 v2 흐름을 쓴다 — 토큰 없이 /start 하면 guestSessionId(anonymous+uuid)를
+#     발급받고, 이후 /next·추천에 X-Guest-Session-Id 헤더로 에코한다(시나리오 G, 로그인 불필요).
+#     v1 진단(/api/v1/diagnoses/**)은 회원 전용이라 게스트가 호출하면 401 이다.
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis mailhog
@@ -40,7 +43,84 @@ Content-Type: application/json
 
 
 ###############################################################################
-# 시나리오 A — 정상 완주 (서울, 유학) → 자동 확정 → 매물 조회
+# 시나리오 G — 비회원(게스트) 진단 (#181): 로그인 없이 start → 세션 키 발급 → 헤더 에코
+#   회원(시나리오 A)과 유일하게 다른 점: Authorization 토큰 대신 X-Guest-Session-Id 헤더를 쓴다.
+#   /start 응답의 guestSessionId(anonymous+uuid)를 이후 요청에 그대로 되돌려보낸다. 표시 언어는 en 고정.
+###############################################################################
+
+### G-1. (게스트) 진단 시작 — 토큰 없이 200. 응답 data.guestSessionId 를 발급받는다.
+# @name gstart
+POST {{baseUrl}}/api/v2/diagnoses/start
+
+### G-2. ① 지역 답 — Authorization 대신 X-Guest-Session-Id 헤더로 세션을 잇는다.
+POST {{baseUrl}}/api/v2/diagnoses/next
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+Content-Type: application/json
+
+{ "field": "region", "code": "SEOUL" }
+
+### G-3. ② 입국 목적
+POST {{baseUrl}}/api/v2/diagnoses/next
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+Content-Type: application/json
+
+{ "field": "purpose", "code": "STUDY" }
+
+### G-4. ③ 대학 그룹
+POST {{baseUrl}}/api/v2/diagnoses/next
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+Content-Type: application/json
+
+{ "field": "university", "code": "SNU_CAU_SOONGSIL" }
+
+### G-5. ④ 주거 조건 (다중 선택)
+POST {{baseUrl}}/api/v2/diagnoses/next
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+Content-Type: application/json
+
+{ "field": "conditions", "codes": ["FEMALE_ONLY"] }
+
+### G-6. ⑤ 월세 범위
+POST {{baseUrl}}/api/v2/diagnoses/next
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+Content-Type: application/json
+
+{ "field": "monthlyRent", "min": 300000, "max": 600000 }
+
+### G-7. ⑥ ARC (마지막 슬롯) → 자동 확정 → COMPLETED + diagnosisId
+# @name gcompleted
+POST {{baseUrl}}/api/v2/diagnoses/next
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+Content-Type: application/json
+
+{ "field": "arcStatus", "code": "ARC_ISSUED" }
+
+### G-8. (게스트) 추천 조회 — 같은 헤더로 소유권을 증명한다(토큰 불필요).
+GET {{baseUrl}}/api/v2/diagnoses/{{gcompleted.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+
+### G-9. (실패 확인) 세션 키 없이 /next → 400 DIAGNOSIS_SESSION_NOT_FOUND
+#     서버가 임의의 세션을 골라 주지 않는다 — 게스트는 헤더가 유일한 조회 키다.
+POST {{baseUrl}}/api/v2/diagnoses/next
+Content-Type: application/json
+
+{ "field": "region", "code": "SEOUL" }
+
+### G-10. (실패 확인) 존재하지 않는/남의 키 → 400 (남의 세션으로 폴백하지 않는다)
+POST {{baseUrl}}/api/v2/diagnoses/next
+X-Guest-Session-Id: anonymous-does-not-exist
+Content-Type: application/json
+
+{ "field": "region", "code": "SEOUL" }
+
+### G-11. (실패 확인) 만료된 access 토큰으로 게스트 경로 — 200 이 아니라 401 TOKEN_EXPIRED
+#     만료 토큰은 게스트로 강등하지 않고 재발급을 유도한다(결정 11). 아래에 만료된 토큰을 붙여넣어야 재현된다.
+POST {{baseUrl}}/api/v2/diagnoses/start
+Authorization: Bearer PASTE_EXPIRED_ACCESS_TOKEN_HERE
+
+
+###############################################################################
+# 시나리오 A — 정상 완주 (서울, 유학) → 자동 확정 → 매물 조회 (회원 토큰)
 ###############################################################################
 
 ### A-1. 진단 시작 (본문 없음) → NEXT_QUESTION + ① 지역 문항

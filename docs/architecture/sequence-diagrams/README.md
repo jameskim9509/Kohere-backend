@@ -11,6 +11,7 @@
 >   - **온보딩 스코프(ROLE_ONBOARDING) 토큰만 통과**: `onboarding`·`DELETE /users/me`. 온보딩 임시 토큰(또는 정식 토큰)으로 접근 가능한 티어.
 >   - **정식 자원(ROLE_USER)**: 나머지 보호 엔드포인트. **PENDING(온보딩 스코프) 토큰으로 ROLE_USER 자원에 접근하면 SEC가 403 `AUTH_ONBOARDING_REQUIRED`**(`AccessDeniedHandler`, 모듈 도달 전).
 > - 인증 실패 경계: 토큰 무효/만료/누락은 **EntryPoint가 401**(`UNAUTHENTICATED`/`TOKEN_EXPIRED`). **스코프 부족 403은 SEC(AccessDeniedHandler) 책임**, **리소스 소유권 403(`FORBIDDEN`)은 모듈 책임**으로 구분한다. 비즈니스 규칙(409/422)도 **모듈**이 판단한다.
+> - **게스트(비회원) 개방 경로 예외**(#181): 퀴즈(`/api/v1/quizzes/**`)·생활 팁(`/api/v1/life-tips/**`)·**v2 진단(`/api/v2/diagnoses/**`)** 은 `permitAll`이라 위 401/403 경계가 그대로 적용되지 않는다(**v1 진단(`/api/v1/diagnoses/**`)은 회원 전용으로 유지**되어 이 예외의 대상이 아니다 — 매처를 추가하지 않아 위 경계가 그대로 적용된다) — **토큰 미전송·위조/형식 오류는 401이 아니라 게스트**(`userId == null`, 합성 userId를 발급하지 않는다)로 모듈에 전달되고, **토큰을 보냈는데 만료된 경우만 `401 TOKEN_EXPIRED`** 를 유지한다. 따라서 이 세 영역의 다이어그램은 공개 티어인데도 **SEC를 생략하지 않고** 그 분기를 그린다. 모듈 책임인 소유권·역할 403(`FORBIDDEN`)은 회원 경로에서 그대로다 — 로그인한 임대인의 퀴즈·생활 팁 호출은 여전히 403이다.
 > - **도메인 상태 영속**은 가장 오른쪽의 `저장소(participant)` 컴포넌트로 표기한다(`모듈->>저장소` 저장/조회/갱신, `저장소-->>모듈` 결과). 저장소 배치는 **폴리글랏으로 확정**됐다([ADR-0005](../../adr/0005-polyglot-persistence.md)·[ADR-0006](../../adr/0006-refresh-token-store-redis.md)) — 각 `모듈->>저장소` 화살표는 **그 화살표 왼쪽 모듈이 소유한 저장소**를 가리킨다:
 >   - **MongoDB**: `listing`(+`favorite`·`recent-listing`)·`diagnosis`·`lifetip`·`gamification`(읽기 전용, 1차 MVP 이후)
 >   - **MySQL**: `auth`(계정·소셜·회원상태)·`user`(프로필)·`community`

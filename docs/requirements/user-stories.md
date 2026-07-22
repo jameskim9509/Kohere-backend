@@ -459,12 +459,14 @@
 - 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(빈 집합, 대학 필터 미적용·지역 기반 매칭으로 폴백). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`가 `NO_ARC`(ARC 미발급)이면 서버가 추천용 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions`에 추가해 ARC 불요 매물만 매칭한다(사용자가 ④에서 직접 고르는 값 아님, 최대 3개 제한에서 제외).
 - MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 선택지로 허용하되, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
 - 추천 결과의 매물 요약은 매물 탐색 도메인의 요약 DTO(`ListingSummaryResponse`)를 재사용한다(확인 필요 — 01 매물 탐색 스펙 확정 시 필드 동기화).
-- 진단·결과는 본인만 접근 가능하다(소유권 검증). 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
+- 진단·결과는 본인만 접근 가능하다(소유권 검증) — **회원은 `userId`가, 비회원(게스트)은 게스트 세션 키가 일치할 때만 통과하며, 신원 종류가 다르면(한쪽이 비어 있으면) 무조건 거절**한다(진단 id가 전역 순차 채번이라 소유권 검사가 유일한 방어선이다). **게스트 진단은 v2 경로에서만 만들어지고 조회되므로 게스트 쪽 판정도 v2 한정**이며, v1 진단 7개는 회원 전용이라 토큰 없는 요청이 애초에 닿지 못한다. 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
 - 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 음수 또는 `monthlyRentMin` > `monthlyRentMax`·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
+
+> **비회원(게스트) 접근 기준(#181)**: 진단은 **v2 서버 주도 흐름에 한해 로그인하지 않아도 이용할 수 있다**(애플 심사 대응 — 개인화 활동에서 제외 가능한 기능은 로그인 없이 쓸 수 있어야 한다). [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 신규 등록하는 **`permitAll` 매처는 `/api/v2/diagnoses/**` 하나뿐**이며, **v1 진단(`/api/v1/diagnoses/**`) 7개는 회원 전용으로 유지**한다 — v1에는 매처를 추가하지 않고 현행대로 `anyRequest().authenticated()`에 남겨 **토큰을 필수로 둔다**. 두 버전 모두 현재 전용 매처가 없어 인증으로 떨어지므로 v2 줄은 **새로 넣어야** 하고, 빠뜨리면 게스트 진단이 계속 401이다. **인가를 여는 수단은 `permitAll`이며, 토큰 없는 요청에 `ROLE_GUEST` 인증을 주입해 `hasAnyRole("USER","GUEST")`로 여는 방식은 쓰지 않는다** — 이유는 둘이다. (a) `SecurityConfig`의 기본값이 `anyRequest().authenticated()`라, 게스트 인증이 주입되면 **명시적으로 열지 않은 엔드포인트까지**(채팅·커뮤니티 등) 함께 게스트에게 열린다. (b) 모든 요청이 "인증됨"이 되어 보호 자원 접근이 **401이 아니라 403**으로 바뀌는데, 그러면 클라이언트가 401을 신호로 거는 **토큰 재발급 플로우가 전역적으로 침묵한다.** `permitAll`은 열기로 한 경로만 정확히 연다. 따라서 **게스트 진단 흐름은 `POST /api/v2/diagnoses/start` → `POST /api/v2/diagnoses/next` → `GET /api/v2/diagnoses/{diagnosisId}/recommendations` 셋으로 닫히며**(US-2-7), 비로그인 상태로 v1 7개를 호출하면 그대로 `401`이다 — 클라이언트는 로그인 여부에 따라 진단 API 버전을 고른다(게스트면 v2). 게스트 신원은 임시 `userId`를 발급하지 않고 **`userId` 부재(`null`)** 로 표현하며, 대화·소유권 연속성은 **`X-Guest-Session-Id`**(값 형식 `anonymous<uuid>`) 헤더로 잇는다(US-2-7) — 서버가 키를 발급하는 지점은 **`POST /api/v2/diagnoses/start` 하나**이고 소비처는 `/next`와 v2 추천 조회이며, 세션 키를 요구하는 것은 **v2 진단뿐**이다(퀴즈·생활팁은 저장이 없어 요구하지 않는다). 게스트의 표시 언어는 **`en` 고정**이며 `user` 공개 query `getLanguage`를 **호출하지 않는다**(`users` 행이 없어 호출 자체가 `404 USER_NOT_FOUND`가 된다 — US-2-6). 진단은 원래 세입자·임대인 공통이라 역할 게이트는 없던 대로 없다. **토큰을 보냈는데 만료된 요청은 게스트로 강등하지 않고 `401 TOKEN_EXPIRED`를 유지**하고(재발급 유도), 토큰 미전송·위조 토큰만 게스트로 처리한다(`permitAll`인 v2 경로 이야기이며, v1은 원래 401이다). **진단은 인가 범위가 넓어지지 않는다** — v1·v2 모두 `hasRole("USER")` 매처가 없어 온보딩 미완료(PENDING/TERMS_AGREED) 토큰이 #181 이전에도 이미 통과했고, 그 토큰은 `users` 행이 있으므로 언어도 `users.lang`을 따른다(의도적 수용 — 매처를 실제로 넓히는 것은 퀴즈·생활 팁뿐이다). 게스트 진단 결과를 로그인 후 계정으로 **이관하지 않는다**(스키마만 열어 둔다). 게스트 진단 데이터의 **TTL은 도입 여부와 수치가 모두 (결정 필요)** 다 — 현재 코드에는 TTL 인덱스가 **하나도 없어**(회원 진단도 영구 보존) 게스트 때문에 새로 도입할지 자체가 미정이며, 도입하지 않고 회원과 동일하게 영구 보존하는 것도 선택지다.
 
 ### US-2-1 — 진단 제출(진행 중 진단 확정 및 저장)
 
-**As a** 한국 주거를 처음 찾는 외국인 사용자
+**As a** 한국 주거를 처음 찾는 외국인 사용자 (로그인한 회원 — v1 진단은 회원 전용이다)
 **I want** 단계별로 서버에 저장해 둔 답으로 채워진 진행 중(`IN_PROGRESS`) 진단을 제출로 확정하고
 **So that** 내 조건이 서버에 영속화되어 매번 다시 입력하지 않고 결과를 재조회·재진단할 수 있다
 
@@ -489,11 +491,12 @@
   - **Given** 진행 중 진단에 저장된 답이 `region=JEJU`처럼 허용 목록(`SEOUL`/`BUSAN`/`GYEONGGI`)에 없는 값 또는 `conditions`에 미정의 코드를 담고 있다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환한다 (허용되지 않은 enum 값을 무시하지 않고 명시적으로 거부 — api-design-guide §5)
-- 시나리오: 인증 실패
+- 시나리오: 인증 실패 — v1 확정은 회원 전용
 
   - **Given** `Authorization` 헤더가 없거나 만료된 token을 보낸다
   - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** 토큰 부재/위조는 `401`+`error.code=UNAUTHENTICATED`, 만료는 `401`+`error.code=TOKEN_EXPIRED`(재발급 유도)를 반환한다
+  - **Then** 토큰 부재/위조는 `401`+`error.code=UNAUTHENTICATED`, 만료는 `401`+`error.code=TOKEN_EXPIRED`(재발급 유도)를 반환한다 — #181로 진단이 비회원에게 열려도 신규 `permitAll` 매처의 대상은 **`/api/v2/diagnoses/**` 뿐**이라 이 v1 확정 엔드포인트는 현행대로 토큰이 필수다
+  - **And** 게스트는 이 엔드포인트를 아예 타지 않는다 — v2 흐름이 6단계를 다 채운 시점에 **서버가 자동 확정**하므로 별도 확정 요청이 없다(US-2-7)
 - 시나리오: 경계 — 저장된 월세 범위(각 0 이상, `min` ≤ `max`)
 
   - **Given** 진행 중 진단에 저장된 `monthlyRentMin`/`monthlyRentMax`가 `0`/`0`(허용)이거나, `monthlyRentMin`이 `-1`(불허)이거나, `monthlyRentMin`이 `monthlyRentMax`보다 큰(예 `600000`/`300000`, 불허) 값이다
@@ -502,13 +505,13 @@
 
 ### US-2-2 — 진단 결과(추천 매물 + 지도 좌표) 조회
 
-**As a** 진단을 마친 외국인 사용자
+**As a** 진단을 마친 외국인 사용자 (로그인한 회원 — 이 v1 추천 엔드포인트는 회원 전용이다)
 **I want** 내 진단 조건에 맞는 매물 리스트와 지도용 좌표를 결과로 받고
 **So that** 한국 부동산 용어를 몰라도 내게 맞는 매물을 지도와 목록으로 한눈에 비교할 수 있다
 
 - **우선순위**: High
 - **관련 NFR**: 성능(추천 쿼리·좌표 집계 응답시간 목표, 확인 필요 — NFR 문서 미확정), 보안(본인 진단만 조회)
-- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 요약 DTO(`ListingSummaryResponse`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100), 정렬은 추천/가격/거리순. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다. `suggestions`의 `reason`/`type`은 언어 무관 enum, 사람이 보는 `message`/`detail`은 **서버가 사용자 표시 언어로 번역**해 전송한다(enum 보유 라벨, `user` 공개 query로 언어 취득, 미지원=영어 폴백 — US-2-6 일관).
+- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 요약 DTO(`ListingSummaryResponse`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100), 정렬은 추천/가격/거리순. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다. `suggestions`의 `reason`/`type`은 언어 무관 enum, 사람이 보는 `message`/`detail`은 **서버가 사용자 표시 언어로 번역**해 전송한다(enum 보유 라벨, `user` 공개 query로 언어 취득, 미지원=영어 폴백 — US-2-6 일관). 이 엔드포인트는 **회원 전용**이며, 비회원(게스트)의 추천 조회는 v2 전용 엔드포인트 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`가 담당한다(US-2-7) — 검증·소유권·조건 매핑·`listing` 호출은 두 버전이 공유 컴포넌트(`DiagnosisRecommendationReader`) 한 곳을 쓰고, 응답 차이는 `suggestions` 유무뿐이다.
 
 **AC (Given / When / Then)**
 
@@ -522,11 +525,16 @@
   - **Given** `region=BUSAN`처럼 MVP 데이터가 없거나 조건이 너무 좁아 매칭이 0건이다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `200 OK`(에러 아님)와 함께 `data.content=[]`, `data.markers=[]`, `data.suggestions`(완화 가능한 조건/예산/키워드 제안 목록)을 반환한다
+- 시나리오: 인증 실패 — v1 추천 조회는 회원 전용
+
+  - **Given** `Authorization` 헤더 없이 요청한다(게스트 세션 키를 실어도 마찬가지다)
+  - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **Then** `401`과 `error.code=UNAUTHENTICATED`를 반환한다 — v1에는 `permitAll` 매처를 추가하지 않는다. 게스트는 대신 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다(US-2-7)
 - 시나리오: 인가 실패 — 타인의 진단 결과 접근
 
-  - **Given** 다른 사용자가 소유한 `diagnosisId`로 요청한다
+  - **Given** 다른 사용자가 소유한 `diagnosisId`로 요청한다 — 다른 회원의 진단, 그리고 신원 종류가 엇갈리는 경우(회원 토큰으로 **게스트**가 v2에서 만든 진단을)
   - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
-  - **Then** `403 Forbidden`과 `error.code=FORBIDDEN`을 반환한다(소유권 위반으로 차단)
+  - **Then** 두 경우 모두 `403 Forbidden`과 `error.code=FORBIDDEN`을 반환한다(소유권 위반으로 차단) — 소유권은 **신원 종류가 같고 값이 같을 때만** 통과하며 한쪽이 비어 있으면 무조건 거절하므로, 회원이 게스트 진단을 읽는 것도 막힌다
 - 시나리오: 리소스 없음 — 존재하지 않는 진단
 
   - **Given** 어떤 사용자에게도 존재하지 않는 `diagnosisId`로 요청한다
@@ -540,7 +548,7 @@
 
 ### US-2-3 — 진단 이력 조회 및 최근 진단 다시 보기
 
-**As a** 재방문한 외국인 사용자
+**As a** 재방문한 외국인 사용자 (로그인한 회원 — 이력·최근·단건 상세는 모두 v1이라 회원 전용이다)
 **I want** 내 진단 이력 목록과 가장 최근 진단을 조회하고
 **So that** 홈에서 "진단 시작 / 재진단" 문구가 완료 여부에 따라 분기되고, 지난 결과를 다시 볼 수 있다
 
@@ -565,16 +573,16 @@
   - **Given** 본인이 소유한 최근 진단 `diagnosisId`가 있다
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
   - **Then** `200 OK`와 진단 입력 전체(`region`/`purpose`/대학 그룹·지역 선택(`university`(`UniversityGroup`)/`district`)/`conditions`/`monthlyRentMin`/`monthlyRentMax`/`arcStatus`/`submittedAt`)를 반환한다
-- 시나리오: 인증 실패
+- 시나리오: 인증 실패 — 이력·최근·상세는 회원 전용
 
   - **Given** 토큰 없이 요청한다
-  - **When** `GET /api/v1/diagnoses`를 호출한다
-  - **Then** `401`과 `error.code=UNAUTHENTICATED`를 반환한다
+  - **When** `GET /api/v1/diagnoses`(또는 `/latest`·`/{diagnosisId}`)를 호출한다
+  - **Then** `401`과 `error.code=UNAUTHENTICATED`를 반환한다 — v1 진단에는 `permitAll` 매처를 추가하지 않으므로 비회원은 이력·최근·상세에 접근하지 못한다. **게스트용 이력·최근 시맨틱을 새로 정의하지 않는다** — v2에는 대응물이 없고, 게스트 진단 결과는 로그인 후에도 계정으로 이관하지 않는다
 - 시나리오: 인가 실패 — 타인 진단 단건 조회
 
-  - **Given** 다른 사용자의 `diagnosisId`로 요청한다
+  - **Given** 다른 사용자의 `diagnosisId`로 요청한다 — 다른 회원의 진단, 그리고 신원 종류가 엇갈리는 경우(회원 토큰으로 게스트가 v2에서 만든 진단을)
   - **When** `GET /api/v1/diagnoses/{diagnosisId}`를 호출한다
-  - **Then** `403`과 `error.code=FORBIDDEN`을 반환한다
+  - **Then** 둘 다 `403`과 `error.code=FORBIDDEN`을 반환한다 — 신원 종류가 같고 값이 같을 때만 통과하며 한쪽이 비어 있으면 무조건 거절한다
 - 시나리오: 리소스 없음 — 존재하지 않는 진단 단건 조회
 
   - **Given** 어떤 사용자에게도 존재하지 않는 `diagnosisId`로 요청한다
@@ -583,7 +591,7 @@
 
 ### US-2-4 — 재진단(새 진단 생성)
 
-**As a** 조건이 바뀐 외국인 사용자
+**As a** 조건이 바뀐 외국인 사용자 (로그인한 회원 — 재진단도 v1 확정 엔드포인트라 회원 전용이다)
 **I want** 기존 진단을 덮어쓰지 않고 새 진단을 생성(재진단)하고
 **So that** 진단 이력이 보존되면서 바뀐 조건으로 다시 결과를 받을 수 있다
 
@@ -607,17 +615,18 @@
 
   - **Given** 만료된 token으로 재진단을 시도한다
   - **When** `POST /api/v1/diagnoses`를 호출한다
-  - **Then** `401`과 `error.code=TOKEN_EXPIRED`를 반환한다
+  - **Then** `401`과 `error.code=TOKEN_EXPIRED`를 반환한다(토큰 부재/위조는 `401`+`UNAUTHENTICATED`) — v1 진단은 회원 전용이라 인증 계약이 바뀌지 않는다
+  - **And** 게스트의 "재진단"은 이 엔드포인트가 아니라 **`POST /api/v2/diagnoses/start`를 다시 호출**하는 것이며, 그때 서버가 새 게스트 세션 키를 발급한다(US-2-7)
 
 ### US-2-5 — 진단 문항·선택지 백엔드 제공
 
-**As a** 진단을 시작하는 외국인 사용자
+**As a** 진단을 시작하는 외국인 사용자 (로그인한 회원 — v1 단계별 흐름은 회원 전용이다)
 **I want** 받을 단계 번호로 질문 1개를 조회하고 그 단계의 답 1개를 보내 서버가 저장하게 하는 흐름을 한 단계씩 반복하고
 **So that** 앱을 새로 배포하지 않고도 질문·선택지(지역·대학·조건 등)와 분기 흐름을 서버에서 갱신·관리할 수 있다
 
 - **우선순위**: High (진단 제출 플로우의 선행 단계)
 - **관련 NFR**: 일관성(문항 카탈로그의 선택지 코드가 진단 제출 검증 enum과 1:1 일치), 단계별 분기를 서버가 결정(클라이언트 로컬 분기 아님)
-- **백엔드 관점**: 진단 문항을 단계별로 내려주는 server-stateful 흐름을 두 엔드포인트로 제공한다(둘 다 인증 필수, 02 스펙 상세 §1에 반영) — 질문 조회 `GET /api/v1/diagnoses/questions/{step}`와 답 저장 `POST /api/v1/diagnoses/answers`. 진행 답은 **서버가 저장**한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`)을 in-progress draft로 두고 채워 간다. 클라이언트는 받을 `step`(1~6)을 **path로 지정**해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개와 선택지를 조회하고, 화면에서 받은 **현재 단계의 답 1개**(그 단계의 `field`+`code`; `conditions`처럼 다중 선택은 `codes` 배열; ⑤ 월세 범위는 코드가 아닌 두 숫자 필드 `field=monthlyRent`+`min`/`max`, 예 `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` — 순서 없는 `codes[]` 배열을 재사용하지 않는다)만 `POST /api/v1/diagnoses/answers` 본문에 담아 보내며, 서버가 그 답을 진행 중 진단에 저장한다 — 6단계(① 지역 / ② 입국 목적 / ③ 대학 그룹·지역 / ④ 주거 조건 / ⑤ 월세 범위(min/max) / ⑥ ARC)를 한 번에 주지 않고 한 단계씩 내려간다. 다음 `step` 번호는 클라이언트가 정해 다시 `GET`을 호출한다. 요청 본문에 누적 답(`answers` 묶음)을 담지 않는다. 질문 조회 응답은 `{ "step", "field", "question"(번역된 표시 라벨), "select"(단일/다중·최대; ⑤ 월세 범위 단계는 고정 선택지 목록이 아닌 두 숫자 입력 `NUMBER_RANGE`·`options` 비움 — "모든 단계가 enum과 1:1인 고정 선택지 목록"이라는 가정에서 의도적으로 분리된 예외), "options": [ { "code", "label" } ] }`이며, 6단계 답이 모두 저장되면 클라이언트는 이후 `POST /api/v1/diagnoses`로 진행 중 진단을 확정 제출한다(US-2-1). ③ 단계 분기는 **서버가 저장된 `purpose`로 결정**하는 비즈니스 로직이다(`STUDY`면 6개 대학 그룹(`UniversityGroup`) `options`를 담은 `university` 질문, `NON_STUDY`면 `district` 질문 — 알맞은 한 질문만 내려주며, 유학 시 답은 단일 그룹 코드 1개(`field=university`, `code=<그룹코드>`)다). 분기 메타는 `diagnosisQuestions`에 두지 않으며(데이터만), 대학 질문·지역 질문은 각각 카탈로그 데이터로 존재하고 어느 것을 낼지는 서비스가 결정한다. 선택지 코드는 제출 시 검증하는 enum과 동일 출처여야 한다. 잘못된 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현한다. MVP 데이터는 서울 기준.
+- **백엔드 관점**: 진단 문항을 단계별로 내려주는 server-stateful 흐름을 두 엔드포인트로 제공한다(둘 다 **인증 필수** — v1 진단에는 `permitAll` 매처를 추가하지 않으므로 비회원은 호출할 수 없고, 게스트가 문항을 받는 경로는 v2 흐름뿐이다(US-2-7). 02 스펙 상세 §1에 반영) — 질문 조회 `GET /api/v1/diagnoses/questions/{step}`와 답 저장 `POST /api/v1/diagnoses/answers`. 진행 답은 **서버가 저장**한다 — 사용자당 진행 중 진단 1건(`status=IN_PROGRESS`)을 in-progress draft로 두고 채워 간다. 클라이언트는 받을 `step`(1~6)을 **path로 지정**해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개와 선택지를 조회하고, 화면에서 받은 **현재 단계의 답 1개**(그 단계의 `field`+`code`; `conditions`처럼 다중 선택은 `codes` 배열; ⑤ 월세 범위는 코드가 아닌 두 숫자 필드 `field=monthlyRent`+`min`/`max`, 예 `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` — 순서 없는 `codes[]` 배열을 재사용하지 않는다)만 `POST /api/v1/diagnoses/answers` 본문에 담아 보내며, 서버가 그 답을 진행 중 진단에 저장한다 — 6단계(① 지역 / ② 입국 목적 / ③ 대학 그룹·지역 / ④ 주거 조건 / ⑤ 월세 범위(min/max) / ⑥ ARC)를 한 번에 주지 않고 한 단계씩 내려간다. 다음 `step` 번호는 클라이언트가 정해 다시 `GET`을 호출한다. 요청 본문에 누적 답(`answers` 묶음)을 담지 않는다. 질문 조회 응답은 `{ "step", "field", "question"(번역된 표시 라벨), "select"(단일/다중·최대; ⑤ 월세 범위 단계는 고정 선택지 목록이 아닌 두 숫자 입력 `NUMBER_RANGE`·`options` 비움 — "모든 단계가 enum과 1:1인 고정 선택지 목록"이라는 가정에서 의도적으로 분리된 예외), "options": [ { "code", "label" } ] }`이며, 6단계 답이 모두 저장되면 클라이언트는 이후 `POST /api/v1/diagnoses`로 진행 중 진단을 확정 제출한다(US-2-1). ③ 단계 분기는 **서버가 저장된 `purpose`로 결정**하는 비즈니스 로직이다(`STUDY`면 6개 대학 그룹(`UniversityGroup`) `options`를 담은 `university` 질문, `NON_STUDY`면 `district` 질문 — 알맞은 한 질문만 내려주며, 유학 시 답은 단일 그룹 코드 1개(`field=university`, `code=<그룹코드>`)다). 분기 메타는 `diagnosisQuestions`에 두지 않으며(데이터만), 대학 질문·지역 질문은 각각 카탈로그 데이터로 존재하고 어느 것을 낼지는 서비스가 결정한다. 선택지 코드는 제출 시 검증하는 enum과 동일 출처여야 한다. 잘못된 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현한다. MVP 데이터는 서울 기준.
 
 **AC (Given / When / Then)**
 
@@ -651,16 +660,27 @@
   - **Given** 미정의 enum(예: `university`에 6 그룹(`UniversityGroup`)에 없는 코드) 또는 그 단계의 목적-대학 그룹/지역이 불일치하는 답 1개를 구성한다(필드명은 `university` 유지, 타입은 `UniversityGroup`)
   - **When** `POST /api/v1/diagnoses/answers`를 호출한다
   - **Then** 미정의 그룹 코드를 무시하지 않고 명시적으로 거부해 `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하며 `error.errors[]`에 위반 필드(`university`)를 담는다
+- 시나리오: 인증 실패 — 비회원은 v1 문항·답 저장에 접근하지 못한다
+
+  - **Given** 로그인하지 않은 사용자가 `Authorization` 헤더 없이 진단 화면에 진입한다
+  - **When** `GET /api/v1/diagnoses/questions/1`(또는 `POST /api/v1/diagnoses/answers`)을 호출한다
+  - **Then** `401`과 `error.code=UNAUTHENTICATED`를 반환한다 — v1 진단은 회원 전용이며 신규 `permitAll` 매처의 대상이 아니다. 게스트는 대신 `POST /api/v2/diagnoses/start` → `POST /api/v2/diagnoses/next`로 문항을 받는다(US-2-7)
+- 시나리오: 온보딩 미완료 토큰 — #181 이전과 동일하게 통과
+
+  - **Given** 온보딩을 마치지 않은(PENDING/TERMS_AGREED, `ROLE_ONBOARDING`) 토큰으로 접근한다
+  - **When** `GET /api/v1/diagnoses/questions/1`을 호출한다
+  - **Then** `403 AUTH_ONBOARDING_REQUIRED`가 아니라 `200 OK`를 받는다 — 진단에는 원래 `hasRole("USER")` 매처가 없어 `anyRequest().authenticated()`로 떨어졌고 `ROLE_ONBOARDING` 토큰은 **#181 이전에도 이미 통과했다**. #181이 말하는 "인가 범위 확대"는 매처를 `hasRole("USER")` → `permitAll`로 **수정**하는 퀴즈(US-6-1)·생활 팁(US-8-1)에만 해당하며, 진단은 v1이 그대로 인증 필수로 남는다
+  - **And** 표시 언어는 **`users.lang`을 따른다** — 온보딩 중이어도 `users` 행은 존재하기 때문이다
 
 ### US-2-6 — 사용자 표시 언어 기반 진단 문항·선택지 번역 제공
 
-**As a** 한국어가 익숙하지 않은 외국인 사용자
+**As a** 한국어가 익숙하지 않은 외국인 사용자 (로그인한 회원 — 이 v1 문항 엔드포인트는 회원 전용이다)
 **I want** 진단 문항·선택지를 내 표시 언어에 맞게 번역된 텍스트로 받고
 **So that** 모국어 또는 영어로 질문을 이해하고 정확히 답할 수 있다
 
 - **우선순위**: High (외국인 대상 서비스의 핵심 접근성)
 - **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 폴백), 보안(본인 표시 언어 기반 — 사용자 선택값)
-- **백엔드 관점**: 번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — 사용자가 앱 지구본에서 언어를 직접 고르면 그 값이 기준이 되고 고르지 않았으면 `en`이 기준이 되며, 서버가 그 언어의 문항·선택지 **표시 라벨**을 채워 반환한다(`Accept-Language` 헤더에 의존하지 않음; 사용자 선택값이 기기 설정보다 안정적). 표시 언어는 `diagnosis`가 **`user` 모듈 공개 query(`getLanguage`)를 동기 호출**해 취득한다(도출 규칙은 `user`가 캡슐화하며 query 시그니처는 불변; 토큰 클레임 분기는 사용하지 않음; ADR-0002 Decision 5 — 모듈 의존 `diagnosis→user` 추가). 진단은 **세입자·임대인 모두 이용할 수 있다**(별도 역할 게이트 없음) — 임대인은 서버 고정 `lang='ko'`라 진단을 한국어로 본다. 번역은 별도 컬렉션·키 없이 **`diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": ..., "ja": ..., "ko": ... }`, 선택지는 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버는 사용자 언어 키(예 `ja`)로 message·label을 고르고, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다. 선택지 **코드는 언어와 무관하게 동일·불변**(UPPER_SNAKE)하며 언어-키 맵의 값(표시 문자열)만 언어별이다(제출은 코드로 검증). 신규 6개 대학 그룹(`UniversityGroup`) 코드(`HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`)도 동일하게 UPPER_SNAKE 불변 코드이며 코드로 검증하고, 그룹의 표시 라벨(예 "서울대·중앙대·숭실대" / "Seoul National · Chung-Ang · Soongsil")은 다른 선택지와 똑같이 언어-키 맵으로 번역 대상이 된다. US-2-5와 동일 엔드포인트에서 처리한다.
+- **백엔드 관점**: 번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — 사용자가 앱 지구본에서 언어를 직접 고르면 그 값이 기준이 되고 고르지 않았으면 `en`이 기준이 되며, 서버가 그 언어의 문항·선택지 **표시 라벨**을 채워 반환한다(`Accept-Language` 헤더에 의존하지 않음; 사용자 선택값이 기기 설정보다 안정적). 표시 언어는 `diagnosis`가 **`user` 모듈 공개 query(`getLanguage`)를 동기 호출**해 취득한다(도출 규칙은 `user`가 캡슐화하며 query 시그니처는 불변; 토큰 클레임 분기는 사용하지 않음; ADR-0002 Decision 5 — 모듈 의존 `diagnosis→user` 추가). 진단은 **세입자·임대인 모두 이용할 수 있다**(별도 역할 게이트 없음) — 임대인은 서버 고정 `lang='ko'`라 진단을 한국어로 본다. **비회원(게스트)은 이 v1 문항 엔드포인트를 호출할 수 없다**(회원 전용 — #181에서도 v1에는 `permitAll` 매처를 추가하지 않는다). 게스트가 문항을 받는 경로는 v2 흐름뿐이며(US-2-7), **그 경로의 표시 언어는 `en` 고정이고 `getLanguage`를 호출하지 않는다** — 게스트는 `users` 행이 없어 호출하면 `404 USER_NOT_FOUND`가 되므로 분기의 요점은 기본값이 아니라 호출 회피다. 번역 전략(인라인 언어-키 맵·`en` 폴백·코드 불변)은 v1·v2가 동일 출처를 공유한다. 게스트에 대한 `Accept-Language` 헤더 해석은 이번 범위 밖이다(지원 언어가 en/ko/ja로 한정돼 임의 로케일 매핑 정책이 별도로 필요하다). 번역은 별도 컬렉션·키 없이 **`diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": ..., "ja": ..., "ko": ... }`, 선택지는 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버는 사용자 언어 키(예 `ja`)로 message·label을 고르고, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다. 선택지 **코드는 언어와 무관하게 동일·불변**(UPPER_SNAKE)하며 언어-키 맵의 값(표시 문자열)만 언어별이다(제출은 코드로 검증). 신규 6개 대학 그룹(`UniversityGroup`) 코드(`HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`)도 동일하게 UPPER_SNAKE 불변 코드이며 코드로 검증하고, 그룹의 표시 라벨(예 "서울대·중앙대·숭실대" / "Seoul National · Chung-Ang · Soongsil")은 다른 선택지와 똑같이 언어-키 맵으로 번역 대상이 된다. US-2-5와 동일 엔드포인트에서 처리한다.
 
 **AC (Given / When / Then)**
 
@@ -679,16 +699,21 @@
   - **Given** 번역된 라벨로 표시된 선택지를 골라 그 **코드**로 제출한다
   - **When** `POST /api/v1/diagnoses`를 호출한다
   - **Then** 언어와 무관하게 동일 코드로 정상 검증·저장된다
+- 시나리오: 게스트 번역은 v2 경로에서 다룬다
+
+  - **Given** `Authorization` 헤더 없이 진단을 시작하는 비로그인 사용자다(`Accept-Language`를 무엇으로 보내든 무관)
+  - **When** v1 문항 엔드포인트(`GET /api/v1/diagnoses/questions/{step}`)를 호출한다
+  - **Then** 번역 이전에 인증에서 막혀 `401`+`UNAUTHENTICATED`다 — 게스트의 문항 번역 계약(**영어(`en`) 고정**·`getLanguage` **미호출**)은 v2 흐름(`POST /api/v2/diagnoses/start`·`/next`)에서 규정한다(US-2-7). 선택지 코드가 언어·신원과 무관하게 불변인 것은 두 경로가 같다
 
 ### US-2-7 — 지역 매물 부재 시 재질의·종료 및 서버 주도 진단 흐름 (v2)
 
-**As a** 진단을 진행하는 외국인 사용자
+**As a** 진단을 진행하는 외국인 사용자 (로그인한 회원 또는 **비로그인 사용자**)
 **I want** 내가 시작을 결정한 진단을 서버가 다음 질문·분기·확정 시점을 알아서 판단해 이끌고, ① 지역에 매물이 없으면 다른 지역으로 다시 시도하거나 진단을 끝낼 수 있게 하고
 **So that** 매물이 없는 지역인데도 끝까지 답하는 헛수고 없이, 앱을 나갔다 들어오지 않고 그 자리에서 재시도하거나 종료할 수 있다
 
 - **우선순위**: High (진단 완주율·이탈 개선)
 - **관련 NFR**: 사용성(불필요한 단계 진행 차단·클라 로컬 분기 제거), 유지보수성(진행 흐름을 서버가 소유), 신뢰성(진행 상태 서버 보관)
-- **백엔드 관점**: 기존 v1(`/api/v1/diagnoses/*`, 클라이언트가 `step`·확정을 주도)은 **그대로 두고**, **서버 주도 대화형 흐름을 `/api/v2`에 신설**한다(하위 호환이 깨지는 변경이라 버전 상향 — [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). **서버는 질문과 분기만 주도하고, 진단을 시작할 시점과 매물을 받을 시점은 클라이언트가 결정한다** — 클라이언트가 **`POST /api/v2/diagnoses/start`**(본문 없음)로 진단을 시작하고 **`POST /api/v2/diagnoses/next`**로 현재 문항 답 1개씩을 이어 보내면, 서버는 `step`을 받지 않고 직전에 낸 문항에서 다음 질문을 결정하며 빌더가 다 채워지면 **자동 확정**한다. `/start`는 진행 중 세션이 있어도 **무조건 버리고** 새 세션(빈 draft·`pendingField=region`)을 만든다 — 진단하다 홈으로 갔다 다시 시작해도 서버가 기존 진단 정보를 보고 이어가지 않고 **언제나 처음부터**다. 진행 세션이 없는데 `/next`가 오면 서버가 임의로 흐름을 되살리지 않고 `400 DIAGNOSIS_SESSION_NOT_FOUND`로 막으며, 클라이언트는 `/start`로 복구한다. `/next`는 답(`field`)이 반드시 있어야 한다(없으면 `INVALID_INPUT`). 확정 응답에 추천 매물을 인라인으로 싣지 않고 **`diagnosisId`만** 담으며, **확정 시점에 매칭 유무조차 확인하지 않는다** — 매물은 클라이언트가 시점을 정해 **`GET /api/v2/diagnoses/{id}/recommendations`**(v1 §7과 같되 `suggestions` 없음)로 별도 조회하고, **매칭 0건은 그 응답의 `resultCode: NO_MATCH`로 드러난다**(흐름 응답엔 그 코드가 없다 — 미리 알려주려면 클라가 요청하지 않은 추천 쿼리를 서버가 돌려야 한다). ① 지역(`region`) 답 직후 매칭이 0건일 때만 서버가 예외적으로 미리 필터링해 "다른 지역 방을 찾아보시겠어요?" 문항을 끼워 넣는다 — 이 예외질문은 서버 코드에 하드코딩한 합성 문구가 아니라 **문항 카탈로그(`diagnosisQuestions`)의 일반 질문**(`step: 1`·`field: regionRetry`·`select: {type: SINGLE, max: 1}`·옵션 `YES`/`NO`)이라 별도 결과코드 없이 다른 문항과 똑같이 `NEXT_QUESTION`으로 내려가고 번역도 US-2-6과 동일 경로를 탄다(신규 환경은 order 0000 시드, 기배포 환경은 멱등 changeUnit order 0005로 적재). 그 예/아니오 응답에만 **클라이언트가 행할 행위**를 코드로 알린다 — 예=`RESTART`(클라가 `/start`로 처음부터 재시도) · 아니오=`TERMINATED`(진단 종료), 둘 다 세션을 삭제한다. 6단계까지 마친 뒤 매칭이 0건이면 `NO_MATCH`이며 **어떤 제안도 없다**(v1의 `suggestions` 기능·시드는 v1 전용으로 유지하되 v2는 참조하지 않는다). 매 응답은 정상 `200 OK`의 `data.resultCode`(태그드 유니온: `NEXT_QUESTION` / `RESTART` / `COMPLETED` / `TERMINATED`)로 표현한다(에러 아님). 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 v2 전용 세션(`diagnosisFlowSessions`)에 담고, 완료 시에만 정본 진단을 기존 `diagnoses`에 저장한다. **① 지역 0건으로 끝난 시도는 버리지 않는다** — 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 "어느 지역을 원했는데 매물이 없었나"를 수요 분석에 쓴다(재시도·종료 양쪽. 사용자 노출 경로 없음 — 이력·최근은 `COMPLETED`만, v1 초안 조회는 `IN_PROGRESS`만 본다). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다. 문항 카탈로그·번역·입력 enum·③ 분기 규칙은 v1과 동일 출처(US-2-5·US-2-6·[ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../adr/0029-diagnosis-i18n-strategy.md))를 공유한다. 시퀀스: [US-2-7 다이어그램](../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md), API: [02 스펙 v2 절](../api/specs/02-diagnosis-recommendation.md).
+- **백엔드 관점**: 기존 v1(`/api/v1/diagnoses/*`, 클라이언트가 `step`·확정을 주도)은 **그대로 두고**, **서버 주도 대화형 흐름을 `/api/v2`에 신설**한다(하위 호환이 깨지는 변경이라 버전 상향 — [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). **서버는 질문과 분기만 주도하고, 진단을 시작할 시점과 매물을 받을 시점은 클라이언트가 결정한다** — 클라이언트가 **`POST /api/v2/diagnoses/start`**(본문 없음)로 진단을 시작하고 **`POST /api/v2/diagnoses/next`**로 현재 문항 답 1개씩을 이어 보내면, 서버는 `step`을 받지 않고 직전에 낸 문항에서 다음 질문을 결정하며 빌더가 다 채워지면 **자동 확정**한다. `/start`는 진행 중 세션이 있어도 **무조건 버리고** 새 세션(빈 draft·`pendingField=region`)을 만든다 — 진단하다 홈으로 갔다 다시 시작해도 서버가 기존 진단 정보를 보고 이어가지 않고 **언제나 처음부터**다. 진행 세션이 없는데 `/next`가 오면 서버가 임의로 흐름을 되살리지 않고 `400 DIAGNOSIS_SESSION_NOT_FOUND`로 막으며, 클라이언트는 `/start`로 복구한다. `/next`는 답(`field`)이 반드시 있어야 한다(없으면 `INVALID_INPUT`). 확정 응답에 추천 매물을 인라인으로 싣지 않고 **`diagnosisId`만** 담으며, **확정 시점에 매칭 유무조차 확인하지 않는다** — 매물은 클라이언트가 시점을 정해 **`GET /api/v2/diagnoses/{id}/recommendations`**(v1 §7과 같되 `suggestions` 없음)로 별도 조회하고, **매칭 0건은 그 응답의 `resultCode: NO_MATCH`로 드러난다**(흐름 응답엔 그 코드가 없다 — 미리 알려주려면 클라가 요청하지 않은 추천 쿼리를 서버가 돌려야 한다). ① 지역(`region`) 답 직후 매칭이 0건일 때만 서버가 예외적으로 미리 필터링해 "다른 지역 방을 찾아보시겠어요?" 문항을 끼워 넣는다 — 이 예외질문은 서버 코드에 하드코딩한 합성 문구가 아니라 **문항 카탈로그(`diagnosisQuestions`)의 일반 질문**(`step: 1`·`field: regionRetry`·`select: {type: SINGLE, max: 1}`·옵션 `YES`/`NO`)이라 별도 결과코드 없이 다른 문항과 똑같이 `NEXT_QUESTION`으로 내려가고 번역도 US-2-6과 동일 경로를 탄다(신규 환경은 order 0000 시드, 기배포 환경은 멱등 changeUnit order 0005로 적재). 그 예/아니오 응답에만 **클라이언트가 행할 행위**를 코드로 알린다 — 예=`RESTART`(클라가 `/start`로 처음부터 재시도) · 아니오=`TERMINATED`(진단 종료), 둘 다 세션을 삭제한다. 6단계까지 마친 뒤 매칭이 0건이면 `NO_MATCH`이며 **어떤 제안도 없다**(v1의 `suggestions` 기능·시드는 v1 전용으로 유지하되 v2는 참조하지 않는다). 매 응답은 정상 `200 OK`의 `data.resultCode`(태그드 유니온: `NEXT_QUESTION` / `RESTART` / `COMPLETED` / `TERMINATED`)로 표현한다(에러 아님). 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 v2 전용 세션(`diagnosisFlowSessions`)에 담고, 완료 시에만 정본 진단을 기존 `diagnoses`에 저장한다. **비회원(게스트)도 이 흐름을 그대로 타며, 여기가 게스트 진단의 정본 경로다**(#181 — 신규 `permitAll` 매처는 `/api/v2/diagnoses/**` 하나뿐이고 v1 진단 7개는 회원 전용으로 남는다) — 회원 세션이 `userId`를 키로 upsert되는 자리에서, 게스트는 `POST /api/v2/diagnoses/start`가 **서버가 발급해 응답에 실어 주는 게스트 세션 키**(값 형식 `anonymous<uuid>`)를 받아 이후 `/next`·추천 요청에 **`X-Guest-Session-Id` 헤더로 에코**한다. 문서에는 `userId`(회원)와 `guestSessionId`(게스트) 두 신원 필드를 두고 **정확히 하나만** 채우며, `diagnosisFlowSessions`의 `userId` UNIQUE 인덱스는 partial로 좁히고 `guestSessionId` partial UNIQUE를 별도로 신설한다(한 인덱스에 두 신원을 섞으면 게스트 문서의 빈 `userId`끼리 충돌한다). 게스트 세션 키는 **요청자마다 달라야 한다** — 진단 id가 전역 순차 채번이라 공용·상수 키를 쓰면 게스트 A가 id를 증가시키며 게스트 B의 진단을 읽을 수 있다. 클라이언트에는 키를 보관·에코할 의무가 새로 생기며, 키를 잃으면 진단을 처음부터 다시 해야 한다. **① 지역 0건으로 끝난 시도는 버리지 않는다** — 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 "어느 지역을 원했는데 매물이 없었나"를 수요 분석에 쓴다(재시도·종료 양쪽. 사용자 노출 경로 없음 — 이력·최근은 `COMPLETED`만, v1 초안 조회는 `IN_PROGRESS`만 본다). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다. 문항 카탈로그·번역·입력 enum·③ 분기 규칙은 v1과 동일 출처(US-2-5·US-2-6·[ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../adr/0029-diagnosis-i18n-strategy.md))를 공유한다. 시퀀스: [US-2-7 다이어그램](../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md), API: [02 스펙 v2 절](../api/specs/02-diagnosis-recommendation.md).
 
 **AC (Given / When / Then)**
 
@@ -755,6 +780,29 @@
   - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations?page=0&size=20`을 호출한다
   - **Then** `200 OK`와 추천 매물(`content`)·지도 좌표(`markers`)·페이지 메타(`page`)를 반환한다(v1 §7과 같은 계약이되 `suggestions`는 없다)
   - **And** 타인 소유 진단이면 `403 FORBIDDEN`, 없는 진단이면 `404 DIAGNOSIS_NOT_FOUND`다
+- 시나리오: 비회원(게스트) 시작 — 토큰 없이 `/start`, 서버가 세션 키 발급
+
+  - **Given** 로그인하지 않은 사용자가 진단 화면에 진입한다
+  - **When** `Authorization` 헤더 없이 본문 없이 `POST /api/v2/diagnoses/start`를 호출한다
+  - **Then** `401`이 아니라 `200 OK`와 `data.resultCode=NEXT_QUESTION`·`data.question`(① 지역 문항, 표시 라벨은 **영어(`en`)**)을 받고, **서버가 발급한 게스트 세션 키**(응답 필드 `data.guestSessionId`, 값 형식 `anonymous<uuid>` — 회원 응답에서는 생략된다)를 함께 받는다([02 스펙 v2 절](../api/specs/02-diagnosis-recommendation.md))
+  - **And** 이 키는 요청자마다 다르다(공용·상수 키가 아니다 — 진단 id가 순차 채번이라 공용 키를 쓰면 게스트끼리 서로의 진단을 열람할 수 있다)
+  - **And** 서버는 이 요청에서 `user` 공개 query `getLanguage`를 **한 번도 호출하지 않는다** — 게스트는 `users` 행이 없어 호출하면 첫 요청부터 `404 USER_NOT_FOUND`가 되므로, 요점은 기본값이 아니라 **호출 회피**다. 게스트는 이 흐름 전 구간(`/start`·`/next`·추천 조회)에서 `user` 모듈을 부르지 않고 `en`을 쓴다
+- 시나리오: 비회원(게스트) 연속성 — 세션 키를 에코하면 흐름이 이어진다
+
+  - **Given** 위에서 게스트 세션 키를 발급받았다
+  - **When** 그 키를 `X-Guest-Session-Id` 헤더에 실어 `{ "field": "region", "code": "SEOUL" }`을 `POST /api/v2/diagnoses/next`로 보낸다
+  - **Then** 서버가 그 키로 세션을 찾아 답을 저장하고 다음 단계(② 입국 목적) 문항을 `NEXT_QUESTION`으로 반환한다 — 회원이 `userId`로 세션을 잇는 자리를 게스트는 이 키로 잇는다
+  - **And** ①~⑥을 모두 채우면 회원과 동일하게 자동 확정되어 `data.resultCode=COMPLETED`·`data.diagnosisId`를 받고, 저장된 진단 문서는 `userId`가 비고 게스트 세션 키가 채워진다(두 신원 필드 중 정확히 하나만 채워진다)
+- 시나리오: 비회원(게스트) 세션 키 누락·불일치
+
+  - **Given** 게스트가 `/start`로 세션을 시작해 두었다
+  - **When** `X-Guest-Session-Id` 없이, 또는 다른 게스트의 키로 `POST /api/v2/diagnoses/next`를 호출한다
+  - **Then** 두 경우 모두 자기 세션에 닿지 못하고 `400`+`error.code=DIAGNOSIS_SESSION_NOT_FOUND`를 받으며, 클라이언트는 `POST /api/v2/diagnoses/start`로 복구한다 — 서버가 요청마다 새 키를 만들어 흐름을 되살리지 않는다(그러면 `/start`만 200이고 `/next`가 구조적으로 죽는다)
+- 시나리오: 비회원(게스트) 추천 조회 — 소유권 3방향
+
+  - **Given** 게스트 A가 확정한 진단 `diagnosisId`가 있다
+  - **When** (a) 게스트 A가 자기 키로, (b) 게스트 B가 자기 키로, (c) 회원이 토큰으로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **Then** (a)만 `200 OK`(`content`·`markers`·`page`)이고 (b)·(c)는 `403 FORBIDDEN`이다 — 소유권은 신원 종류가 같고 값이 같을 때만 통과하며, 반대로 **게스트 키로 회원 진단을 조회하는 것도 `403`** 이다
 - 시나리오: 세션 없음 — 진행 중 진단 없이 `/next`
 
   - **Given** 앱 재시작·터미널 응답 후 재전송·세션 만료 등으로 진행 중 세션이 없다
@@ -770,6 +818,7 @@
   - **Given** 기존 클라이언트가 v1 흐름(`GET /api/v1/diagnoses/questions/{step}` · `POST /api/v1/diagnoses/answers` · `POST /api/v1/diagnoses`)을 사용한다
   - **When** v2 추가 이후에도 v1 엔드포인트를 그대로 호출한다
   - **Then** v1 동작·응답 계약이 바뀌지 않는다(예: `GET /api/v1/diagnoses/questions/1`은 `regionRetry` 문항이 같은 `step 1`에 있어도 ① 지역(`field=region`) 문항을 그대로 반환한다 — v2는 새 컨트롤러로만 추가되고 v1 로직을 건드리지 않는다)
+  - **And** #181(비회원 접근)에서도 v1의 인가 계약은 그대로다 — `permitAll` 매처는 `/api/v2/diagnoses/**`에만 추가되고 v1은 계속 인증 필수이므로, v1 응답 DTO(`AnswerSavedResponse` 등)와 그 RestDocs 테스트도 바뀌지 않는다 — 게스트 세션 키를 발급하는 지점도 `POST /api/v2/diagnoses/start` 하나뿐이라 v1 응답에는 등장하지 않는다
 
 ## 3. 매물 탐색 · 찜
 
@@ -1452,17 +1501,17 @@
 
 > 관련 API 스펙: [06-gamification](../api/specs/06-gamification.md)
 
-외국인 세입자(임차인)가 한국 주거 관련 지식을 **요청할 때마다 무작위로 제공되는 4지선다 퀴즈**로 반복 학습하는 기능이다. 사용자는 문항·보기를 조회하고, 고른 보기를 제출하면 서버가 저장된 정답과 대조해 **정답 여부**를 즉시 돌려준다 — 정답·오답 모두 **해설**을 함께 반환하고, 오답이면 **정답 보기**를 추가로 반환한다. 정답 판정은 전적으로 서버가 수행하며(클라이언트 응답값 신뢰 금지), 채점은 **무상태(stateless)** 다 — 제출 기록·포인트 적립·하루 1회 제한·`(userId, quizDate)` 유니크 제약이 없고, 사용자는 횟수 제한 없이 반복해 풀 수 있다.
+외국인 세입자(임차인)를 주 대상으로 하되 **임대인과 아직 로그인하지 않은 사용자를 포함해 누구나** 한국 주거 관련 지식을 **요청할 때마다 무작위로 제공되는 4지선다 퀴즈**로 반복 학습하는 기능이다. 사용자는 문항·보기를 조회하고, 고른 보기를 제출하면 서버가 저장된 정답과 대조해 **정답 여부**를 즉시 돌려준다 — 정답·오답 모두 **해설**을 함께 반환하고, 오답이면 **정답 보기**를 추가로 반환한다. 정답 판정은 전적으로 서버가 수행하며(클라이언트 응답값 신뢰 금지), 채점은 **무상태(stateless)** 다 — 제출 기록·포인트 적립·하루 1회 제한·`(userId, quizDate)` 유니크 제약이 없고, 사용자는 횟수 제한 없이 반복해 풀 수 있다.
 
 > **범위 변경(이전 모델 대체)**: 이전 범위의 "오늘의 퀴즈(하루 1개)"·포인트 적립(`QUIZ_CORRECT`)·`/points` 합계·내역 조회 모델은 본 범위에서 **랜덤·무상태·다국어 학습 퀴즈로 대체**된다. 따라서 포인트 관련 스토리·엔드포인트는 제외되고, `QUIZ_NOT_TODAY`·`QUIZ_ALREADY_SUBMITTED` 도메인 에러는 발생하지 않는다. 이 대체 모델은 API 스펙([06-gamification](../api/specs/06-gamification.md))·시퀀스 다이어그램(`sequence-diagrams/06-gamification/`)·도메인 모델·DB 설계·[ADR-0035](../adr/0035-gamification-quiz-random-stateless-catalog.md)에 반영 완료됐다("한 도메인 = 네 곳" 정합, [CLAUDE.md](../../CLAUDE.md)). 남은 후속은 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`) 재구현이다.
 >
-> **다국어 번역이 기반**이다. 퀴즈 문항·보기·해설의 **표시 텍스트**는 사용자의 **표시 언어**로 번역해 반환한다 — 표시 언어는 `gamification`이 `user` 모듈 공개 query(`getLanguage`)를 호출해 취득하며 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); `Accept-Language`·토큰 클레임에 의존하지 않음). 해당 언어 번역이 없으면 **영어(`en`)로 폴백**한다(에러 아님). 보기 **키(A~D)는 언어와 무관하게 불변**이며 표시 텍스트만 언어별이다(채점은 키로 검증). 번역 저장은 `diagnosis`와 동일하게 문항 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하는 방식을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6와 동일 패턴).
+> **다국어 번역이 기반**이다. 퀴즈 문항·보기·해설의 **표시 텍스트**는 사용자의 **표시 언어**로 번역해 반환한다 — 표시 언어는 `gamification`이 `user` 모듈 공개 query(`getLanguage`)를 호출해 취득하며 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); `Accept-Language`·토큰 클레임에 의존하지 않음). **비로그인 사용자는 이 query를 호출하지 않고 `en` 고정**이다(#181). **임대인은 `users.lang`이 서버 고정값 `'ko'`라 한국어로 본다**(US-1-5·US-1-9). 해당 언어 번역이 없으면 **영어(`en`)로 폴백**한다(에러 아님). 보기 **키(A~D)는 언어와 무관하게 불변**이며 표시 텍스트만 언어별이다(채점은 키로 검증). 번역 저장은 `diagnosis`와 동일하게 문항 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하는 방식을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6와 동일 패턴).
 >
-> 인증 표기 기준: 본 기능은 **외국인 세입자(`userType=TENANT`)** 대상이다 — 조회·채점 모두 **온보딩을 완료한(`ACTIVE`) 세입자** 전용이다(정식 access 토큰 = `ROLE_USER`). **한국 주거 지식을 학습하려는 외국인 세입자를 위한 기능이라 임대인은 대상이 아니다** — 임대인도 `country`·`lang`(`'KR'`/`'ko'` 고정)을 갖게 되었으므로([ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) "임대인은 등록 국가가 없어서"가 아니라 **대상 액터 정의**가 게이트의 근거다. 상태를 저장하지 않으므로 타인 리소스 접근 개념이 없고 인증만 강제한다. `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅하고 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
+> 인증·권한 표기 기준(#181로 개정): 본 기능은 **로그인 여부·`userType`과 무관하게 누구나** 이용할 수 있다 — 조회·채점 모두 **로그인 없이 된다**(애플 심사 대응). [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 `/api/v1/quizzes/**` 매처를 `hasRole("USER")` → **`permitAll`로 수정**한다(진단과 달리 매처가 이미 있으므로 신규 추가가 아니라 수정이다 — 인가를 여는 수단이 `ROLE_GUEST` 주입이 아니라 `permitAll`인 이유는 2절 비회원 접근 기준과 같다). **매처와 함께 응용 계층의 세입자 게이트(`GamificationService.assertTenant`)도 제거한다** — 비로그인 게스트에게 열린 콘텐츠를 로그인한 임대인에게만 `403`으로 막는 것은 앞뒤가 맞지 않고 실효도 없기 때문이다(임대인이 로그아웃하면 그대로 볼 수 있다). 그 결과 `gamification`은 `getUserType`을 더 이상 호출하지 않고 `com.kohere.gamification.domain.TenantOnlyException`은 사용처가 사라지며, **퀴즈에서 `403 FORBIDDEN`(TenantOnly) 케이스가 완전히 없어진다** — 즉 퀴즈에는 이제 **어떤 역할 게이트도 없다**(예약의 세입자 전용 게이트(US-4-1)는 이 변경과 무관하게 그대로다). 상태를 저장하지 않으므로 타인 리소스 접근 개념이 없고, 퀴즈는 신원을 영속에 담지 않아 **게스트 경로에는 신원 소비자가 하나도 남지 않는다**(세션 키도 요구하지 않는다). 표시 언어만 호출자별로 갈린다 — 게스트는 **`en` 고정**이며 `getLanguage`를 호출하지 않고(`users` 행이 없어 호출하면 `404 USER_NOT_FOUND`), 로그인 사용자는 `users.lang`을 따르는데 **임대인은 온보딩에서 서버가 `lang='ko'`·`country='KR'`을 고정으로 심으므로 퀴즈를 한국어(`ko`)로 본다**(US-1-5·US-1-9; `ko` 번역이 없는 문항은 `en` 폴백). `permitAll` 전환의 부수효과로 **온보딩 미완료(PENDING/TERMS_AGREED, `ROLE_ONBOARDING`) 토큰도 통과**하며(`403 AUTH_ONBOARDING_REQUIRED`가 이 경로에서 사라진다) 이를 의도로 수용한다. **토큰을 보냈는데 만료된 요청만 `401 TOKEN_EXPIRED`를 유지**하고, 토큰 미전송·위조 토큰은 게스트로 처리한다.
 
 ### US-6-1 — 랜덤 퀴즈 조회
 
-**As a** 로그인한 외국인 세입자(온보딩 완료, `ACTIVE`·`userType=TENANT`)
+**As a** 퀴즈를 풀려는 **누구나** — 외국인 세입자(`userType=TENANT`)·임대인(`userType=LANDLORD`)·**아직 로그인하지 않은 사용자** (역할 게이트 없음 — #181)
 **I want** 요청할 때마다 서버가 무작위로 고른 4지선다 퀴즈 1개를 내 언어로 번역된 문항·보기와 함께 받기
 **So that** 매번 새로운 문제로 횟수 제한 없이 반복 학습할 수 있다 (정답·해설은 조회 응답에 싣지 않고 채점 요청에서만 공개한다)
 
@@ -1481,16 +1530,29 @@
   - Given 동일 세입자가 방금 한 문제를 조회·채점했다
   - When `GET /api/v1/quizzes/random`을 다시 호출한다
   - Then `200 OK` 와 함께 새 퀴즈를 받는다(제출 상태를 저장하지 않으므로 횟수 제한·`409` 차단이 없다)
-- 시나리오: 인증 누락
+- 시나리오: 비로그인 조회 — 토큰 없이 `2xx`
 
-  - Given Authorization 헤더가 없거나 토큰이 위조/만료되었다
+  - Given Authorization 헤더가 없는(또는 위조된 토큰을 보낸) 비로그인 사용자다
   - When `GET /api/v1/quizzes/random`을 호출한다
-  - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
-- 시나리오: 권한 — 온보딩 미완료(비-`ACTIVE`) 접근
+  - Then `401`이 아니라 `200 OK`와 회원과 동일한 응답(`quizId`·`question`·`choices`)을 받는다(`/api/v1/quizzes/**`가 `permitAll` — #181). 이 경로에서 `UNAUTHENTICATED`는 더 이상 발생하지 않는다
+  - And 표시 텍스트는 **영어(`en`)** 로 내려오고, 서버는 `getLanguage`를 **한 번도 호출하지 않는다**(호출하면 `users` 행이 없어 `404 USER_NOT_FOUND`). `getUserType`은 게스트뿐 아니라 **어떤 호출자에게도 호출하지 않는다** — 세입자 게이트를 제거해 `gamification`에서 이 포트 사용이 사라졌기 때문이다(#181). 게스트 세션 키(`X-Guest-Session-Id`)도 요구하지 않는다(퀴즈는 신원을 저장하지 않는다)
+- 시나리오: 인증 실패 — 만료된 토큰(게스트로 강등하지 않음)
 
-  - Given 온보딩을 마치지 않은(`PENDING`/`TERMS_AGREED`) 토큰으로 접근한다
+  - Given 만료된 access token을 보낸다
   - When `GET /api/v1/quizzes/random`을 호출한다
-  - Then `403 Forbidden` 와 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다(정식 인증=`ROLE_USER` 필요)
+  - Then `permitAll` 경로라도 `401 Unauthorized` 와 `error.code=TOKEN_EXPIRED`를 받는다(재발급 유도). 토큰 미전송·위조 토큰만 게스트로 처리한다
+- 시나리오: 권한 — 로그인한 임대인도 허용(종전 `403`에서 변경)
+
+  - Given 온보딩을 마친 임대인(`userType=LANDLORD`)이 유효한 access token으로 접근한다
+  - When `GET /api/v1/quizzes/random`을 호출한다
+  - Then `403 FORBIDDEN`이 아니라 `200 OK`와 세입자와 동일한 응답(`quizId`·`question`·`choices`)을 받는다 — 응용 계층 세입자 게이트(`assertTenant`)를 제거했으므로 **퀴즈에 역할 게이트가 없다**(#181). 비로그인 게스트에게 열린 콘텐츠를 임대인에게만 막을 근거가 없다
+  - And 표시 텍스트는 **한국어(`ko`)** 로 내려온다 — 임대인의 `users.lang`은 온보딩에서 서버가 `'ko'`로 고정하기 때문이다(US-1-9). `ko` 번역이 없는 문항은 `en`으로 폴백한다
+- 시나리오: 온보딩 미완료(비-`ACTIVE`) 접근 — 이제 허용
+
+  - Given 온보딩을 마치지 않은(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰으로 접근한다
+  - When `GET /api/v1/quizzes/random`을 호출한다
+  - Then `403 AUTH_ONBOARDING_REQUIRED`가 아니라 `200 OK`를 받는다 — `permitAll` 전환으로 `hasRole("USER")`가 하던 온보딩 차단이 이 경로에서 사라지며 이를 의도로 수용한다. 로그인 없이 볼 수 있는 콘텐츠를 온보딩 중인 사용자에게만 막을 이유가 없다
+  - And 표시 언어는 `en` 고정이 아니라 **`users.lang`을 따른다**(온보딩 중이어도 `users` 행은 존재한다)
 - 시나리오: 경계 — 사용 가능한 퀴즈가 없음
 
   - Given 인증은 정상이나 퀴즈 콘텐츠 풀이 비어 있다
@@ -1499,7 +1561,7 @@
 
 ### US-6-2 — 퀴즈 정답 제출 및 즉시 피드백
 
-**As a** 로그인한 외국인 세입자(온보딩 완료, `ACTIVE`·`userType=TENANT`)
+**As a** 퀴즈를 푼 **누구나** — 외국인 세입자(`userType=TENANT`)·임대인(`userType=LANDLORD`)·**아직 로그인하지 않은 사용자** (역할 게이트 없음 — #181)
 **I want** 내가 고른 보기(A~D)를 제출해 서버가 채점한 정답 여부와 해설을 즉시 받고, 오답이면 정답 보기도 함께 받기
 **So that** 바로 학습 피드백을 얻는다 (정답 판정은 서버가 저장된 정답과 대조해 수행하며 클라가 보낸 정답 여부는 신뢰하지 않는다; 제출 기록·포인트 적립을 남기지 않는 무상태 채점이다)
 
@@ -1528,11 +1590,22 @@
   - Given 세입자가 본문을 깨진 JSON으로 보낸다
   - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
   - Then `400 Bad Request` 와 `error.code=MALFORMED_REQUEST`를 받는다
-- 시나리오: 인증 누락
+- 시나리오: 비로그인 채점 — 토큰 없이 `2xx`
 
-  - Given Authorization 헤더가 없거나 토큰이 만료/위조되었다
+  - Given Authorization 헤더가 없는(또는 위조된 토큰을 보낸) 비로그인 사용자가 보기를 골랐다
+  - When `POST /api/v1/quizzes/{quizId}/answer`에 `{ "selectedChoice": "B" }`를 보낸다
+  - Then `401`이 아니라 `200 OK`와 회원과 동일한 채점 결과(`correct`, 오답이면 `correctChoice`, 그리고 `explanation`)를 받는다(`/api/v1/quizzes/**`가 `permitAll` — #181). `explanation`은 **영어(`en`)** 이고 서버는 `getLanguage`를 호출하지 않는다(`getUserType`은 세입자 게이트 제거로 호출자 구분 없이 아예 호출하지 않는다)
+- 시나리오: 인증 실패 — 만료된 토큰(게스트로 강등하지 않음)
+
+  - Given 만료된 access token으로 채점을 요청한다
   - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
-  - Then `401 Unauthorized` 와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
+  - Then `permitAll` 경로라도 `401 Unauthorized` 와 `error.code=TOKEN_EXPIRED`를 받는다(재발급 유도)
+- 시나리오: 권한 — 로그인한 임대인도 허용(종전 `403`에서 변경)
+
+  - Given 온보딩을 마친 임대인(`userType=LANDLORD`)이 유효한 access token으로 채점을 요청한다
+  - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
+  - Then `403 FORBIDDEN`이 아니라 `200 OK`와 세입자와 동일한 채점 결과(`correct`, 오답이면 `correctChoice`, `explanation`)를 받는다 — `assertTenant` 제거로 **역할 게이트가 없다**(#181)
+  - And `explanation`은 **한국어(`ko`)** 로 내려온다(임대인의 `users.lang`은 서버 고정값 `'ko'` — US-1-9; `ko` 해설이 없으면 `en` 폴백)
 - 시나리오: 경계 — 존재하지 않는 퀴즈 채점
 
   - Given 경로의 `{quizId}`가 존재하지 않는다
@@ -1546,9 +1619,9 @@
 
 ### US-6-3 — 사용자 표시 언어 기반 퀴즈 문항·해설 번역 제공
 
-**As a** 한국어가 익숙하지 않은 외국인 세입자(`ACTIVE`·`userType=TENANT`)
+**As a** 퀴즈를 푸는 **누구나** — 한국어가 익숙하지 않은 외국인 세입자(`userType=TENANT`)·임대인(`userType=LANDLORD`)·**비로그인 사용자**
 **I want** 퀴즈 문항·보기·해설을 내 표시 언어에 맞게 번역된 텍스트로 받기
-**So that** 모국어 또는 영어로 문제를 이해하고 정확히 답할 수 있다 (번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이며 `user` 공개 query `getLanguage`로 취득([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 미지원 언어는 영어로 폴백, 보기 키 A~D는 언어와 무관하게 불변)
+**So that** 모국어 또는 영어로 문제를 이해하고 정확히 답할 수 있다 (로그인 사용자의 번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이며 `user` 공개 query `getLanguage`로 취득([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), **임대인은 `users.lang`이 서버 고정값 `'ko'`라 한국어로 본다**, **비로그인 사용자는 `en` 고정이며 `getLanguage`를 호출하지 않는다**(#181), 미지원 언어는 영어로 폴백, 보기 키 A~D는 언어와 무관하게 불변)
 
 - 우선순위: High
 - 관련 NFR: 국제화(i18n), 일관성(번역 누락 시 영어 폴백), 보안(본인 표시 언어·국가 정보 기반 — 사용자 선택값 또는 온보딩 수집값)
@@ -1575,6 +1648,16 @@
   - Given 번역된 라벨로 표시된 보기를 골라 그 키(A~D)로 제출한다
   - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
   - Then 언어와 무관하게 동일 키로 정상 채점된다
+- 시나리오: 비로그인 — `en` 고정 및 `getLanguage` 미호출
+
+  - Given 로그인하지 않은 사용자가 `Accept-Language`를 무엇으로 보내든 무관하게 퀴즈를 조회·채점한다
+  - When `GET /api/v1/quizzes/random` 또는 `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
+  - Then 문항·보기·해설 표시 텍스트가 **영어(`en`)** 로 반환되고, 서버는 `user` 공개 query `getLanguage`를 **호출하지 않는다**(호출하면 `users` 행이 없어 `404 USER_NOT_FOUND`). `Accept-Language` 기반 게스트 언어 결정은 이번 범위 밖이다. 보기 키(A~D)는 회원과 동일하게 불변이다
+- 시나리오: 임대인 — `users.lang` 서버 고정값(`ko`)을 따름
+
+  - Given 온보딩을 마친 임대인이 퀴즈를 조회·채점한다(임대인 온보딩에서 서버가 `lang='ko'`·`country='KR'`을 고정으로 심었다 — US-1-9)
+  - When `GET /api/v1/quizzes/random` 또는 `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
+  - Then `403`이 아니라 `200 OK`를 받고(#181로 역할 게이트 제거) 문항·보기·해설이 **한국어(`ko`)** 로 반환된다 — 임대인은 지구본에서 표시 언어를 고를 수 없어 `ko` 외의 값이 나올 수 없다(US-1-5). `ko` 번역이 없는 문항은 세입자와 동일하게 `en`으로 폴백한다
 
 ## 7. 신고 처리
 
@@ -1736,19 +1819,19 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 
 > 관련 API 스펙: [08-life-tips](../api/specs/08-life-tips.md)
 
-온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 읽기 전용 큐레이션 기능이다. 홈 화면 진입점([project-brief §4](../project/project-brief.md))에서 시작하며, 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(5절)와 구분된다).
+세입자(외국인)를 주 대상으로 하되 **임대인과 아직 로그인하지 않은 사용자를 포함해 누구나** 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 읽기 전용 큐레이션 기능이다. 홈 화면 진입점([project-brief §4](../project/project-brief.md))에서 시작하며, 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(5절)와 구분된다).
 
-**번역이 이 기능의 바탕이다** — 주제명·주제 설명(짧은·긴)·제목·내용 표시 텍스트는 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한 언어로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 이미지 URL(주제의 카드 이미지 `LifeTipTopic.imageUrl`·배경 이미지 `backgroundImageUrl`, 팁의 사진 `LifeTip.imageUrl`)은 언어 무관 불변이고, 표시 텍스트(주제명·주제 설명·제목·내용)만 언어별이다.
+**번역이 이 기능의 바탕이다** — 주제명·주제 설명(짧은·긴)·제목·내용 표시 텍스트는 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한 언어로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). **비로그인 사용자는 이 query를 호출하지 않고 `en` 고정**이다(#181). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 이미지 URL(주제의 카드 이미지 `LifeTipTopic.imageUrl`·배경 이미지 `backgroundImageUrl`, 팁의 사진 `LifeTip.imageUrl`)은 언어 무관 불변이고, 표시 텍스트(주제명·주제 설명·제목·내용)만 언어별이다.
 
-> **인증·상태 게이트 기준**: 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자**이고, 모든 조회는 **정식 인증(ROLE_USER)** 을 요구한다. **한국 생활 정보가 필요한 외국인 세입자를 위한 기능이라 임대인은 대상이 아니며**, 온보딩 미완료 사용자는 표시 언어를 정할 프로필 자체가 확정되지 않아 대상이 아니다 — 임대인도 `country`·`lang`(`'KR'`/`'ko'` 고정)을 갖게 되었으므로([ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) "임대인은 등록 국가가 없어서"가 아니라 **대상 액터 정의**가 게이트의 근거다. 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트). 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
+> **인증·상태 게이트 기준(#181로 개정)**: 대상 액터는 **로그인 여부·`userType`과 무관한 누구나**이고, 모든 조회는 **로그인 없이 이용할 수 있다**(애플 심사 대응). [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 `/api/v1/life-tips/**` 매처를 `hasRole("USER")` → **`permitAll`로 수정**한다(매처가 이미 있으므로 신규 추가가 아니라 수정이다 — 인가를 여는 수단이 `ROLE_GUEST` 주입이 아니라 `permitAll`인 이유는 2절 비회원 접근 기준과 같다). **매처와 함께 응용 계층의 세입자 게이트(`LifeTipService.assertTenant`)도 제거한다** — 비로그인 게스트에게 열린 콘텐츠를 로그인한 임대인에게만 `403`으로 막는 것은 앞뒤가 맞지 않고 실효도 없기 때문이다(임대인이 로그아웃하면 그대로 볼 수 있다). 그 결과 `lifetip`은 `getUserType`을 더 이상 호출하지 않고 `com.kohere.lifetip.domain.TenantOnlyException`은 사용처가 사라지며, **생활 팁에서 `403 FORBIDDEN`(TenantOnly) 케이스가 완전히 없어진다** — 즉 생활 팁에는 이제 **어떤 역할 게이트도 없다**. 표시 언어만 호출자별로 갈린다 — 게스트는 **`en` 고정**이며 `getLanguage`를 호출하지 않고(`users` 행이 없어 호출하면 `404 USER_NOT_FOUND`), 로그인 사용자는 `users.lang`을 따르는데 **임대인은 온보딩에서 서버가 `lang='ko'`·`country='KR'`을 고정으로 심으므로 생활 팁을 한국어(`ko`)로 본다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141), US-1-5·US-1-9; `ko` 번역이 없으면 `en` 폴백). "온보딩 미완료 사용자는 표시 언어를 정할 프로필이 확정되지 않아 대상이 아니다"라는 근거는 게스트에게 성립하지 않으므로(정할 프로필이 없으면 `en`으로 읽으면 된다) **온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰도 이제 통과**하며(`403 AUTH_ONBOARDING_REQUIRED`가 이 경로에서 사라진다) 이를 의도로 수용한다. 생활 팁은 신원을 영속에 담지 않으므로 게스트 세션 키(`X-Guest-Session-Id`)를 요구하지 않는다. **토큰을 보냈는데 만료된 요청만 `401 TOKEN_EXPIRED`를 유지**하고, 토큰 미전송·위조 토큰은 게스트로 처리한다.
 >
-> **註 — 세입자 게이트 미구현(기존 결함, #141에서 수정)**: 현재 코드에는 생활 팁의 `userType=TENANT` 검사가 **없어 임대인도 조회를 통과한다**(퀴즈(6절)에는 `assertTenant` 게이트가 이미 있다). 이 문서가 정본이며, 응용 계층에 TENANT 게이트를 **신설**해 코드가 문서를 따라가게 한다. 반면 **진단(2절)은 세입자·임대인 모두 이용 가능**해 게이트를 두지 않는다(임대인은 진단을 `ko`로 본다).
+> **註 — 세입자 게이트의 신설과 폐지**: 과거에는 생활 팁의 `userType=TENANT` 검사가 없어 임대인도 조회를 통과했으나(기존 결함), #141에서 응용 계층 `assertTenant` 게이트를 신설해 퀴즈(6절)와 동일하게 맞췄다. **#181에서 이 게이트를 퀴즈와 함께 다시 폐지한다** — `permitAll`로 게스트가 볼 수 있게 된 이상 로그인한 임대인만 막는 것이 실효가 없기 때문이다. 따라서 세 기능 모두 역할 게이트가 없는 상태로 정렬된다: **진단(2절)은 원래부터 세입자·임대인 공통**이었고, 퀴즈(6절)·생활 팁(8절)이 이번에 합류한다(임대인은 셋 다 `ko`로 본다). **예약(4절)의 세입자 전용 게이트(`com.kohere.booking.domain.TenantOnlyException`)는 이 변경과 무관하게 그대로 남는다**(US-4-1).
 
 > **저장소**: 문서형·가변 스키마·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏, [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). 모듈 경계(`lifetip` 신설 여부)·저장소·MVP 편입 시점 확정은 이슈 #79에서 다룬다.
 
 ### US-8-1 — 생활 팁 주제 목록 조회
 
-**As a** 온보딩을 마친(ACTIVE) 세입자(외국인) 사용자
+**As a** 생활 정보를 찾는 **누구나** — 세입자(외국인)·임대인(`userType=LANDLORD`)·**아직 로그인하지 않은 사용자** (역할 게이트 없음 — #181)
 **I want** 생활 팁이 어떤 주제로 나뉘어 있는지 주제 목록을 내 언어로 조회하되, 각 주제의 이름·짧은 설명·긴 설명과 카드 이미지·배경 이미지까지 한 응답에 함께 받고
 **So that** 홈 화면에서 주제 카드(이미지 + 짧은 설명)를 훑어보고, 관심 있는 주제를 골라 상세 상단(배경 이미지 + 긴 설명)과 관련 생활 정보로 들어갈 수 있다
 
@@ -1778,20 +1861,32 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
   - **Given** 번역이 준비되지 않은 국가/언어의 ACTIVE 세입자다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
   - **Then** 주제 표시명(`name`)과 짧은/긴 설명(`shortDescription`·`longDescription`)이 모두 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님, US-8-3과 동일 전략), `code`와 이미지 2종(`imageUrl`·`backgroundImageUrl`)은 언어와 무관하게 동일하다
-- 시나리오: 상태 게이트 — 온보딩 미완료
+- 시나리오: 비로그인 조회 — 토큰 없이 `2xx`
+
+  - **Given** Authorization 헤더가 없는(또는 위조된 토큰을 보낸) 비로그인 사용자다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `401`이 아니라 `200 OK`와 회원과 동일한 `topics[]`(주제당 `code`·`name`·`shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl` 6필드)를 받는다(`/api/v1/life-tips/**`가 `permitAll` — #181). 이 경로에서 `UNAUTHENTICATED`는 더 이상 발생하지 않는다
+  - **And** 표시 텍스트(`name`·두 설명)는 **영어(`en`)** 로 내려오고, 서버는 `getLanguage`를 **한 번도 호출하지 않는다**(호출하면 `users` 행이 없어 `404 USER_NOT_FOUND`). `getUserType`은 게스트뿐 아니라 **어떤 호출자에게도 호출하지 않는다** — 세입자 게이트를 제거해 `lifetip`에서 이 포트 사용이 사라졌기 때문이다(#181). `code`와 이미지 2종은 언어와 무관하게 동일하다
+- 시나리오: 상태 게이트 — 온보딩 미완료(이제 허용)
 
   - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
-  - **Then** `403 Forbidden`과 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다(정식 인증 ROLE_USER=ACTIVE만 허용)
-- 시나리오: 인증 누락
+  - **Then** `403 AUTH_ONBOARDING_REQUIRED`가 아니라 `200 OK`를 받는다 — `permitAll` 전환으로 `hasRole("USER")`가 하던 온보딩 차단이 사라지며 이를 의도로 수용한다. 표시 언어는 `en` 고정이 아니라 **`users.lang`을 따른다**(온보딩 중이어도 `users` 행은 존재한다)
+- 시나리오: 권한 — 로그인한 임대인도 허용(종전 `403`에서 변경)
 
-  - **Given** Authorization 헤더가 없거나 토큰이 만료/위조되었다
+  - **Given** 온보딩을 마친 임대인(`userType=LANDLORD`)이 유효한 access token으로 접근한다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
-  - **Then** `401 Unauthorized`와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
+  - **Then** `403 FORBIDDEN`이 아니라 `200 OK`와 세입자와 동일한 `topics[]`(주제당 6필드)를 받는다 — 응용 계층 세입자 게이트(`assertTenant`)를 제거했으므로 **생활 팁에 역할 게이트가 없다**(#181)
+  - **And** 표시 텍스트(`name`·두 설명)는 **한국어(`ko`)** 로 내려온다 — 임대인의 `users.lang`은 온보딩에서 서버가 `'ko'`로 고정하기 때문이다(US-1-9). `ko` 번역이 없으면 `en`으로 폴백하며, `code`와 이미지 2종은 언어와 무관하게 동일하다
+- 시나리오: 인증 실패 — 만료된 토큰(게스트로 강등하지 않음)
+
+  - **Given** 만료된 access token을 보낸다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `permitAll` 경로라도 `401 Unauthorized`와 `error.code=TOKEN_EXPIRED`를 받는다(재발급 유도)
 
 ### US-8-2 — 특정 주제의 생활 팁(제목·내용·사진) 목록 조회
 
-**As a** 특정 주제의 생활 정보를 보려는 ACTIVE 세입자(외국인) 사용자
+**As a** 특정 주제의 생활 정보를 보려는 **누구나** — 세입자(외국인)·임대인(`userType=LANDLORD`)·**아직 로그인하지 않은 사용자** (역할 게이트 없음 — #181)
 **I want** 고른 주제에 속한 생활 팁(제목·내용·사진) 전체를 내 언어로 한 번에 받고
 **So that** 그 주제의 정보를 앱을 새로 배포하지 않고도 최신 큐레이션으로 읽을 수 있다
 
@@ -1821,26 +1916,38 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
   - **Given** 경로의 `{topicCode}`가 카탈로그에 없다
   - **When** `GET /api/v1/life-tips/topics/UNKNOWN_TOPIC/tips`를 호출한다
   - **Then** `404 Not Found`와 `error.code=LIFE_TIP_TOPIC_NOT_FOUND`를 받는다
-- 시나리오: 상태 게이트 — 온보딩 미완료
+- 시나리오: 비로그인 조회 — 토큰 없이 `2xx`
+
+  - **Given** Authorization 헤더가 없는(또는 위조된 토큰을 보낸) 비로그인 사용자다
+  - **When** `GET /api/v1/life-tips/topics/MOVING_IN/tips`를 호출한다
+  - **Then** `401`이 아니라 `200 OK`와 회원과 동일한 `tips[]`(각 `id`·`title`·`content`·`imageUrl`)를 노출 순서대로 받는다(`/api/v1/life-tips/**`가 `permitAll` — #181). `title`·`content`는 **영어(`en`)** 이고 서버는 `getLanguage`를 호출하지 않는다(`getUserType`은 세입자 게이트 제거로 호출자 구분 없이 아예 호출하지 않는다)
+  - **And** 존재하지 않는 주제 `code`는 로그인 여부와 무관하게 `404 LIFE_TIP_TOPIC_NOT_FOUND`다(게스트라고 `401`로 바뀌지 않는다)
+- 시나리오: 상태 게이트 — 온보딩 미완료(이제 허용)
 
   - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다
   - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
-  - **Then** `403 Forbidden`과 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다
-- 시나리오: 인증 누락
+  - **Then** `403 AUTH_ONBOARDING_REQUIRED`가 아니라 `200 OK`를 받으며, 표시 언어는 **`users.lang`을 따른다**(온보딩 중이어도 `users` 행은 존재한다)
+- 시나리오: 권한 — 로그인한 임대인도 허용(종전 `403`에서 변경)
 
-  - **Given** Authorization 헤더가 없거나 토큰이 만료/위조되었다
+  - **Given** 온보딩을 마친 임대인(`userType=LANDLORD`)이 유효한 access token으로 접근한다
   - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
-  - **Then** `401 Unauthorized`와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
+  - **Then** `403 FORBIDDEN`이 아니라 `200 OK`와 세입자와 동일한 `tips[]`(각 `id`·`title`·`content`·`imageUrl`)를 노출 순서대로 받는다 — `assertTenant` 제거로 **역할 게이트가 없다**(#181)
+  - **And** `title`·`content`는 **한국어(`ko`)** 로 내려온다(임대인의 `users.lang`은 서버 고정값 `'ko'` — US-1-9; `ko` 번역이 없으면 `en` 폴백)
+- 시나리오: 인증 실패 — 만료된 토큰(게스트로 강등하지 않음)
+
+  - **Given** 만료된 access token을 보낸다
+  - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** `permitAll` 경로라도 `401 Unauthorized`와 `error.code=TOKEN_EXPIRED`를 받는다(재발급 유도)
 
 ### US-8-3 — 사용자 표시 언어 기반 생활 팁 번역 제공
 
-**As a** 한국어가 익숙하지 않은 ACTIVE 세입자(외국인) 사용자
+**As a** 생활 팁을 읽는 **누구나** — 한국어가 익숙하지 않은 세입자(외국인)·임대인(`userType=LANDLORD`)·**비로그인 사용자**
 **I want** 주제명·제목·내용을 내 표시 언어에 맞게 번역된 텍스트로 받고
 **So that** 모국어 또는 영어로 생활 정보를 이해할 수 있다
 
 - **우선순위**: High (외국인 대상 서비스의 핵심 접근성 — 이 기능의 바탕)
 - **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 `en` 폴백), 보안(본인 표시 언어 기반 — 사용자 선택값)
-- **백엔드 관점**: 번역 전략은 진단 i18n([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6)과 **동일**하며 별도 메커니즘을 만들지 않는다. 번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이고([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 표시 언어는 `user` 모듈 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(도출 규칙은 `user`가 캡슐화하며 query 시그니처는 불변; `Accept-Language`·토큰 클레임 미사용; [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가). 번역 텍스트는 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드한다 — 주제는 `name: { "en": …, "ja": …, "ko": … }`, 팁은 `title`/`content` 각각 언어-키 맵. 서버는 사용자 언어 키로 문자열을 고르고 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 주제·팁 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. US-8-1·US-8-2와 동일 엔드포인트에서 처리하며 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
+- **백엔드 관점**: 번역 전략은 진단 i18n([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6)과 **동일**하며 별도 메커니즘을 만들지 않는다. 로그인 사용자의 번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이고([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 표시 언어는 `user` 모듈 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다. **비로그인 사용자는 `en` 고정이며 이 query를 호출하지 않는다** — `users` 행이 없어 호출하면 `404 USER_NOT_FOUND`가 되므로 분기의 요점은 기본값이 아니라 호출 회피다(#181). **임대인은 `users.lang`이 온보딩에서 심긴 서버 고정값 `'ko'`라 한국어로 읽는다**(선택 불가 — US-1-5·US-1-9). 반면 `getUserType`은 세입자 게이트 폐지로 **호출자 구분 없이 더 이상 호출하지 않는다**(#181). 게스트에 대한 `Accept-Language` 해석은 이번 범위 밖이다(도출 규칙은 `user`가 캡슐화하며 query 시그니처는 불변; `Accept-Language`·토큰 클레임 미사용; [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가). 번역 텍스트는 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드한다 — 주제는 `name: { "en": …, "ja": …, "ko": … }`, 팁은 `title`/`content` 각각 언어-키 맵. 서버는 사용자 언어 키로 문자열을 고르고 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 주제·팁 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. US-8-1·US-8-2와 동일 엔드포인트에서 처리하며 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
 
 **AC (Given / When / Then)**
 
@@ -1859,3 +1966,13 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
   - **Given** 사용자가 `Accept-Language`를 다른 값으로 보내도 그 사용자의 표시 언어는 일본어(`ja`)다
   - **When** 생활 팁 조회 엔드포인트를 호출한다
   - **Then** 응답 언어는 헤더와 무관하게 표시 언어(일본어)로 결정된다(번역 언어 출처는 `user`의 `getLanguage(userId)` — `users.lang`이 있으면 그 값, 없으면 `en`)
+- 시나리오: 비로그인 — `en` 고정 및 `getLanguage` 미호출
+
+  - **Given** 로그인하지 않은 사용자가 `Accept-Language`를 무엇으로 보내든 무관하게 생활 팁을 조회한다
+  - **When** `GET /api/v1/life-tips/topics` 또는 `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** 주제명·주제 설명(짧은·긴)·제목·내용이 **영어(`en`)** 로 반환되고, 서버는 `user` 공개 query `getLanguage`를 **호출하지 않는다**(호출하면 `users` 행이 없어 `404 USER_NOT_FOUND`). `code`/`id`와 이미지 URL은 회원과 동일하게 언어 무관 불변이다
+- 시나리오: 임대인 — `users.lang` 서버 고정값(`ko`)을 따름
+
+  - **Given** 온보딩을 마친 임대인이 생활 팁을 조회한다(임대인 온보딩에서 서버가 `lang='ko'`·`country='KR'`을 고정으로 심었다 — US-1-9)
+  - **When** `GET /api/v1/life-tips/topics` 또는 `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** `403`이 아니라 `200 OK`를 받고(#181로 역할 게이트 제거) 주제명·주제 설명·제목·내용이 **한국어(`ko`)** 로 반환된다 — 임대인은 지구본에서 표시 언어를 고를 수 없어 `ko` 외의 값이 나올 수 없다(US-1-5). `ko` 번역이 없으면 세입자와 동일하게 `en`으로 폴백하고, `code`/`id`·이미지 URL은 언어 무관 불변이다

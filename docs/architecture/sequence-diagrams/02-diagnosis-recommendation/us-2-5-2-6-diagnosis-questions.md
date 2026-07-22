@@ -17,7 +17,7 @@ sequenceDiagram
     loop 각 단계(step = 1 → 6, 클라이언트가 다음 step 번호 지정)
         Note over U,C: ① 질문 조회 — 해당 step의 질문 1개
         C->>SEC: GET /api/v1/diagnoses/questions/:step<br/>Authorization: Bearer accessToken
-        Note over SEC: JWT 검증 (서명·만료·클레임)
+        Note over SEC: JWT 검증 (서명·만료·클레임)<br/>v1 진단은 회원 전용 — permitAll 매처를 추가하지 않는다
         SEC->>DIAG: 인증된 요청 전달(userId, step)
         Note over DIAG: 번역 언어 결정을 위해 표시 언어 필요<br/>(JWT 클레임 비의존 — 항상 user 공개 query로 취득)
         DIAG->>USER: user 공개 query 동기 호출 getLanguage(userId)<br/>(표시 언어 조회 — users.lang(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 en, ADR-0002 Decision 5)
@@ -38,7 +38,7 @@ sequenceDiagram
 
         Note over U,C: ② 답 저장 — 현재 step의 답 1개
         C->>SEC: POST /api/v1/diagnoses/answers<br/>body: field + code (현재 step 답, conditions처럼 다중은 codes 배열)<br/>(⑤ 월세는 예외 — field=monthlyRent + min/max 두 숫자 값, codes 배열 미사용)<br/>Authorization: Bearer accessToken
-        Note over SEC: JWT 검증 (서명·만료·클레임)
+        Note over SEC: JWT 검증 (서명·만료·클레임)<br/>이 경로도 회원 전용 — 토큰 없으면 401 UNAUTHENTICATED
         SEC->>DIAG: 인증된 요청 전달(userId, 단계 답 1개)
         alt 잘못된 답(미정의 enum·목적/대학·지역 불일치 등)
             DIAG-->>C: 400 INVALID_INPUT + errors[]
@@ -68,5 +68,7 @@ sequenceDiagram
 - ③ 대학·지역 문항은 ②(`purpose`) 답변에 따라 **서버 비즈니스 로직**이 분기한다 — `STUDY`면 `field=university`로 대학 질문을, `NON_STUDY`면 `field=district`로 지역(구) 질문을 내려준다(알맞은 한 질문만 내려주고 두 목록을 함께 주지 않는다). 대학 질문·지역 질문은 각각 카탈로그 데이터(별도 step)로 존재하고, 노출은 저장된 `purpose`를 보고 서비스가 결정한다. ③ 대학은 개별 대학(15개 평면 값)이 아니라 **6개 대학 그룹**을 단일 선택한다 — 진단이 보유한 enum은 `University`(개별 15값)에서 `UniversityGroup`(그룹 6값)으로 변경한다(여전히 diagnosis 소유 enum, 결정: [ADR-0028](../../../adr/0028-diagnosis-questions-catalog-store.md)). `UniversityGroup` 값(UPPER_SNAKE)과 그룹→멤버 대학 코드 매핑(멤버 코드는 기존 개별 `University` 코드이며 매물은 그대로 `nearbyUniversityCodes`에 개별 코드를 저장 — 저장 구조 불변): `HUFS_KHU_KOREA → {HUFS, KHU, KOREA}`, `SKKU_SUNGSHIN → {SKKU, SUNGSHIN}`, `SNU_CAU_SOONGSIL → {SNU, CAU, SOONGSIL}`, `HONGIK_YONSEI_EWHA → {HONGIK, YONSEI, EWHA}`, `KONKUK_SEJONG_HYU → {KONKUK, SEJONG, HYU}`, `ETC → {}`(빈 집합: 대학 필터 미적용 — 지역 기반 매칭으로만 폴백). `district` enum 값(UPPER_SNAKE): `GURO_GU, YEONGDEUNGPO_GU, GEUMCHEON_GU, GWANAK_GU, DONGDAEMUN_GU, ETC`.
 - 잘못된 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `INVALID_INPUT`(400)+`errors[]`로 반환한다.
 - 번역(US-2-6)은 반환 질문의 **표시 `question`·`label`만** 대상이며, `user`가 정한 표시 언어(`users.lang`이 있으면 그 값, 없으면 `en`)로 `diagnosisQuestions` 도큐먼트의 인라인 언어-키 맵에서 그 언어 값을 골라 채운다 — `question`은 `question[lang]`, 선택지 `label`은 `options[].label[lang]`에서 고른다. 선택지 `code`는 언어와 무관하게 동일(UPPER_SNAKE·불변)하다. `Accept-Language` 헤더에 의존하지 않는다. 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님; 기본 언어=영어).
-- 번역 언어 결정을 위한 표시 언어는 `user`가 보유하며 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한다([ADR-0029](../../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). diagnosis 모듈은 JWT 클레임에 의존하지 않고 **항상 `user`의 공개 query(`getLanguage`)를 동기 호출**해 표시 언어(`lang`)를 취득한다(즉시 결과가 필요한 조회 → ADR-0002 Decision 5). 이를 위해 모듈 의존 `diagnosis → user`를 추가한다. 표시 언어 결정(`users.lang`이 있으면 그 값, 없으면 `en`)은 `user`가 책임지고, 표시 문자열은 위 `diagnosisQuestions` 도큐먼트의 인라인 언어-키 맵에서 그 `lang` 값으로 해소한다.
+- 번역 언어 결정을 위한 표시 언어는 `user`가 보유하며 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한다([ADR-0029](../../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). **회원 요청이면** diagnosis 모듈은 JWT 클레임에 의존하지 않고 **항상 `user`의 공개 query(`getLanguage`)를 동기 호출**해 표시 언어(`lang`)를 취득한다(즉시 결과가 필요한 조회 → ADR-0002 Decision 5). 이를 위해 모듈 의존 `diagnosis → user`를 추가한다. 표시 언어 결정(`users.lang`이 있으면 그 값, 없으면 `en`)은 `user`가 책임지고, 표시 문자열은 위 `diagnosisQuestions` 도큐먼트의 인라인 언어-키 맵에서 그 `lang` 값으로 해소한다.
+- **이 두 엔드포인트는 회원 전용이다**(#181): 신규 `permitAll` 매처의 대상은 `/api/v2/diagnoses/**` 하나이고 `/api/v1/diagnoses/**`에는 매처를 추가하지 않으므로, 문항 조회·답 저장 모두 토큰이 필수다(없으면 `401 UNAUTHENTICATED`) — 그래서 위 다이어그램에 게스트 분기가 없고 `getLanguage`도 조건 없이 호출된다. **v1을 열지 않는 이유**는 이 흐름에 `/start`에 해당하는 진입점이 없어 게스트 세션 키를 발급할 지점이 없기 때문이다(발급 지점은 `POST /api/v2/diagnoses/start` 하나뿐이다). 비회원이 문항을 받는 정본 경로는 v2 서버 주도 흐름 [us-2-7](us-2-7-v2-server-driven-flow.md)이며, 게스트의 표시 언어를 `en`으로 고정하고 `getLanguage`를 호출하지 않는 분기도 그 문서에서 다룬다.
+- 문항 카탈로그·번역 전략(인라인 언어-키 맵·`en` 폴백·코드 불변)은 v1·v2가 **동일 출처**를 공유하므로, 게스트 경로가 v2로 갈려도 표시 문자열의 해소 규칙은 이 문서와 같다.
 - 선택지 `code`는 진단 제출(`POST /api/v1/diagnoses`) 검증 enum과 **1:1 동일 출처**다 — 문항 카탈로그에서 받은 `code`로 답 저장(`POST /api/v1/diagnoses/answers`) 본문을 구성하면 동일 enum으로 검증·저장되므로 라벨 번역(언어-키 맵) 여부와 무관하게 수용된다. ③ 대학은 `options[].code`가 `UniversityGroup`(그룹 6값)과 1:1이며, 사용자는 한 그룹을 단일 선택한다. 다만 ⑤ 월세는 이 불변식의 의도적 예외(carve-out)다 — 고정 선택지 enum 코드가 아니라 숫자 범위 자유 입력이므로 step-5 카탈로그의 `select.type`은 `NUMBER_RANGE`(숫자 입력 2개)이고 `options`는 비어 있으며, 답은 `field=monthlyRent` + `min`/`max` 두 숫자 값으로 보낸다(결정: [ADR-0028](../../../adr/0028-diagnosis-questions-catalog-store.md)).

@@ -14,10 +14,18 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * 보안 필터 체인 구성(ADR-0010). 무상태 Bearer 인증 — 세션·CSRF·폼로그인 비활성, {@link JwtAuthenticationFilter}를 인증 필터
  * 앞에 등록한다.
  *
- * <p>보호 경로 3티어: (1) 공개(permitAll) — social-login·reissue·actuator health·매물 탐색, (2) 온보딩 스코프 이상 —
+ * <p>보호 경로: (1) 공개(permitAll) — social-login·reissue·actuator health·매물 탐색, (2) 온보딩 스코프 이상 —
  * onboarding·DELETE /users/me(PENDING 탈퇴 허용), (3) 정식 인증(ROLE_USER) — GET/PATCH
- * /users/me·logout·찜·최근 본 매물 등. PENDING(ROLE_ONBOARDING) 토큰으로 ROLE_USER 자원 접근 시 {@link
- * RestAccessDeniedHandler}가 403 AUTH_ONBOARDING_REQUIRED로 응답한다.
+ * /users/me·logout·찜·최근 본 매물 등, (4) <b>게스트 허용(permitAll)</b> — 퀴즈·생활 팁·v2 진단(회원·게스트가 함께 닿는다).
+ * PENDING(ROLE_ONBOARDING) 토큰으로 ROLE_USER 자원 접근 시 {@link RestAccessDeniedHandler}가 403
+ * AUTH_ONBOARDING_REQUIRED로 응답한다.
+ *
+ * <p>(4)는 토큰이 오면 {@link JwtAuthenticationFilter}가 세운 주체를 그대로 쓰고, 없으면 주체 없이(userId=null) 통과시킨다(게스트
+ * 신원 표현은 {@link AuthPrincipals#userIdOrNull}). <b>만료 토큰은 게스트로 강등하지 않고 기본 401 TOKEN_EXPIRED</b>이며,
+ * 신원이 무관한 공개 티어({@link PublicPaths} — 로그인·재발급·health·문서)만 예외로 통과시킨다 — 재발급 요청에 만료된 access 토큰이 실려 와도
+ * 막히지 않게 하기 위해서다. 매물 탐색·퀴즈·생활 팁·진단은 PublicPaths가 아니므로 만료 토큰이면 401이다(#181).
+ *
+ * <p>매처는 선언 순서대로 평가되므로 게스트 허용 줄은 반드시 {@code anyRequest()} 위에 있어야 한다.
  */
 @Configuration
 @EnableWebSecurity
@@ -94,13 +102,20 @@ public class SecurityConfig {
                     // 차단 목록·해제 — /api/v1/users/me 정확 매처가 /me/blocks를 덮지 않아 별도 매처가 필요하다.
                     .requestMatchers("/api/v1/users/me/blocks", "/api/v1/users/me/blocks/*")
                     .hasRole("USER")
-                    // 생활 팁 — 등록 국가 언어 번역이 온보딩 국가에 의존하므로 ACTIVE 세입자(ROLE_USER)만(US-8,
-                    // 08-life-tips.md)
+                    // (4) 게스트 허용(permitAll) — 회원·비회원이 함께 닿는다(#181). 만료 토큰이 조용히 게스트로 강등되지
+                    // 않게 막는 가드는 JwtAuthenticationFilter에 있다(공개 티어 PublicPaths만 예외).
+                    // 생활 팁 — 비회원 허용(US-8·08-life-tips.md). 게스트는 users 행이 없어 표시 언어를 en으로 고정하고,
+                    // 세입자 한정 게이트는 제거해 임대인도 조회할 수 있다.
                     .requestMatchers("/api/v1/life-tips/**")
-                    .hasRole("USER")
-                    // 학습 퀴즈 — 온보딩 완료(ACTIVE=ROLE_USER) 전용. 세입자 한정은 응용 계층에서 검증(ADR-0035)
+                    .permitAll()
+                    // 학습 퀴즈 — 비회원 허용(06-gamification.md). 역할 게이트 없이 누구나 풀 수 있고, 포인트 적립만
+                    // 회원(userId != null)에게 적용한다.
                     .requestMatchers("/api/v1/quizzes/**")
-                    .hasRole("USER")
+                    .permitAll()
+                    // v2 서버 주도 진단 — 비회원 허용(US-2-7). v1 진단(/api/v1/diagnoses/**)은 매처를 추가하지 않고
+                    // anyRequest().authenticated()에 남겨 회원 전용으로 유지한다.
+                    .requestMatchers("/api/v2/diagnoses/**")
+                    .permitAll()
                     .anyRequest()
                     .authenticated())
         .exceptionHandling(

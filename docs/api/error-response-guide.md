@@ -84,6 +84,17 @@
 | `INTERNAL_ERROR` | 500 | 서버 내부 오류 |
 | `UPSTREAM_ERROR` | 502 | 외부 연동 실패 |
 
+> **게스트(비회원) 경로에서 달라지는 인증·인가 코드(#181)** — 퀴즈(`/api/v1/quizzes/**`)·생활 팁(`/api/v1/life-tips/**`)·**v2 진단(`/api/v2/diagnoses/**`)** 은 `permitAll`이라 **토큰 없이 호출할 수 있다**(인증 부재를 401로 막지 않는다 — 개별 엔드포인트가 게스트에게 무엇을 반환하는지는 [02-diagnosis-recommendation](./specs/02-diagnosis-recommendation.md) 게스트 접근 절을 따른다). **v1 진단(`/api/v1/diagnoses/**`)은 회원 전용으로 유지**되므로 이 표의 대상이 아니다 — 신규 `permitAll` 매처는 `/api/v2/diagnoses/**`만 대상이고 v1은 `anyRequest().authenticated()`에 남아 토큰이 필수다. 아래 세 경로에 한해 위 코드의 도달 가능성이 갈리며, **그 외 엔드포인트의 계약은 그대로다.**
+>
+> | code | status | 게스트 경로에서 | 근거 |
+> | --- | --- | --- | --- |
+> | `UNAUTHENTICATED` | 401 | **도달 불가** — 토큰 미전송·위조·형식 오류 토큰은 401이 아니라 **게스트로 처리**돼 2xx가 된다. 단 **v1 진단은 이 표 밖이라 종전대로 401**이다 | `permitAll`이라 `AuthenticationException`이 발생하지 않아 `RestAuthenticationEntryPoint`가 실행되지 않는다(게스트용 ROLE을 주입하는 대신 해당 매처만 `permitAll`로 연 결과다 — ROLE 주입은 미지정 엔드포인트까지 함께 열고 401을 403으로 바꿔버린다). v1 진단은 `permitAll`이 아니므로 이 면제가 적용되지 않는다 |
+> | `TOKEN_EXPIRED` | 401 | **유지** — 만료된 access token을 보내면 게스트로 강등하지 않고 401이다 | 토큰을 **보냈는데** 만료된 것은 게스트가 아니라 재발급이 필요한 회원이다. 강등하면 §7의 재발급 플로우가 조용히 침묵한다 |
+> | `AUTH_ONBOARDING_REQUIRED` | 403 | **도달 불가** — 온보딩 미완료(`ROLE_ONBOARDING`) 토큰으로 불러도 2xx다 | 퀴즈·생활 팁은 `hasRole("USER")` 매처가 `permitAll`로 바뀌어 `RestAccessDeniedHandler`가 실행되지 않으며, 인가 범위가 넓어지는 것을 **의도로 수용**한다(로그인 없이도 볼 수 있는 콘텐츠를 온보딩 중인 사용자에게만 막을 이유가 없다). 진단은 **원래 전용 매처가 없어** `anyRequest().authenticated()`로 떨어졌으므로 이 코드가 #181 이전에도 나오지 않았다 — v2 진단은 `permitAll`로 열려도, v1 진단은 매처를 추가하지 않아 그 자리에 그대로 남아도 인가 범위 변화가 없다 |
+> | `FORBIDDEN` | 403 | **퀴즈·생활 팁에는 해당 없음** — 두 도메인에서 이 코드가 완전히 사라진다. 게스트·세입자·**임대인**·온보딩 미완료가 모두 2xx다(임대인은 종전 403에서 바뀌었다) | 세입자 전용 게이트(`assertTenant` → `TenantOnlyException`)를 **제거했다**(#181). `permitAll`로 게스트에게 열린 콘텐츠를 로그인한 임대인만 403으로 막는 것은 앞뒤가 맞지 않고 실효도 없다 — 임대인이 로그아웃하면 그대로 볼 수 있기 때문이다. **`booking`의 소유권·역할 403과 아래 진단 소유권 403은 이 표 밖이라 그대로다** |
+>
+> 진단 소유권 위반의 403 `FORBIDDEN`(`DiagnosisAccessDeniedException`)도 그대로이며, 게스트에도 같은 코드로 적용된다 — 소유권 검사는 **신원 종류가 같고 값이 같을 때만** 통과하고 한쪽이 null이면 거절하므로, 게스트가 회원 진단을·회원이 게스트 진단을 열면 403이다. 부재 진단은 종전대로 404 `DIAGNOSIS_NOT_FOUND`다.
+
 ### 도메인 코드 prefix 규약
 
 | 모듈 | prefix 예 |
@@ -106,6 +117,8 @@
 | `DIAGNOSIS_SESSION_NOT_FOUND` | 400 | 진행 중인 v2 흐름 세션 없이 `POST /api/v2/diagnoses/next`가 옴(앱 재시작·터미널 이후 재전송·만료) — 클라이언트가 `POST /api/v2/diagnoses/start`로 복구한다 |
 
 > `DIAGNOSIS_SESSION_NOT_FOUND`는 접미사가 `_NOT_FOUND`지만 **400**이라 §3의 `*_NOT_FOUND`→404 관례에 대한 의도적 예외다. 없는 것은 클라이언트가 지목한 리소스가 아니라 **서버가 들고 있던 진행 세션**이고, 뜻도 "그 진단이 없다"가 아니라 "지금 이 요청은 보낼 수 없다 — `POST /api/v2/diagnoses/start`로 다시 시작하라"는 흐름 지시이기 때문이다. 상세는 [02-diagnosis-recommendation](./specs/02-diagnosis-recommendation.md) v2 절·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md).
+
+> **게스트가 가장 자주 만나는 코드다(#181)** — 게스트 진단 세션은 토큰이 아니라 **클라이언트가 에코하는 세션 키**로 이어진다: `POST /api/v2/diagnoses/start`가 게스트에게 세션 키를 발급하고, 클라이언트는 이후 `POST /api/v2/diagnoses/next`·추천 조회에 **`X-Guest-Session-Id` 헤더**로 되돌려보낸다. 따라서 헤더를 **빠뜨렸거나**, 값이 **다르거나**, 앱이 키를 **잃어버린** 요청은 서버가 세션을 찾지 못해 그대로 이 코드(400)가 된다 — 회원의 "앱 재시작·터미널 이후 재전송"과 원인만 다를 뿐 **코드도 복구법도 같다**(`POST /start`로 다시 시작). 값이 다르면 남의 세션에 닿는 것이 아니라 "세션 없음"이며(게스트 세션 키는 요청자마다 다르다), 퀴즈·생활 팁은 저장이 없어 세션 키를 요구하지 않으므로 이 코드가 나오지 않는다.
 
 #### booking 도메인 코드
 
@@ -190,6 +203,7 @@ public class GlobalExceptionHandler {
 - 먼저 **HTTP status**로 큰 분기(2xx/4xx/5xx), 다음 **`error.code`** 로 세부 분기한다. **`message` 문자열로 분기하지 않는다.**
 - `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로.
 - `400 INVALID_INPUT` → `errors[]`의 `field`를 입력 폼에 매핑해 표시.
+- **게스트(비로그인)로 퀴즈·생활 팁·진단을 부를 땐 `Authorization` 헤더를 아예 보내지 않는다** — 만료된 토큰을 그대로 붙여 보내면 게스트로 처리되지 않고 `401 TOKEN_EXPIRED`다(재발급하거나 헤더를 떼고 재시도). 진단 v2는 `POST /api/v2/diagnoses/start` 응답의 게스트 세션 키를 보관했다가 이후 요청에 `X-Guest-Session-Id`로 에코해야 하며, 잃어버리면 `400 DIAGNOSIS_SESSION_NOT_FOUND`이므로 `/start`부터 다시 한다(#181).
 - `5xx` → 사용자에게 일반 메시지 + 재시도 버튼. 자동 재시도는 멱등 요청에만.
 - 다국어: `code`별 문구 테이블을 클라이언트가 보유한다(서버 `message`는 fallback).
 

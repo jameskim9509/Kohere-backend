@@ -3,10 +3,15 @@ package com.kohere.diagnosis.infrastructure;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.springframework.restdocs.headers.HeaderDocumentation.headerWithName;
+import static org.springframework.restdocs.headers.HeaderDocumentation.requestHeaders;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
@@ -54,6 +59,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
+import org.springframework.restdocs.headers.HeaderDescriptor;
 import org.springframework.restdocs.mockmvc.RestDocumentationResultHandler;
 import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
@@ -96,6 +102,10 @@ class DiagnosisV2DocsTest {
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   private static final String MALFORMED_BODY = "{ \"oops\" }";
+
+  /** 게스트 세션 키 에코 헤더(#181). 발급은 {@code /start} 응답이고 소비처는 {@code /next}·추천 조회다. */
+  private static final String GUEST_SESSION_HEADER = "X-Guest-Session-Id";
+
   private static final String RECOMMENDATIONS_DESCRIPTION =
       """
       v2에서 확정된 진단 조건에 맞는 매물 카드와 지도 마커를 조회한다. 추천 조회 시점·페이지·정렬은 프론트가 결정한다.
@@ -423,6 +433,82 @@ class DiagnosisV2DocsTest {
                 responseFields(flowCodeOnlyFields("TERMINATED — 진단 종료"))));
   }
 
+  /**
+   * 게스트 흐름 스니펫(#181) — 회원 스니펫({@link #generatesV2FlowSnippets})과 같은 오퍼레이션이라 restdocs-api-spec이 예시를
+   * 함께 병합한다. 게스트 예시가 있어야 Swagger에 <b>{@code /start} 응답의 {@code guestSessionId}</b>와 <b>{@code
+   * /next}·추천의 {@code X-Guest-Session-Id} 요청 헤더</b>가 드러난다(회원 시점만 문서화하면 비회원 사용법이 명세에 없다).
+   */
+  @Test
+  void generatesV2GuestSnippets() throws Exception {
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(SAMPLE_VIEW));
+
+    // ① POST /start (토큰 없음) — 게스트 세션 키를 발급해 응답에 싣는다. 회원 응답에는 없는 필드다(NON_NULL).
+    String startBody =
+        mockMvc
+            .perform(post("/api/v2/diagnoses/start"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.resultCode").value("NEXT_QUESTION"))
+            .andExpect(jsonPath("$.data.question.field").value("region"))
+            .andExpect(jsonPath("$.data.guestSessionId").exists())
+            .andDo(
+                document(
+                    "diagnosis-v2-start-guest",
+                    resourceDetails()
+                        .summary(
+                            "v2 진단 시작(비회원) — 토큰 없이 호출하면 게스트 세션 키(guestSessionId)를 발급해 응답에 싣는다."
+                                + " 이후 /next·추천 조회에 X-Guest-Session-Id 헤더로 되돌려보낸다(회원은 Authorization 토큰으로 식별)"),
+                    responseFields(flowQuestionGuestFields())))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String guestKey = read(startBody, "data", "guestSessionId");
+
+    // ② POST /next (X-Guest-Session-Id 헤더) — 게스트는 이 헤더가 유일한 세션 조회 키다.
+    mockMvc
+        .perform(
+            post("/api/v2/diagnoses/next")
+                .header(GUEST_SESSION_HEADER, guestKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(answerJson("region", "SEOUL")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.question.field").value("purpose"))
+        .andDo(
+            document(
+                "diagnosis-v2-next-guest",
+                resourceDetails()
+                    .summary(
+                        "v2 답 적용(비회원) — 게스트는 Authorization 대신 X-Guest-Session-Id 헤더로 세션을 잇는다"
+                            + "(회원은 이 헤더를 보내지 않는다)"),
+                requestHeaders(guestSessionHeader()),
+                requestFields(nextRequestFields()),
+                responseFields(flowQuestionFields("서버가 정한 다음 문항(여기서는 ② 입국 목적)"))));
+
+    // ③ 확정까지 진행 → GET /{id}/recommendations 도 헤더만으로 소유권을 증명한다(① 지역은 위에서 이미 답했다).
+    long diagnosisId = completeGuestFlowAfterRegion(guestKey);
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations", diagnosisId)
+                .header(GUEST_SESSION_HEADER, guestKey)
+                .param("page", "0")
+                .param("size", "20")
+                .param("sort", "recommended,desc"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.resultCode").value("MATCHED"))
+        .andExpect(jsonPath("$.data.content[0].listingId").value("6858e2000000000000000001"))
+        .andDo(
+            document(
+                "diagnosis-v2-recommendations-guest",
+                resourceDetails()
+                    .summary("v2 진단 결과 추천(비회원) — 게스트는 X-Guest-Session-Id 헤더로 소유권을 증명한다(회원은 토큰)")
+                    .description(RECOMMENDATIONS_DESCRIPTION),
+                requestHeaders(guestSessionHeader()),
+                pathParameters(
+                    parameterWithName("diagnosisId")
+                        .description("COMPLETED로 받은 확정 진단 식별자(본인 세션 소유)")),
+                queryParameters(recommendationQueryParameters()),
+                responseFields(v2RecommendationFields())));
+  }
+
   /** 스펙 §v2의 "발생 가능한 에러"를 엔드포인트별로 실제 트리거해 스니펫으로 생성하고 status·error.code를 단정한다. */
   @Test
   void generatesV2ErrorSnippets() throws Exception {
@@ -437,13 +523,9 @@ class DiagnosisV2DocsTest {
     long missingId = 9_999_999L;
 
     // ===== POST /api/v2/diagnoses/start =====
-    perform(
-        post("/api/v2/diagnoses/start").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
-        status().isUnauthorized(),
-        "UNAUTHENTICATED",
-        "diagnosis-v2-start-unauthenticated",
-        "v2 진단 시작 — 인증 누락/위조 (401 UNAUTHENTICATED)");
-
+    // #181로 v2가 permitAll이 되면서 401 UNAUTHENTICATED(누락·위조) 세 케이스(start·next·추천)는
+    // 도달 불가가 됐다 — guestFlowWithoutToken이 그 자리를 2xx 계약으로 대신 고정한다.
+    // 만료 토큰만 401로 남는다(게스트 강등 금지 — 결정 11).
     perform(
         post("/api/v2/diagnoses/start").header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
@@ -488,16 +570,6 @@ class DiagnosisV2DocsTest {
 
     perform(
         post("/api/v2/diagnoses/next")
-            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(answerJson("region", "SEOUL")),
-        status().isUnauthorized(),
-        "UNAUTHENTICATED",
-        "diagnosis-v2-next-unauthenticated",
-        "v2 답 적용 — 인증 누락/위조 (401 UNAUTHENTICATED)");
-
-    perform(
-        post("/api/v2/diagnoses/next")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(answerJson("region", "SEOUL")),
@@ -534,19 +606,236 @@ class DiagnosisV2DocsTest {
 
     perform(
         get("/api/v2/diagnoses/{diagnosisId}/recommendations", ownedId)
-            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
-        status().isUnauthorized(),
-        "UNAUTHENTICATED",
-        "diagnosis-v2-recommendations-unauthenticated",
-        "v2 진단 결과 추천 — 인증 누락/위조 (401 UNAUTHENTICATED)");
-
-    perform(
-        get("/api/v2/diagnoses/{diagnosisId}/recommendations", ownedId)
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "diagnosis-v2-recommendations-token-expired",
         "v2 진단 결과 추천 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+  }
+
+  /**
+   * 게이트 해제 계약(#181) — {@code Authorization} 헤더 <b>없이</b> v2 세 엔드포인트가 모두 2xx다.
+   *
+   * <p>표시 언어가 {@code en}인 것만 보면 부족하다 — {@code getLanguage}를 부르고 예외를 삼키는 구현도 통과한다. 게스트는 {@code
+   * users} 행이 없어 호출 자체가 404이므로 <b>한 번도 부르지 않음</b>을 함께 못 박는다(회원 스텁은 ko라 en 응답이 곧 미호출의 방증이기도 하다).
+   */
+  @Test
+  void guestFlowWithoutToken() throws Exception {
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(SAMPLE_VIEW));
+
+    // ① /start — 키 발급 지점. 회원 응답에는 없는 guestSessionId가 실린다(NON_NULL).
+    String startBody =
+        mockMvc
+            .perform(post("/api/v2/diagnoses/start"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.resultCode").value("NEXT_QUESTION"))
+            .andExpect(jsonPath("$.data.question.field").value("region"))
+            .andExpect(jsonPath("$.data.question.question").value("Which region will you live in?"))
+            .andExpect(jsonPath("$.data.guestSessionId").exists())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String guestKey = read(startBody, "data", "guestSessionId");
+    assertThat(guestKey).startsWith("anonymous");
+
+    // ② /next — 헤더 에코로 세션이 이어진다.
+    guestNext(guestKey, answerJson("region", "SEOUL"))
+        .andExpect(jsonPath("$.data.question.field").value("purpose"));
+
+    // ③ 확정까지 진행 → 추천 조회도 헤더만으로 통과한다(① 지역은 위에서 이미 답했다).
+    long diagnosisId = completeGuestFlowAfterRegion(guestKey);
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations", diagnosisId)
+                .header(GUEST_SESSION_HEADER, guestKey))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.resultCode").value("MATCHED"))
+        .andExpect(jsonPath("$.data.content[0].listingId").value("6858e2000000000000000001"));
+
+    verify(userAccountService, never()).getLanguage(anyLong());
+  }
+
+  /** 위조·형식 오류 토큰은 (만료와 달리) 게스트로 통과한다 — 신원 없는 요청과 같은 취급이다(#181). */
+  @Test
+  void forgedTokenIsTreatedAsGuest() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v2/diagnoses/start").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.guestSessionId").exists())
+        .andExpect(jsonPath("$.data.question.question").value("Which region will you live in?"));
+
+    verify(userAccountService, never()).getLanguage(anyLong());
+  }
+
+  /**
+   * 세션 연속성 — 게스트의 {@code /next}는 세션 키가 유일한 조회 키다. 키를 빠뜨렸거나 남의 키면 조회가 비어 돌아와 같은 코드({@code 400
+   * DIAGNOSIS_SESSION_NOT_FOUND})가 되고, <b>남의 세션에는 닿지 않는다</b>.
+   */
+  @Test
+  void guestSessionKeyIsRequiredAndScoped() throws Exception {
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(SAMPLE_VIEW));
+    String keyA = guestStart();
+    String keyB = guestStart();
+
+    // 키 없이 /next → 400. 서버가 임의의 세션을 골라 주지 않는다.
+    mockMvc
+        .perform(
+            post("/api/v2/diagnoses/next")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(answerJson("region", "SEOUL")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("DIAGNOSIS_SESSION_NOT_FOUND"));
+
+    // A가 진행해도 B 세션은 그대로다 — 두 키가 서로의 세션을 건드리지 않는다.
+    guestNext(keyA, answerJson("region", "SEOUL"))
+        .andExpect(jsonPath("$.data.question.field").value("purpose"));
+    guestNext(keyB, answerJson("region", "SEOUL"))
+        .andExpect(jsonPath("$.data.question.field").value("purpose"));
+
+    // 존재하지 않는 키 → 400(남의 세션으로 폴백하지 않는다).
+    mockMvc
+        .perform(
+            post("/api/v2/diagnoses/next")
+                .header(GUEST_SESSION_HEADER, "anonymous-does-not-exist")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(answerJson("purpose", "STUDY")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("DIAGNOSIS_SESSION_NOT_FOUND"));
+  }
+
+  /**
+   * IDOR — 소유권은 신원 <b>종류</b>가 같고 값이 같을 때만 통과한다. 세 방향 모두 막힌다: 게스트 A↛게스트 B · 게스트↛회원 · 회원↛게스트. 진단 id가
+   * 전역 순차 채번이라 열거가 쉬워 이 검사가 유일한 방어선이다.
+   */
+  @Test
+  void recommendationsRejectCrossIdentityAccess() throws Exception {
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(SAMPLE_VIEW));
+    String memberToken = jwtTokenService.issueAccessToken(500L);
+    long memberDiagnosisId = createCompletedDiagnosis(memberToken);
+
+    String keyA = guestStart();
+    long guestDiagnosisId = completeGuestFlow(keyA);
+    String keyB = guestStart();
+
+    // 게스트 A ↛ 게스트 B
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations", guestDiagnosisId)
+                .header(GUEST_SESSION_HEADER, keyB))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+    // 게스트 ↛ 회원
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations", memberDiagnosisId)
+                .header(GUEST_SESSION_HEADER, keyA))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+    // 회원 ↛ 게스트 — 회원 요청은 헤더가 실려 와도 무시한다(키를 훔쳐도 통하지 않는다).
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations", guestDiagnosisId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(memberToken))
+                .header(GUEST_SESSION_HEADER, keyA))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+    // 신원 없는 요청(토큰도 키도 없음)은 어떤 진단도 소유하지 않는다.
+    mockMvc
+        .perform(get("/api/v2/diagnoses/{diagnosisId}/recommendations", guestDiagnosisId))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+    // 회원 무회귀 — 본인 진단은 그대로 조회된다.
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations", memberDiagnosisId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(memberToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.resultCode").value("MATCHED"));
+  }
+
+  /**
+   * 결정 3의 가드 — <b>v1 진단은 게스트에게 열리지 않는다</b>. {@code permitAll} 매처는 {@code /api/v2/diagnoses/**}
+   * 하나뿐이고 v1 7개는 {@code anyRequest().authenticated()}에 남아 토큰이 필수다. v1에 매처가 조용히 추가되면 여기서 깨진다.
+   */
+  @Test
+  void v1DiagnosesStayMemberOnly() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/diagnoses"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+
+    mockMvc
+        .perform(post("/api/v1/diagnoses").contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+
+    mockMvc
+        .perform(get("/api/v1/diagnoses/{diagnosisId}", 1L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+  }
+
+  /** 게스트 경로의 만료 토큰은 200이 아니라 401 {@code TOKEN_EXPIRED}다 — 조용한 게스트 강등을 막는다(결정 11). */
+  @Test
+  void expiredTokenIsNotDowngradedToGuest() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v2/diagnoses/start")
+                .header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken())))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  // ---- helpers (guest) ----
+
+  /** 토큰 없이 {@code /start}를 호출해 발급된 게스트 세션 키를 돌려준다. */
+  private String guestStart() throws Exception {
+    String body =
+        mockMvc
+            .perform(post("/api/v2/diagnoses/start"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return read(body, "data", "guestSessionId");
+  }
+
+  private org.springframework.test.web.servlet.ResultActions guestNext(String guestKey, String body)
+      throws Exception {
+    return mockMvc
+        .perform(
+            post("/api/v2/diagnoses/next")
+                .header(GUEST_SESSION_HEADER, guestKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk());
+  }
+
+  /** 이미 {@code /start}한 게스트 세션을 ① 지역부터 끝까지 진행해 확정된 diagnosisId를 돌려준다(STUDY 흐름). */
+  private long completeGuestFlow(String guestKey) throws Exception {
+    guestNext(guestKey, answerJson("region", "SEOUL"));
+    return completeGuestFlowAfterRegion(guestKey);
+  }
+
+  /** ① 지역까지 답해 둔 게스트 세션을 ② 목적부터 끝까지 진행한다(지역을 두 번 답하면 INVALID_INPUT이다). */
+  private long completeGuestFlowAfterRegion(String guestKey) throws Exception {
+    guestNext(guestKey, answerJson("purpose", "STUDY"));
+    guestNext(guestKey, answerJson("university", "SNU_CAU_SOONGSIL"));
+    guestNext(guestKey, "{\"field\":\"conditions\",\"codes\":[\"FEMALE_ONLY\"]}");
+    guestNext(guestKey, answerRentJson(200000, 500000));
+    String completed =
+        guestNext(guestKey, answerJson("arcStatus", "ARC_ISSUED"))
+            .andExpect(jsonPath("$.data.resultCode").value("COMPLETED"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return Long.parseLong(read(completed, "data", "diagnosisId"));
   }
 
   // ---- helpers (flow) ----
@@ -693,6 +982,30 @@ class DiagnosisV2DocsTest {
         field("data.question.options[].code", JsonFieldType.STRING, "선택지 코드(enum, 언어 무관 동일)"),
         field("data.question.options[].label", JsonFieldType.STRING, "번역된 표시 라벨"),
         errorNull());
+  }
+
+  /**
+   * 게스트 {@code /start} 응답 — {@link #flowQuestionFields}에 {@code guestSessionId}를 더한다. 회원 응답에는 없는
+   * 필드라(NON_NULL) 회원 스니펫엔 없고 게스트 스니펫에만 있다.
+   */
+  private static List<FieldDescriptor> flowQuestionGuestFields() {
+    List<FieldDescriptor> fields =
+        new ArrayList<>(flowQuestionFields("① 지역 질문(step 1, field=region)"));
+    fields.add(
+        optField(
+            "data.guestSessionId",
+            JsonFieldType.STRING,
+            "게스트 세션 키(anonymous+uuid) — 비회원 /start 응답에만 실린다(회원 응답에서는 생략, NON_NULL)."
+                + " 클라이언트는 이 값을 보관했다가 이후 /next·추천 조회에 X-Guest-Session-Id 헤더로 에코한다"));
+    return fields;
+  }
+
+  /** 게스트 세션 키 에코 요청 헤더 서술자({@code /next}·추천 조회 공용). */
+  private static HeaderDescriptor guestSessionHeader() {
+    return headerWithName(GUEST_SESSION_HEADER)
+        .description(
+            "게스트 세션 키(anonymous+uuid) — /start 응답의 guestSessionId를 그대로 실어 보낸다. 회원은 보내지 않는다"
+                + "(Authorization 토큰으로 식별). 없거나 남의 키면 조회가 비어 400 DIAGNOSIS_SESSION_NOT_FOUND");
   }
 
   /**

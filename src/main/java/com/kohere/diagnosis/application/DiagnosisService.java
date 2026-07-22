@@ -141,8 +141,9 @@ public class DiagnosisService {
    */
   public RecommendationResponse getRecommendations(
       long userId, Long diagnosisId, int page, int size, String sort) {
+    // 게스트 키 자리는 언제나 null이다 — v1은 회원 전용이라 게스트 신원으로 여기 도달할 수 없다(#181).
     PageResponse<RecommendedListingView> result =
-        recommendationReader.read(userId, diagnosisId, page, size, sort);
+        recommendationReader.read(userId, null, diagnosisId, page, size, sort);
 
     List<RecommendationResponse.RecommendedListing> content =
         result.content().stream().map(DiagnosisService::toRecommendedListing).toList();
@@ -223,8 +224,15 @@ public class DiagnosisService {
     return d.getConditions() == null ? List.of() : List.copyOf(d.getConditions());
   }
 
+  /**
+   * 소유권 판정은 {@link Diagnosis#isOwnedBy(Long, String)} 하나에 위임한다 — 같은 규칙이 {@link
+   * DiagnosisRecommendationReader}에도 필요한데, 규칙을 두 벌 두면 한쪽만 고쳐져 다른 경로가 뚫린다(#181).
+   *
+   * <p>v1은 회원 전용이라 게스트 키 자리에 {@code null}을 넘긴다. 그래서 회원이 v2에서 만들어진 게스트 진단 id를 찔러도 403이다 — 신원 종류가 다르면
+   * 거절이기 때문이다.
+   */
   private static void requireOwner(Diagnosis diagnosis, long userId) {
-    if (diagnosis.getUserId() == null || diagnosis.getUserId() != userId) {
+    if (!diagnosis.isOwnedBy(userId, null)) {
       throw new DiagnosisAccessDeniedException();
     }
   }

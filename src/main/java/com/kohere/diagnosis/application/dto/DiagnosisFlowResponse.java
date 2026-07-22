@@ -14,19 +14,29 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param resultCode 결과코드(항상 존재)
  * @param question NEXT_QUESTION일 때의 질문 1개(그 외 null)
  * @param diagnosisId COMPLETED일 때 확정된 진단 식별자(그 외 null)
+ * @param guestSessionId 게스트가 {@code /start}를 호출했을 때 발급된 세션 키(그 외 null — 회원 응답·{@code /next}에서는 생략)
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record DiagnosisFlowResponse(
-    FlowResultCode resultCode, QuestionResponse question, Long diagnosisId) {
+    FlowResultCode resultCode, QuestionResponse question, Long diagnosisId, String guestSessionId) {
 
   /** 다음 질문(① 지역 0건 예외질문 {@code regionRetry} 포함 — 일반 질문과 같은 코드로 내려간다). */
   public static DiagnosisFlowResponse nextQuestion(QuestionResponse question) {
-    return new DiagnosisFlowResponse(FlowResultCode.NEXT_QUESTION, question, null);
+    return new DiagnosisFlowResponse(FlowResultCode.NEXT_QUESTION, question, null, null);
+  }
+
+  /**
+   * 게스트의 {@code POST /start} 응답 — 첫 질문에 발급된 세션 키를 함께 싣는다(#181). <b>키가 내려가는 유일한 지점</b>이며, 클라이언트는 이후
+   * {@code /next}·추천 조회에 {@code X-Guest-Session-Id} 헤더로 에코해야 한다.
+   */
+  public static DiagnosisFlowResponse nextQuestionForGuest(
+      QuestionResponse question, String guestSessionId) {
+    return new DiagnosisFlowResponse(FlowResultCode.NEXT_QUESTION, question, null, guestSessionId);
   }
 
   /** 지역 예외질문 "예" → 클라이언트가 {@code POST /start}로 처음부터 재시도한다. */
   public static DiagnosisFlowResponse restart() {
-    return new DiagnosisFlowResponse(FlowResultCode.RESTART, null, null);
+    return new DiagnosisFlowResponse(FlowResultCode.RESTART, null, null, null);
   }
 
   /**
@@ -34,11 +44,11 @@ public record DiagnosisFlowResponse(
    * resultCode=NO_MATCH}가 알려준다.
    */
   public static DiagnosisFlowResponse completed(Long diagnosisId) {
-    return new DiagnosisFlowResponse(FlowResultCode.COMPLETED, null, diagnosisId);
+    return new DiagnosisFlowResponse(FlowResultCode.COMPLETED, null, diagnosisId, null);
   }
 
   /** 지역 예외질문 "아니오" → 진단 종료. */
   public static DiagnosisFlowResponse terminated() {
-    return new DiagnosisFlowResponse(FlowResultCode.TERMINATED, null, null);
+    return new DiagnosisFlowResponse(FlowResultCode.TERMINATED, null, null, null);
   }
 }

@@ -15,6 +15,9 @@ import lombok.Getter;
  * COMPLETED로 전이한다. 입국 목적이 {@code STUDY}이면 {@code university}가, {@code NON_STUDY}이면 {@code
  * district}가 채워진다(반대 필드는 null). 확정 시 6단계 필수·조건부 대학(그룹)/지역·조건 최대 3·월세 범위(min≤max) 불변식을 강제한다.
  *
+ * <p><b>신원은 {@code userId}(회원) 또는 {@code guestSessionId}(비회원) 중 정확히 하나로 표현된다</b>(#181). 게스트에게 임시
+ * {@code userId}를 발급하지 않고 부재(null)로 두며, 소유권 판정은 {@link #isOwnedBy(Long, String)} 하나가 정본이다.
+ *
  * <p>스펙: docs/api/specs/02-diagnosis-recommendation.md · 시퀀스 US-2-1/US-2-5.
  */
 @Getter
@@ -25,7 +28,16 @@ public class Diagnosis {
   public static final int MAX_CONDITIONS = 3;
 
   private final Long id;
+
+  /** 회원 진단의 신원. 게스트 진단은 {@code null}이고 {@code guestSessionId}가 대신 채워진다(#181). */
   private final Long userId;
+
+  /**
+   * 비회원(게스트) 진단의 신원 — 값 형식 {@code anonymous<uuid>}. 회원 진단은 {@code null}이며 {@code userId}와 <b>정확히
+   * 하나만</b> 채워진다. 채워지는 경로는 v2 흐름({@code /api/v2/diagnoses/**})뿐이다 — v1은 회원 전용이다.
+   */
+  private final String guestSessionId;
+
   private final Region region;
   private final Purpose purpose;
   private final UniversityGroup university;
@@ -48,6 +60,44 @@ public class Diagnosis {
         .conditions(new LinkedHashSet<>())
         .status(DiagnosisStatus.IN_PROGRESS)
         .build();
+  }
+
+  /**
+   * 비회원(게스트)의 진행 중 진단 초안을 시작한다(#181). {@code userId}는 채우지 않는다 — 게스트에게 임시 식별자를 발급하지 않기 때문이다.
+   *
+   * <p>이 초안은 v2 흐름에서만 만들어지며 종료 상태({@code COMPLETED}·{@code DISCARDED})로만 {@code diagnoses}에 저장된다.
+   */
+  public static Diagnosis startInProgressForGuest(String guestSessionId) {
+    return Diagnosis.builder()
+        .guestSessionId(guestSessionId)
+        .conditions(new LinkedHashSet<>())
+        .status(DiagnosisStatus.IN_PROGRESS)
+        .build();
+  }
+
+  /**
+   * 요청자가 이 진단의 소유자인지 판정한다(#181). <b>신원 종류가 같고 값이 같을 때만</b> 통과하며, 한쪽이 비어 있으면 무조건 거절한다 — 진단 id가 전역 순차
+   * 채번이라 열거가 쉬워 게스트 경로가 열린 뒤 이 검사가 <b>유일한 IDOR 방어선</b>이다.
+   *
+   * <p>요청자가 회원이면 게스트 키는 <b>보지 않는다</b> — 회원 요청에 {@code X-Guest-Session-Id}가 실려 와도 무시한다는 스펙과 같다. 따라서
+   * 회원↔게스트 교차 조회는 양방향 모두 거절된다.
+   *
+   * <p>비교는 반드시 {@code equals}다 — {@code Long}끼리 {@code ==}로 비교하면 참조 비교가 되어 캐시 범위(-128~127) 밖 id가
+   * 조용히 전부 거절된다.
+   *
+   * @param requesterUserId 요청자가 회원이면 userId, 게스트면 {@code null}
+   * @param requesterGuestSessionId 요청자가 게스트면 세션 키, 회원이면 {@code null}(있어도 무시된다)
+   * @return 소유자면 {@code true}
+   */
+  public boolean isOwnedBy(Long requesterUserId, String requesterGuestSessionId) {
+    if (requesterUserId != null) {
+      return userId != null && userId.equals(requesterUserId);
+    }
+    if (requesterGuestSessionId != null) {
+      return guestSessionId != null && guestSessionId.equals(requesterGuestSessionId);
+    }
+    // 신원 없는 요청(토큰도 게스트 키도 없음)은 어떤 진단도 소유하지 않는다.
+    return false;
   }
 
   /**

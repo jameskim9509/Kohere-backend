@@ -604,11 +604,13 @@ class ListingDocsTest {
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.favorited").value(false));
 
+    // 만료 토큰만은 예외다 — 익명으로 강등하지 않고 401 TOKEN_EXPIRED로 재발급을 유도한다(#181 결정 11).
+    // 토큰 미전송·위조·온보딩 토큰은 위처럼 익명(200)이지만, 만료는 "재발급이 필요한 회원"이라 조용히 강등하지 않는다.
     mockMvc
         .perform(
             get("/api/v1/listings").header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken())))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID));
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"));
 
     // 위의 상세 조회들은 정식 ROLE_USER 요청이 아니므로, 같은 사용자가 온보딩을 완료한 뒤 조회해도 최근 본 목록은 비어 있어야 한다.
     mockMvc

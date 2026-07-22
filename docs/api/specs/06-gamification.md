@@ -5,14 +5,26 @@
 
 ## 개요
 
-외국인 세입자의 학습용 퀴즈다. 요청마다 활성 퀴즈 풀에서 **랜덤 4지선다 1개**를 사용자 언어로 번역해 조회하고, 사용자가 보기를 선택해 제출하면 서버가 저장된 정답과 대조해 즉시 채점한다. 제출 기록·포인트가 없는 **무상태(stateless)** 설계로, 같은 퀴즈를 **무제한 반복**할 수 있다.
+외국인의 한국 생활 학습용 퀴즈다. 요청마다 활성 퀴즈 풀에서 **랜덤 4지선다 1개**를 사용자 언어로 번역해 조회하고, 사용자가 보기를 선택해 제출하면 서버가 저장된 정답과 대조해 즉시 채점한다. 제출 기록·포인트가 없는 **무상태(stateless)** 설계로, 같은 퀴즈를 **무제한 반복**할 수 있다.
 
 - **정답 판정은 서버 전용**: 저장된 정답(`correctChoice`)과 대조해 판정한다. 정답·해설은 **조회 응답에 포함하지 않으며**, 채점 응답에서 `explanation`은 정답·오답 모두, `correctChoice`는 오답일 때만 공개한다.
 - **무상태(stateless)**: 제출 기록·포인트가 없다. 하루 1회 제한·`(userId, quizDate)` 유니크 제약이 없으며, 채점은 멱등하고 무제한 반복 가능하다(같은 요청을 몇 번 보내도 동일 결과).
-- **다국어 번역 기반**: 퀴즈의 `question`·각 보기 `text`·`explanation`은 퀴즈 도큐먼트 내부의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)으로 저장한다. 표시 언어는 `user` 모듈의 공개 query(`getLanguage(userId)`)를 동기 호출해 취득하며, `user`가 **사용자가 고른 표시 언어(`users.lang`)이 있으면 그 값, 없으면 `en`**을 반환한다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님). 보기 키 `A`~`D`는 **언어와 무관하게 동일**하며(채점은 키로 수행), 번역되지 않는다.
-- **대상/인증**: 외국인 세입자(`userType=TENANT`, `status=ACTIVE`, `ROLE_USER`) 전용이다 — **외국인 세입자를 대상으로 한 학습 기능**이라는 것이 세입자 전용의 근거이며, 표시 언어 도출 가능 여부와는 무관하다(임대인도 `lang='ko'`·`country='KR'`를 갖는다). 모든 엔드포인트는 인증 필수다.
+- **다국어 번역 기반**: 퀴즈의 `question`·각 보기 `text`·`explanation`은 퀴즈 도큐먼트 내부의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)으로 저장한다. 표시 언어는 **로그인 사용자에 한해** `user` 모듈의 공개 query(`getLanguage(userId)`)를 동기 호출해 취득하며, `user`가 **사용자가 고른 표시 언어(`users.lang`)이 있으면 그 값, 없으면 `en`**을 반환한다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). **게스트(비로그인)는 `getLanguage`를 호출하지 않고 표시 언어가 `en` 고정**이다. 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님). 보기 키 `A`~`D`는 **언어와 무관하게 동일**하며(채점은 키로 수행), 번역되지 않는다.
+- **인증·역할 제한 없음**: **로그인 없이(게스트) 이용할 수 있다** — 두 엔드포인트 모두 `permitAll`이고 `Authorization` 헤더는 **선택**이다(issue #181). **역할 게이트도 없다** — 세입자·임대인 구분 없이 누구나 호출할 수 있고, 호출자에 따라 갈리는 것은 **표시 언어뿐**이다. 퀴즈는 무상태라 신원을 저장하지 않으므로(영속에 userId 필드가 없다) 게스트에게 세션 식별자를 요구하지도 발급하지도 않는다.
 
-> **인증·대상**: `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅되며, 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
+> **인증·호출 권한**: `/api/v1/quizzes/**`는 `permitAll`이라 인증 없이 호출할 수 있다(기존 `hasRole("USER")` 게이트 해제 — #181). 토큰 미전송·위조 토큰은 **게스트**로 처리한다. **응용 계층의 `userType=TENANT` 게이트도 제거한다(#181)** — `permitAll`로 비로그인 게스트가 이미 호출할 수 있는 이상, 로그인한 임대인만 403으로 막는 것은 앞뒤가 맞지 않고 실효도 없기 때문이다(임대인이 로그아웃하면 그대로 볼 수 있다). 따라서 이 도메인에서 `403 FORBIDDEN`(세입자 아님)은 **더 이상 발생하지 않는다**. **만료된 access token만은 게스트로 강등하지 않고 `401 TOKEN_EXPIRED`** 를 반환한다 — 토큰을 보냈는데 만료된 쪽은 게스트가 아니라 재발급이 필요한 회원이기 때문이다. 온보딩 미완료(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰도 통과하므로 이 경로에서 `403 AUTH_ONBOARDING_REQUIRED`·`401 UNAUTHENTICATED`도 발생하지 않는다.
+
+### 호출자별 결과
+
+응답 스키마는 호출자와 무관하게 동일하며, 갈리는 것은 **표시 언어**뿐이다.
+
+| 호출자 | 결과 | 표시 언어 |
+| --- | --- | --- |
+| 비로그인 게스트(토큰 미전송·위조) | 200 | **`en` 고정** — `getLanguage`를 호출하지 않는다 |
+| 세입자(`TENANT`, ACTIVE) | 200 | **`users.lang`** — 온보딩에서 고른 표시 언어(선택값이라 미선택이면 `en`) |
+| 임대인(`LANDLORD`, ACTIVE) | **200** (종전 403 `FORBIDDEN`에서 변경) | **`ko` 고정** — 임대인 온보딩에서 서버가 `lang='ko'`로 확정하고(`country='KR'`와 함께) 프로필 수정으로도 바뀌지 않으므로, 임대인은 퀴즈를 **한국어로** 본다 |
+| 온보딩 미완료(`PENDING`/`TERMS_AGREED`) | 200 | **`en`** — users 행은 있어 `getLanguage`를 호출하지만 `users.lang`이 아직 NULL이라 `en`으로 폴백한다 |
+| 만료 토큰 | 401 `TOKEN_EXPIRED` | — |
 
 ### 핵심 개념·enum
 
@@ -21,7 +33,7 @@
 | 보기 키 `selectedChoice` / `correctChoice` | `A`, `B`, `C`, `D` | 4지선다 보기 식별 키. 단일 대문자이며, 요청 시 이 네 값 중 하나여야 한다(그 외 값은 검증 실패). **언어 불변** — 채점은 키로 수행한다 |
 
 - 보기 키 `A`~`D`는 4지선다 식별용 단일 대문자 키이며, 의미를 갖는 도메인 enum이 아니다. 번역과 무관하게 동일하고, 채점은 이 키로 수행한다.
-- 다국어: `question`·보기 `text`·`explanation`은 인라인 언어-키 맵에 저장되며, 표시 언어는 `getLanguage(userId)`로 취득한다. 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님, [ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
+- 다국어: `question`·보기 `text`·`explanation`은 인라인 언어-키 맵에 저장되며, 표시 언어는 **로그인 사용자에 한해** `getLanguage(userId)`로 취득하고 **게스트는 `en` 고정**이다. 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님, [ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
 
 ---
 
@@ -29,8 +41,10 @@
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
-| GET | `/api/v1/quizzes/random` | 랜덤 퀴즈 1개 조회(사용자 언어 번역, 정답·해설 미포함) | 필수(ACTIVE 세입자) | 200 |
-| POST | `/api/v1/quizzes/{quizId}/answer` | 정답 제출·즉시 채점(무상태, 해설 항상 반환·오답 시 정답 키 추가) | 필수(ACTIVE 세입자) | 200 |
+| GET | `/api/v1/quizzes/random` | 랜덤 퀴즈 1개 조회(사용자 언어 번역, 정답·해설 미포함) | 선택 | 200 |
+| POST | `/api/v1/quizzes/{quizId}/answer` | 정답 제출·즉시 채점(무상태, 해설 항상 반환·오답 시 정답 키 추가) | 선택 | 200 |
+
+> 인증 "선택"은 **토큰 없이 호출하면 게스트로 처리**하고, 토큰을 보내면 로그인 사용자로 처리한다는 의미다(#181). **역할 제한은 없다** — 게스트·세입자·임대인의 **응답 스키마는 동일**하며 차이는 표시 언어(게스트 `en` 고정, 세입자 `users.lang`, 임대인 `ko` 고정)뿐이다. 만료 토큰을 보낸 요청만 `401 TOKEN_EXPIRED`다.
 
 ---
 
@@ -40,12 +54,12 @@
 
 퀴즈 콘텐츠 풀(MongoDB 카탈로그)에서 활성 퀴즈 1개를 **무작위로 선정(SELECTION)** 해 반환한다(동적 생성이 아니라 기존 퀴즈 중 하나를 고르는 것 — **(확인 필요)**). 반환 문제는 사용자 언어로 번역되며, 정답(`correctChoice`)·해설(`explanation`)은 **포함하지 않는다**.
 
-- **인증**: 필수(ACTIVE 세입자)
+- **인증**: 선택 — `Authorization` 헤더 없이 호출하면 게스트로 처리한다(표시 언어 `en` 고정). 역할 제한은 없다(임대인도 200, 표시 언어 `ko`)
 - Path 파라미터: 없음
 - Query 파라미터: 없음
 - Request Body: 없음
 
-> **인증·대상**: `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅되며, 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
+> **인증·호출 권한**: `/api/v1/quizzes/**`는 `permitAll`이라 인증 없이 호출할 수 있고 **역할 게이트가 없다** — 게스트·세입자·임대인 모두 200이다(#181). 만료 토큰만 `401 TOKEN_EXPIRED`이고, 온보딩 미완료 토큰은 게스트와 동일하게 통과한다. 표시 언어는 위 [호출자별 결과](#호출자별-결과) 표를 따른다.
 
 #### 성공 Response — 200 OK
 
@@ -72,10 +86,10 @@
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료/위조 |
-| 403 | `AUTH_ONBOARDING_REQUIRED` | 비-ACTIVE(온보딩 미완료) 접근 |
-| 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아님(임대인 등) |
+| 401 | `TOKEN_EXPIRED` | **만료된** access token으로 호출(토큰 미전송·위조는 게스트로 처리되어 200) |
 | 404 | `QUIZ_NOT_FOUND` | 활성 퀴즈 풀이 비어 사용 가능한 퀴즈가 없음 |
+
+> `permitAll` 전환으로 `401 UNAUTHENTICATED`(토큰 없음·위조)와 `403 AUTH_ONBOARDING_REQUIRED`(온보딩 미완료)는 이 엔드포인트에서 **도달 불가**다 — 전자는 게스트로 처리되고(표시 언어 `en` 고정), 후자는 인가상 게스트와 동일하게 통과하되 표시 언어는 `users.lang`(미설정이면 `en`)을 따른다. **`403 FORBIDDEN`(세입자 아님)도 역할 게이트 제거(#181)로 도달 불가**다 — 로그인한 임대인도 200이다.
 
 ---
 
@@ -83,7 +97,7 @@
 
 사용자가 선택한 보기를 제출한다. 서버가 저장된 정답(`correctChoice`)과 대조해 정답 여부를 판정한다. 채점은 **무상태**로, 제출 기록을 남기지 않고 멱등하며 무제한 반복할 수 있다. 해설(`explanation`)은 정답·오답 모두 반환하며, 정답 키(`correctChoice`)는 오답인 경우에만 반환한다.
 
-- **인증**: 필수(ACTIVE 세입자)
+- **인증**: 선택 — `Authorization` 헤더 없이 호출하면 게스트로 처리한다(해설 언어 `en` 고정). 역할 제한은 없다(임대인도 200, 해설 언어 `ko`)
 
 #### Path 파라미터
 
@@ -146,16 +160,16 @@ Query 파라미터: 없음
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `selectedChoice` 누락/빈값/허용 외 값 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
-| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료/위조 |
-| 403 | `AUTH_ONBOARDING_REQUIRED` | 비-ACTIVE(온보딩 미완료) 접근 |
-| 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아님(임대인 등) |
+| 401 | `TOKEN_EXPIRED` | **만료된** access token으로 호출(토큰 미전송·위조는 게스트로 처리되어 200) |
 | 404 | `QUIZ_NOT_FOUND` | 경로의 `quizId`가 존재하지 않음 |
+
+> `permitAll` 전환으로 `401 UNAUTHENTICATED`(토큰 없음·위조)와 `403 AUTH_ONBOARDING_REQUIRED`(온보딩 미완료)는 이 엔드포인트에서 **도달 불가**다 — 전자는 게스트로 처리되고(표시 언어 `en` 고정), 후자는 인가상 게스트와 동일하게 통과하되 표시 언어는 `users.lang`(미설정이면 `en`)을 따른다. **`403 FORBIDDEN`(세입자 아님)도 역할 게이트 제거(#181)로 도달 불가**다 — 로그인한 임대인도 200이다.
 
 ---
 
 ## 도메인 에러 코드
 
-> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `INTERNAL_ERROR` 등)는 [error-response-guide](../error-response-guide.md) §4의 정의를 그대로 쓰며 여기서 재정의하지 않는다. 5xx(`INTERNAL_ERROR` 등)는 전 엔드포인트에 공통 적용되므로 개별 표에 반복 기재하지 않는다. `AUTH_ONBOARDING_REQUIRED`(403, 비-ACTIVE)는 auth 도메인 코드([01-auth-onboarding](01-auth-onboarding.md)), `FORBIDDEN`(403, 세입자 아님)은 공통 코드로 각각 정의된 곳을 따르며 여기서 재정의하지 않는다(교차 참조). 아래는 본 도메인 고유 코드만 정의한다(prefix `QUIZ`).
+> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `TOKEN_EXPIRED`, `INTERNAL_ERROR` 등)는 [error-response-guide](../error-response-guide.md) §4의 정의를 그대로 쓰며 여기서 재정의하지 않는다. 5xx(`INTERNAL_ERROR` 등)는 전 엔드포인트에 공통 적용되므로 개별 표에 반복 기재하지 않는다. `FORBIDDEN`(403)은 **본 도메인에서 발생하지 않는다** — 역할 게이트를 제거해(#181) 임대인도 200이다. `AUTH_ONBOARDING_REQUIRED`(403, 비-ACTIVE)는 auth 도메인 코드([01-auth-onboarding](01-auth-onboarding.md))지만 **본 도메인에서는 게이트 해제(`permitAll` 전환)로 발생하지 않는다**. 아래는 본 도메인 고유 코드만 정의한다(prefix `QUIZ`).
 
 | code | status | 의미 |
 | --- | --- | --- |

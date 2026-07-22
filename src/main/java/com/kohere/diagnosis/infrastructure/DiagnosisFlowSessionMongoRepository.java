@@ -9,5 +9,9 @@ interface DiagnosisFlowSessionMongoRepository
 
   Optional<DiagnosisFlowSessionDocument> findByUserId(long userId);
 
+  Optional<DiagnosisFlowSessionDocument> findByGuestSessionId(String guestSessionId);
+
   void deleteByUserId(long userId);
+
+  void deleteByGuestSessionId(String guestSessionId);
 }
