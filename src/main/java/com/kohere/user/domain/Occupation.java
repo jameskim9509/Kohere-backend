@@ -1,8 +1,8 @@
 package com.kohere.user.domain;
 
 /**
- * 직업 유형(온보딩 필수). 요구사항 정의서의 직업 드롭다운 확정 항목(#93, #138 개편). docs/architecture/domain-model.md §2 ·
- * database-design §6.
+ * 직업 유형(온보딩 선택 — #187에서 필수→선택 완화, 미설정은 NULL). 요구사항 정의서의 직업 드롭다운 확정 항목(#93, #138 개편).
+ * docs/architecture/domain-model.md §2 · database-design §6.
  */
 public enum Occupation {
   /** 학부생(undergraduate student). */

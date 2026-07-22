@@ -26,8 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * user 공개 API 구현. auth가 호출하는 회원 생성·약관 동의·온보딩 완료·계정 조회를 처리한다. 약관 버전은 서버 설정값(app.terms.version)을 약관
- * 동의 시 기록한다(ADR-0012). gender·occupation·visaType은 원시 문자열로 받아 enum으로 변환하고(유효하지 않으면 INVALID_INPUT),
- * country는 {@link CountryRepository}로 존재를 검증한다. 닉네임은 {@link NicknameGenerator}로 생성한다.
+ * 동의 시 기록한다(ADR-0012). gender·occupation·visaType은 원시 문자열로 받아 enum으로 변환하고(유효하지 않으면 INVALID_INPUT —
+ * 단, occupation은 선택이라 null은 미설정으로 저장한다, #187), country는 {@link CountryRepository}로 존재를 검증한다. 닉네임은
+ * {@link NicknameGenerator}로 생성한다.
  */
 @Service
 public class UserAccountServiceImpl implements UserAccountService {
@@ -75,7 +76,7 @@ public class UserAccountServiceImpl implements UserAccountService {
   public UserProfileView completeOnboarding(long userId, OnboardingProfile profile) {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
     Gender gender = parseEnum(Gender.class, profile.gender());
-    Occupation occupation = parseEnum(Occupation.class, profile.occupation());
+    Occupation occupation = parseOccupation(profile.occupation());
     VisaType visaType = parseEnum(VisaType.class, profile.visaType());
     if (profile.country() == null || !countryRepository.existsByCode(profile.country())) {
       throw new InvalidInputException("country 값이 올바르지 않습니다: " + profile.country());
@@ -221,6 +222,17 @@ public class UserAccountServiceImpl implements UserAccountService {
     }
     return Language.from(code)
         .orElseThrow(() -> new InvalidInputException("lang 값이 올바르지 않습니다: " + code));
+  }
+
+  /**
+   * 직업 문자열을 {@link Occupation}으로 파싱. 선택값이라 {@code null}은 미설정({@code null})으로 두고, 값이 있으면(빈 문자열
+   * {@code ""} 포함) enum 목록 밖은 {@code INVALID_INPUT}(#187).
+   */
+  private static Occupation parseOccupation(String value) {
+    if (value == null) {
+      return null;
+    }
+    return parseEnum(Occupation.class, value);
   }
 
   private static <E extends Enum<E>> E parseEnum(Class<E> type, String value) {
