@@ -69,7 +69,8 @@ Content-Type: application/json
 
 ### 5. 온보딩 제출 — 성공 시 user 프로필 + 정식 access/refresh 발급
 #    enum 유효값: gender=MALE|FEMALE
-#                 occupation=UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC
+#                 occupation=UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC,
+#                            **선택** (생략/null이면 저장 안 함(NULL) → 프로필 응답에서 필드 생략, §5b — #187. 값을 보내면 기존대로 enum 검증)
 #                 visaType=SHORT_TERM_VISIT|STUDENTS_TRAINEES|NON_PROFESSIONAL_WORKERS|WORKING_HOLIDAY_WORK_AND_VISIT|OVERSEAS_KOREANS|FAMILY_MARRIAGE_MIGRANTS|PERMANENT_RESIDENTS|PROFESSIONALS|DIPLOMATIC_OFFICIAL_AND_OTHERS|ETC
 #    country=ISO 3166-1 alpha-2 (시드: KR,CN,VN,US,UZ,TH,PH,NP,MN,JP,ID,KH,RU,IN,MM) / email=4단계서 인증한 값
 #    lang=표시 언어 ISO 639-1 소문자, **선택** (지원: en·ko·ja / 생략하면 미설정 → 조회 시 en 폴백) — #141
@@ -88,6 +89,24 @@ Content-Type: application/json
   "email": "{{email}}",
   "visaType": "STUDENTS_TRAINEES",
   "lang": "ja"
+}
+
+### 5b. (#187·§5 대안) 직업 없이 온보딩 — occupation 생략/null이어도 200
+#     §5와 같은 계정으로 둘 다 보내면 두 번째는 409(이미 온보딩 완료) — 새 계정(§1부터)으로 시도한다.
+#     성공 시 직업은 저장되지 않고(NULL), §6 프로필 응답에서 occupation 필드가 생략된다(lang 미설정과 동일 정책).
+#     주의: "occupation": "" (빈 문자열)은 생략이 아니라 '값'이라 enum 검증에 걸려 400 INVALID_INPUT 이다.
+POST {{baseUrl}}/api/v1/auth/onboarding
+Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "firstName": "Minji",
+  "lastName": "Kim",
+  "gender": "FEMALE",
+  "birthDate": "1995-03-21",
+  "country": "VN",
+  "email": "{{email}}",
+  "visaType": "STUDENTS_TRAINEES"
 }
 
 ### 6. 내 프로필 조회 (정식 access 토큰 필요)
