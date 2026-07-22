@@ -62,6 +62,22 @@ mail_from     = "noreply@kohere.app"
 # test_login_enabled = true   # 마스터 계정 시드 + idToken="master:<role>:<secret>" 우회 로그인 허용
 # 반영: apply → (refresh-env.sh 최초 변경이면 EC2 재생성 1회) → 배포(gh workflow run deploy.yml, ADR-0024). 시크릿은 SSM에서 확인.
 
+# ----- 앱스토어 심사 계정 고정 인증번호 (dev 전용, 운영 미사용 — #180) -----
+# 심사자가 실제 SMS·이메일을 수신할 수 없어, 등록된 심사 계정에 한해 인증번호를 고정값으로 발급하고 외부 발송을 생략한다.
+# 역할별로 채널이 갈린다 — tenant 계정은 이메일 인증만, landlord 계정은 SMS 인증만 고정 인증번호를 받고,
+# 반대 채널이나 목록에 없는 값은 실제 발송 없이 422로 거절된다(심사자는 외부 수신을 못 하므로 흘려보내야 얻는 게 없다).
+# 그룹은 통째로 비거나 통째로 채운다 — 반쪽이면 앱이 기동을 거부한다. 한쪽 트랙만 쓰는 것은 허용.
+# 같은 Google 계정을 tenant·landlord 양쪽에 넣으면 역할이 모호해 기동이 막힌다.
+# 심사 노트에는 아래 값(로그인 Google 계정 / 인증 대상 / 고정 인증번호)을 그대로 적어야 한다 — 다른 값을 입력하면 거절된다.
+# fixed_verification_enabled                = true
+# fixed_verification_code                   = "000000"                    # sensitive — 자릿수는 app.email/phone.code-length(6)와 일치
+# fixed_verification_tenant_google_emails   = "review-tenant@gmail.com"    # sensitive — 콤마 구분
+# fixed_verification_tenant_emails          = "demo-tenant@example.com"    # sensitive — 콤마 구분
+# fixed_verification_landlord_google_emails = "review-landlord@gmail.com"  # sensitive — 콤마 구분
+# fixed_verification_landlord_phones        = "01000000000"                # sensitive — 콤마 구분
+# 반영: apply → (refresh-env.sh 최초 변경이면 EC2 재생성 1회) → 배포(gh workflow run deploy.yml, ADR-0024).
+# 심사 종료 후 fixed_verification_enabled = false 로 되돌리고 apply → 배포한다.
+
 # ----- DB 자격증명 (SSM SecureString) + 외부 접속 (dev 한정) -----
 # 비우면 기본 "kohere". 외부 노출(db_ingress_cidrs) 시 반드시 강한 값으로 바꾼다.
 # 변경 반영: 최초 init 후의 username·비번 변경은 배포 시 reconcile-db.sh가 live DB에 회전 적용한다(데이터 보존, ADR-0025).

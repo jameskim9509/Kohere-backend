@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,10 +12,10 @@ import com.kohere.auth.domain.PhoneNotVerifiedException;
 import com.kohere.auth.domain.PhoneRateLimitException;
 import com.kohere.auth.domain.PhoneVerification;
 import com.kohere.auth.domain.PhoneVerificationCodeHasher;
+import com.kohere.auth.domain.PhoneVerificationCodeIssuer;
 import com.kohere.auth.domain.PhoneVerificationFailedException;
 import com.kohere.auth.domain.PhoneVerificationRepository;
 import com.kohere.auth.domain.SmsDispatchException;
-import com.kohere.auth.domain.VerificationSmsSender;
 import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,9 +26,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link PhoneVerificationService} 단위 테스트(Mockito) — 인증번호 발송(재발송 간격·발송 실패 시 챌린지 미저장)·검증(챌린지
- * 부재/만료/불일치·시도 상한)·온보딩 선행 검사(검증 마커 대조). Redis 저장·해시·SMS 발송 포트를 모킹하고 정책값은 실제 기본값을 쓴다(세입자 이메일 인증과 대칭,
- * ADR-0034).
+ * {@link PhoneVerificationService} 단위 테스트(Mockito) — 인증번호 발급(재발송 간격·발급 실패 시 챌린지 미저장)·검증(챌린지
+ * 부재/만료/불일치·시도 상한)·온보딩 선행 검사(검증 마커 대조). Redis 저장·해시·인증번호 발급 포트를 모킹하고 정책값은 실제 기본값을 쓴다(세입자 이메일 인증과
+ * 대칭, ADR-0034).
  */
 @ExtendWith(MockitoExtension.class)
 class PhoneVerificationServiceTest {
@@ -42,7 +39,7 @@ class PhoneVerificationServiceTest {
 
   @Mock private PhoneVerificationRepository repository;
   @Mock private PhoneVerificationCodeHasher codeHasher;
-  @Mock private VerificationSmsSender smsSender;
+  @Mock private PhoneVerificationCodeIssuer codeIssuer;
   // 정책값은 실제 기본값(스파이 아님 — when().thenReturn() 인자에서 getter를 호출해도 스터빙과 충돌하지 않도록).
   private final PhoneVerificationProperties properties = new PhoneVerificationProperties();
 
@@ -50,19 +47,20 @@ class PhoneVerificationServiceTest {
 
   @BeforeEach
   void setUp() {
-    service = new PhoneVerificationService(repository, codeHasher, smsSender, properties);
+    service = new PhoneVerificationService(repository, codeHasher, codeIssuer, properties);
   }
 
   @Test
-  void sendCode_dispatchesSmsThenStoresChallenge_returnsExpiresIn() {
+  void sendCode_issuesCodeThenStoresChallenge_returnsExpiresIn() {
     when(repository.findChallenge(USER_ID)).thenReturn(Optional.empty());
-    when(codeHasher.hash(anyString())).thenReturn("hashed-code");
+    when(codeIssuer.issue(USER_ID, PHONE)).thenReturn(CODE);
+    when(codeHasher.hash(CODE)).thenReturn("hashed-code");
 
     long expiresIn = service.sendCode(USER_ID, PHONE);
 
     assertThat(expiresIn).isEqualTo(properties.getCodeTtlSeconds());
-    // 발송 성공 뒤에만 챌린지를 저장한다(attempts=0, 대상 번호·해시 보관)
-    verify(smsSender).send(eq(PHONE), anyString());
+    // 발급(생성+발송) 성공 뒤에만 챌린지를 저장한다(attempts=0, 대상 번호·해시 보관)
+    verify(codeIssuer).issue(USER_ID, PHONE);
     ArgumentCaptor<PhoneVerification> captor = ArgumentCaptor.forClass(PhoneVerification.class);
     verify(repository).saveChallenge(captor.capture());
     assertThat(captor.getValue().getUserId()).isEqualTo(USER_ID);
@@ -81,16 +79,15 @@ class PhoneVerificationServiceTest {
     assertThatThrownBy(() -> service.sendCode(USER_ID, PHONE))
         .isInstanceOf(PhoneRateLimitException.class);
 
-    verify(smsSender, never()).send(any(), any());
+    verify(codeIssuer, never()).issue(anyLong(), any());
     verify(repository, never()).saveChallenge(any());
   }
 
   @Test
   void sendCode_dispatchFails_doesNotStoreChallenge() {
     when(repository.findChallenge(USER_ID)).thenReturn(Optional.empty());
-    doThrow(new SmsDispatchException(new RuntimeException("solapi down")))
-        .when(smsSender)
-        .send(eq(PHONE), anyString());
+    when(codeIssuer.issue(USER_ID, PHONE))
+        .thenThrow(new SmsDispatchException(new RuntimeException("solapi down")));
 
     assertThatThrownBy(() -> service.sendCode(USER_ID, PHONE))
         .isInstanceOf(SmsDispatchException.class);

@@ -53,6 +53,12 @@ locals {
     # 네이버 지역 검색 API 인증정보 — Client ID/Secret 모두 시크릿(#160/#162)
     NAVER_SEARCH_CLIENT_ID     = var.naver_search_client_id
     NAVER_SEARCH_CLIENT_SECRET = var.naver_search_client_secret
+    # 앱스토어 심사 계정 고정 인증번호(#180) — 코드는 우회 자격, 계정·연락처는 실제 인물 PII라 SecureString.
+    FIXED_VERIFICATION_CODE                   = var.fixed_verification_code
+    FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS   = var.fixed_verification_tenant_google_emails
+    FIXED_VERIFICATION_TENANT_EMAILS          = var.fixed_verification_tenant_emails
+    FIXED_VERIFICATION_LANDLORD_GOOGLE_EMAILS = var.fixed_verification_landlord_google_emails
+    FIXED_VERIFICATION_LANDLORD_PHONES        = var.fixed_verification_landlord_phones
   }
 
   # nonsensitive: 빈 값 여부만 for_each 키 결정에 쓴다(값 자체는 노출 안 함). vars라 plan 시점 known.
@@ -65,10 +71,11 @@ locals {
   # compose(부팅 1회 렌더)가 아닌 SSM 경유로 옮겨 재배포(refresh-env 재실행)만으로 반영되게 한다(ADR-0024). 빈 값은 SSM이 거부하므로 제외.
   config_params = {
     for k, v in {
-      SOLAPI_ENABLED     = tostring(var.solapi_enabled)
-      SOLAPI_FROM        = var.solapi_from
-      BIZNO_ENABLED      = tostring(var.bizno_enabled)
-      TEST_LOGIN_ENABLED = tostring(var.test_login_enabled)
+      SOLAPI_ENABLED             = tostring(var.solapi_enabled)
+      SOLAPI_FROM                = var.solapi_from
+      BIZNO_ENABLED              = tostring(var.bizno_enabled)
+      TEST_LOGIN_ENABLED         = tostring(var.test_login_enabled)
+      FIXED_VERIFICATION_ENABLED = tostring(var.fixed_verification_enabled)
     } : k => v if v != ""
   }
 }

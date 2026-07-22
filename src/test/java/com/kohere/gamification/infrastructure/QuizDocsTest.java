@@ -5,6 +5,8 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resour
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
@@ -60,9 +62,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * (06-gamification.md)에 정의된 에러 응답을 {@code build/generated-snippets}에 생성해 OpenAPI3(Swagger UI)에
  * 합류한다.
  *
- * <p>cross-module 협력(user 표시 언어·userType)은 {@code @MockitoBean}으로 대체하고 access 토큰은 {@link
- * JwtTokenService}로 직접 발급한다. MongoDB(퀴즈 카탈로그)는 실제 컨테이너로 구동하며, 시더는 {@code test} 프로파일에서 비활성이라 이 테스트가
- * 직접 시드한다.
+ * <p>cross-module 협력(user 표시 언어)은 {@code @MockitoBean}으로 대체하고 access 토큰은 {@link JwtTokenService}로
+ * 직접 발급한다. MongoDB(퀴즈 카탈로그)는 실제 컨테이너로 구동하며, 시더는 {@code test} 프로파일에서 비활성이라 이 테스트가 직접 시드한다.
+ *
+ * <p><b>#181로 인가 계약이 바뀌었다</b> — 퀴즈는 {@code permitAll}이라 토큰 없이도 2xx이고 세입자 게이트가 없다. 그래서 401
+ * UNAUTHENTICATED·403 AUTH_ONBOARDING_REQUIRED·403 FORBIDDEN 스니펫은 도달 불가라 제거했고, 그 자리를 {@link
+ * #guestAccessWithoutToken}·{@link #forgedTokenIsTreatedAsGuest}·{@link #landlordGetsKoreanLabels}가
+ * 2xx 계약으로 고정한다. 401은 <b>만료 토큰</b>에만 남는다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -105,9 +111,9 @@ class QuizDocsTest {
             .apply(documentationConfiguration(restDocumentation))
             .build();
     quizMongoRepository.deleteAll();
-    // 표시 언어는 user 공개 query로 취득(ADR-0029) — 등록 국가(KR→ko)를 가정. 대상은 세입자(TENANT).
+    // 표시 언어는 user 공개 query로 취득(ADR-0029) — 사용자가 고른 ko(users.lang)를 가정한다.
+    // userType은 더 이상 조회하지 않는다(#181로 세입자 게이트 제거) — 스텁을 두면 죽은 코드다.
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
-    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
   }
 
   @Test
@@ -168,39 +174,18 @@ class QuizDocsTest {
   @Test
   void generatesQuizErrorSnippets() throws Exception {
     String token = jwtTokenService.issueAccessToken(1L);
-    String onboardingToken = jwtTokenService.issueOnboardingToken(2L); // ROLE_ONBOARDING
-    String landlordToken = jwtTokenService.issueAccessToken(3L);
     String expiredToken = expiredAccessToken();
-    given(userAccountService.getUserType(3L)).willReturn("LANDLORD");
 
     // ===== GET /quizzes/random =====
-    perform(
-        get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
-        status().isUnauthorized(),
-        "UNAUTHENTICATED",
-        "quiz-get-random-unauthenticated",
-        "랜덤 퀴즈 조회 — 인증 누락/위조 (401 UNAUTHENTICATED)");
-
+    // #181로 퀴즈가 permitAll이 되면서 401 UNAUTHENTICATED(누락·위조)·403 AUTH_ONBOARDING_REQUIRED
+    // ·403 FORBIDDEN(비-세입자) 세 케이스는 도달 불가가 됐다 — 아래 guestAccessWithoutToken·
+    // landlordGetsKoreanLabels가 그 자리를 2xx 계약으로 대신 고정한다. 만료만 401로 남는다.
     perform(
         get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "quiz-get-random-token-expired",
-        "랜덤 퀴즈 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
-
-    perform(
-        get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)),
-        status().isForbidden(),
-        "AUTH_ONBOARDING_REQUIRED",
-        "quiz-get-random-onboarding-required",
-        "랜덤 퀴즈 조회 — 온보딩 미완료(비-ACTIVE) 접근 (403 AUTH_ONBOARDING_REQUIRED)");
-
-    perform(
-        get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(landlordToken)),
-        status().isForbidden(),
-        "FORBIDDEN",
-        "quiz-get-random-not-tenant",
-        "랜덤 퀴즈 조회 — 세입자가 아님(임대인 등) (403 FORBIDDEN)");
+        "랜덤 퀴즈 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED, 게스트로 강등하지 않고 재발급을 유도한다)");
 
     perform(
         get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(token)),
@@ -232,33 +217,13 @@ class QuizDocsTest {
 
     perform(
         post("/api/v1/quizzes/{quizId}/answer", 4001L)
-            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(answerJson("A")),
-        status().isUnauthorized(),
-        "UNAUTHENTICATED",
-        "quiz-answer-unauthenticated",
-        "정답 제출 — 인증 누락/위조 (401 UNAUTHENTICATED)");
-
-    perform(
-        post("/api/v1/quizzes/{quizId}/answer", 4001L)
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(answerJson("A")),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "quiz-answer-token-expired",
-        "정답 제출 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
-
-    perform(
-        post("/api/v1/quizzes/{quizId}/answer", 4001L)
-            .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(answerJson("A")),
-        status().isForbidden(),
-        "AUTH_ONBOARDING_REQUIRED",
-        "quiz-answer-onboarding-required",
-        "정답 제출 — 온보딩 미완료(비-ACTIVE) 접근 (403 AUTH_ONBOARDING_REQUIRED)");
+        "정답 제출 — 액세스 토큰 만료 (401 TOKEN_EXPIRED, 게스트로 강등하지 않고 재발급을 유도한다)");
 
     perform(
         post("/api/v1/quizzes/{quizId}/answer", 9999L)
@@ -269,6 +234,67 @@ class QuizDocsTest {
         "QUIZ_NOT_FOUND",
         "quiz-answer-not-found",
         "정답 제출 — 대상 퀴즈가 존재하지 않음 (404 QUIZ_NOT_FOUND)");
+  }
+
+  /**
+   * 게이트 해제 계약(#181) — {@code Authorization} 헤더 <b>없이</b> 퀴즈 두 엔드포인트가 2xx다.
+   *
+   * <p>기본 언어가 {@code en}인 것만 보면 부족하다 — {@code getLanguage}를 부르고 예외를 삼키는 구현도 통과한다. 게스트는 {@code
+   * users} 행이 없어 호출 자체가 404이므로 <b>한 번도 부르지 않음</b>을 함께 못 박는다.
+   */
+  @Test
+  void guestAccessWithoutToken() throws Exception {
+    seedQuiz();
+
+    mockMvc
+        .perform(get("/api/v1/quizzes/random"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.quizId").value(4001))
+        .andExpect(jsonPath("$.data.question").value("Which protects a jeonse tenant?"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/quizzes/{quizId}/answer", 4001L)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(answerJson("A")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.correct").value(true))
+        .andExpect(jsonPath("$.data.explanation").value("A fixed date protects your deposit."));
+
+    verify(userAccountService, never()).getLanguage(anyLong());
+    verify(userAccountService, never()).getUserType(anyLong());
+  }
+
+  /** 위조·형식 오류 토큰은 (만료와 달리) 게스트로 통과한다 — 신원 없는 요청과 같은 취급이다(#181). */
+  @Test
+  void forgedTokenIsTreatedAsGuest() throws Exception {
+    seedQuiz();
+
+    mockMvc
+        .perform(
+            get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.question").value("Which protects a jeonse tenant?"));
+
+    verify(userAccountService, never()).getLanguage(anyLong());
+  }
+
+  /**
+   * 임대인도 200이며 응답 언어는 본인 {@code users.lang}(ko)이다 — 세입자 게이트가 사라졌음을 HTTP 계약으로 고정한다(#181). 게이트를 되살리면
+   * 여기서 403으로 깨진다.
+   */
+  @Test
+  void landlordGetsKoreanLabels() throws Exception {
+    seedQuiz();
+    String landlordToken = jwtTokenService.issueAccessToken(3L);
+
+    mockMvc
+        .perform(
+            get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(landlordToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.question").value("전세 임차인 보호 제도는?"));
+
+    verify(userAccountService, never()).getUserType(anyLong());
   }
 
   // ---- helpers ----

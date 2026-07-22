@@ -17,6 +17,8 @@ import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +41,12 @@ import org.springframework.stereotype.Service;
  * 재사용한다. 진행 상태는 v1의 {@code diagnoses}(IN_PROGRESS)와 분리된 {@link DiagnosisFlowSessionRepository}에 담고,
  * 완료 시에만 {@link DiagnosisRepository}로 정본 진단을 저장한다.
  *
+ * <p><b>비회원(게스트)도 이 흐름을 쓴다</b>(#181). 게스트는 임시 {@code userId}를 받지 않고 {@code userId == null}로 오며, 요청
+ * 사이의 연속성은 {@code /start}가 발급하고 클라이언트가 {@code X-Guest-Session-Id} 헤더로 에코하는 게스트 세션 키가 잇는다. 신원이 둘로
+ * 갈리는 지점은 셋뿐이다 — 세션 조회({@link #findSession})·세션 삭제({@link #deleteSession})·표시 언어({@link
+ * #resolveLanguage}). 게스트의 표시 언어는 {@code en} 고정이며 {@code user} 모듈을 <b>호출하지 않는다</b>(users 행이 없어 조회
+ * 자체가 404다).
+ *
  * <p>MongoDB 단일 노드 트랜잭션 미지원이라 {@code @Transactional}을 두지 않는다(연산은 단건 위주).
  */
 @Service
@@ -53,6 +61,12 @@ public class DiagnosisFlowService {
 
   private static final String YES = "YES";
   private static final String NO = "NO";
+
+  /** 게스트 세션 키의 접두사. 값 형식은 {@code anonymous<uuid>}이며 요청자마다 다르다(#181). */
+  private static final String GUEST_SESSION_ID_PREFIX = "anonymous";
+
+  /** 게스트 표시 언어. users 행이 없어 {@code getLanguage}를 호출할 수 없으므로 고정한다(#181). */
+  private static final String GUEST_LANGUAGE = "en";
 
   private final DiagnosisFlowSessionRepository flowSessionRepository;
   private final DiagnosisRepository diagnosisRepository;
@@ -71,24 +85,39 @@ public class DiagnosisFlowService {
    * <p>덮어쓰는 이전 세션은 <b>기록하지 않고 버린다</b>. 이탈은 요청으로 오지 않아 돌아왔을 때에야 알 수 있는데, 그러면 영영 안 돌아온 사용자는 집계에서 빠지고
    * 시각도 실제 이탈 시각이 아니라 재시작 시각이라 신뢰할 수 없다. 폐기 기록({@code DISCARDED})은 그 자리에서 응답이 오는 ① 지역 0건 경로에만
    * 남긴다(ADR-0036 결정 12).
+   *
+   * <p><b>게스트({@code userId == null})는 여기가 세션 키의 유일한 발급 지점</b>이다(#181) — 매 호출마다 새 키를 만들어 응답에 실어 주고,
+   * 클라이언트가 이후 요청에 헤더로 에코한다. 게스트에게는 교체할 기존 세션이 특정되지 않으므로(키가 매번 새것) upsert가 아니라 새 세션 삽입이며, 이전 게스트 세션은
+   * 버려지지 않고 남는다.
+   *
+   * @param userId 회원이면 userId, 게스트면 {@code null}
    */
-  public DiagnosisFlowResponse start(long userId) {
-    // 새 세션의 첫 문항은 언제나 ① 지역이고 DiagnosisFlowSession.start()가 그 field를 pendingField로
-    // 담고 있으므로, 교체 한 번으로 끝낸다(ask로 다시 저장할 필요 없음).
+  public DiagnosisFlowResponse start(Long userId) {
+    // 새 세션의 첫 문항은 언제나 ① 지역이고 DiagnosisFlowSession.start*()가 그 field를 pendingField로
+    // 담고 있으므로, 저장 한 번으로 끝낸다(ask로 다시 저장할 필요 없음).
+    QuestionResponse firstQuestion =
+        question(userId, DiagnosisFlowStep.REGION.step(), DiagnosisFlowStep.REGION.field());
+    if (userId == null) {
+      String guestSessionId = newGuestSessionId();
+      flowSessionRepository.save(DiagnosisFlowSession.startForGuest(guestSessionId));
+      return DiagnosisFlowResponse.nextQuestionForGuest(firstQuestion, guestSessionId);
+    }
     flowSessionRepository.upsertByUserId(DiagnosisFlowSession.start(userId));
-    return DiagnosisFlowResponse.nextQuestion(
-        question(userId, DiagnosisFlowStep.REGION.step(), DiagnosisFlowStep.REGION.field()));
+    return DiagnosisFlowResponse.nextQuestion(firstQuestion);
   }
 
   /**
    * 현재 문항 답을 적용하고 다음 결과(다음 질문 / 자동 확정 결과 / 흐름 제어 코드)를 반환한다. 진행 중 세션이 없으면 {@code
    * DIAGNOSIS_SESSION_NOT_FOUND} — 서버가 임의로 흐름을 되살리지 않고 클라이언트가 {@code /start}로 다시 시작한다.
+   *
+   * <p>게스트가 세션 키를 빠뜨렸거나 남의 키를 보낸 경우도 <b>같은 코드·같은 복구 절차</b>다 — 조회가 비어 돌아오므로 남의 세션에 닿지 않는다(#181).
+   *
+   * @param userId 회원이면 userId, 게스트면 {@code null}
+   * @param guestSessionId 게스트가 {@code X-Guest-Session-Id}로 에코한 키(회원은 {@code null})
    */
-  public DiagnosisFlowResponse next(long userId, AnswerRequest request) {
+  public DiagnosisFlowResponse next(Long userId, String guestSessionId, AnswerRequest request) {
     DiagnosisFlowSession session =
-        flowSessionRepository
-            .findByUserId(userId)
-            .orElseThrow(DiagnosisFlowSessionNotFoundException::new);
+        findSession(userId, guestSessionId).orElseThrow(DiagnosisFlowSessionNotFoundException::new);
     if (request == null || request.field() == null || request.field().isBlank()) {
       throw new InvalidInputException("현재 문항의 답(field)이 필요합니다.");
     }
@@ -118,11 +147,16 @@ public class DiagnosisFlowService {
    * <p>v1 §7과 같은 조회지만 0건일 때 조정 제안 문구·액션({@code suggestions})을 붙이지 않는다 — v2는 제안 기능을 쓰지 않으므로 사유만
    * {@code resultCode}({@code MATCHED}/{@code NO_MATCH})로 알린다. 검증·소유권·조건 매핑은 v1과 공유한다({@link
    * DiagnosisRecommendationReader}).
+   *
+   * <p>게스트도 닿는 유일한 소유권 검사 지점이다(#181) — 신원 종류가 같고 값이 같을 때만 통과하므로 회원↔게스트 교차 조회는 양방향 모두 403이다.
+   *
+   * @param userId 회원이면 userId, 게스트면 {@code null}
+   * @param guestSessionId 게스트가 {@code X-Guest-Session-Id}로 에코한 키(회원은 {@code null})
    */
   public V2RecommendationResponse getRecommendations(
-      long userId, Long diagnosisId, int page, int size, String sort) {
+      Long userId, String guestSessionId, Long diagnosisId, int page, int size, String sort) {
     return V2RecommendationResponse.from(
-        recommendationReader.read(userId, diagnosisId, page, size, sort));
+        recommendationReader.read(userId, guestSessionId, diagnosisId, page, size, sort));
   }
 
   // --- ① 지역 0건 예외질문 응답 처리(예=재시도 / 아니오=종료) ---
@@ -144,7 +178,7 @@ public class DiagnosisFlowService {
     // 완주했을 때 원래 원했던 지역이 증발한다. 이 상태는 ① 지역을 답한 뒤에만 도달하므로 draft에 region이
     // 있는 게 보장된다.
     diagnosisRepository.save(session.getDraft().discard(Instant.now()));
-    flowSessionRepository.deleteByUserId(session.getUserId());
+    deleteSession(session);
     return YES.equals(code) ? DiagnosisFlowResponse.restart() : DiagnosisFlowResponse.terminated();
   }
 
@@ -180,8 +214,45 @@ public class DiagnosisFlowService {
    */
   private DiagnosisFlowResponse autoConfirm(DiagnosisFlowSession session) {
     Diagnosis completed = diagnosisRepository.save(session.getDraft().complete(Instant.now()));
-    flowSessionRepository.deleteByUserId(session.getUserId());
+    deleteSession(session);
     return DiagnosisFlowResponse.completed(completed.getId());
+  }
+
+  // --- 신원(회원/게스트) 분기 ---
+
+  /**
+   * 요청자의 진행 세션을 찾는다 — 회원은 {@code userId}, 게스트는 세션 키가 유일한 조회 키다(#181).
+   *
+   * <p>신원이 아예 없으면(토큰도 헤더도 없음) 조회하지 않고 빈 값을 돌려준다. 호출자가 이를 {@code DIAGNOSIS_SESSION_NOT_FOUND}로 옮기므로,
+   * 키 없는 요청이 임의의 세션에 닿을 여지가 없다.
+   */
+  private Optional<DiagnosisFlowSession> findSession(Long userId, String guestSessionId) {
+    if (userId != null) {
+      return flowSessionRepository.findByUserId(userId);
+    }
+    if (guestSessionId == null || guestSessionId.isBlank()) {
+      return Optional.empty();
+    }
+    return flowSessionRepository.findByGuestSessionId(guestSessionId);
+  }
+
+  /** 터미널(확정·재시도·종료)에서 세션을 지운다. 어느 키로 지울지는 <b>세션 자신의 신원</b>이 정한다(요청 파라미터가 아니다). */
+  private void deleteSession(DiagnosisFlowSession session) {
+    if (session.getUserId() != null) {
+      flowSessionRepository.deleteByUserId(session.getUserId());
+      return;
+    }
+    flowSessionRepository.deleteByGuestSessionId(session.getGuestSessionId());
+  }
+
+  /**
+   * 새 게스트 세션 키를 발급한다({@code anonymous<uuid>}).
+   *
+   * <p><b>요청자마다 반드시 달라야 한다</b> — 진단 id가 전역 순차 채번이라 열거가 쉽고, 게스트 경로에서는 이 키의 일치 여부가 유일한 IDOR 방어선이다.
+   * 공용·상수 키를 쓰면 모든 게스트가 서로의 진단을 읽는다.
+   */
+  private static String newGuestSessionId() {
+    return GUEST_SESSION_ID_PREFIX + UUID.randomUUID();
   }
 
   // --- 헬퍼 ---
@@ -194,8 +265,8 @@ public class DiagnosisFlowService {
     return slot.field();
   }
 
-  /** 카탈로그에서 {@code field} 문항 1건을 꺼내 사용자 언어로 번역한다({@code step}은 코드가 정본이라 함께 넘긴다). */
-  private QuestionResponse question(long userId, int step, String field) {
+  /** 카탈로그에서 {@code field} 문항 1건을 꺼내 요청자 언어로 번역한다({@code step}은 코드가 정본이라 함께 넘긴다). */
+  private QuestionResponse question(Long userId, int step, String field) {
     DiagnosisQuestion question =
         questionCatalog
             .findByField(field)
@@ -212,7 +283,12 @@ public class DiagnosisFlowService {
     return !listingRecommendationService.recommendByCriteria(criteria).content().isEmpty();
   }
 
-  private String resolveLanguage(long userId) {
-    return userAccountService.getLanguage(userId);
+  /**
+   * 표시 언어를 정한다. <b>게스트는 {@code en} 고정이며 {@code user} 모듈을 호출하지 않는다</b>(#181) — 기본값을 고르는 문제가 아니라 호출
+   * 자체를 피하는 것이 요점이다. 게스트는 {@code users} 행이 없어 {@code getLanguage(null)}이 곧 {@code 404
+   * USER_NOT_FOUND}가 되고, 그러면 게스트의 첫 {@code /start}부터 실패한다.
+   */
+  private String resolveLanguage(Long userId) {
+    return userId == null ? GUEST_LANGUAGE : userAccountService.getLanguage(userId);
   }
 }

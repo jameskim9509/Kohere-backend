@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.kohere.lifetip.application.LifeTipService;
 import com.kohere.lifetip.application.dto.TipListResponse;
@@ -46,8 +48,6 @@ class LifeTipMongoIntegrationTest {
   void clean() {
     topicRepository.deleteAll();
     tipRepository.deleteAll();
-    // 생활 팁은 세입자 전용(US-8) — 조회 진입 게이트가 userType을 확인한다.
-    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
   }
 
   @Test
@@ -135,6 +135,51 @@ class LifeTipMongoIntegrationTest {
   void tipsUnknownTopic() {
     assertThatThrownBy(() -> lifeTipService.getTips(4L, "UNKNOWN"))
         .isInstanceOf(LifeTipTopicNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("게스트(userId=null)의 주제 목록은 en이고 user 모듈을 한 번도 호출하지 않는다")
+  void guestTopicsUseEnglishWithoutCallingUser() {
+    // 요점은 "기본값이 en"이 아니라 "호출 회피"다 — 게스트는 users 행이 없어 getLanguage가 곧 404다.
+    topicRepository.save(topic("MOVING_IN", 1, Map.of("en", "Moving In", "ko", "입주")));
+
+    TopicListResponse res = lifeTipService.getTopics(null);
+
+    assertThat(res.topics().get(0).name()).isEqualTo("Moving In");
+    verify(userAccountService, never()).getLanguage(anyLong());
+    verify(userAccountService, never()).getUserType(anyLong());
+  }
+
+  @Test
+  @DisplayName("게스트의 주제별 팁도 en이고 user 모듈 미호출")
+  void guestTipsUseEnglishWithoutCallingUser() {
+    topicRepository.save(topic("MOVING_IN", 1, Map.of("en", "Moving In", "ko", "입주")));
+    tipRepository.save(
+        tip(
+            "MOVING_IN",
+            1,
+            Map.of("en", "Registration", "ko", "전입신고"),
+            Map.of("en", "Do it within 14 days.", "ko", "14일 이내에 하세요."),
+            null));
+
+    TipListResponse res = lifeTipService.getTips(null, "MOVING_IN");
+
+    assertThat(res.tips()).extracting(TipListResponse.Tip::title).containsExactly("Registration");
+    verify(userAccountService, never()).getLanguage(anyLong());
+    verify(userAccountService, never()).getUserType(anyLong());
+  }
+
+  @Test
+  @DisplayName("임대인도 생활 팁을 본다 — 역할 게이트가 사라졌다(#181)")
+  void landlordAllowed() {
+    // 게이트를 되살리면 깨진다. 로그아웃하면 그대로 보이는 자원이라 로그인 임대인만 막는 것은 실효가 없다.
+    topicRepository.save(topic("MOVING_IN", 1, Map.of("en", "Moving In", "ko", "입주")));
+    given(userAccountService.getLanguage(77L)).willReturn("ko");
+
+    TopicListResponse res = lifeTipService.getTopics(77L);
+
+    assertThat(res.topics().get(0).name()).isEqualTo("입주");
+    verify(userAccountService, never()).getUserType(anyLong());
   }
 
   @Test
