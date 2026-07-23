@@ -38,6 +38,9 @@ import org.springframework.test.web.servlet.MockMvc;
  *
  * <p>흐름: 소셜로그인(신규)→온보딩 미완료 차단(403)→약관 동의(TERMS_AGREED)→이메일 인증(코드 발송·확인)→온보딩(ACTIVE)→프로필
  * 조회·수정→재발급→재사용 탐지(401)→탈퇴(204)→탈퇴 후 조회(404)→재가입 분리.
+ *
+ * <p>occupation은 온보딩 **선택** 입력(#187) — 미전송/null 명시(200 ACTIVE + 응답 생략)·빈 문자열(400 INVALID_INPUT)
+ * 케이스는 별도 테스트로 검증한다(US-1-2 AC).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -202,12 +205,135 @@ class OnboardingFlowTest {
         .andExpect(jsonPath("$.data.status").value("PENDING"));
   }
 
+  /**
+   * US-1-2 AC(#187): occupation 미전송이어도 온보딩이 완료(ACTIVE)되고, 저장하지 않으므로(NULL) 온보딩 응답과 프로필 조회 모두에서
+   * occupation 필드가 생략된다(NON_NULL 직렬화).
+   */
+  @Test
+  void onboardingWithoutOccupation_activatesAndOmitsOccupation() throws Exception {
+    String email = "occ-omitted@example.com";
+    String token = readyForOnboarding("google-sub-occ-omitted", email);
+
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/auth/onboarding")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(onboardingJson(email, "")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.user.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.data.user.occupation").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String accessToken = read(body, "data", "accessToken");
+    mockMvc
+        .perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+        .andExpect(jsonPath("$.data.occupation").doesNotExist());
+  }
+
+  /** US-1-2 AC(#187): {@code "occupation": null} 명시 전송도 미전송과 동일하게 취급한다(200 ACTIVE + 응답 생략). */
+  @Test
+  void onboardingWithNullOccupation_activatesAndOmitsOccupation() throws Exception {
+    String email = "occ-null@example.com";
+    String token = readyForOnboarding("google-sub-occ-null", email);
+
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/auth/onboarding")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(onboardingJson(email, "\"occupation\": null,")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.user.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.data.user.occupation").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    String accessToken = read(body, "data", "accessToken");
+    mockMvc
+        .perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+        .andExpect(jsonPath("$.data.occupation").doesNotExist());
+  }
+
+  /**
+   * 계약 고정(#187): occupation은 선택이지만 값을 보낸 경우 enum 검증은 종전과 동일 — 빈 문자열 {@code ""}도 목록 밖 값이라 400
+   * INVALID_INPUT이다(null과 다르게 취급, 정규화하지 않음).
+   */
+  @Test
+  void onboardingWithEmptyOccupation_returnsInvalidInput() throws Exception {
+    String email = "occ-empty@example.com";
+    String token = readyForOnboarding("google-sub-occ-empty", email);
+
+    mockMvc
+        .perform(
+            post("/api/v1/auth/onboarding")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(onboardingJson(email, "\"occupation\": \"\",")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+  }
+
   @Test
   void protectedEndpoint_withoutToken_returnsUnauthenticated() throws Exception {
     mockMvc
         .perform(get("/api/v1/users/me"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+  }
+
+  /** 소셜 로그인(신규)→약관 동의→이메일 인증까지 마치고 온보딩 임시 토큰을 돌려준다(occupation 케이스 테스트의 공통 진입 셋업). */
+  private String readyForOnboarding(String subject, String email) throws Exception {
+    String loginBody =
+        mockMvc
+            .perform(
+                post("/api/v1/auth/social-login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"provider\":\"GOOGLE\",\"idToken\":\"" + subject + "\"}"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String token = read(loginBody, "data", "accessToken");
+
+    mockMvc
+        .perform(
+            post("/api/v1/auth/terms")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"termsOfServiceAgreed\":true,\"privacyPolicyAgreed\":true,\"marketingAgreed\":false}"))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/verification-code")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk());
+    ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+    verify(emailSender).send(eq(email), codeCaptor.capture());
+
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/verify")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"email\":\"" + email + "\",\"code\":\"" + codeCaptor.getValue() + "\"}"))
+        .andExpect(status().isOk());
+    return token;
   }
 
   private String read(String json, String... path) throws Exception {
@@ -223,6 +349,14 @@ class OnboardingFlowTest {
   }
 
   private static String onboardingJson(String email) {
+    return onboardingJson(email, "\"occupation\": \"UNDERGRADUATE_STUDENT\",");
+  }
+
+  /**
+   * 온보딩 요청 본문. {@code occupationEntry}는 occupation 항목 문자열 그 자체(예: {@code "occupation": null,}) —
+   * 미전송 케이스는 빈 문자열을 넘긴다(#187 선택 입력 케이스 조립용).
+   */
+  private static String onboardingJson(String email, String occupationEntry) {
     return """
         {
           "firstName": "Gil",
@@ -230,11 +364,11 @@ class OnboardingFlowTest {
           "gender": "MALE",
           "birthDate": "1990-01-01",
           "country": "KR",
-          "occupation": "UNDERGRADUATE_STUDENT",
+          %s
           "email": "%s",
           "visaType": "SHORT_TERM_VISIT"
         }
         """
-        .formatted(email);
+        .formatted(occupationEntry, email);
   }
 }
