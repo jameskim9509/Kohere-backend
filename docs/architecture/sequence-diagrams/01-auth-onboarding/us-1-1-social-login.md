@@ -53,20 +53,20 @@ sequenceDiagram
             USER->>SQL: users에 PENDING 사용자 write<br/>(name·email 포함)
             SQL-->>USER: 저장 완료
             USER-->>S: userId(PENDING)
-            S->>SQL: social_accounts 매핑(provider, providerUserId, email, userId) 생성<br/>(Apple은 apple_refresh_token 함께 저장, name은 User 소유라 미저장)
+            S->>SQL: social_accounts 매핑(provider, providerUserId, email, name, userId) 생성<br/>(Apple은 apple_refresh_token 함께 저장; email·name은 provider 스냅샷)
             SQL-->>S: 저장 완료
             Note over S: 온보딩 임시 accessToken(onboardingCompleted=false)<br/>refreshToken 미발급
             S-->>C: 200 OK<br/>{ onboardingRequired: true, status: PENDING, name, email,<br/>tokenType: Bearer, accessToken, refreshToken: null, expiresIn: 1800 }
             C-->>U: 약관 동의 화면으로 이동(US-1-7)
             end
         else 기존 ACTIVE 회원
-            Note over S: 요청 email·name 무시(저장값 사용) — accessToken+refreshToken 발급
+            Note over S: User는 요청 email·name 무시(저장값 사용)<br/>SocialAccount 스냅샷(email·name) upsert · accessToken+refreshToken 발급
             S->>RDS: refreshToken(status=ACTIVE) 저장(14일 TTL)
             RDS-->>S: 저장 완료
             S-->>C: 200 OK<br/>{ onboardingRequired: false, status: ACTIVE, name, email,<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
             C-->>U: 홈 화면으로 이동
         else 기존 미완료 회원 재로그인 (PENDING·TERMS_AGREED)
-            Note over S,USER: 신규 행 미생성 — 요청 email·name 무시, 기존 userId·저장 name·email 사용
+            Note over S,USER: 신규 행 미생성 — User는 안 덮고 저장 name·email 사용<br/>SocialAccount 스냅샷(email·name) upsert
             S->>USER: 공개 쿼리: 현재 status·name·email 조회
             USER-->>S: status (PENDING 또는 TERMS_AGREED)·name·email
             Note over S: 온보딩 임시 accessToken 재발급(onboardingCompleted=false)<br/>refreshToken 미발급

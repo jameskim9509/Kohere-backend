@@ -160,15 +160,17 @@
 | `user_id` | BIGINT | NOT NULL, INDEX · → user `users.id`(FK 아님, 값 참조) |
 | `provider` | VARCHAR(20) (enum `Provider`) | NOT NULL |
 | `provider_user_id` | VARCHAR(255) | NOT NULL · provider OIDC `sub` |
-| `email` | VARCHAR(255) | NULL · 제공자 이메일 — 민감정보 |
+| `email` | VARCHAR(255) | NULL · 제공자 이메일(**provider 스냅샷**) — 로그인마다 최신값 upsert. 심사계정 매칭 등에 사용. 민감정보 |
+| `name` | VARCHAR(200) | NULL · 제공자가 준 표시 이름(**provider 스냅샷**) — 로그인마다 요청 `name`으로 upsert(값 있을 때만, Apple 재로그인 `null`은 기존값 보존). `users.name`(사용자 값)과 별개 · 전진 마이그레이션 V20 · 민감정보 |
 | `apple_refresh_token` | VARCHAR(512) | NULL · Apple 전용 — 코드 교환(`/auth/token`)으로 받은 refresh token. 탈퇴 시 `/auth/revoke` 폐기용([ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)). Google·교환 전 행은 NULL — **1급 민감정보(로그·응답 비노출)** |
 | `linked_at` | DATETIME(6) | NOT NULL · 자격 연결 시각 |
 
 **인덱스**: PK `id` / UNIQUE `(provider, provider_user_id)`(중복 연동 방지·로그인 분기 등치 조회) / INDEX `user_id`(회원 연동 목록·탈퇴 정리).
 
 - **교차 모듈 no-FK**: `user_id`는 user 소유 → FK 미설정(값 참조). 회원 상태/프로필은 user 공개 쿼리/애플리케이션 조인.
-- 연동 매핑은 불변(생성/삭제만) → `updated_at`/소프트삭제 미적용. 단 `apple_refresh_token`은 Apple 재동의 시 갱신될 수 있다(코드 교환 응답에 있을 때만 upsert, 없으면 기존 값 보존 — [ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)).
+- 연동 매핑의 **식별키**(`provider`·`provider_user_id`·`user_id`)는 불변(생성/삭제만) → `updated_at`/소프트삭제 미적용. 단 **provider 스냅샷 컬럼 `email`·`name`·`apple_refresh_token`은 로그인마다 최신 provider 값으로 upsert**된다(email=검증 토큰 값, name=요청 값·값 있을 때만, apple_refresh_token=응답에 있을 때만; 비어 오면 기존 값 보존 — [ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md)). 이 스냅샷은 `users`(사용자 값)와 별개로, 재로그인 시 provider 변경은 여기 반영하되 `users`(사용자 편집분)는 덮지 않는다.
 - **Apple refresh token**: 1급 민감정보 — 로그·응답·`toString` 비노출. MVP는 평문(RDS 저장소 암호화 의존, [ADR-0015](../adr/0015-sensitive-column-encryption.md))이며 컬럼 암호화 도입 시 후보. 전진 마이그레이션(Flyway)으로 추가하며, 탈퇴 시 매핑 삭제로 함께 제거된다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)).
+- **이름 스냅샷 컬럼 — 전진 마이그레이션 V20**: `social_accounts`에 `name VARCHAR(200) NULL` 추가(#192, provider 스냅샷). 기존 행은 NULL(과거 로그인의 provider name 미보유)이며 다음 로그인 시 upsert로 채워진다(소비처가 없어 NULL이어도 무방; 필요 시 `users.name`에서 1회 백필 가능). Apple 기존 계정은 재로그인 때 이름을 주지 않아 NULL로 남을 수 있다.
 
 ### 4-2. `user`
 
@@ -203,7 +205,7 @@
 
 **인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / INDEX `user_type`(역할별 조회·집계) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
 
-- **이메일 두 종류**: 소셜 제공자 이메일은 **auth `social_accounts.email`** 소관(역할 무관·소셜 연동 메타데이터)이고, `users.email`은 **소셜 로그인 시 provider email(요청 `email`↔토큰 `email` 클레임 대조로 확정)로 세팅**되는 연락 이메일이다(#192 — 온보딩 입력·인증이 아니며, 계정 생성 시 둘은 같은 provider 값에서 나온다). **역할과 무관하게** 세입자·임대인 모두 소셜 로그인에서 캡처된 provider email을 `users.email`에 보유한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 '임대인 이메일 미수집' 결정은 #192로 개정 — 수집 폼이 아니라 소셜 로그인 provider 값 보유이고, 이메일 인증(신원 확인)이 없어진 지금 email은 '미검증 연락처'일 뿐이다). 이메일 인증 API(§4-1 A-2)는 **온보딩 완료(`ACTIVE`) 이후 접근 전용**이고, 그 *인증 흔적*은 Redis에만 단명 보관하며 **실제 `users.email` 변경 반영은 후속 이슈**(#192 범위 밖 — 이번엔 접근 제한만).
+- **이메일 두 종류**: 소셜 제공자 이메일은 **auth `social_accounts.email`** 소관(역할 무관·소셜 연동 메타데이터)이고, `users.email`은 **소셜 로그인 시 provider email(요청 `email`↔토큰 `email` 클레임 대조로 확정)로 세팅**되는 연락 이메일이다(#192 — 온보딩 입력·인증이 아니며, 계정 생성 시 둘은 같은 provider 값에서 나온다). **역할과 무관하게** 세입자·임대인 모두 소셜 로그인에서 캡처된 provider email을 `users.email`에 보유한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 '임대인 이메일 미수집' 결정은 #192로 개정 — 수집 폼이 아니라 소셜 로그인 provider 값 보유이고, 이메일 인증(신원 확인)이 없어진 지금 email은 '미검증 연락처'일 뿐이다). 이메일 인증 API(§4-1 A-2)는 **온보딩 완료(`ACTIVE`) 이후 접근 전용**이고, 그 *인증 흔적*은 Redis에만 단명 보관하며 **실제 `users.email` 변경 반영은 후속 이슈**(#192 범위 밖 — 이번엔 접근 제한만). **이름도 같은 이중 관리**다 — `social_accounts.name`(provider 스냅샷)과 `users.name`(사용자 값). `social_accounts`의 `email`·`name`은 로그인마다 provider 값으로 upsert되지만 `users`는 최초 로그인에만 세팅되고 이후 사용자 편집(name=`PATCH /users/me`)만 반영한다 — 재로그인 시 provider 변경은 `social_accounts`에만 반영하고 `users`는 덮지 않는다.
 - **닉네임**: 시스템이 `형용사 + 사물`로 무작위 배정하며 `UNIQUE`로 중복을 막는다(충돌 시 재시도). 사용자 입력·수정 대상이 아니다.
 - **상태 흐름·컬럼 채움 시점**: `status`는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`. **`name`과 `email`은 소셜 로그인 시점**(User 생성, `PENDING`)에 요청 `name`·provider `email`로 채워지고(#192 — 온보딩이 아니며 세입자·임대인 역할 무관), **동의 컬럼**(`terms_of_service_agreed`·`privacy_policy_agreed`·`marketing_agreed`·`agreed_at`·`terms_version`)은 **약관 동의 단계**(`PENDING`→`TERMS_AGREED`)에 채워지며, **프로필 컬럼**(세입자: `nickname`·성별·생년월일·`country`·`lang`(선택 — 미전송이면 저장하지 않고 NULL, 표시 시 `en` 폴백)·`occupation`(선택 — 미전송이면 저장하지 않고 NULL, #187)·`visa_type` / 임대인: `nickname`·`phone_number`·`birth_date`·`country`=`KR`·`lang`=`ko`(둘 다 서버 고정, 사용자 미입력))은 **온보딩 단계**(`TERMS_AGREED`→`ACTIVE`)에 채워진다(임대인 `business_registration_number_hash`는 온보딩에서 수집하지 않아 이 단계엔 채우지 않는다 — 추후 매물 등록 시점에 채움; enum 값 정본은 [domain-model](../architecture/domain-model.md)).
 - **역할(`user_type`) 분기**: `user_type`은 **온보딩 제출 엔드포인트**(세입자 `POST /api/v1/auth/onboarding` / 임대인 `POST /api/v1/auth/landlord/onboarding`)로 확정되며 **이후 불변**이다. 소셜 로그인·약관 동의까지 두 역할 공통이고 이후 온보딩에서 분기한다(임대인 온보딩엔 연락처 SMS 인증이 있고, 세입자 이메일 인증은 온보딩 단계가 아니라 `ACTIVE` 이후 전용 접근이다 — §4-1 A-2). 임대인은 user 별도 모듈이 아니라 **같은 `users` 애그리거트**다 — 본인 프로필 조회·수정(`GET`/`PATCH /users/me`)은 세입자와 동일 경로로 제공하되 `user_type`에 따라 응답·수정 가능 컬럼이 갈린다(임대인 응답은 `name`·`nickname`·`birth_date`·`phone_number`·`email`·`country`(=`KR`, 표시명·국기 포함)·`status`·동의 컬럼·`created_at`만 — 세입자 전용 컬럼 `gender`·`occupation`·`visa_type`는 제외(`birth_date`·`country`는 임대인도 보유·반환 — `country`는 서버 고정값이라 수집하지 않지만 응답엔 나오고, `email`은 소셜 로그인 provider 값이라 임대인도 보유·반환한다); 수정은 `name`·`phone_number`·`marketing_agreed`만(임대인 `birth_date`는 온보딩 확정·조회 전용이고 `country`·`lang`은 서버 고정이라 변경 불가 — `lang` 변경은 세입자 전용), `business_registration_number_hash`·`user_type`·`nickname`은 불변).

@@ -49,8 +49,8 @@
   When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
   Then `200 OK` + 공통 래퍼 `data`에 `accessToken`/`refreshToken`/`onboardingRequired=false`/`status="ACTIVE"`/`tokenType="Bearer"`/`expiresIn`과 `email`/`name`(온보딩 프리필용 — 모든 분기에서 반환, 값은 User의 `name`/`email`)이 내려오고, refresh 토큰은 서버에 해시 저장되어 재발급에 사용된다. 앱은 홈으로 이동한다.
 - **정상 — 신규 회원 약관 동의 유도**
-  Given 해당 provider 계정으로 가입한 회원이 없고
-  When 유효한 `idToken`으로 `POST /api/v1/auth/social-login`을 호출하면
+  Given 해당 provider 계정으로 가입한 회원이 없고, 앱이 네이티브 SDK로부터 `email`·`name`을 받았고
+  When 유효한 `idToken`과 함께 `email`·`name`을 담아(**신규 가입은 `email` 필수**, `name`은 캡처·없으면 `null`) `POST /api/v1/auth/social-login`을 호출하면
   Then `200 OK` + `data.onboardingRequired=true`·`data.status="PENDING"`(온보딩 프리필용 `email`/`name` 포함)으로 응답하고, 서버는 **소셜 로그인 값으로 `name`/`email`을 이미 채운 온보딩 미완료(PENDING)** 사용자 레코드(및 provider/providerUserId/email을 보유한 `SocialAccount`)를 생성한다(이름·이메일 수집을 온보딩까지 미루지 않는다 — #192; `SocialAccount`에 `name`은 저장하지 않는다). 이때 발급되는 access 토큰은 온보딩 흐름(약관 동의·본인 확인(임대인 연락처/사업자번호 검증)·온보딩) API만 통과시키는 클레임(`onboardingCompleted=false`)을 가지며, refresh 토큰은 발급하지 않는다(`refreshToken=null`). 앱은 `status`로 분기해 다음으로 **약관 동의 화면**(US-1-7)으로 이동한다. (확인 필요: 온보딩 전용 임시 토큰 만료시간)
 - **정상 — 가입 미완료 회원 재로그인(재개 지점 분기)**
   Given 소셜 로그인은 했으나 가입을 끝내지 못한 회원이 다시 로그인하고(신규 행은 만들지 않음)
