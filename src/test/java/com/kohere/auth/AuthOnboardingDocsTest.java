@@ -143,14 +143,18 @@ class AuthOnboardingDocsTest {
     when(appleAuthClient.exchangeAuthorizationCode("docs-apple-code"))
         .thenReturn(new AppleAuthClient.AppleTokens("docs-apple-sub", "docs-apple-rt"));
 
-    // 소셜 로그인(신규) → 온보딩 임시 토큰
+    // 소셜 로그인(신규) → 온보딩 임시 토큰. email·name은 앱이 함께 보내 최초 로그인에서 캡처된다(#192).
+    // email은 토큰 email 클레임(docs-sub-1@example.com)과 교차 검증되므로 동일 값을 보낸다.
     String login =
         mockMvc
             .perform(
                 post("/api/v1/auth/social-login")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"provider\":\"GOOGLE\",\"idToken\":\"docs-sub-1\"}"))
+                    .content(
+                        "{\"provider\":\"GOOGLE\",\"idToken\":\"docs-sub-1\",\"email\":\"docs-sub-1@example.com\",\"name\":\"Minh Nguyen\"}"))
             .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.name").value("Minh Nguyen"))
+            .andExpect(jsonPath("$.data.email").value("docs-sub-1@example.com"))
             .andDo(
                 document(
                     "auth-social-login",
@@ -193,44 +197,14 @@ class AuthOnboardingDocsTest {
                 requestFields(termsRequestFields()),
                 responseFields(termsResponseFields())));
 
-    // 이메일 인증번호 발송
-    mockMvc
-        .perform(
-            post("/api/v1/auth/email/verification-code")
-                .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"" + email + "\"}"))
-        .andExpect(status().isOk())
-        .andDo(
-            document(
-                "auth-email-verification-code",
-                resourceDetails().summary("이메일 인증번호 발송 — 동기 발송 성공 후 챌린지 저장(email 마스킹 반환)"),
-                requestFields(emailCodeRequestFields()),
-                responseFields(emailCodeResponseFields())));
-
-    // 이메일 인증번호 확인
-    mockMvc
-        .perform(
-            post("/api/v1/auth/email/verify")
-                .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"" + email + "\",\"code\":\"" + sentCodes.get(email) + "\"}"))
-        .andExpect(status().isOk())
-        .andDo(
-            document(
-                "auth-email-verify",
-                resourceDetails().summary("이메일 인증번호 확인 — 검증 완료(VERIFIED) 마킹"),
-                requestFields(emailVerifyRequestFields()),
-                responseFields(emailVerifyResponseFields())));
-
-    // 온보딩 완료 → 정식 토큰
+    // 온보딩 완료 → 정식 토큰(이메일 인증은 온보딩과 분리돼 정식 토큰 전용 — 아래에서 별도 생성, #192)
     String onboarding =
         mockMvc
             .perform(
                 post("/api/v1/auth/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(onboardingJson(email)))
+                    .content(onboardingJson()))
             .andExpect(status().isOk())
             .andDo(
                 document(
@@ -260,6 +234,37 @@ class AuthOnboardingDocsTest {
                 resourceDetails().summary("소셜 로그인 — 기존 회원(ACTIVE) 로그인: 정식 access+refresh 발급"),
                 requestFields(socialLoginRequestFields()),
                 responseFields(socialLoginResponseFields())));
+
+    // 이메일 인증번호 발송 — 정식(ACTIVE) 토큰 전용(#192에서 온보딩 단계 전용→정식 전용으로 반전)
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/verification-code")
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk())
+        .andDo(
+            document(
+                "auth-email-verification-code",
+                resourceDetails()
+                    .summary("이메일 인증번호 발송(정식 ACTIVE 전용) — 동기 발송 성공 후 챌린지 저장(email 마스킹 반환)"),
+                requestFields(emailCodeRequestFields()),
+                responseFields(emailCodeResponseFields())));
+
+    // 이메일 인증번호 확인 — 정식(ACTIVE) 토큰 전용
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/verify")
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\",\"code\":\"" + sentCodes.get(email) + "\"}"))
+        .andExpect(status().isOk())
+        .andDo(
+            document(
+                "auth-email-verify",
+                resourceDetails().summary("이메일 인증번호 확인(정식 ACTIVE 전용) — 검증 완료(VERIFIED) 마킹"),
+                requestFields(emailVerifyRequestFields()),
+                responseFields(emailVerifyResponseFields())));
 
     // 내 프로필 조회
     mockMvc
@@ -458,10 +463,10 @@ class AuthOnboardingDocsTest {
         "auth-terms-already-completed",
         "약관 동의 — 이미 온보딩 완료(ACTIVE) 사용자의 재요청 (409 AUTH_ONBOARDING_ALREADY_COMPLETED)");
 
-    // ===== email verification-code =====
+    // ===== email verification-code (정식 ACTIVE 토큰 전용 — #192) =====
     perform(
         post("/api/v1/auth/email/verification-code")
-            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"\"}"),
         status().isBadRequest(),
@@ -471,7 +476,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/email/verification-code")
-            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
@@ -483,7 +488,7 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/email/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-pending") + "\"}"),
+            .content("{\"email\":\"" + emailFor("err-active") + "\"}"),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-email-verification-code-unauthenticated",
@@ -493,36 +498,35 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/email/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-pending") + "\"}"),
+            .content("{\"email\":\"" + emailFor("err-active") + "\"}"),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-email-verification-code-token-expired",
         "이메일 인증번호 발송 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
 
-    // 약관 미동의(PENDING) 상태로 인증번호 발송 → 약관 동의 선행 안내 422 (이메일 인증은 약관 동의가 선행)
+    // 온보딩 미완료(온보딩 토큰, ROLE_ONBOARDING) 호출 → 정식 토큰 필요 403 (#192 반전)
     perform(
         post("/api/v1/auth/email/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"" + emailFor("err-pending") + "\"}"),
-        status().isUnprocessableEntity(),
-        "AUTH_TERMS_AGREEMENT_REQUIRED",
-        "auth-email-verification-code-terms-required",
-        "이메일 인증번호 발송 — 약관 미동의(PENDING) 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "auth-email-verification-code-onboarding-required",
+        "이메일 인증번호 발송 — 온보딩 미완료(온보딩 토큰) 호출 (403 AUTH_ONBOARDING_REQUIRED): 정식(ACTIVE) 토큰 필요");
 
-    // 재발송 간격 미달 → 429 (첫 발송 성공 직후 즉시 재요청)
-    String resendToken = read(socialLogin("err-resend"), "data", "accessToken");
-    agreeTerms(resendToken);
+    // 재발송 간격 미달 → 429 (정식 ACTIVE 사용자, 첫 발송 성공 직후 즉시 재요청)
+    String resendAccess = onboardCompletely("err-resend");
     mockMvc
         .perform(
             post("/api/v1/auth/email/verification-code")
-                .header(HttpHeaders.AUTHORIZATION, bearer(resendToken))
+                .header(HttpHeaders.AUTHORIZATION, bearer(resendAccess))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + emailFor("err-resend") + "\"}"))
         .andExpect(status().isOk());
     perform(
         post("/api/v1/auth/email/verification-code")
-            .header(HttpHeaders.AUTHORIZATION, bearer(resendToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(resendAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"" + emailFor("err-resend") + "\"}"),
         status().isTooManyRequests(),
@@ -530,16 +534,15 @@ class AuthOnboardingDocsTest {
         "auth-email-verification-code-rate-limited",
         "이메일 인증번호 발송 — 재발송 간격 미달 (429 TOO_MANY_REQUESTS)");
 
-    // 메일 발송 실패(provider 장애·타임아웃) → 502, 챌린지 미저장
-    String smtpToken = read(socialLogin("err-smtp"), "data", "accessToken");
-    agreeTerms(smtpToken);
+    // 메일 발송 실패(provider 장애·타임아웃) → 502, 챌린지 미저장 (정식 ACTIVE 사용자)
+    String smtpAccess = onboardCompletely("err-smtp");
     String smtpEmail = emailFor("err-smtp");
     doThrow(new EmailDispatchException(new RuntimeException("smtp down")))
         .when(emailSender)
         .send(eq(smtpEmail), any());
     perform(
         post("/api/v1/auth/email/verification-code")
-            .header(HttpHeaders.AUTHORIZATION, bearer(smtpToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(smtpAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"" + smtpEmail + "\"}"),
         status().isBadGateway(),
@@ -547,22 +550,12 @@ class AuthOnboardingDocsTest {
         "auth-email-verification-code-dispatch-failed",
         "이메일 인증번호 발송 — 메일 발송 실패 (502 UPSTREAM_ERROR): 챌린지 미저장");
 
-    perform(
-        post("/api/v1/auth/email/verification-code")
-            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-active") + "\"}"),
-        status().isConflict(),
-        "AUTH_ONBOARDING_ALREADY_COMPLETED",
-        "auth-email-verification-code-already-completed",
-        "이메일 인증번호 발송 — 이미 온보딩 완료(ACTIVE) 사용자의 요청 (409 AUTH_ONBOARDING_ALREADY_COMPLETED)");
-
-    // ===== email verify =====
+    // ===== email verify (정식 ACTIVE 토큰 전용 — #192) =====
     perform(
         post("/api/v1/auth/email/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-pending") + "\",\"code\":\"000000\"}"),
+            .content("{\"email\":\"" + emailFor("err-active") + "\",\"code\":\"000000\"}"),
         status().isUnprocessableEntity(),
         "AUTH_EMAIL_VERIFICATION_FAILED",
         "auth-email-verify-failed",
@@ -570,7 +563,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/email/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"\",\"code\":\"123456\"}"),
         status().isBadRequest(),
@@ -580,7 +573,7 @@ class AuthOnboardingDocsTest {
 
     perform(
         post("/api/v1/auth/email/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
@@ -592,7 +585,7 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/email/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-pending") + "\",\"code\":\"000000\"}"),
+            .content("{\"email\":\"" + emailFor("err-active") + "\",\"code\":\"000000\"}"),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-email-verify-unauthenticated",
@@ -602,20 +595,30 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/email/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-pending") + "\",\"code\":\"000000\"}"),
+            .content("{\"email\":\"" + emailFor("err-active") + "\",\"code\":\"000000\"}"),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-email-verify-token-expired",
         "이메일 인증 확인 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
 
-    // 코드 불일치 누적 → 시도 상한 초과 429 (오입력 maxAttempts회째에 거절)
-    String attemptsToken = read(socialLogin("err-attempts"), "data", "accessToken");
-    agreeTerms(attemptsToken);
+    // 온보딩 미완료(온보딩 토큰) 호출 → 정식 토큰 필요 403 (#192 반전)
+    perform(
+        post("/api/v1/auth/email/verify")
+            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"email\":\"" + emailFor("err-pending") + "\",\"code\":\"000000\"}"),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "auth-email-verify-onboarding-required",
+        "이메일 인증 확인 — 온보딩 미완료(온보딩 토큰) 호출 (403 AUTH_ONBOARDING_REQUIRED): 정식(ACTIVE) 토큰 필요");
+
+    // 코드 불일치 누적 → 시도 상한 초과 429 (정식 ACTIVE 사용자, 오입력 maxAttempts회째에 거절)
+    String attemptsAccess = onboardCompletely("err-attempts");
     String attemptsEmail = emailFor("err-attempts");
     mockMvc
         .perform(
             post("/api/v1/auth/email/verification-code")
-                .header(HttpHeaders.AUTHORIZATION, bearer(attemptsToken))
+                .header(HttpHeaders.AUTHORIZATION, bearer(attemptsAccess))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + attemptsEmail + "\"}"))
         .andExpect(status().isOk());
@@ -623,14 +626,14 @@ class AuthOnboardingDocsTest {
       mockMvc
           .perform(
               post("/api/v1/auth/email/verify")
-                  .header(HttpHeaders.AUTHORIZATION, bearer(attemptsToken))
+                  .header(HttpHeaders.AUTHORIZATION, bearer(attemptsAccess))
                   .contentType(MediaType.APPLICATION_JSON)
                   .content("{\"email\":\"" + attemptsEmail + "\",\"code\":\"000000\"}"))
           .andExpect(status().isUnprocessableEntity());
     }
     perform(
         post("/api/v1/auth/email/verify")
-            .header(HttpHeaders.AUTHORIZATION, bearer(attemptsToken))
+            .header(HttpHeaders.AUTHORIZATION, bearer(attemptsAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"email\":\"" + attemptsEmail + "\",\"code\":\"000000\"}"),
         status().isTooManyRequests(),
@@ -643,7 +646,7 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingBlankFirstName()),
+            .content(onboardingBlankGender()),
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-onboarding-invalid-input",
@@ -663,7 +666,7 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson(emailFor("err-pending"))),
+            .content(onboardingJson()),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-onboarding-unauthenticated",
@@ -673,7 +676,7 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson(emailFor("err-pending"))),
+            .content(onboardingJson()),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-onboarding-token-expired",
@@ -684,31 +687,20 @@ class AuthOnboardingDocsTest {
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson(emailFor("err-pending"))),
+            .content(onboardingJson()),
         status().isUnprocessableEntity(),
         "AUTH_TERMS_AGREEMENT_REQUIRED",
         "auth-onboarding-terms-required",
         "온보딩 — 약관 미동의 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
 
-    // 약관은 동의했으나(TERMS_AGREED) 이메일 미인증 → 이메일 인증 선행 필요 422
-    String emailNeedToken = read(socialLogin("err-emailneed"), "data", "accessToken");
-    agreeTerms(emailNeedToken);
-    perform(
-        post("/api/v1/auth/onboarding")
-            .header(HttpHeaders.AUTHORIZATION, bearer(emailNeedToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson(emailFor("err-emailneed"))),
-        status().isUnprocessableEntity(),
-        "AUTH_EMAIL_NOT_VERIFIED",
-        "auth-onboarding-email-not-verified",
-        "온보딩 — 약관 동의 후 이메일 미인증 (422 AUTH_EMAIL_NOT_VERIFIED)");
+    // #192: 온보딩에서 이메일 인증 선행 게이트가 제거됐다(AUTH_EMAIL_NOT_VERIFIED 폐지) — 약관만 동의하면 곧바로 온보딩 가능.
 
-    // 이미 온보딩 완료한 사용자(약관·이메일 모두 통과) 재요청 → 409
+    // 이미 온보딩 완료한 사용자 재요청 → 409
     perform(
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson(emailFor("err-active"))),
+            .content(onboardingJson()),
         status().isConflict(),
         "AUTH_ONBOARDING_ALREADY_COMPLETED",
         "auth-onboarding-already-completed",
@@ -998,7 +990,15 @@ class AuthOnboardingDocsTest {
         optField(
             "authorizationCode",
             JsonFieldType.STRING,
-            "Apple 1회용 인가코드(APPLE 필수, GOOGLE 미사용, 약 5분 만료)"));
+            "Apple 1회용 인가코드(APPLE 필수, GOOGLE 미사용, 약 5분 만료)"),
+        optField(
+            "email",
+            JsonFieldType.STRING,
+            "앱이 네이티브 SDK에서 받은 이메일(선택 — 최초 로그인 필수, 토큰 email 클레임과 교차 검증). 재로그인 값은 무시(#192)"),
+        optField(
+            "name",
+            JsonFieldType.STRING,
+            "앱이 네이티브 SDK에서 받은 표시 이름(선택 — 최초 로그인에서만 캡처, 검증 없이 신뢰). Apple은 최초 1회만 제공(#192)"));
   }
 
   private static List<FieldDescriptor> socialLoginResponseFields() {
@@ -1012,6 +1012,11 @@ class AuthOnboardingDocsTest {
             "data.status",
             JsonFieldType.STRING,
             "사용자 상태(PENDING|TERMS_AGREED|ACTIVE) — 클라이언트 재개 지점 분기"),
+        field("data.email", JsonFieldType.STRING, "사용자 이메일(provider 진본) — 모든 분기에서 프리필용 반환(#192)"),
+        optField(
+            "data.name",
+            JsonFieldType.STRING,
+            "사용자 이름(단일 name) — 모든 분기에서 프리필용 반환, 아직 없으면 null(#192)"),
         field("data.tokenType", JsonFieldType.STRING, "토큰 타입(Bearer)"),
         field("data.accessToken", JsonFieldType.STRING, "access 토큰(JWT). 미완료는 온보딩 전용 스코프"),
         optField("data.refreshToken", JsonFieldType.STRING, "refresh 토큰(불투명). 미완료 응답에서는 null"),
@@ -1065,8 +1070,6 @@ class AuthOnboardingDocsTest {
 
   private static List<FieldDescriptor> onboardingRequestFields() {
     return List.of(
-        field("firstName", JsonFieldType.STRING, "이름(필수)"),
-        field("lastName", JsonFieldType.STRING, "성(필수)"),
         field("gender", JsonFieldType.STRING, "성별: MALE | FEMALE(필수)"),
         field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(필수)"),
         field("country", JsonFieldType.STRING, "국적 ISO 3166-1 alpha-2 코드 예: KR(필수)"),
@@ -1074,7 +1077,6 @@ class AuthOnboardingDocsTest {
             "occupation",
             JsonFieldType.STRING,
             "직업 enum(선택 — 미전송·null이면 저장하지 않고 응답에서 생략, 값이 있으면 목록 검증 — #187): UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC"),
-        field("email", JsonFieldType.STRING, "사전 인증된 이메일과 일치(필수)"),
         field(
             "visaType",
             JsonFieldType.STRING,
@@ -1091,15 +1093,13 @@ class AuthOnboardingDocsTest {
 
   private static List<FieldDescriptor> patchRequestFields() {
     return List.of(
-        optField("firstName", JsonFieldType.STRING, "이름(세입자·선택)"),
-        optField("lastName", JsonFieldType.STRING, "성(세입자·선택)"),
+        optField("name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름·선택 — #192)"),
         optField("gender", JsonFieldType.STRING, "성별 MALE|FEMALE(세입자·선택)"),
         optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(세입자·선택)"),
         optField("country", JsonFieldType.STRING, "국적 ISO 코드(세입자·선택)"),
         optField("occupation", JsonFieldType.STRING, "직업 enum(세입자·선택)"),
         optField("visaType", JsonFieldType.STRING, "비자유형 enum(세입자·선택)"),
         optField("lang", JsonFieldType.STRING, "표시 언어 en|ko|ja(세입자·선택 — 위반 시 INVALID_INPUT)"),
-        optField("name", JsonFieldType.STRING, "이름(임대인 전체 이름·선택)"),
         optField(
             "phoneNumber",
             JsonFieldType.STRING,
@@ -1120,8 +1120,7 @@ class AuthOnboardingDocsTest {
   private static List<FieldDescriptor> profileFields(String prefix) {
     return List.of(
         field(prefix + "id", JsonFieldType.NUMBER, "회원 ID"),
-        field(prefix + "firstName", JsonFieldType.STRING, "이름"),
-        field(prefix + "lastName", JsonFieldType.STRING, "성"),
+        field(prefix + "name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름 — #192)"),
         field(prefix + "nickname", JsonFieldType.STRING, "닉네임(서버 배정, 형용사+사물)"),
         field(prefix + "gender", JsonFieldType.STRING, "성별(MALE|FEMALE)"),
         field(prefix + "birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
@@ -1139,9 +1138,7 @@ class AuthOnboardingDocsTest {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.id", JsonFieldType.NUMBER, "회원 ID"),
         field("data.userType", JsonFieldType.STRING, "회원 역할(TENANT|LANDLORD) — 응답 필드가 이에 따라 갈린다"),
-        field("data.firstName", JsonFieldType.STRING, "이름(세입자)"),
-        field("data.lastName", JsonFieldType.STRING, "성(세입자)"),
-        optField("data.name", JsonFieldType.STRING, "전체 이름(임대인만 — 세입자는 생략)"),
+        field("data.name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름 — #192)"),
         field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정, 형용사+사물)"),
         field("data.gender", JsonFieldType.STRING, "성별(MALE|FEMALE)"),
         field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
@@ -1206,35 +1203,17 @@ class AuthOnboardingDocsTest {
         .andExpect(status().isOk());
   }
 
-  private void sendAndVerifyEmail(String token, String email) throws Exception {
-    mockMvc
-        .perform(
-            post("/api/v1/auth/email/verification-code")
-                .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"" + email + "\"}"))
-        .andExpect(status().isOk());
-    mockMvc
-        .perform(
-            post("/api/v1/auth/email/verify")
-                .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"" + email + "\",\"code\":\"" + sentCodes.get(email) + "\"}"))
-        .andExpect(status().isOk());
-  }
-
-  /** 신규 소셜 로그인 → 약관 동의 → 이메일 인증 → 온보딩 완료까지 수행하고 정식 access 토큰을 돌려준다. */
+  /** 신규 소셜 로그인 → 약관 동의 → 온보딩 완료까지 수행하고 정식 access 토큰을 돌려준다(이메일 인증은 온보딩과 분리 — #192). */
   private String onboardCompletely(String subject) throws Exception {
     String onboardingToken = read(socialLogin(subject), "data", "accessToken");
     agreeTerms(onboardingToken);
-    sendAndVerifyEmail(onboardingToken, emailFor(subject));
     String body =
         mockMvc
             .perform(
                 post("/api/v1/auth/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(onboardingJson(emailFor(subject))))
+                    .content(onboardingJson()))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -1281,33 +1260,28 @@ class AuthOnboardingDocsTest {
         + "}";
   }
 
-  private static String onboardingJson(String email) {
+  private static String onboardingJson() {
+    // 이름·이메일은 소셜 로그인 시점에 캡처되므로 온보딩 본문에 없다(#192).
     return """
         {
-          "firstName": "Gil",
-          "lastName": "Hong",
           "gender": "MALE",
           "birthDate": "1990-01-01",
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
-          "email": "%s",
           "visaType": "SHORT_TERM_VISIT",
           "lang": "ko"
         }
-        """
-        .formatted(email);
+        """;
   }
 
-  private static String onboardingBlankFirstName() {
+  private static String onboardingBlankGender() {
+    // 필수 gender 빈값 → INVALID_INPUT(@NotBlank).
     return """
         {
-          "firstName": "",
-          "lastName": "Hong",
-          "gender": "MALE",
+          "gender": "",
           "birthDate": "1990-01-01",
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
-          "email": "gil@mail.example",
           "visaType": "SHORT_TERM_VISIT"
         }
         """;

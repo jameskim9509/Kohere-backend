@@ -2,6 +2,7 @@ package com.kohere.auth.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -38,11 +39,11 @@ class MasterAccountSeedRunnerTest {
   void run_whenNotSeeded_createsActiveTenantAndLandlordWithSocialMapping() {
     when(socialAccountRepository.findByProviderAndProviderUserId(any(), any()))
         .thenReturn(Optional.empty());
-    when(userAccountService.createPendingUser()).thenReturn(1L, 2L);
+    when(userAccountService.createPendingUser(anyString(), anyString())).thenReturn(1L, 2L);
 
     runner().run(null);
 
-    verify(userAccountService, times(2)).createPendingUser();
+    verify(userAccountService, times(2)).createPendingUser(anyString(), anyString());
     verify(userAccountService).agreeToTerms(1L, true);
     verify(userAccountService).completeOnboarding(eq(1L), any(OnboardingProfile.class));
     verify(userAccountService).agreeToTerms(2L, true);
@@ -63,7 +64,7 @@ class MasterAccountSeedRunnerTest {
 
     runner().run(null);
 
-    verify(userAccountService, never()).createPendingUser();
+    verify(userAccountService, never()).createPendingUser(anyString(), anyString());
     verify(socialAccountRepository, never()).save(any());
   }
 }

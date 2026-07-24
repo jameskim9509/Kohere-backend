@@ -9,23 +9,27 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link User} 도메인 불변식 — 상태 전이(PENDING→TERMS_AGREED→ACTIVE→WITHDRAWN)·약관 동의·온보딩 선행조건·부분 수정·탈퇴 PII
- * 익명화(domain-model §2, ADR-0014).
+ * 익명화(domain-model §2, ADR-0014). 이름은 세입자·임대인 공통 단일 {@code name}으로, 소셜 로그인 시점({@code
+ * createPending})에 채우고 온보딩에서는 건드리지 않는다(#192).
  */
 class UserTest {
 
   private static final Instant NOW = Instant.parse("2026-06-17T00:00:00Z");
 
   @Test
-  void createPending_startsInPending() {
-    User user = User.createPending(NOW);
+  void createPending_startsInPendingWithNameAndEmail() {
+    User user = User.createPending("Gil Hong", "gil@example.com", NOW);
 
     assertThat(user.getStatus()).isEqualTo(UserStatus.PENDING);
+    assertThat(user.getName()).isEqualTo("Gil Hong");
+    assertThat(user.getEmail()).isEqualTo("gil@example.com");
     assertThat(user.getCreatedAt()).isEqualTo(NOW);
   }
 
   @Test
   void agreeToTerms_transitionsPendingToTermsAgreed() {
-    User agreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
+    User agreed =
+        User.createPending("Gil Hong", "gil@example.com", NOW).agreeToTerms(true, "v1.0", NOW);
 
     assertThat(agreed.getStatus()).isEqualTo(UserStatus.TERMS_AGREED);
     assertThat(agreed.isTermsOfServiceAgreed()).isTrue();
@@ -37,7 +41,8 @@ class UserTest {
 
   @Test
   void agreeToTerms_whenAlreadyTermsAgreed_isIdempotent() {
-    User agreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
+    User agreed =
+        User.createPending("Gil Hong", "gil@example.com", NOW).agreeToTerms(true, "v1.0", NOW);
 
     User again = agreed.agreeToTerms(false, "v1.0", NOW);
 
@@ -46,48 +51,44 @@ class UserTest {
   }
 
   @Test
-  void completeOnboarding_transitionsTermsAgreedToActive() {
-    User termsAgreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
+  void completeOnboarding_transitionsTermsAgreedToActive_keepsNameAndEmail() {
+    User termsAgreed =
+        User.createPending("Gil Hong", "gil@example.com", NOW).agreeToTerms(true, "v1.0", NOW);
 
     User active =
         termsAgreed.completeOnboarding(
-            "Gil",
-            "Hong",
             "BraveOtter",
             Gender.MALE,
             LocalDate.of(1990, 1, 1),
             "KR",
             Occupation.UNDERGRADUATE_STUDENT,
-            "gil@example.com",
             VisaType.SHORT_TERM_VISIT,
             Language.EN,
             NOW);
 
     assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
-    assertThat(active.getFirstName()).isEqualTo("Gil");
+    // 이름·이메일은 소셜 로그인 시점 값을 그대로 유지(온보딩에서 미수집 — #192)
+    assertThat(active.getName()).isEqualTo("Gil Hong");
+    assertThat(active.getEmail()).isEqualTo("gil@example.com");
     assertThat(active.getNickname()).isEqualTo("BraveOtter");
     assertThat(active.getCountry()).isEqualTo("KR");
     assertThat(active.getOccupation()).isEqualTo(Occupation.UNDERGRADUATE_STUDENT);
-    assertThat(active.getEmail()).isEqualTo("gil@example.com");
     // 동의는 약관 동의 단계에서 이미 확정됨
     assertThat(active.isTermsOfServiceAgreed()).isTrue();
   }
 
   @Test
   void completeOnboarding_whenPending_throwsTermsAgreementRequired() {
-    User pending = User.createPending(NOW);
+    User pending = User.createPending("Gil Hong", "gil@example.com", NOW);
 
     assertThatThrownBy(
             () ->
                 pending.completeOnboarding(
-                    "Gil",
-                    "Hong",
                     "BraveOtter",
                     Gender.MALE,
                     LocalDate.of(1990, 1, 1),
                     "KR",
                     Occupation.UNDERGRADUATE_STUDENT,
-                    "gil@example.com",
                     VisaType.SHORT_TERM_VISIT,
                     Language.EN,
                     NOW))
@@ -101,14 +102,11 @@ class UserTest {
     assertThatThrownBy(
             () ->
                 active.completeOnboarding(
-                    "A",
-                    "B",
                     "CalmFox",
                     Gender.FEMALE,
                     LocalDate.of(1995, 5, 5),
                     "VN",
                     Occupation.ETC,
-                    "a@example.com",
                     VisaType.STUDENTS_TRAINEES,
                     Language.EN,
                     NOW))
@@ -119,11 +117,9 @@ class UserTest {
   void updateProfile_changesOnlyProvidedFields() {
     User active = activeUser();
 
-    User updated =
-        active.updateProfile("Updated", null, null, null, null, null, null, null, null, NOW);
+    User updated = active.updateProfile("Updated", null, null, null, null, null, null, null, NOW);
 
-    assertThat(updated.getFirstName()).isEqualTo("Updated");
-    assertThat(updated.getLastName()).isEqualTo(active.getLastName());
+    assertThat(updated.getName()).isEqualTo("Updated");
     assertThat(updated.getCountry()).isEqualTo(active.getCountry());
     assertThat(updated.getVisaType()).isEqualTo(active.getVisaType());
   }
@@ -136,8 +132,7 @@ class UserTest {
 
     assertThat(withdrawn.getStatus()).isEqualTo(UserStatus.WITHDRAWN);
     assertThat(withdrawn.getWithdrawnAt()).isEqualTo(NOW);
-    assertThat(withdrawn.getFirstName()).isNull();
-    assertThat(withdrawn.getLastName()).isNull();
+    assertThat(withdrawn.getName()).isNull();
     assertThat(withdrawn.getNickname()).isNull();
     assertThat(withdrawn.getCountry()).isNull();
     assertThat(withdrawn.getOccupation()).isNull();
@@ -156,26 +151,26 @@ class UserTest {
 
   @Test
   void completeLandlordOnboarding_transitionsTermsAgreedToActiveAsLandlord() {
-    User termsAgreed = User.createPending(NOW).agreeToTerms(true, "v1.0", NOW);
+    User termsAgreed =
+        User.createPending("Kim Imdae", "kim@example.com", NOW).agreeToTerms(true, "v1.0", NOW);
 
     User active =
         termsAgreed.completeLandlordOnboarding(
-            "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
+            "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
 
     assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
     assertThat(active.getUserType()).isEqualTo(UserType.LANDLORD);
-    // 단일 name은 firstName에 보관하고 lastName은 미사용(null)
-    assertThat(active.getFirstName()).isEqualTo("Kim Imdae");
-    assertThat(active.getLastName()).isNull();
+    // 이름·이메일은 소셜 로그인 시점 값 유지(세입자와 통일 — #192)
+    assertThat(active.getName()).isEqualTo("Kim Imdae");
+    assertThat(active.getEmail()).isEqualTo("kim@example.com");
     assertThat(active.getPhoneNumber()).isEqualTo("01012345678");
     // 사업자번호 해시는 온보딩에서 확정하지 않는다(온보딩 후 매물 등록 시점에 채움, ADR-0033)
     assertThat(active.getBusinessRegistrationNumberHash()).isNull();
     assertThat(active.getNickname()).isEqualTo("CalmFox");
-    // 임대인은 성별·직업·비자·이메일을 수집하지 않는다(생년월일은 세입자와 동일하게 수집 — #131)
+    // 임대인은 성별·직업·비자를 수집하지 않는다(생년월일은 세입자와 동일하게 수집 — #131)
     assertThat(active.getGender()).isNull();
     assertThat(active.getOccupation()).isNull();
     assertThat(active.getVisaType()).isNull();
-    assertThat(active.getEmail()).isNull();
     assertThat(active.getBirthDate()).isEqualTo(LocalDate.of(1988, 5, 20));
     // 국적·표시 언어는 서버가 KR·ko로 고정 부여한다(ADR-0034 개정, #141)
     assertThat(active.getCountry()).isEqualTo("KR");
@@ -184,12 +179,12 @@ class UserTest {
 
   @Test
   void completeLandlordOnboarding_whenPending_throwsTermsAgreementRequired() {
-    User pending = User.createPending(NOW);
+    User pending = User.createPending("Kim Imdae", "kim@example.com", NOW);
 
     assertThatThrownBy(
             () ->
                 pending.completeLandlordOnboarding(
-                    "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW))
+                    "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW))
         .isInstanceOf(TermsAgreementRequiredException.class);
   }
 
@@ -200,17 +195,13 @@ class UserTest {
     assertThatThrownBy(
             () ->
                 active.completeLandlordOnboarding(
-                    "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW))
+                    "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW))
         .isInstanceOf(OnboardingAlreadyCompletedException.class);
   }
 
   @Test
   void withdraw_landlord_anonymizesPhoneAndBusinessHash() {
-    User landlord =
-        User.createPending(NOW)
-            .agreeToTerms(true, "v1.0", NOW)
-            .completeLandlordOnboarding(
-                "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
+    User landlord = activeLandlord();
 
     User withdrawn = landlord.withdraw(NOW);
 
@@ -225,8 +216,8 @@ class UserTest {
 
     User updated = landlord.updateLandlordProfile("New Name", null, null, NOW);
 
-    // 단일 name은 firstName에 보관, 미전송 연락처·마케팅은 유지
-    assertThat(updated.getFirstName()).isEqualTo("New Name");
+    // 단일 name 갱신, 미전송 연락처·마케팅은 유지
+    assertThat(updated.getName()).isEqualTo("New Name");
     assertThat(updated.getPhoneNumber()).isEqualTo(landlord.getPhoneNumber());
     assertThat(updated.isMarketingAgreed()).isEqualTo(landlord.isMarketingAgreed());
     assertThat(updated.getUserType()).isEqualTo(UserType.LANDLORD);
@@ -240,29 +231,25 @@ class UserTest {
 
     assertThat(updated.getPhoneNumber()).isEqualTo("01099998888");
     assertThat(updated.isMarketingAgreed()).isTrue();
-    // name 미전송이면 firstName(전체 이름) 유지
-    assertThat(updated.getFirstName()).isEqualTo(landlord.getFirstName());
+    // name 미전송이면 기존 이름 유지
+    assertThat(updated.getName()).isEqualTo(landlord.getName());
   }
 
   private static User activeLandlord() {
-    return User.createPending(NOW)
+    return User.createPending("Kim Imdae", "kim@example.com", NOW)
         .agreeToTerms(true, "v1.0", NOW)
-        .completeLandlordOnboarding(
-            "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
+        .completeLandlordOnboarding("01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW);
   }
 
   private static User activeUser() {
-    return User.createPending(NOW)
+    return User.createPending("Gil Hong", "gil@example.com", NOW)
         .agreeToTerms(true, "v1.0", NOW)
         .completeOnboarding(
-            "Gil",
-            "Hong",
             "BraveOtter",
             Gender.MALE,
             LocalDate.of(1990, 1, 1),
             "KR",
             Occupation.UNDERGRADUATE_STUDENT,
-            "gil@example.com",
             VisaType.SHORT_TERM_VISIT,
             Language.EN,
             NOW);

@@ -53,8 +53,8 @@ public class UserAccountServiceImpl implements UserAccountService {
 
   @Override
   @Transactional
-  public long createPendingUser() {
-    return userRepository.save(User.createPending(Instant.now())).getId();
+  public long createPendingUser(String name, String email) {
+    return userRepository.save(User.createPending(name, email, Instant.now())).getId();
   }
 
   @Override
@@ -85,14 +85,11 @@ public class UserAccountServiceImpl implements UserAccountService {
     String nickname = nicknameGenerator.generateUnique();
     User active =
         user.completeOnboarding(
-            profile.firstName(),
-            profile.lastName(),
             nickname,
             gender,
             profile.birthDate(),
             profile.country(),
             occupation,
-            profile.email(),
             visaType,
             lang,
             Instant.now());
@@ -107,7 +104,7 @@ public class UserAccountServiceImpl implements UserAccountService {
     String nickname = nicknameGenerator.generateUnique();
     User active =
         user.completeLandlordOnboarding(
-            profile.name(), profile.phoneNumber(), profile.birthDate(), nickname, Instant.now());
+            profile.phoneNumber(), profile.birthDate(), nickname, Instant.now());
     return toProfileView(userRepository.save(active));
   }
 
@@ -115,7 +112,8 @@ public class UserAccountServiceImpl implements UserAccountService {
   @Transactional(readOnly = true)
   public UserAccountView getAccount(long userId) {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
-    return new UserAccountView(user.getId(), user.getStatus().name());
+    return new UserAccountView(
+        user.getId(), user.getStatus().name(), user.getName(), user.getEmail());
   }
 
   @Override
@@ -132,9 +130,7 @@ public class UserAccountServiceImpl implements UserAccountService {
   @Transactional(readOnly = true)
   public String getUserName(long userId) {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
-    String first = user.getFirstName() == null ? "" : user.getFirstName();
-    String last = user.getLastName() == null ? "" : user.getLastName();
-    return (first + " " + last).trim();
+    return user.getName() == null ? "" : user.getName();
   }
 
   @Override
@@ -145,11 +141,9 @@ public class UserAccountServiceImpl implements UserAccountService {
         user.getCountry() == null
             ? null
             : countryRepository.findByCode(user.getCountry()).orElse(null);
-    String first = user.getFirstName() == null ? "" : user.getFirstName();
-    String last = user.getLastName() == null ? "" : user.getLastName();
     return new ApplicantProfileView(
         user.getId(),
-        (first + " " + last).trim(),
+        user.getName() == null ? "" : user.getName(),
         user.getGender() == null ? null : user.getGender().name(),
         user.getCountry(),
         country == null ? null : country.name(),
@@ -165,22 +159,20 @@ public class UserAccountServiceImpl implements UserAccountService {
   }
 
   /**
-   * 온보딩 완료 응답 뷰로 매핑한다. {@code userType}에 따라 세입자/임대인 필드를 분기한다 — 세입자는 {@code firstName}·{@code
-   * lastName}과 성별·국적·직업·비자정보를 채우고, 임대인은 전체 이름을 {@code name}에, 마스킹된 연락처를 {@code phoneNumber}에 채운다.
-   * 나머지는 {@code null}로 두어 응답에서 생략되게 한다(UserProfileView {@code @JsonInclude(NON_NULL)}). 임대인 온보딩 응답의
-   * 연락처는 마스킹한다(spec §5-2 — 프로필 조회 §8의 평문과 구분).
+   * 온보딩 완료 응답 뷰로 매핑한다. {@code name}은 세입자·임대인 공통 단일 이름이다(#192). {@code userType}에 따라 갈리는 건 세입자 전용
+   * 필드(성별·국적·직업·비자정보)와 임대인 전용 마스킹된 {@code phoneNumber}뿐이며, 나머지는 {@code null}로 두어 응답에서 생략되게
+   * 한다(UserProfileView {@code @JsonInclude(NON_NULL)}). 임대인 온보딩 응답의 연락처는 마스킹한다(spec §5-2 — 프로필 조회
+   * §8의 평문과 구분).
    */
   private UserProfileView toProfileView(User u) {
     boolean landlord = u.getUserType() == UserType.LANDLORD;
-    // 임대인은 gender·occupation·visaType·email 미수집(null) — country·lang은 서버가 KR·ko 고정(#141). 세입자/임대인
-    // 공용이라 null 가드한다.
+    // 임대인은 gender·occupation·visaType 미수집(null) — country·lang은 서버가 KR·ko 고정(#141). 세입자/임대인
+    // 공용이라 null 가드한다. 이메일·이름은 소셜 로그인 시점에 세팅된 공통 값이다(#192).
     Country country =
         u.getCountry() == null ? null : countryRepository.findByCode(u.getCountry()).orElse(null);
     return new UserProfileView(
         u.getId(),
-        landlord ? null : u.getFirstName(),
-        landlord ? null : u.getLastName(),
-        landlord ? u.getFirstName() : null,
+        u.getName(),
         u.getNickname(),
         u.getGender() == null ? null : u.getGender().name(),
         u.getBirthDate(),

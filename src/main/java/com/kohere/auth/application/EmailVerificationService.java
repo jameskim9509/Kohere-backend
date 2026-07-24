@@ -1,6 +1,5 @@
 package com.kohere.auth.application;
 
-import com.kohere.auth.domain.EmailNotVerifiedException;
 import com.kohere.auth.domain.EmailRateLimitException;
 import com.kohere.auth.domain.EmailVerification;
 import com.kohere.auth.domain.EmailVerificationCodeHasher;
@@ -13,8 +12,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 온보딩 중 이메일 인증 유스케이스. 인증번호 발송(동기·발송 성공 시에만 챌린지 확정)·검증(해시 대조·시도 상한)·온보딩 제출 시 검증 완료 확인을 담당한다. Redis
- * 저장·해시·메일 발송은 도메인 포트로 협력한다(시퀀스 US-1-6).
+ * 이메일 인증 유스케이스(정식(ACTIVE) 사용자 전용 — #192). 인증번호 발송(동기·발송 성공 시에만 챌린지 확정)·검증(해시 대조·시도 상한·성공 시 마커 저장)을
+ * 담당한다. 검증 성공 마커는 저장하지만 이번 범위에서 소비처(온보딩 대조)는 없다(실제 이메일 변경 반영은 후속 이슈). Redis 저장·해시·메일 발송은 도메인 포트로
+ * 협력한다(시퀀스 US-1-6).
  */
 @Service
 @RequiredArgsConstructor
@@ -73,14 +73,5 @@ public class EmailVerificationService {
     }
     repository.markVerified(userId, email, properties.getVerifiedTtlSeconds());
     repository.deleteChallenge(userId);
-  }
-
-  /** 온보딩 제출 선행 검사 — 제출 email이 검증 완료 마커와 일치해야 한다. */
-  public void assertVerified(long userId, String email) {
-    String verified =
-        repository.findVerifiedEmail(userId).orElseThrow(EmailNotVerifiedException::new);
-    if (!verified.equals(email)) {
-      throw new EmailNotVerifiedException();
-    }
   }
 }

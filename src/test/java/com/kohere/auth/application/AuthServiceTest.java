@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.kohere.auth.application.dto.BusinessVerifyResponse;
@@ -20,13 +21,13 @@ import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.AppleAuthClient;
-import com.kohere.auth.domain.EmailNotVerifiedException;
+import com.kohere.auth.domain.EmailMismatchException;
+import com.kohere.auth.domain.EmailRequiredException;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
 import com.kohere.auth.domain.LandlordOnlyException;
 import com.kohere.auth.domain.MissingCredentialException;
 import com.kohere.auth.domain.OidcTokenVerifier;
 import com.kohere.auth.domain.OidcUser;
-import com.kohere.auth.domain.OnboardingAlreadyCompletedException;
 import com.kohere.auth.domain.PhoneNotVerifiedException;
 import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.RefreshToken;
@@ -106,48 +107,115 @@ class AuthServiceTest {
   }
 
   @Test
-  void socialLogin_newUser_createsPendingAndIssuesOnboardingToken() {
+  void socialLogin_newUser_createsPendingWithCapturedNameEmailAndIssuesOnboardingToken() {
     when(oidcTokenVerifier.verify(Provider.GOOGLE, "idtok"))
         .thenReturn(new OidcUser(Provider.GOOGLE, "sub-1", "a@example.com"));
     when(socialAccountRepository.findByProviderAndProviderUserId(Provider.GOOGLE, "sub-1"))
         .thenReturn(Optional.empty());
-    when(userAccountService.createPendingUser()).thenReturn(10L);
+    when(userAccountService.createPendingUser("Minh Nguyen", "a@example.com")).thenReturn(10L);
     when(jwtTokenService.issueOnboardingToken(10L)).thenReturn("onboarding-token");
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
+        authService.socialLogin(
+            new SocialLoginRequest(Provider.GOOGLE, "idtok", null, "a@example.com", "Minh Nguyen"));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("PENDING");
     assertThat(response.accessToken()).isEqualTo("onboarding-token");
     assertThat(response.refreshToken()).isNull();
     assertThat(response.expiresIn()).isEqualTo(1800L);
-    verify(socialAccountRepository).save(any(SocialAccount.class));
+    // 소셜 로그인 시 provider 이름·이메일을 응답에 프리필로 반환(#192)
+    assertThat(response.email()).isEqualTo("a@example.com");
+    assertThat(response.name()).isEqualTo("Minh Nguyen");
+    // SocialAccount 스냅샷에 provider email·name을 저장한다
+    ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
+    verify(socialAccountRepository).save(captor.capture());
+    assertThat(captor.getValue().getEmail()).isEqualTo("a@example.com");
+    assertThat(captor.getValue().getName()).isEqualTo("Minh Nguyen");
+    verify(userAccountService).createPendingUser("Minh Nguyen", "a@example.com");
     verify(refreshTokenRepository, never()).save(any());
   }
 
   @Test
-  void socialLogin_existingActiveUser_issuesAccessAndRefresh() {
+  void socialLogin_newUser_noEmailFromToken_usesRequestEmail() {
+    when(oidcTokenVerifier.verify(Provider.GOOGLE, "idtok"))
+        .thenReturn(new OidcUser(Provider.GOOGLE, "sub-1", null));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.GOOGLE, "sub-1"))
+        .thenReturn(Optional.empty());
+    when(userAccountService.createPendingUser(null, "req@example.com")).thenReturn(10L);
+    when(jwtTokenService.issueOnboardingToken(10L)).thenReturn("onboarding-token");
+    when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
+
+    SocialLoginResponse response =
+        authService.socialLogin(
+            new SocialLoginRequest(Provider.GOOGLE, "idtok", null, "req@example.com", null));
+
+    assertThat(response.email()).isEqualTo("req@example.com");
+    assertThat(response.name()).isNull();
+    verify(userAccountService).createPendingUser(null, "req@example.com");
+  }
+
+  @Test
+  void socialLogin_newUser_emailMismatch_throwsAndDoesNotCreate() {
+    when(oidcTokenVerifier.verify(Provider.GOOGLE, "idtok"))
+        .thenReturn(new OidcUser(Provider.GOOGLE, "sub-1", "token@example.com"));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.GOOGLE, "sub-1"))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                authService.socialLogin(
+                    new SocialLoginRequest(
+                        Provider.GOOGLE, "idtok", null, "other@example.com", "Minh")))
+        .isInstanceOf(EmailMismatchException.class);
+
+    verify(userAccountService, never()).createPendingUser(any(), any());
+    verify(socialAccountRepository, never()).save(any());
+  }
+
+  @Test
+  void socialLogin_newUser_noEmailAnywhere_throwsEmailRequired() {
+    when(oidcTokenVerifier.verify(Provider.GOOGLE, "idtok"))
+        .thenReturn(new OidcUser(Provider.GOOGLE, "sub-1", null));
+    when(socialAccountRepository.findByProviderAndProviderUserId(Provider.GOOGLE, "sub-1"))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                authService.socialLogin(
+                    new SocialLoginRequest(Provider.GOOGLE, "idtok", null, null, "Minh")))
+        .isInstanceOf(EmailRequiredException.class);
+
+    verify(userAccountService, never()).createPendingUser(any(), any());
+    verify(socialAccountRepository, never()).save(any());
+  }
+
+  @Test
+  void socialLogin_existingActiveUser_issuesAccessAndRefreshWithPrefill() {
     when(oidcTokenVerifier.verify(Provider.GOOGLE, "idtok"))
         .thenReturn(new OidcUser(Provider.GOOGLE, "sub-1", "a@example.com"));
     when(socialAccountRepository.findByProviderAndProviderUserId(Provider.GOOGLE, "sub-1"))
         .thenReturn(Optional.of(socialAccount(20L)));
-    when(userAccountService.getAccount(20L)).thenReturn(new UserAccountView(20L, "ACTIVE"));
+    when(userAccountService.getAccount(20L))
+        .thenReturn(new UserAccountView(20L, "ACTIVE", "Existing User", "existing@example.com"));
     when(jwtTokenService.issueAccessToken(20L)).thenReturn("access-token");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null, null, null));
 
     assertThat(response.onboardingRequired()).isFalse();
     assertThat(response.status()).isEqualTo("ACTIVE");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
     assertThat(response.expiresIn()).isEqualTo(3600L);
+    // 재로그인 응답의 name·email은 저장된 User 값(userAccountService 조회)
+    assertThat(response.email()).isEqualTo("existing@example.com");
+    assertThat(response.name()).isEqualTo("Existing User");
     verify(refreshTokenRepository).save(any(RefreshToken.class));
-    verify(userAccountService, never()).createPendingUser();
+    verify(userAccountService, never()).createPendingUser(any(), any());
   }
 
   @Test
@@ -156,18 +224,20 @@ class AuthServiceTest {
         .thenReturn(new OidcUser(Provider.GOOGLE, "sub-1", "a@example.com"));
     when(socialAccountRepository.findByProviderAndProviderUserId(Provider.GOOGLE, "sub-1"))
         .thenReturn(Optional.of(socialAccount(30L)));
-    when(userAccountService.getAccount(30L)).thenReturn(new UserAccountView(30L, "TERMS_AGREED"));
+    when(userAccountService.getAccount(30L))
+        .thenReturn(new UserAccountView(30L, "TERMS_AGREED", "Terms User", "terms@example.com"));
     when(jwtTokenService.issueOnboardingToken(30L)).thenReturn("onboarding-token");
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null));
+        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null, null, null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("TERMS_AGREED");
     assertThat(response.refreshToken()).isNull();
-    verify(userAccountService, never()).createPendingUser();
-    verify(socialAccountRepository, never()).save(any());
+    assertThat(response.email()).isEqualTo("terms@example.com");
+    assertThat(response.name()).isEqualTo("Terms User");
+    verify(userAccountService, never()).createPendingUser(any(), any());
   }
 
   @Test
@@ -178,12 +248,14 @@ class AuthServiceTest {
         .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@privaterelay.appleid.com"));
     when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
         .thenReturn(Optional.empty());
-    when(userAccountService.createPendingUser()).thenReturn(11L);
+    when(userAccountService.createPendingUser(any(), eq("a@privaterelay.appleid.com")))
+        .thenReturn(11L);
     when(jwtTokenService.issueOnboardingToken(11L)).thenReturn("onboarding-token");
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+        authService.socialLogin(
+            new SocialLoginRequest(Provider.APPLE, null, "apple-code", null, null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("PENDING");
@@ -204,13 +276,15 @@ class AuthServiceTest {
         .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@example.com"));
     when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
         .thenReturn(Optional.of(appleAccount(21L, "apple-rt-old")));
-    when(userAccountService.getAccount(21L)).thenReturn(new UserAccountView(21L, "ACTIVE"));
+    when(userAccountService.getAccount(21L))
+        .thenReturn(new UserAccountView(21L, "ACTIVE", "Apple User", "a@example.com"));
     when(jwtTokenService.issueAccessToken(21L)).thenReturn("access-token");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+        authService.socialLogin(
+            new SocialLoginRequest(Provider.APPLE, null, "apple-code", null, null));
 
     assertThat(response.status()).isEqualTo("ACTIVE");
     ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
@@ -227,22 +301,32 @@ class AuthServiceTest {
         .thenReturn(new OidcUser(Provider.APPLE, "apple-sub", "a@example.com"));
     when(socialAccountRepository.findByProviderAndProviderUserId(Provider.APPLE, "apple-sub"))
         .thenReturn(Optional.of(appleAccount(22L, "apple-rt-existing")));
-    when(userAccountService.getAccount(22L)).thenReturn(new UserAccountView(22L, "ACTIVE"));
+    when(userAccountService.getAccount(22L))
+        .thenReturn(new UserAccountView(22L, "ACTIVE", "Apple User", "a@example.com"));
     when(jwtTokenService.issueAccessToken(22L)).thenReturn("access-token");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
-    authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, "apple-code"));
+    SocialLoginResponse response =
+        authService.socialLogin(
+            new SocialLoginRequest(Provider.APPLE, null, "apple-code", null, null));
 
-    // refresh token이 새로 안 왔으면 매핑을 다시 저장하지 않는다 → 저장된 토큰 보존(ADR-0031 #4)
-    verify(socialAccountRepository, never()).save(any(SocialAccount.class));
+    // Apple 재로그인은 refresh token·name을 안 주므로, name은 기존 SocialAccount 값을 보존하고
+    // appleRefreshToken도 기존 값을 유지한 채 스냅샷을 upsert한다(ADR-0031 #4, #192).
+    ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
+    verify(socialAccountRepository).save(captor.capture());
+    assertThat(captor.getValue().getAppleRefreshToken()).isEqualTo("apple-rt-existing");
+    assertThat(captor.getValue().getName()).isEqualTo("Apple Existing");
+    assertThat(response.status()).isEqualTo("ACTIVE");
     verify(refreshTokenRepository).save(any(RefreshToken.class));
   }
 
   @Test
   void socialLogin_apple_missingAuthorizationCode_throwsMissingCredential() {
     assertThatThrownBy(
-            () -> authService.socialLogin(new SocialLoginRequest(Provider.APPLE, null, null)))
+            () ->
+                authService.socialLogin(
+                    new SocialLoginRequest(Provider.APPLE, null, null, null, null)))
         .isInstanceOf(MissingCredentialException.class);
 
     verify(appleAuthClient, never()).exchangeAuthorizationCode(any());
@@ -251,7 +335,9 @@ class AuthServiceTest {
   @Test
   void socialLogin_google_blankIdToken_throwsMissingCredential() {
     assertThatThrownBy(
-            () -> authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "  ", null)))
+            () ->
+                authService.socialLogin(
+                    new SocialLoginRequest(Provider.GOOGLE, "  ", null, null, null)))
         .isInstanceOf(MissingCredentialException.class);
 
     verify(oidcTokenVerifier, never()).verify(any(), any());
@@ -282,7 +368,7 @@ class AuthServiceTest {
 
   @Test
   void sendEmailVerificationCode_delegatesAndMasksEmail() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    // 정식(ACTIVE) 전용 게이트는 SecurityConfig(ROLE_USER)가 담당하므로 서비스는 상태 조회 없이 발송에 위임한다(#192).
     when(emailVerificationService.sendCode(40L, "minh@example.com")).thenReturn(300L);
 
     EmailVerificationCodeResponse response =
@@ -292,32 +378,6 @@ class AuthServiceTest {
     assertThat(response.expiresIn()).isEqualTo(300L);
     assertThat(response.email()).isEqualTo("mi***@example.com");
     verify(emailVerificationService).sendCode(40L, "minh@example.com");
-  }
-
-  @Test
-  void sendEmailVerificationCode_activeUser_throwsAlreadyCompletedAndDoesNotSend() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "ACTIVE"));
-
-    assertThatThrownBy(
-            () ->
-                authService.sendEmailVerificationCode(
-                    40L, new EmailVerificationCodeRequest("minh@example.com")))
-        .isInstanceOf(OnboardingAlreadyCompletedException.class);
-
-    verify(emailVerificationService, never()).sendCode(anyLong(), any());
-  }
-
-  @Test
-  void sendEmailVerificationCode_termsNotAgreed_throwsTermsRequiredAndDoesNotSend() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
-
-    assertThatThrownBy(
-            () ->
-                authService.sendEmailVerificationCode(
-                    40L, new EmailVerificationCodeRequest("minh@example.com")))
-        .isInstanceOf(TermsAgreementRequiredException.class);
-
-    verify(emailVerificationService, never()).sendCode(anyLong(), any());
   }
 
   @Test
@@ -332,7 +392,8 @@ class AuthServiceTest {
 
   @Test
   void onboarding_completesAndIssuesFullTokensWithProfile() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
     when(jwtTokenService.issueAccessToken(40L)).thenReturn("access-token");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
@@ -347,34 +408,21 @@ class AuthServiceTest {
     assertThat(response.user().nickname()).isEqualTo("BraveOtter");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
-    verify(emailVerificationService).assertVerified(40L, "gil@example.com");
+    // 온보딩은 이름·이메일을 받지 않고(소셜 로그인 캡처), 이메일 인증 선행 게이트도 없다(#192).
     verify(userAccountService).completeOnboarding(eq(40L), any(OnboardingProfile.class));
     verify(refreshTokenRepository).save(any(RefreshToken.class));
+    verifyNoInteractions(emailVerificationService);
   }
 
   @Test
-  void onboarding_emailNotVerified_throwsAndDoesNotComplete() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
-    doThrow(new EmailNotVerifiedException())
-        .when(emailVerificationService)
-        .assertVerified(40L, "gil@example.com");
-
-    assertThatThrownBy(() -> authService.onboarding(40L, onboardingRequest()))
-        .isInstanceOf(EmailNotVerifiedException.class);
-
-    verify(userAccountService, never()).completeOnboarding(anyLong(), any());
-    verify(refreshTokenRepository, never()).save(any());
-  }
-
-  @Test
-  void onboarding_termsNotAgreed_throwsTermsRequiredBeforeEmailCheck() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+  void onboarding_termsNotAgreed_throwsTermsRequiredAndDoesNotComplete() {
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "PENDING", null, null));
 
     assertThatThrownBy(() -> authService.onboarding(40L, onboardingRequest()))
         .isInstanceOf(TermsAgreementRequiredException.class);
 
-    // 약관 미동의면 이메일 검증·온보딩 완료 전에 차단 — 이메일 인증 안내보다 약관 동의 안내가 먼저
-    verify(emailVerificationService, never()).assertVerified(anyLong(), any());
+    // 약관 미동의면 온보딩 완료 전에 차단
     verify(userAccountService, never()).completeOnboarding(anyLong(), any());
     verify(refreshTokenRepository, never()).save(any());
   }
@@ -469,7 +517,8 @@ class AuthServiceTest {
 
   @Test
   void sendPhoneVerificationCode_delegatesAndMasksPhone() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
     when(phoneVerificationService.sendCode(40L, "01012345678")).thenReturn(300L);
 
     PhoneVerificationCodeResponse response =
@@ -483,7 +532,8 @@ class AuthServiceTest {
   @Test
   void sendPhoneVerificationCode_activeUser_allowedForProfileChange() {
     // US-1-5: 정식 회원(ACTIVE)도 프로필 연락처 변경을 위해 인증번호를 받을 수 있다(온보딩 전용 아님, ADR-0034 §6·§8).
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "ACTIVE"));
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "ACTIVE", null, null));
     when(phoneVerificationService.sendCode(40L, "01012345678")).thenReturn(300L);
 
     PhoneVerificationCodeResponse response =
@@ -495,7 +545,8 @@ class AuthServiceTest {
 
   @Test
   void sendPhoneVerificationCode_termsNotAgreed_throwsTermsRequiredAndDoesNotSend() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "PENDING", null, null));
 
     assertThatThrownBy(
             () ->
@@ -541,7 +592,8 @@ class AuthServiceTest {
 
   @Test
   void landlordOnboarding_completesAndIssuesFullTokensWithLandlordProfile() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
     when(userAccountService.completeLandlordOnboarding(
             eq(40L), any(LandlordOnboardingProfile.class)))
         .thenReturn(landlordProfileView(40L));
@@ -562,7 +614,7 @@ class AuthServiceTest {
     ArgumentCaptor<LandlordOnboardingProfile> captor =
         ArgumentCaptor.forClass(LandlordOnboardingProfile.class);
     verify(userAccountService).completeLandlordOnboarding(eq(40L), captor.capture());
-    assertThat(captor.getValue().name()).isEqualTo("Kim Imdae");
+    // 임대인 온보딩은 이름을 받지 않는다(소셜 로그인 캡처) — 연락처·생년월일만 전달(#192)
     assertThat(captor.getValue().phoneNumber()).isEqualTo("01012345678");
     assertThat(captor.getValue().birthDate()).isEqualTo(LocalDate.of(1990, 1, 1));
     verify(refreshTokenRepository).save(any(RefreshToken.class));
@@ -570,7 +622,8 @@ class AuthServiceTest {
 
   @Test
   void landlordOnboarding_phoneNotVerified_throwsAndDoesNotComplete() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "TERMS_AGREED"));
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
     doThrow(new PhoneNotVerifiedException())
         .when(phoneVerificationService)
         .assertVerified(40L, "01012345678");
@@ -585,7 +638,8 @@ class AuthServiceTest {
 
   @Test
   void landlordOnboarding_termsNotAgreed_throwsTermsRequiredBeforeVerificationChecks() {
-    when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "PENDING"));
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "PENDING", null, null));
 
     assertThatThrownBy(() -> authService.landlordOnboarding(40L, landlordOnboardingRequest()))
         .isInstanceOf(TermsAgreementRequiredException.class);
@@ -602,6 +656,7 @@ class AuthServiceTest {
         .provider(Provider.GOOGLE)
         .providerUserId("sub-1")
         .email("a@example.com")
+        .name("Existing Name")
         .userId(userId)
         .linkedAt(Instant.now())
         .build();
@@ -613,6 +668,7 @@ class AuthServiceTest {
         .provider(Provider.APPLE)
         .providerUserId("apple-sub")
         .email("a@example.com")
+        .name("Apple Existing")
         .userId(userId)
         .linkedAt(Instant.now())
         .appleRefreshToken(appleRefreshToken)
@@ -622,9 +678,7 @@ class AuthServiceTest {
   private static UserProfileView profileView(long id) {
     return new UserProfileView(
         id,
-        "Gil",
-        "Hong",
-        null,
+        "Gil Hong",
         "BraveOtter",
         "MALE",
         LocalDate.of(1990, 1, 1),
@@ -644,26 +698,16 @@ class AuthServiceTest {
 
   private static OnboardingRequest onboardingRequest() {
     return new OnboardingRequest(
-        "Gil",
-        "Hong",
-        "MALE",
-        LocalDate.of(1990, 1, 1),
-        "KR",
-        "UNDERGRADUATE_STUDENT",
-        "gil@example.com",
-        "SHORT_TERM_VISIT",
-        null);
+        "MALE", LocalDate.of(1990, 1, 1), "KR", "UNDERGRADUATE_STUDENT", "SHORT_TERM_VISIT", null);
   }
 
   /**
-   * 임대인 온보딩 응답 프로필 — 성별·직업·비자·이메일 미수집(null), 국적(`KR`)·표시 언어(`ko`)는 서버가 고정 부여, 전체 이름은 {@code name}에,
-   * 마스킹된 연락처를 {@code phoneNumber}에, userType=LANDLORD.
+   * 임대인 온보딩 응답 프로필 — 성별·직업·비자 미수집(null), 이름·이메일은 소셜 로그인 캡처값, 국적(`KR`)·표시 언어(`ko`)는 서버가 고정 부여, 마스킹된
+   * 연락처를 {@code phoneNumber}에, userType=LANDLORD.
    */
   private static UserProfileView landlordProfileView(long id) {
     return new UserProfileView(
         id,
-        null,
-        null,
         "Kim Imdae",
         "CalmFox",
         null,
@@ -673,7 +717,7 @@ class AuthServiceTest {
         "https://flagcdn.com/kr.svg",
         "ko",
         null,
-        null,
+        "kim@example.com",
         null,
         "010-****-5678",
         "LANDLORD",
@@ -683,6 +727,6 @@ class AuthServiceTest {
   }
 
   private static LandlordOnboardingRequest landlordOnboardingRequest() {
-    return new LandlordOnboardingRequest("Kim Imdae", "01012345678", LocalDate.of(1990, 1, 1));
+    return new LandlordOnboardingRequest("01012345678", LocalDate.of(1990, 1, 1));
   }
 }

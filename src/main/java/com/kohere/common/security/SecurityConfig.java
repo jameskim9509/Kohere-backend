@@ -57,12 +57,12 @@ public class SecurityConfig {
                     // /listings/*는 현재 map·search·places·{listingId} 상세 조회를 포함한다.
                     .requestMatchers(HttpMethod.GET, "/api/v1/listings", "/api/v1/listings/*")
                     .permitAll()
-                    // (2) 온보딩 스코프 이상 허용 — 약관 동의·이메일/연락처 인증·온보딩 흐름(PENDING/TERMS_AGREED 토큰 허용)
+                    // (2) 온보딩 스코프 이상 허용 — 약관 동의·연락처 인증·온보딩 흐름(PENDING/TERMS_AGREED 토큰 허용).
+                    // 세입자 이메일 인증(/auth/email/**)은 #192에서 온보딩 흐름에서 제외돼 정식(ACTIVE) 전용으로 반전 → (3)으로
+                    // 이동.
                     .requestMatchers(
                         HttpMethod.POST,
                         "/api/v1/auth/terms",
-                        "/api/v1/auth/email/verification-code",
-                        "/api/v1/auth/email/verify",
                         "/api/v1/auth/phone/verification-code",
                         "/api/v1/auth/phone/verify",
                         "/api/v1/auth/onboarding",
@@ -70,11 +70,17 @@ public class SecurityConfig {
                     .authenticated()
                     .requestMatchers(HttpMethod.DELETE, "/api/v1/users/me")
                     .authenticated()
-                    // (3) 정식 인증(ROLE_USER) — 온보딩 완료(ACTIVE) 사용자만. 사업자번호 검증은 온보딩 후 임대인이 호출(ADR-0033)
+                    // (3) 정식 인증(ROLE_USER) — 온보딩 완료(ACTIVE) 사용자만. 사업자번호 검증은 온보딩 후 임대인이
+                    // 호출(ADR-0033).
+                    // 세입자 이메일 인증은 온보딩 완료 후 호출하는 API라 정식 토큰 전용이다(#192).
                     .requestMatchers("/api/v1/users/me")
                     .hasRole("USER")
                     .requestMatchers(
-                        HttpMethod.POST, "/api/v1/auth/business/verify", "/api/v1/auth/logout")
+                        HttpMethod.POST,
+                        "/api/v1/auth/email/verification-code",
+                        "/api/v1/auth/email/verify",
+                        "/api/v1/auth/business/verify",
+                        "/api/v1/auth/logout")
                     .hasRole("USER")
                     // 찜과 최근 본 매물은 사용자별 데이터를 읽고 변경하므로 ACTIVE(ROLE_USER) 사용자만 허용한다.
                     // 명시하지 않고 anyRequest().authenticated()에 맡기면 ROLE_ONBOARDING 토큰도 통과할 수 있다.
