@@ -6,8 +6,11 @@ package com.kohere.user.api;
  */
 public interface UserAccountService {
 
-  /** 신규 회원을 PENDING으로 생성하고 식별자를 반환한다(소셜 로그인 신규 분기). */
-  long createPendingUser();
+  /**
+   * 신규 회원을 PENDING으로 생성하고 식별자를 반환한다(소셜 로그인 신규 분기). 소셜 로그인 시점에 provider가 준 이름({@code
+   * name})·이메일({@code email})을 즉시 채운다(#192) — 이름은 없으면 {@code null}이다.
+   */
+  long createPendingUser(String name, String email);
 
   /**
    * 약관 동의 — PENDING→TERMS_AGREED 전이 + 동의 3종·약관 버전·동의 시각 확정. 필수 약관 동의 검증은 호출자(auth)가 선행한다. 이미
@@ -63,8 +66,8 @@ public interface UserAccountService {
   String getLanguage(long userId);
 
   /**
-   * 회원 표시 이름 조회. booking 등 다른 모듈이 예약자 성명 표시를 위해 동기 호출한다(ADR-0002 공개 API 협력). 세입자는 {@code firstName
-   * + " " + lastName}, 임대인은 {@code firstName}(전체 이름)이며, 온보딩 전/탈퇴 등으로 이름이 없으면 빈 문자열을 반환한다.
+   * 회원 표시 이름 조회. booking 등 다른 모듈이 예약자 성명 표시를 위해 동기 호출한다(ADR-0002 공개 API 협력). 세입자·임대인 공통 단일 {@code
+   * name}이며(#192), 이름이 없으면(소셜 로그인 시 provider 미제공·탈퇴 등) 빈 문자열을 반환한다.
    *
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우
    */
@@ -72,7 +75,7 @@ public interface UserAccountService {
 
   /**
    * 신청자(세입자) 프로필 조회. booking의 임대인 받은 신청 상세 조회(US-4-6, userType 분기)가 신청자 정보를 표시하기 위해 동기
-   * 호출한다(ADR-0002 공개 API 협력). 성명(firstName + lastName)·성별·국적(ISO 코드·표시명)·이메일을 담으며, 임대인에게 마스킹 없이 평문
+   * 호출한다(ADR-0002 공개 API 협력). 성명(단일 {@code name})·성별·국적(ISO 코드·표시명)·이메일을 담으며, 임대인에게 마스킹 없이 평문
    * 노출한다(제품 결정). 온보딩 전/탈퇴 등으로 값이 없으면 {@code name}은 빈 문자열, 나머지는 {@code null}이다.
    *
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우

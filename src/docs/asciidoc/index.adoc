@@ -84,7 +84,7 @@ include::{snippets}/auth-terms-agreement-missing/http-response.adoc[]
 
 == 이메일 인증번호 발송
 
-`POST /api/v1/auth/email/verification-code` — 온보딩 스코프 토큰 필요. 입력 이메일로 인증번호를 동기 발송하고, 발송에 성공한 뒤에만 챌린지를 저장한다(발송 실패 시 502, 챌린지 미저장). 응답의 `email`은 마스킹한다. 이메일 인증은 약관 동의(`TERMS_AGREED`)가 선행돼야 하므로 미동의(`PENDING`)는 422, 이미 완료(`ACTIVE`)된 사용자는 409. 재발송은 레이트리밋으로 보호한다.
+`POST /api/v1/auth/email/verification-code` — 정식(ACTIVE, `ROLE_USER`) 토큰 필요(#192에서 온보딩 단계 전용→정식 전용으로 반전). 입력 이메일로 인증번호를 동기 발송하고, 발송에 성공한 뒤에만 챌린지를 저장한다(발송 실패 시 502, 챌린지 미저장). 응답의 `email`은 마스킹한다. 온보딩 스코프(`PENDING`/`TERMS_AGREED`) 토큰으로 호출하면 403 AUTH_ONBOARDING_REQUIRED. 재발송은 레이트리밋으로 보호한다.
 
 .요청
 include::{snippets}/auth-email-verification-code/http-request.adoc[]
@@ -113,11 +113,8 @@ include::{snippets}/auth-email-verification-code-unauthenticated/http-response.a
 *401 TOKEN_EXPIRED* — 액세스(온보딩) 토큰 만료
 include::{snippets}/auth-email-verification-code-token-expired/http-response.adoc[]
 
-*422 AUTH_TERMS_AGREEMENT_REQUIRED* — 약관 미동의(PENDING) 상태의 요청(약관 동의가 이메일 인증에 선행)
-include::{snippets}/auth-email-verification-code-terms-required/http-response.adoc[]
-
-*409 AUTH_ONBOARDING_ALREADY_COMPLETED* — 이미 ACTIVE인 사용자의 요청(이메일 인증은 온보딩 단계 전용)
-include::{snippets}/auth-email-verification-code-already-completed/http-response.adoc[]
+*403 AUTH_ONBOARDING_REQUIRED* — 온보딩 스코프(PENDING/TERMS_AGREED) 토큰으로 호출(정식(ACTIVE) 토큰 필요, #192 반전)
+include::{snippets}/auth-email-verification-code-onboarding-required/http-response.adoc[]
 
 *429 TOO_MANY_REQUESTS* — 재발송 간격 미달
 include::{snippets}/auth-email-verification-code-rate-limited/http-response.adoc[]
@@ -128,7 +125,7 @@ include::{snippets}/auth-email-verification-code-dispatch-failed/http-response.a
 
 == 이메일 인증번호 확인
 
-`POST /api/v1/auth/email/verify` — 온보딩 스코프 토큰 필요. 발송된 인증번호를 검증하고 성공 시 이메일을 검증 완료(VERIFIED)로 마킹한다(이후 온보딩 제출 시 같은 이메일 통과). 검증 시도는 횟수 상한으로 보호한다.
+`POST /api/v1/auth/email/verify` — 정식(ACTIVE, `ROLE_USER`) 토큰 필요(#192 반전). 발송된 인증번호를 검증하고 성공 시 이메일을 검증 완료(VERIFIED)로 마킹한다(이번 범위에서는 `User.email` 변경 없음 — 접근만 ACTIVE 제한, 실제 변경은 후속 이슈). 온보딩 스코프(`PENDING`/`TERMS_AGREED`) 토큰으로 호출하면 403 AUTH_ONBOARDING_REQUIRED. 검증 시도는 횟수 상한으로 보호한다.
 
 .요청
 include::{snippets}/auth-email-verify/http-request.adoc[]
@@ -157,6 +154,9 @@ include::{snippets}/auth-email-verify-unauthenticated/http-response.adoc[]
 *401 TOKEN_EXPIRED* — 액세스(온보딩) 토큰 만료
 include::{snippets}/auth-email-verify-token-expired/http-response.adoc[]
 
+*403 AUTH_ONBOARDING_REQUIRED* — 온보딩 스코프(PENDING/TERMS_AGREED) 토큰으로 호출(정식(ACTIVE) 토큰 필요, #192 반전)
+include::{snippets}/auth-email-verify-onboarding-required/http-response.adoc[]
+
 *422 AUTH_EMAIL_VERIFICATION_FAILED* — 코드 불일치, 또는 챌린지 부재(미발송·만료·이미 검증)
 include::{snippets}/auth-email-verify-failed/http-response.adoc[]
 
@@ -166,7 +166,7 @@ include::{snippets}/auth-email-verify-rate-limited/http-response.adoc[]
 
 == 온보딩
 
-`POST /api/v1/auth/onboarding` — 온보딩 스코프 토큰 필요(상태 `TERMS_AGREED`). 약관 동의(상단)·이메일 인증(상단)이 선행돼야 하며, 필수 프로필을 제출해 TERMS_AGREED→ACTIVE로 전이하고 닉네임 자동 배정·정식 access+refresh를 발급한다. 닉네임은 서버가 형용사+사물 풀에서 조합해 전역 유니크로 배정한다(입력·수정 불가).
+`POST /api/v1/auth/onboarding` — 온보딩 스코프 토큰 필요(상태 `TERMS_AGREED`). 약관 동의(상단)가 선행돼야 하며, 필수 프로필을 제출해 TERMS_AGREED→ACTIVE로 전이하고 닉네임 자동 배정·정식 access+refresh를 발급한다. 이름·이메일은 소셜 로그인 시점에 캡처돼 온보딩에서 받지 않는다(#192). 닉네임은 서버가 형용사+사물 풀에서 조합해 전역 유니크로 배정한다(입력·수정 불가).
 
 .요청
 include::{snippets}/auth-onboarding/http-request.adoc[]
@@ -200,9 +200,6 @@ include::{snippets}/auth-onboarding-already-completed/http-response.adoc[]
 
 *422 AUTH_TERMS_AGREEMENT_REQUIRED* — 약관 미동의(PENDING) 상태로 온보딩 제출(약관 동의 §약관 동의 선행 필요)
 include::{snippets}/auth-onboarding-terms-required/http-response.adoc[]
-
-*422 AUTH_EMAIL_NOT_VERIFIED* — 제출 `email`이 미검증이거나 검증한 이메일과 불일치
-include::{snippets}/auth-onboarding-email-not-verified/http-response.adoc[]
 ====
 
 == 토큰 재발급

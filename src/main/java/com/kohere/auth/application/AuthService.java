@@ -10,6 +10,8 @@ import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
 import com.kohere.auth.domain.AppleAuthClient;
+import com.kohere.auth.domain.EmailMismatchException;
+import com.kohere.auth.domain.EmailRequiredException;
 import com.kohere.auth.domain.InvalidRefreshTokenException;
 import com.kohere.auth.domain.LandlordOnlyException;
 import com.kohere.auth.domain.MissingCredentialException;
@@ -41,6 +43,7 @@ import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
 import com.kohere.user.api.TermsAgreementView;
 import com.kohere.user.api.UserAccountService;
+import com.kohere.user.api.UserAccountView;
 import com.kohere.user.api.UserProfileView;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -56,8 +59,9 @@ import org.springframework.util.StringUtils;
  * 동의·회원 생성·상태 전이는 user 공개 API({@link UserAccountService})와 협력한다(user 내부 타입 비참조). 이메일 인증은 {@link
  * EmailVerificationService}에 위임한다.
  *
- * <p>상태 흐름: 소셜 로그인(PENDING) → 약관 동의(TERMS_AGREED) → 이메일 인증 → 온보딩(ACTIVE). 응답의 {@code status}로
- * 클라이언트가 재개 지점을 분기한다.
+ * <p>상태 흐름: 소셜 로그인(PENDING) → 약관 동의(TERMS_AGREED) → 온보딩(ACTIVE). 응답의 {@code status}로 클라이언트가 재개 지점을
+ * 분기한다. 이름·이메일은 소셜 로그인 시점에 provider 값으로 확정하고(#192), 세입자 이메일 인증(§3·§4)은 온보딩 흐름이 아니라 정식(ACTIVE) 사용자
+ * 전용이다.
  */
 @Service
 @RequiredArgsConstructor
@@ -100,13 +104,24 @@ public class AuthService {
     if (existing.isPresent()) {
       SocialAccount account = existing.get();
       long userId = account.getUserId();
-      // Apple 재로그인: refresh token이 새로 반환됐을 때만 upsert(없으면 기존 값 보존, ADR-0031 #4)
-      if (request.provider() == Provider.APPLE && StringUtils.hasText(appleRefreshToken)) {
-        socialAccountRepository.save(
-            account.toBuilder().appleRefreshToken(appleRefreshToken).build());
-      }
-      String status = userAccountService.getAccount(userId).status();
-      if (STATUS_ACTIVE.equals(status)) {
+      // 기존 로그인: User는 건드리지 않고 SocialAccount 스냅샷만 upsert한다(provider 값 변경 반영).
+      // email은 토큰 값이 있으면 갱신·없으면 기존값 보존, name은 요청 값이 non-blank일 때만 갱신(없으면 기존값 보존 —
+      // Apple 재로그인은 name 미제공), appleRefreshToken은 Apple이 새로 반환했을 때만 갱신(ADR-0031 #4).
+      String snapEmail =
+          StringUtils.hasText(oidcUser.email()) ? oidcUser.email() : account.getEmail();
+      String snapName = StringUtils.hasText(request.name()) ? request.name() : account.getName();
+      String snapAppleRefreshToken =
+          request.provider() == Provider.APPLE && StringUtils.hasText(appleRefreshToken)
+              ? appleRefreshToken
+              : account.getAppleRefreshToken();
+      socialAccountRepository.save(
+          account.toBuilder()
+              .email(snapEmail)
+              .name(snapName)
+              .appleRefreshToken(snapAppleRefreshToken)
+              .build());
+      UserAccountView acct = userAccountService.getAccount(userId);
+      if (STATUS_ACTIVE.equals(acct.status())) {
         TokenResponse tokens = issueFullTokens(userId);
         return new SocialLoginResponse(
             false,
@@ -114,24 +129,39 @@ public class AuthService {
             tokens.tokenType(),
             tokens.accessToken(),
             tokens.refreshToken(),
-            tokens.expiresIn());
+            tokens.expiresIn(),
+            acct.email(),
+            acct.name());
       }
       // 기존 미완료(PENDING·TERMS_AGREED) 재로그인 → 온보딩 임시 토큰 재발급(신규 행 미생성)
-      return onboardingResponse(userId, status);
+      return onboardingResponse(userId, acct.status(), acct.email(), acct.name());
     }
 
-    // 신규: user PENDING 회원 생성 + social_accounts 매핑 생성
-    long userId = userAccountService.createPendingUser();
+    // 신규(최초 로그인): email 교차 검증 후 provider 진본으로 확정한다. name은 검증하지 않고 요청 값을 신뢰한다(#192).
+    String tokenEmail = oidcUser.email();
+    String reqEmail = request.email();
+    if (StringUtils.hasText(tokenEmail)
+        && StringUtils.hasText(reqEmail)
+        && !tokenEmail.equalsIgnoreCase(reqEmail)) {
+      throw new EmailMismatchException();
+    }
+    String email = StringUtils.hasText(tokenEmail) ? tokenEmail : reqEmail;
+    if (!StringUtils.hasText(email)) {
+      throw new EmailRequiredException();
+    }
+    // user PENDING 회원 생성(이름·이메일 즉시 세팅) + social_accounts 매핑 생성
+    long userId = userAccountService.createPendingUser(request.name(), email);
     socialAccountRepository.save(
         SocialAccount.builder()
             .provider(oidcUser.provider())
             .providerUserId(oidcUser.subject())
-            .email(oidcUser.email())
+            .email(email)
+            .name(request.name())
             .userId(userId)
             .linkedAt(Instant.now())
             .appleRefreshToken(appleRefreshToken)
             .build());
-    return onboardingResponse(userId, STATUS_PENDING);
+    return onboardingResponse(userId, STATUS_PENDING, email, request.name());
   }
 
   /**
@@ -188,14 +218,12 @@ public class AuthService {
   }
 
   /**
-   * 온보딩 중 이메일 인증번호 발송. 약관 동의(TERMS_AGREED)가 선행되어야 하므로 미동의(PENDING)는 422
-   * AUTH_TERMS_AGREEMENT_REQUIRED로, 이미 완료(ACTIVE)된 사용자의 요청은 409로 거절한다(spec §3). 동기 발송 성공 시에만 챌린지를
-   * 저장한다(발송 실패 502).
+   * 이메일 인증번호 발송. 정식(ACTIVE) 사용자 전용으로, 접근 제한(정식 토큰·ROLE_USER)은 보안 필터(SecurityConfig)가 담당하므로 여기서는 상태
+   * 게이트를 두지 않는다(#192 — 온보딩 단계 전용→정식 전용 반전). 동기 발송 성공 시에만 챌린지를 저장한다(발송 실패 502).
    */
   @Transactional(readOnly = true)
   public EmailVerificationCodeResponse sendEmailVerificationCode(
       long userId, EmailVerificationCodeRequest request) {
-    assertTermsAgreed(userId);
     long expiresIn = emailVerificationService.sendCode(userId, request.email());
     return new EmailVerificationCodeResponse(maskEmail(request.email()), expiresIn);
   }
@@ -208,25 +236,21 @@ public class AuthService {
   }
 
   /**
-   * 온보딩 완료. 온보딩 흐름 순서(약관 동의 → 이메일 인증)를 강제한다 — 약관 미동의(PENDING)면 이메일 인증 안내보다 먼저 422
-   * AUTH_TERMS_AGREEMENT_REQUIRED로, 이미 완료(ACTIVE)면 409로 거절한다. 그 뒤 제출 email의 인증 완료를 확인(미검증·불일치 422
-   * AUTH_EMAIL_NOT_VERIFIED)하고 user에 TERMS_AGREED→ACTIVE 전이를 위임한 뒤 정식 토큰을 발급한다.
+   * 온보딩 완료. 약관 미동의(PENDING)면 422 AUTH_TERMS_AGREEMENT_REQUIRED로, 이미 완료(ACTIVE)면 409로 거절한다. 이름·이메일은
+   * 소셜 로그인 시점에 이미 세팅됐으므로 온보딩에서 받지 않는다(#192 — 이메일 인증 선행 게이트도 제거). user에 TERMS_AGREED→ACTIVE 전이를 위임한
+   * 뒤 정식 토큰을 발급한다.
    */
   @Transactional
   public OnboardingResponse onboarding(long userId, OnboardingRequest request) {
     assertTermsAgreed(userId);
-    emailVerificationService.assertVerified(userId, request.email());
     UserProfileView user =
         userAccountService.completeOnboarding(
             userId,
             new OnboardingProfile(
-                request.firstName(),
-                request.lastName(),
                 request.gender(),
                 request.birthDate(),
                 request.country(),
                 request.occupation(),
-                request.email(),
                 request.visaType(),
                 request.lang()));
     TokenResponse tokens = issueFullTokens(userId);
@@ -281,9 +305,7 @@ public class AuthService {
     phoneVerificationService.assertVerified(userId, request.phoneNumber());
     UserProfileView user =
         userAccountService.completeLandlordOnboarding(
-            userId,
-            new LandlordOnboardingProfile(
-                request.name(), request.phoneNumber(), request.birthDate()));
+            userId, new LandlordOnboardingProfile(request.phoneNumber(), request.birthDate()));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
@@ -361,14 +383,17 @@ public class AuthService {
     }
   }
 
-  private SocialLoginResponse onboardingResponse(long userId, String status) {
+  private SocialLoginResponse onboardingResponse(
+      long userId, String status, String email, String name) {
     return new SocialLoginResponse(
         true,
         status,
         TOKEN_TYPE,
         jwtTokenService.issueOnboardingToken(userId),
         null,
-        jwtTokenService.onboardingTtlSeconds());
+        jwtTokenService.onboardingTtlSeconds(),
+        email,
+        name);
   }
 
   private TokenResponse issueFullTokens(long userId) {

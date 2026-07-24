@@ -34,8 +34,7 @@ public class UserRepositoryImpl implements UserRepository {
   private static User toDomain(UserJpaEntity e) {
     return User.builder()
         .id(e.getId())
-        .firstName(e.getFirstName())
-        .lastName(e.getLastName())
+        .name(e.getName())
         .nickname(e.getNickname())
         .gender(e.getGender())
         .birthDate(e.getBirthDate())
@@ -62,8 +61,7 @@ public class UserRepositoryImpl implements UserRepository {
   private static UserJpaEntity toEntity(User u) {
     return UserJpaEntity.builder()
         .id(u.getId())
-        .firstName(u.getFirstName())
-        .lastName(u.getLastName())
+        .name(u.getName())
         .nickname(u.getNickname())
         .gender(u.getGender())
         .birthDate(u.getBirthDate())

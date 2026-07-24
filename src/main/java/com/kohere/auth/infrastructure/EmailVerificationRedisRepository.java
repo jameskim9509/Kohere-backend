@@ -74,9 +74,4 @@ public class EmailVerificationRedisRepository implements EmailVerificationReposi
   public void markVerified(long userId, String email, long ttlSeconds) {
     redis.opsForValue().set(VERIFIED_PREFIX + userId, email, Duration.ofSeconds(ttlSeconds));
   }
-
-  @Override
-  public Optional<String> findVerifiedEmail(long userId) {
-    return Optional.ofNullable(redis.opsForValue().get(VERIFIED_PREFIX + userId));
-  }
 }

@@ -46,6 +46,10 @@ public class SocialAccountJpaEntity {
   private String providerUserId;
 
   private String email;
+
+  // provider가 준 표시 이름 스냅샷(로그인마다 갱신, Apple name은 최초값 유지). User.name(사용자 값)과 별개(#192).
+  private String name;
+
   private Long userId;
   private Instant linkedAt;
 

@@ -65,18 +65,23 @@ class OnboardingFlowTest {
   void fullScenario() throws Exception {
     String email = "gil@example.com";
 
-    // 1) 소셜 로그인 (신규) → 온보딩 임시 토큰(refresh 없음), status=PENDING
+    // 1) 소셜 로그인 (신규) → 온보딩 임시 토큰(refresh 없음), status=PENDING. 이름·이메일은 이 시점에 캡처된다(#192).
+    //    email은 미전송(토큰 클레임 google-sub-1@example.com을 provider 진본으로 사용), name은 앱이 전달.
     String loginBody =
         mockMvc
             .perform(
                 post("/api/v1/auth/social-login")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"provider\":\"GOOGLE\",\"idToken\":\"google-sub-1\"}"))
+                    .content(
+                        "{\"provider\":\"GOOGLE\",\"idToken\":\"google-sub-1\",\"name\":\"Gil Hong\"}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.onboardingRequired").value(true))
             .andExpect(jsonPath("$.data.status").value("PENDING"))
             .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+            // 응답에 프리필용 name·email 포함(모든 분기)
+            .andExpect(jsonPath("$.data.name").value("Gil Hong"))
+            .andExpect(jsonPath("$.data.email").value("google-sub-1@example.com"))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -99,39 +104,28 @@ class OnboardingFlowTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("TERMS_AGREED"));
 
-    // 4) 이메일 인증번호 발송 → 발송 메일에서 인증번호 캡처
+    // 4) 이메일 인증은 온보딩 흐름에서 제외돼 정식(ACTIVE) 전용이다(#192) — 온보딩 토큰으로는 403 AUTH_ONBOARDING_REQUIRED
     mockMvc
         .perform(
             post("/api/v1/auth/email/verification-code")
                 .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + email + "\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.expiresIn").isNumber());
-    ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
-    verify(emailSender).send(eq(email), codeCaptor.capture());
-    String code = codeCaptor.getValue();
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"));
 
-    // 5) 이메일 인증 확인 → verified
-    mockMvc
-        .perform(
-            post("/api/v1/auth/email/verify")
-                .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"" + email + "\",\"code\":\"" + code + "\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.verified").value(true));
-
-    // 6) 온보딩 완료(TERMS_AGREED→ACTIVE) → 정식 access + refresh
+    // 5) 온보딩 완료(TERMS_AGREED→ACTIVE) → 정식 access + refresh. 이름·이메일은 받지 않는다(소셜 로그인 캡처).
     String onboardingBody =
         mockMvc
             .perform(
                 post("/api/v1/auth/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(onboardingJson(email)))
+                    .content(onboardingJson()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.user.nickname").isNotEmpty())
+            .andExpect(jsonPath("$.data.user.name").value("Gil Hong"))
+            .andExpect(jsonPath("$.data.user.email").value("google-sub-1@example.com"))
             .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
             .andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
             .andReturn()
@@ -140,24 +134,45 @@ class OnboardingFlowTest {
     String accessToken = read(onboardingBody, "data", "accessToken");
     String refreshToken = read(onboardingBody, "data", "refreshToken");
 
-    // 7) 내 프로필 조회 → ACTIVE, 국적(코드)·국기 resolve
+    // 6) 내 프로필 조회 → ACTIVE, 단일 name·국적(코드)·국기 resolve
     mockMvc
         .perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("ACTIVE"))
-        .andExpect(jsonPath("$.data.firstName").value("Gil"))
+        .andExpect(jsonPath("$.data.name").value("Gil Hong"))
         .andExpect(jsonPath("$.data.country").value("KR"))
         .andExpect(jsonPath("$.data.countryFlag").value("https://flagcdn.com/kr.svg"));
 
-    // 8) 프로필 부분 수정
+    // 7) 이메일 인증(정식 ACTIVE 전용) — 발송·확인. 발송 메일에서 인증번호 캡처(#192 반전).
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/verification-code")
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.expiresIn").isNumber());
+    ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+    verify(emailSender).send(eq(email), codeCaptor.capture());
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/verify")
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"email\":\"" + email + "\",\"code\":\"" + codeCaptor.getValue() + "\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.verified").value(true));
+
+    // 8) 프로필 부분 수정 — 단일 name
     mockMvc
         .perform(
             patch("/api/v1/users/me")
                 .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"firstName\":\"Updated\"}"))
+                .content("{\"name\":\"Updated\"}"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.firstName").value("Updated"));
+        .andExpect(jsonPath("$.data.name").value("Updated"));
 
     // 9) 재발급(항상 회전) → 새 refresh
     String reissueBody =
@@ -211,8 +226,7 @@ class OnboardingFlowTest {
    */
   @Test
   void onboardingWithoutOccupation_activatesAndOmitsOccupation() throws Exception {
-    String email = "occ-omitted@example.com";
-    String token = readyForOnboarding("google-sub-occ-omitted", email);
+    String token = readyForOnboarding("google-sub-occ-omitted");
 
     String body =
         mockMvc
@@ -220,7 +234,7 @@ class OnboardingFlowTest {
                 post("/api/v1/auth/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(token))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(onboardingJson(email, "")))
+                    .content(onboardingJson("")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.user.status").value("ACTIVE"))
             .andExpect(jsonPath("$.data.user.occupation").doesNotExist())
@@ -239,8 +253,7 @@ class OnboardingFlowTest {
   /** US-1-2 AC(#187): {@code "occupation": null} 명시 전송도 미전송과 동일하게 취급한다(200 ACTIVE + 응답 생략). */
   @Test
   void onboardingWithNullOccupation_activatesAndOmitsOccupation() throws Exception {
-    String email = "occ-null@example.com";
-    String token = readyForOnboarding("google-sub-occ-null", email);
+    String token = readyForOnboarding("google-sub-occ-null");
 
     String body =
         mockMvc
@@ -248,7 +261,7 @@ class OnboardingFlowTest {
                 post("/api/v1/auth/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(token))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(onboardingJson(email, "\"occupation\": null,")))
+                    .content(onboardingJson("\"occupation\": null,")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.user.status").value("ACTIVE"))
             .andExpect(jsonPath("$.data.user.occupation").doesNotExist())
@@ -270,15 +283,14 @@ class OnboardingFlowTest {
    */
   @Test
   void onboardingWithEmptyOccupation_returnsInvalidInput() throws Exception {
-    String email = "occ-empty@example.com";
-    String token = readyForOnboarding("google-sub-occ-empty", email);
+    String token = readyForOnboarding("google-sub-occ-empty");
 
     mockMvc
         .perform(
             post("/api/v1/auth/onboarding")
                 .header(HttpHeaders.AUTHORIZATION, bearer(token))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(onboardingJson(email, "\"occupation\": \"\",")))
+                .content(onboardingJson("\"occupation\": \"\",")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
@@ -292,8 +304,8 @@ class OnboardingFlowTest {
         .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
   }
 
-  /** 소셜 로그인(신규)→약관 동의→이메일 인증까지 마치고 온보딩 임시 토큰을 돌려준다(occupation 케이스 테스트의 공통 진입 셋업). */
-  private String readyForOnboarding(String subject, String email) throws Exception {
+  /** 소셜 로그인(신규)→약관 동의까지 마치고 온보딩 임시 토큰을 돌려준다(occupation 케이스 테스트의 공통 진입 셋업). */
+  private String readyForOnboarding(String subject) throws Exception {
     String loginBody =
         mockMvc
             .perform(
@@ -314,25 +326,6 @@ class OnboardingFlowTest {
                 .content(
                     "{\"termsOfServiceAgreed\":true,\"privacyPolicyAgreed\":true,\"marketingAgreed\":false}"))
         .andExpect(status().isOk());
-
-    mockMvc
-        .perform(
-            post("/api/v1/auth/email/verification-code")
-                .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"" + email + "\"}"))
-        .andExpect(status().isOk());
-    ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
-    verify(emailSender).send(eq(email), codeCaptor.capture());
-
-    mockMvc
-        .perform(
-            post("/api/v1/auth/email/verify")
-                .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    "{\"email\":\"" + email + "\",\"code\":\"" + codeCaptor.getValue() + "\"}"))
-        .andExpect(status().isOk());
     return token;
   }
 
@@ -348,27 +341,24 @@ class OnboardingFlowTest {
     return "Bearer " + token;
   }
 
-  private static String onboardingJson(String email) {
-    return onboardingJson(email, "\"occupation\": \"UNDERGRADUATE_STUDENT\",");
+  private static String onboardingJson() {
+    return onboardingJson("\"occupation\": \"UNDERGRADUATE_STUDENT\",");
   }
 
   /**
    * 온보딩 요청 본문. {@code occupationEntry}는 occupation 항목 문자열 그 자체(예: {@code "occupation": null,}) —
-   * 미전송 케이스는 빈 문자열을 넘긴다(#187 선택 입력 케이스 조립용).
+   * 미전송 케이스는 빈 문자열을 넘긴다(#187 선택 입력 케이스 조립용). 이름·이메일은 소셜 로그인 시점에 캡처되므로 온보딩 본문에 없다(#192).
    */
-  private static String onboardingJson(String email, String occupationEntry) {
+  private static String onboardingJson(String occupationEntry) {
     return """
         {
-          "firstName": "Gil",
-          "lastName": "Hong",
           "gender": "MALE",
           "birthDate": "1990-01-01",
           "country": "KR",
           %s
-          "email": "%s",
           "visaType": "SHORT_TERM_VISIT"
         }
         """
-        .formatted(occupationEntry, email);
+        .formatted(occupationEntry);
   }
 }

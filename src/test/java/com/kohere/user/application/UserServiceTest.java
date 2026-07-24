@@ -65,8 +65,7 @@ class UserServiceTest {
     UserProfileResponse res = userService.getMyProfile(1L);
 
     assertThat(res.userType()).isEqualTo(UserType.TENANT);
-    assertThat(res.firstName()).isEqualTo("Gil");
-    assertThat(res.name()).isNull(); // 세입자는 name 없음 → 응답에서 생략
+    assertThat(res.name()).isEqualTo("Gil Hong"); // 세입자·임대인 공통 단일 name(#192)
     assertThat(res.phoneNumber()).isNull(); // 세입자는 연락처 없음 → 생략
     assertThat(res.occupation()).isEqualTo(Occupation.UNDERGRADUATE_STUDENT);
   }
@@ -79,7 +78,6 @@ class UserServiceTest {
 
     assertThat(res.userType()).isEqualTo(UserType.LANDLORD);
     assertThat(res.name()).isEqualTo("Kim Imdae");
-    assertThat(res.firstName()).isNull(); // 임대인은 firstName 노출 안 함(name으로)
     assertThat(res.phoneNumber()).isEqualTo("01012345678"); // 본인 조회 — 평문
     assertThat(res.occupation()).isNull(); // 세입자 전용 필드 생략
   }
@@ -123,8 +121,7 @@ class UserServiceTest {
     when(userRepository.findById(1L)).thenReturn(Optional.of(landlord(1L)));
     when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
     UpdateProfileRequest req =
-        new UpdateProfileRequest(
-            null, null, null, null, null, null, null, null, "New Name", null, true);
+        new UpdateProfileRequest("New Name", null, null, null, null, null, null, null, true);
 
     UserProfileResponse res = userService.updateMyProfile(1L, req);
 
@@ -138,7 +135,7 @@ class UserServiceTest {
     when(userRepository.findById(1L)).thenReturn(Optional.of(tenant(1L)));
     when(countryRepository.existsByCode("XX")).thenReturn(false);
     UpdateProfileRequest req =
-        new UpdateProfileRequest(null, null, null, null, "XX", null, null, null, null, null, null);
+        new UpdateProfileRequest(null, null, null, "XX", null, null, null, null, null);
 
     assertThatThrownBy(() -> userService.updateMyProfile(1L, req))
         .isInstanceOf(InvalidInputException.class);
@@ -147,22 +144,18 @@ class UserServiceTest {
   }
 
   private static UpdateProfileRequest landlordPatch(String phoneNumber) {
-    return new UpdateProfileRequest(
-        null, null, null, null, null, null, null, null, null, phoneNumber, null);
+    return new UpdateProfileRequest(null, null, null, null, null, null, null, phoneNumber, null);
   }
 
   private static User tenant(long id) {
-    return User.createPending(NOW)
+    return User.createPending("Gil Hong", "gil@example.com", NOW)
         .agreeToTerms(true, "v1.0", NOW)
         .completeOnboarding(
-            "Gil",
-            "Hong",
             "BraveOtter",
             Gender.MALE,
             LocalDate.of(1990, 1, 1),
             "KR",
             Occupation.UNDERGRADUATE_STUDENT,
-            "gil@example.com",
             VisaType.SHORT_TERM_VISIT,
             Language.EN,
             NOW)
@@ -172,10 +165,9 @@ class UserServiceTest {
   }
 
   private static User landlord(long id) {
-    return User.createPending(NOW)
+    return User.createPending("Kim Imdae", "kim@example.com", NOW)
         .agreeToTerms(true, "v1.0", NOW)
-        .completeLandlordOnboarding(
-            "Kim Imdae", "01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW)
+        .completeLandlordOnboarding("01012345678", LocalDate.of(1988, 5, 20), "CalmFox", NOW)
         .toBuilder()
         .id(id)
         .build();

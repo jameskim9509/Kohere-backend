@@ -11,14 +11,16 @@ import lombok.Getter;
  *
  * <p>상태 전이는 단방향 PENDING→TERMS_AGREED→ACTIVE→WITHDRAWN만 허용한다(domain-model §2, ADR-0014). 약관 동의와 온보딩은
  * 분리된 단계다. 탈퇴 시 식별 PII를 즉시 익명화한다.
+ *
+ * <p>이름({@code name})은 성·이름을 합친 단일 값으로, 세입자·임대인 공통이며 소셜 로그인 시점에 provider 값으로 채운다(#192 — 온보딩에서 수집하지
+ * 않음). 이메일({@code email})도 소셜 로그인 시 provider 진본으로 확정한다.
  */
 @Getter
 @Builder(toBuilder = true)
 public class User {
 
   private final Long id;
-  private final String firstName;
-  private final String lastName;
+  private final String name;
   private final String nickname;
   private final Gender gender;
   private final LocalDate birthDate;
@@ -41,11 +43,15 @@ public class User {
   private final Instant withdrawnAt;
 
   /**
-   * 소셜 검증만 완료한 신규 회원(PENDING). 약관 동의·프로필은 이후 단계에서 채운다. 역할은 기본 {@code TENANT}이며 임대인 온보딩 시 {@code
-   * LANDLORD}로 확정한다(V8 DEFAULT 'TENANT'와 정합, 온보딩 전에는 미확정 의미).
+   * 소셜 검증만 완료한 신규 회원(PENDING). 소셜 로그인 시점에 provider가 준 이름({@code name})·이메일({@code email})을 즉시
+   * 채운다(#192 — 온보딩까지 미루지 않는다). 이름은 없으면 {@code null}(이후 프로필 수정으로 채움). 약관 동의·나머지 프로필은 이후 단계에서 채운다.
+   * 역할은 기본 {@code TENANT}이며 임대인 온보딩 시 {@code LANDLORD}로 확정한다(V8 DEFAULT 'TENANT'와 정합, 온보딩 전에는 미확정
+   * 의미).
    */
-  public static User createPending(Instant now) {
+  public static User createPending(String name, String email, Instant now) {
     return User.builder()
+        .name(name)
+        .email(email)
         .userType(UserType.TENANT)
         .status(UserStatus.PENDING)
         .createdAt(now)
@@ -78,22 +84,19 @@ public class User {
   }
 
   /**
-   * 온보딩 완료(TERMS_AGREED→ACTIVE). 프로필(이름·성별·생년월일·국적·표시 언어·직업·이메일·비자)과 시스템 배정 닉네임을 확정한다. 표시 언어({@code
-   * lang})는 선택값이라 {@code null}이면 미설정으로 두고(표시 시 en 폴백), 값이 있으면 응용 계층이 지원 목록을 검증한 뒤 넘긴다. 약관 동의는 약관 동의
-   * 단계에서 이미 기록됐다. 이메일은 auth가 인증 완료를 선행 확인한다.
+   * 온보딩 완료(TERMS_AGREED→ACTIVE). 프로필(성별·생년월일·국적·표시 언어·직업·비자)과 시스템 배정 닉네임을 확정한다. 이름·이메일은 소셜 로그인 시점에
+   * 이미 채워졌으므로 여기서 건드리지 않는다(#192). 표시 언어({@code lang})는 선택값이라 {@code null}이면 미설정으로 두고(표시 시 en 폴백),
+   * 값이 있으면 응용 계층이 지원 목록을 검증한 뒤 넘긴다. 약관 동의는 약관 동의 단계에서 이미 기록됐다.
    *
    * @throws TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(약관 동의 선행 필요, 422)
    * @throws OnboardingAlreadyCompletedException 이미 ACTIVE(또는 WITHDRAWN)인 경우(409)
    */
   public User completeOnboarding(
-      String firstName,
-      String lastName,
       String nickname,
       Gender gender,
       LocalDate birthDate,
       String country,
       Occupation occupation,
-      String email,
       VisaType visaType,
       Language lang,
       Instant now) {
@@ -104,15 +107,12 @@ public class User {
       throw new OnboardingAlreadyCompletedException();
     }
     return toBuilder()
-        .firstName(firstName)
-        .lastName(lastName)
         .nickname(nickname)
         .gender(gender)
         .birthDate(birthDate)
         .country(country)
         .lang(lang)
         .occupation(occupation)
-        .email(email)
         .visaType(visaType)
         .userType(UserType.TENANT)
         .status(UserStatus.ACTIVE)
@@ -121,18 +121,18 @@ public class User {
   }
 
   /**
-   * 임대인 온보딩 완료(TERMS_AGREED→ACTIVE). 단일 {@code name}(성·이름 합친 전체 이름 — {@code firstName}에 보관, {@code
-   * lastName} 미사용)·연락처와 시스템 배정 닉네임을 확정하고 {@code userType}을 LANDLORD로 확정한다. 연락처는 auth가 SMS 인증을 선행
-   * 확인한다. 사업자등록번호 해시는 온보딩에서 확정하지 않는다({@code null} 유지) — 온보딩 후 별도 검증 흐름(매물 등록 시점)에서 채운다(ADR-0033).
-   * 임대인은 성별·직업·비자정보·이메일을 수집하지 않는다(생년월일 {@code birthDate}은 세입자와 동일하게 수집 — ADR-0034, #131). 임대인은 한국인
-   * 사업자 전제라 국적({@code country})·표시 언어({@code lang})는 클라이언트가 보내지 않고 서버가 {@code KR}·{@code ko}로 고정
-   * 부여한다 (ADR-0034 개정, #141) — 표시 언어 기본값이 en이므로 한국어로 보이게 하려면 서버가 ko를 심어야 한다.
+   * 임대인 온보딩 완료(TERMS_AGREED→ACTIVE). 연락처·생년월일({@code birthDate})과 시스템 배정 닉네임을 확정하고 {@code
+   * userType}을 LANDLORD로 확정한다. 이름은 소셜 로그인 시점 provider 값을 유지한다(#192 — 온보딩에서 수집하지 않음, 세입자와 통일). 연락처는
+   * auth가 SMS 인증을 선행 확인한다. 사업자등록번호 해시는 온보딩에서 확정하지 않는다({@code null} 유지) — 온보딩 후 별도 검증 흐름(매물 등록 시점)에서
+   * 채운다(ADR-0033). 임대인은 성별·직업·비자정보를 수집하지 않는다(생년월일 {@code birthDate}은 세입자와 동일하게 수집 — ADR-0034,
+   * #131). 임대인은 한국인 사업자 전제라 국적({@code country})·표시 언어({@code lang})는 클라이언트가 보내지 않고 서버가 {@code
+   * KR}·{@code ko}로 고정 부여한다 (ADR-0034 개정, #141) — 표시 언어 기본값이 en이므로 한국어로 보이게 하려면 서버가 ko를 심어야 한다.
    *
    * @throws TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(422)
    * @throws OnboardingAlreadyCompletedException 이미 ACTIVE(또는 WITHDRAWN)인 경우(409)
    */
   public User completeLandlordOnboarding(
-      String name, String phoneNumber, LocalDate birthDate, String nickname, Instant now) {
+      String phoneNumber, LocalDate birthDate, String nickname, Instant now) {
     if (status == UserStatus.PENDING) {
       throw new TermsAgreementRequiredException();
     }
@@ -140,8 +140,6 @@ public class User {
       throw new OnboardingAlreadyCompletedException();
     }
     return toBuilder()
-        .firstName(name)
-        .lastName(null)
         .birthDate(birthDate)
         .nickname(nickname)
         .phoneNumber(phoneNumber)
@@ -155,12 +153,11 @@ public class User {
   }
 
   /**
-   * 프로필 부분 수정. 전송한(=null 아님) 필드만 변경하고 미전송 필드는 유지한다. {@code email}·{@code nickname}은 이 경로로 수정하지
-   * 않는다(이메일은 재인증, 닉네임은 시스템 배정).
+   * 프로필 부분 수정. 전송한(=null 아님) 필드만 변경하고 미전송 필드는 유지한다. {@code name}은 단일 이름(성·이름 합친 전체 이름)이다. {@code
+   * email}·{@code nickname}은 이 경로로 수정하지 않는다(이메일은 후속 이슈, 닉네임은 시스템 배정).
    */
   public User updateProfile(
-      String firstName,
-      String lastName,
+      String name,
       Gender gender,
       LocalDate birthDate,
       String country,
@@ -170,11 +167,8 @@ public class User {
       Boolean marketingAgreed,
       Instant now) {
     var builder = toBuilder();
-    if (firstName != null) {
-      builder.firstName(firstName);
-    }
-    if (lastName != null) {
-      builder.lastName(lastName);
+    if (name != null) {
+      builder.name(name);
     }
     if (gender != null) {
       builder.gender(gender);
@@ -201,15 +195,15 @@ public class User {
   }
 
   /**
-   * 임대인 프로필 부분 수정. 전송한(=null 아님) 필드만 변경한다 — {@code name}(전체 이름)은 {@code firstName}에 보관하고({@code
-   * lastName} 미사용), {@code phoneNumber}·{@code marketingAgreed}를 갱신한다. 연락처 변경 시 SMS 재인증 완료 확인은
-   * 호출자(user 응용)가 선행한다(ADR-0034). 세입자 전용 필드(성별·국적·직업·비자정보)는 임대인 경로에서 다루지 않는다.
+   * 임대인 프로필 부분 수정. 전송한(=null 아님) 필드만 변경한다 — {@code name}(단일 전체 이름)·{@code phoneNumber}·{@code
+   * marketingAgreed}를 갱신한다. 연락처 변경 시 SMS 재인증 완료 확인은 호출자(user 응용)가 선행한다(ADR-0034). 세입자 전용
+   * 필드(성별·국적·직업· 비자정보)는 임대인 경로에서 다루지 않는다.
    */
   public User updateLandlordProfile(
       String name, String phoneNumber, Boolean marketingAgreed, Instant now) {
     var builder = toBuilder();
     if (name != null) {
-      builder.firstName(name);
+      builder.name(name);
     }
     if (phoneNumber != null) {
       builder.phoneNumber(phoneNumber);
@@ -232,8 +226,7 @@ public class User {
       throw new UserAlreadyWithdrawnException();
     }
     return toBuilder()
-        .firstName(null)
-        .lastName(null)
+        .name(null)
         .nickname(null)
         .gender(null)
         .birthDate(null)
