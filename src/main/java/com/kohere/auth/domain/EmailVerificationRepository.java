@@ -15,8 +15,6 @@ public interface EmailVerificationRepository {
 
   void deleteChallenge(long userId);
 
-  /** 검증 완료 마커 저장(TTL=온보딩 토큰 만료 정도). 온보딩 제출 시 제출 email과 대조한다. */
+  /** 검증 완료 마커 저장(TTL 설정값). verify 성공 표시용(#192에서 온보딩 대조 소비는 폐지, 마커만 유지). */
   void markVerified(long userId, String email, long ttlSeconds);
-
-  Optional<String> findVerifiedEmail(long userId);
 }

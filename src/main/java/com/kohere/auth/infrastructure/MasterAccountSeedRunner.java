@@ -47,21 +47,18 @@ class MasterAccountSeedRunner implements ApplicationRunner {
     if (alreadySeeded(account)) {
       return;
     }
-    long userId = userAccountService.createPendingUser();
+    long userId = userAccountService.createPendingUser("Master Tenant", account.email());
     userAccountService.agreeToTerms(userId, true);
     userAccountService.completeOnboarding(
         userId,
         new OnboardingProfile(
-            "Master",
-            "Tenant",
             "MALE",
             LocalDate.of(1990, 1, 1),
             "US",
             "UNDERGRADUATE_STUDENT",
-            account.email(),
             "STUDENTS_TRAINEES",
             "en"));
-    link(account, userId);
+    link(account, userId, "Master Tenant");
     log.warn("[TEST SEED] 세입자 마스터 계정 시드 완료 (userId={}, subject={}).", userId, account.subject());
   }
 
@@ -70,12 +67,11 @@ class MasterAccountSeedRunner implements ApplicationRunner {
     if (alreadySeeded(account)) {
       return;
     }
-    long userId = userAccountService.createPendingUser();
+    long userId = userAccountService.createPendingUser("Master Landlord", account.email());
     userAccountService.agreeToTerms(userId, true);
     userAccountService.completeLandlordOnboarding(
-        userId,
-        new LandlordOnboardingProfile("Master Landlord", "01000000000", LocalDate.of(1980, 1, 1)));
-    link(account, userId);
+        userId, new LandlordOnboardingProfile("01000000000", LocalDate.of(1980, 1, 1)));
+    link(account, userId, "Master Landlord");
     log.warn("[TEST SEED] 임대인 마스터 계정 시드 완료 (userId={}, subject={}).", userId, account.subject());
   }
 
@@ -85,12 +81,13 @@ class MasterAccountSeedRunner implements ApplicationRunner {
         .isPresent();
   }
 
-  private void link(TestMasterAccount account, long userId) {
+  private void link(TestMasterAccount account, long userId, String name) {
     socialAccountRepository.save(
         SocialAccount.builder()
             .provider(account.provider())
             .providerUserId(account.subject())
             .email(account.email())
+            .name(name)
             .userId(userId)
             .linkedAt(Instant.now())
             .build());

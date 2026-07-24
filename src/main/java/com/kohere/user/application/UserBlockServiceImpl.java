@@ -84,11 +84,7 @@ public class UserBlockServiceImpl implements UserBlockService {
   private String resolveName(long userId) {
     return userRepository
         .findById(userId)
-        .map(u -> (nullToEmpty(u.getFirstName()) + " " + nullToEmpty(u.getLastName())).trim())
+        .map(u -> u.getName() == null ? "" : u.getName())
         .orElse("");
-  }
-
-  private static String nullToEmpty(String s) {
-    return s == null ? "" : s;
   }
 }

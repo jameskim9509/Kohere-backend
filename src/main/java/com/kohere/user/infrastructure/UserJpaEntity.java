@@ -40,8 +40,7 @@ public class UserJpaEntity {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  private String firstName;
-  private String lastName;
+  private String name;
   private String nickname;
 
   @Enumerated(EnumType.STRING)

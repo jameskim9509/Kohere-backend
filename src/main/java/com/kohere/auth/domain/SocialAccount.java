@@ -23,6 +23,7 @@ public class SocialAccount {
   private final Provider provider;
   private final String providerUserId;
   private final String email;
+  private final String name;
   private final Long userId;
   private final Instant linkedAt;
   private final String appleRefreshToken;

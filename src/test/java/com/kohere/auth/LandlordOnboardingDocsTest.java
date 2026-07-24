@@ -193,7 +193,7 @@ class LandlordOnboardingDocsTest {
                 post("/api/v1/auth/landlord/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(landlordJson("Kim Imdae", PHONE)))
+                    .content(landlordJson(PHONE)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.user.userType").value("LANDLORD"))
             .andDo(
@@ -513,11 +513,11 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("", PHONE)),
+            .content(landlordJson("")),
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-landlord-onboarding-invalid-input",
-        "임대인 온보딩 — 입력 검증 실패 (400 INVALID_INPUT): name/phoneNumber 누락·형식 위반");
+        "임대인 온보딩 — 입력 검증 실패 (400 INVALID_INPUT): phoneNumber 누락·빈값·형식 위반");
 
     perform(
         post("/api/v1/auth/landlord/onboarding")
@@ -533,7 +533,7 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE)),
+            .content(landlordJson(PHONE)),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-landlord-onboarding-unauthenticated",
@@ -543,7 +543,7 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE)),
+            .content(landlordJson(PHONE)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-landlord-onboarding-token-expired",
@@ -554,7 +554,7 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE)),
+            .content(landlordJson(PHONE)),
         status().isUnprocessableEntity(),
         "AUTH_TERMS_AGREEMENT_REQUIRED",
         "auth-landlord-onboarding-terms-required",
@@ -567,7 +567,7 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(phoneNeedToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE)),
+            .content(landlordJson(PHONE)),
         status().isUnprocessableEntity(),
         "AUTH_PHONE_NOT_VERIFIED",
         "auth-landlord-onboarding-phone-not-verified",
@@ -577,7 +577,7 @@ class LandlordOnboardingDocsTest {
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson("Kim Imdae", PHONE)),
+            .content(landlordJson(PHONE)),
         status().isConflict(),
         "AUTH_ONBOARDING_ALREADY_COMPLETED",
         "auth-landlord-onboarding-already-completed",
@@ -699,22 +699,23 @@ class LandlordOnboardingDocsTest {
 
   private static List<FieldDescriptor> landlordOnboardingRequestFields() {
     return List.of(
-        field("name", JsonFieldType.STRING, "임대인 이름(성·이름 합친 단일 이름, 필수·빈값 불가)"),
         field("phoneNumber", JsonFieldType.STRING, "사전 SMS 인증된 연락처와 일치(필수)"),
         field("birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD, 필수·과거 날짜만)"));
   }
 
   /**
-   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·occupation·email·visaType)는 {@code null}이라
-   * 응답에서 생략된다(UserProfileView {@code @JsonInclude(NON_NULL)}). 국적({@code country})·표시 언어({@code
-   * lang})는 서버가 KR·ko로 고정 부여하므로 응답에 포함된다(ADR-0034 개정·#141). 임대인은 단일 {@code name}·생년월일({@code
-   * birthDate})·마스킹된 {@code phoneNumber}를 받는다(spec §5-2, #131).
+   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(gender·occupation·visaType)는 {@code null}이라 응답에서 생략된다(UserProfileView
+   * {@code @JsonInclude(NON_NULL)}). 이름({@code name})·이메일({@code email})은 소셜 로그인 시 provider 값으로 확정돼
+   * 임대인도 보유하므로 응답에 포함된다(#192). 국적({@code country})·표시 언어({@code lang})는 서버가 KR·ko로 고정 부여하므로 응답에
+   * 포함된다(ADR-0034 개정·#141). 임대인은 단일 {@code name}·생년월일({@code birthDate})·마스킹된 {@code phoneNumber}를
+   * 받는다(spec §5-2, #131·#192).
    */
   private static List<FieldDescriptor> landlordOnboardingResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.user.id", JsonFieldType.NUMBER, "회원 ID"),
-        field("data.user.name", JsonFieldType.STRING, "임대인 이름(요청 name — 성·이름 합친 전체 이름)"),
+        field("data.user.name", JsonFieldType.STRING, "임대인 이름(소셜 로그인 캡처 — 성·이름 합친 전체 이름)"),
+        field("data.user.email", JsonFieldType.STRING, "이메일(소셜 로그인 provider 값 — 임대인도 보유, #192)"),
         field("data.user.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
         field("data.user.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
         field("data.user.country", JsonFieldType.STRING, "국적 ISO 코드(임대인은 서버 고정 KR)"),
@@ -737,10 +738,10 @@ class LandlordOnboardingDocsTest {
   }
 
   /**
-   * 임대인 프로필 조회(GET /users/me) 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·occupation·email·
-   * visaType)는 {@code null}이라 생략된다(UserProfileResponse {@code @JsonInclude(NON_NULL)}). 국적({@code
-   * country})·표시 언어({@code lang})는 서버가 KR·ko로 고정 부여하므로 포함된다(ADR-0034 개정·#141). 본인 조회이므로 {@code
-   * phoneNumber}는 평문이다(spec §8, #131).
+   * 임대인 프로필 조회(GET /users/me) 응답 필드 — 세입자 전용 필드(gender·occupation·visaType)는 {@code null}이라
+   * 생략된다(UserProfileResponse {@code @JsonInclude(NON_NULL)}). 이름({@code name})·이메일({@code email})은
+   * 소셜 로그인 provider 값으로 임대인도 보유하므로 포함된다(#192). 국적({@code country})·표시 언어({@code lang})는 서버가 KR·ko로
+   * 고정 부여하므로 포함된다(ADR-0034 개정·#141). 본인 조회이므로 {@code phoneNumber}는 평문이다(spec §8, #131).
    */
   private static List<FieldDescriptor> landlordProfileResponseFields() {
     return List.of(
@@ -748,6 +749,7 @@ class LandlordOnboardingDocsTest {
         field("data.id", JsonFieldType.NUMBER, "회원 ID"),
         field("data.userType", JsonFieldType.STRING, "회원 역할(LANDLORD)"),
         field("data.name", JsonFieldType.STRING, "임대인 이름(성·이름 합친 전체 이름)"),
+        field("data.email", JsonFieldType.STRING, "이메일(소셜 로그인 provider 값 — 임대인도 보유, #192)"),
         field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
         field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
         field("data.country", JsonFieldType.STRING, "국적 ISO 코드(임대인은 서버 고정 KR)"),
@@ -764,11 +766,15 @@ class LandlordOnboardingDocsTest {
   }
 
   private String socialLogin(String subject) throws Exception {
+    // 이름은 소셜 로그인 시 캡처된다(#192) — 임대인 온보딩 응답의 name은 이 값이다.
     return mockMvc
         .perform(
             post("/api/v1/auth/social-login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"provider\":\"GOOGLE\",\"idToken\":\"" + subject + "\"}"))
+                .content(
+                    "{\"provider\":\"GOOGLE\",\"idToken\":\""
+                        + subject
+                        + "\",\"name\":\"Kim Imdae\"}"))
         .andExpect(status().isOk())
         .andReturn()
         .getResponse()
@@ -819,7 +825,7 @@ class LandlordOnboardingDocsTest {
                 post("/api/v1/auth/landlord/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(token))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(landlordJson("Kim Imdae", PHONE)))
+                    .content(landlordJson(PHONE)))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
@@ -852,13 +858,8 @@ class LandlordOnboardingDocsTest {
     return "Bearer " + token;
   }
 
-  private static String landlordJson(String name, String phone) {
-    return "{\"name\":\""
-        + name
-        + "\",\"phoneNumber\":\""
-        + phone
-        + "\",\"birthDate\":\""
-        + BIRTH_DATE
-        + "\"}";
+  private static String landlordJson(String phone) {
+    // 이름은 온보딩에서 받지 않는다(소셜 로그인 캡처) — 요청 본문은 { phoneNumber, birthDate }(#192).
+    return "{\"phoneNumber\":\"" + phone + "\",\"birthDate\":\"" + BIRTH_DATE + "\"}";
   }
 }

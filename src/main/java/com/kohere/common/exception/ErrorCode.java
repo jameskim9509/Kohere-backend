@@ -26,10 +26,11 @@ public enum ErrorCode {
   // --- 인증·회원 (auth/user) — docs/api/specs/01-auth-onboarding.md ---
   AUTH_MISSING_CREDENTIAL(HttpStatus.BAD_REQUEST, "소셜 로그인에 필요한 자격 정보가 누락되었습니다."),
   AUTH_INVALID_SOCIAL_TOKEN(HttpStatus.UNAUTHORIZED, "소셜 토큰 검증에 실패했습니다."),
+  AUTH_EMAIL_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 정보가 필요합니다."),
+  AUTH_EMAIL_MISMATCH(HttpStatus.UNPROCESSABLE_ENTITY, "요청 이메일이 소셜 계정 이메일과 일치하지 않습니다."),
   AUTH_REQUIRED_AGREEMENT_MISSING(HttpStatus.UNPROCESSABLE_ENTITY, "필수 약관에 동의해야 합니다."),
   AUTH_TERMS_AGREEMENT_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "약관 동의가 선행되어야 합니다."),
   AUTH_EMAIL_VERIFICATION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증번호가 올바르지 않거나 만료되었습니다."),
-  AUTH_EMAIL_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증이 필요합니다."),
   AUTH_PHONE_VERIFICATION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "연락처 인증번호가 올바르지 않거나 만료되었습니다."),
   AUTH_PHONE_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "연락처 인증이 필요합니다."),
   AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED(

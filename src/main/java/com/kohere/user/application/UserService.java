@@ -50,7 +50,7 @@ public class UserService {
     return toResponse(userRepository.save(updated));
   }
 
-  /** 세입자 프로필 수정 — 성·이름·성별·생년월일·국적·직업·비자정보·마케팅 동의. country는 존재 검증한다. */
+  /** 세입자 프로필 수정 — 이름·성별·생년월일·국적·직업·비자정보·마케팅 동의. country는 존재 검증한다. */
   private User updateTenantProfile(User user, UpdateProfileRequest request) {
     if (request.country() != null && !countryRepository.existsByCode(request.country())) {
       throw new InvalidInputException("country 값이 올바르지 않습니다: " + request.country());
@@ -62,8 +62,7 @@ public class UserService {
                 .orElseThrow(
                     () -> new InvalidInputException("lang 값이 올바르지 않습니다: " + request.lang()));
     return user.updateProfile(
-        request.firstName(),
-        request.lastName(),
+        request.name(),
         request.gender(),
         request.birthDate(),
         request.country(),
@@ -102,10 +101,10 @@ public class UserService {
   }
 
   /**
-   * 프로필 응답으로 매핑한다. {@code userType}에 따라 필드를 분기한다 — 세입자는 성·이름·성별·국적·직업·비자정보를, 임대인은 전체 이름({@code
-   * name})·연락처를 채우고 나머지는 {@code null}로 두어 응답에서 생략되게 한다(UserProfileResponse
-   * {@code @JsonInclude(NON_NULL)}). 본인 조회이므로 임대인 {@code phoneNumber}는 평문으로 반환한다(spec §8 — 온보딩 응답
-   * §5-2의 마스킹과 구분).
+   * 프로필 응답으로 매핑한다. {@code name}은 세입자·임대인 공통 단일 이름이다(#192). {@code userType}에 따라 갈리는 건 세입자 전용
+   * 필드(성별·국적·직업·비자정보)와 임대인 전용 {@code phoneNumber}뿐이며, 나머지는 {@code null}로 두어 응답에서 생략되게
+   * 한다(UserProfileResponse {@code @JsonInclude(NON_NULL)}). 본인 조회이므로 임대인 {@code phoneNumber}는 평문으로
+   * 반환한다(spec §8 — 온보딩 응답 §5-2의 마스킹과 구분).
    */
   private UserProfileResponse toResponse(User u) {
     boolean landlord = u.getUserType() == UserType.LANDLORD;
@@ -114,9 +113,7 @@ public class UserService {
     return new UserProfileResponse(
         u.getId(),
         u.getUserType(),
-        landlord ? null : u.getFirstName(),
-        landlord ? null : u.getLastName(),
-        landlord ? u.getFirstName() : null,
+        u.getName(),
         u.getNickname(),
         u.getGender(),
         u.getBirthDate(),
