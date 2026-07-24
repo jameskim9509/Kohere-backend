@@ -11,7 +11,7 @@
 
 ### 임대인 트랙
 
-사용자는 **세입자(`TENANT`, 외국인)** 와 **임대인(`LANDLORD`)** 두 역할로 나뉜다. **소셜 로그인·약관 동의까지는 두 역할이 공통 흐름**이고, **이후 온보딩 단계에서 분기**한다 — 세입자는 곧바로 `POST /auth/onboarding`(§5), 임대인은 연락처 SMS 인증(§4-1·§4-2) 후 `POST /auth/landlord/onboarding`(§5-2)으로 제출한다(세입자의 이메일은 소셜 로그인 시 provider 값으로 확정되므로 온보딩에서 재입력·인증하지 않는다 — #192). **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 온보딩 제출에 포함하지 않는다 — 온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 별도 검증 API(§5-1)로 검증한다. **`userType`은 온보딩 제출 엔드포인트로 확정되고 이후 불변**이다(소셜 로그인·약관 단계에서는 미확정). **임대인은 이메일을 수집하지 않고 본인 확인을 연락처(휴대폰) SMS 인증으로 한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). 관련 유저 스토리: US-1-8(사업자번호 검증)·US-1-9(임대인 온보딩)·US-1-10(임대인 연락처 인증).
+사용자는 **세입자(`TENANT`, 외국인)** 와 **임대인(`LANDLORD`)** 두 역할로 나뉜다. **소셜 로그인·약관 동의까지는 두 역할이 공통 흐름**이고, **이후 온보딩 단계에서 분기**한다 — 세입자는 곧바로 `POST /auth/onboarding`(§5), 임대인은 연락처 SMS 인증(§4-1·§4-2) 후 `POST /auth/landlord/onboarding`(§5-2)으로 제출한다(세입자의 이메일은 소셜 로그인 시 provider 값으로 확정되므로 온보딩에서 재입력·인증하지 않는다 — #192). **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 온보딩 제출에 포함하지 않는다 — 온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 별도 검증 API(§5-1)로 검증한다. **`userType`은 온보딩 제출 엔드포인트로 확정되고 이후 불변**이다(소셜 로그인·약관 단계에서는 미확정). **임대인의 이메일은 세입자와 동일하게 소셜 로그인 시 provider(Apple/Google) 값으로 캡처·보유하되(더는 미수집 아님), 본인 확인은 연락처(휴대폰) SMS 인증으로 한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#192) — 이메일은 인증 대상 아닌 미검증 연락처). 관련 유저 스토리: US-1-8(사업자번호 검증)·US-1-9(임대인 온보딩)·US-1-10(임대인 연락처 인증).
 
 ### 핵심 개념·enum
 
@@ -25,10 +25,10 @@
 | 비자정보 `visaType` | `SHORT_TERM_VISIT`(단기방문), `STUDENTS_TRAINEES`(유학·연수), `NON_PROFESSIONAL_WORKERS`(비전문취업), `WORKING_HOLIDAY_WORK_AND_VISIT`(워킹홀리데이·방문취업), `OVERSEAS_KOREANS`(재외동포), `FAMILY_MARRIAGE_MIGRANTS`(방문동거·거주·결혼이민), `PERMANENT_RESIDENTS`(영주), `PROFESSIONALS`(전문인력), `DIPLOMATIC_OFFICIAL_AND_OTHERS`(외교·공무·기타), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). API는 상수명, DB 저장은 표시 라벨 |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
 | 표시 언어 `lang` | ISO 639-1 소문자 코드 — 지원값 `en`, `ko`, `ja` | **세입자 온보딩·프로필 수정 모두 선택** · 사용자가 앱 지구본 아이콘에서 직접 고른다. `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`이다. 지원 목록(`en`·`ko`·`ja`)으로 서버가 검증하고 목록 밖 값은 `INVALID_INPUT`이다(값은 소문자 코드로 주고받되 서버는 내부적으로 `Language` enum으로 모델링한다). **임대인은 서버가 `ko`로 고정 부여하며 변경할 수 없다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) |
-| 이메일 `email` | 이메일 문자열 | **세입자** 소셜 로그인 시 provider(Apple/Google) 진본으로 확정 — 요청 `email`이 토큰 `email` 클레임과 일치해야 하며(§1) 온보딩에서 재수집·재인증하지 않는다(#192). 정식(ACTIVE) 사용자의 이메일 인증 API는 §3·§4(접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈). 임대인은 미수집([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)) |
+| 이메일 `email` | 이메일 문자열 | **세입자** 소셜 로그인 시 provider(Apple/Google) 진본으로 확정 — 요청 `email`이 토큰 `email` 클레임과 일치해야 하며(§1) 온보딩에서 재수집·재인증하지 않는다(#192). 정식(ACTIVE) 사용자의 이메일 인증 API는 §3·§4(접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈). 임대인도 소셜 로그인 시 provider 값을 `User.email`에 보유한다(더는 미수집·NULL 아님 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192): 수집 폼이 아니라 소셜 로그인 provider 값 보유이며 인증 대상 아님, 수정은 후속 이슈) |
 | 닉네임 `nickname` | `형용사 + 사물` 문자열 | 서버가 자동 배정(사용자 입력·수정 불가), 전역 유니크 |
 | 사용자 역할 `userType` | `TENANT`(세입자·외국인), `LANDLORD`(임대인) | 온보딩 제출 엔드포인트(세입자 `/auth/onboarding` · 임대인 `/auth/landlord/onboarding`)로 확정·이후 불변. 소셜·약관 단계에서는 미확정 |
-| 이름 `name` | 문자열 | **세입자·임대인 공통** · 성·이름을 합친 **단일 이름**(#192에서 세입자의 `firstName`/`lastName`을 단일 `name`으로 통합해 임대인과 완전히 통일). 빈 문자열 불가. API 필드명·저장 모두 단일 `name`(`FullName` VO의 단일 `name` 속성 · `users.name` 컬럼). 세입자는 소셜 로그인 시 provider 값으로 채우고(§1) 이후 `PATCH /users/me`(§9)로 수정, 임대인은 온보딩(§5-2)에서 수집 |
+| 이름 `name` | 문자열 | **세입자·임대인 공통** · 성·이름을 합친 **단일 이름**(#192에서 세입자의 `firstName`/`lastName`을 단일 `name`으로 통합해 임대인과 완전히 통일). 빈 문자열 불가. API 필드명·저장 모두 단일 `name`(`FullName` VO의 단일 `name` 속성 · `users.name` 컬럼). 세입자·임대인 모두 소셜 로그인 시 provider 값으로 채우고(§1) 이후 `PATCH /users/me`(§9)로 수정한다(#192에서 임대인도 온보딩 수집을 폐지해 세입자와 수집 시점까지 완전히 통일) |
 | 연락처 `phoneNumber` | 전화번호 문자열 | **임대인 온보딩 필수** · SMS 인증번호로 사전 검증(§4-1·§4-2) 필요. 응답·로그 마스킹(예 `010-****-5678`) |
 | 사업자등록번호 `businessRegistrationNumber` | 숫자 10자리 문자열 | **임대인 전용** · **온보딩 제출에는 미포함**(온보딩은 약관·연락처 인증만으로 완료). 온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 무상태 검증한다. 응답·로그 마스킹 |
 
@@ -559,7 +559,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 ### 5-2. POST `/api/v1/auth/landlord/onboarding` — 임대인 온보딩 제출(임대인 전용·가입 완료)
 
-`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행**되어야 한다 — **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 수집·검증하지 않는다(온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 검증). 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·직업·비자정보와 **이메일을 수집하지 않으며**(생년월일 `birthDate`은 세입자와 동일하게 필수 수집한다 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)), 이름은 단일 `name`으로 받는다(#192에서 세입자의 `firstName`/`lastName`도 단일 `name`으로 통합돼 두 역할의 이름 모델이 완전히 통일됐다). **국적 `country`와 표시 언어 `lang`은 클라이언트가 보내지 않고 서버가 `country="KR"`·`lang="ko"`로 고정 부여**한다 — 임대인은 한국인 사업자를 전제하므로 국적을 묻지 않고, 한국어로만 서비스를 본다(변경 불가). 이는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 국적 미수집" 결정을 개정한 것으로, 요청 본문은 여전히 `{ name, phoneNumber, birthDate }` 그대로이고 응답에만 국적·국기·언어가 더해진다.
+`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행**되어야 한다 — **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 수집·검증하지 않는다(온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 검증). 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·직업·비자정보를 온보딩에서 수집하지 않으며(**이름 `name`과 이메일 `email`은 세입자와 동일하게 소셜 로그인 시 provider 값으로 이미 확정돼 있어 온보딩에서 재입력·재수집하지 않는다** — #192; 생년월일 `birthDate`은 세입자와 동일하게 필수 수집한다 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)). 이름은 단일 `name`이다(#192에서 세입자의 `firstName`/`lastName`도 단일 `name`으로 통합돼 두 역할의 이름 모델·수집 시점이 완전히 통일됐다 — 이후 수정은 `PATCH /users/me` §9). **국적 `country`와 표시 언어 `lang`은 클라이언트가 보내지 않고 서버가 `country="KR"`·`lang="ko"`로 고정 부여**한다 — 임대인은 한국인 사업자를 전제하므로 국적을 묻지 않고, 한국어로만 서비스를 본다(변경 불가). 이는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 국적 미수집" 결정을 개정한 것으로, 요청 본문은 `{ phoneNumber, birthDate }` 두 필드이고 응답에는 소셜 로그인 시 확정된 `name`·`email`과 서버 고정 국적·국기·언어가 더해진다.
 
 > **검증 게이트 우선순위**: 약관 미동의(`PENDING`) → `422 AUTH_TERMS_AGREEMENT_REQUIRED`(이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`) → 제출 `phoneNumber` 미검증·불일치 → `422 AUTH_PHONE_NOT_VERIFIED` 순으로 판정한다(약관 → 연락처, 사업자번호 게이트 없음). 약관 동의·`termsVersion`은 §2에서 이미 기록되므로 이 요청 본문에 약관 필드를 담지 않는다. `phoneNumber`는 §4-1·§4-2로 검증 완료된 값과 일치해야 한다. `nickname`은 서버가 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가).
 
@@ -570,7 +570,6 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 ```json
 {
-  "name": "Kim Minsu",
   "phoneNumber": "010-1234-5678",
   "birthDate": "1998-04-12"
 }
@@ -578,7 +577,6 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `name` | string | 필수 | 성·이름을 합친 단일 이름. 빈 문자열 불가 |
 | `phoneNumber` | string | 필수 | 전화번호 형식. **§4-1·§4-2로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_PHONE_NOT_VERIFIED` 422) |
 | `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) — 세입자 온보딩(§5)과 동일 규칙 |
 
@@ -598,6 +596,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "countryName": "South Korea",
       "countryFlag": "https://flagcdn.com/kr.svg",
       "lang": "ko",
+      "email": "minsu@example.com",
       "userType": "LANDLORD",
       "status": "ACTIVE",
       "marketingAgreed": false,
@@ -612,13 +611,13 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 임대인 응답은 세입자와 달리 `gender`·`occupation`·`visaType`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 서버가 고정 부여한 값(`KR`·`ko`)이라 임대인 응답에도 포함한다**(요청 본문에는 없다 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
+> 임대인 응답은 세입자와 달리 `gender`·`occupation`·`visaType`을 포함하지 않는다. **`email`은 세입자와 동일하게 소셜 로그인 시 provider 값으로 확정돼 임대인도 보유하므로 응답에 포함한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192) — 이메일은 인증 대상 아닌 미검증 연락처). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 서버가 고정 부여한 값(`KR`·`ko`)이라 임대인 응답에도 포함한다**(요청 본문에는 없다 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
 
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `name`/`phoneNumber` 누락·빈값·형식(전화번호) 위반, `birthDate` 누락·형식·미래 날짜 위반(`errors[]`로 위반 필드 반환) |
+| 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값·형식(전화번호) 위반, `birthDate` 누락·형식·미래 날짜 위반(`errors[]`로 위반 필드 반환) |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 `ACTIVE`인 사용자의 온보딩 재요청(동시 요청 포함 — 한 요청만 성공) |
@@ -759,6 +758,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
     "countryName": "South Korea",
     "countryFlag": "https://flagcdn.com/kr.svg",
     "lang": "ko",
+    "email": "minsu@example.com",
     "status": "ACTIVE",
     "termsOfServiceAgreed": true,
     "privacyPolicyAgreed": true,
@@ -770,7 +770,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```
 
 > 본인 프로필이므로 `phoneNumber`는 평문으로 반환한다(로그·타 사용자 노출 시에만 마스킹). **세입자·임대인 모두 이름은 단일 `name`으로 반환한다**(#192 — 세입자의 `firstName`/`lastName`은 단일 `name`으로 통합). 세입자 응답의 `occupation`은 온보딩에서 **선택**(#187)이라 **미설정이면 필드가 생략**된다(온보딩 응답 §5와 동일 — REST Docs 응답 필드는 optional로 선언).
-> 임대인 응답은 세입자 전용 필드(`gender`·`occupation`·`visaType`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 임대인 응답에도 포함한다** — 온보딩에서 서버가 `KR`·`ko`로 고정 부여하기 때문이며(클라이언트가 보내지 않는다), 이는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 국적 미수집" 결정을 개정한 것이다. **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
+> 임대인 응답은 세입자 전용 필드(`gender`·`occupation`·`visaType`)를 포함하지 않는다. **`email`은 세입자와 동일하게 소셜 로그인 시 provider 값으로 확정돼 임대인도 보유하므로 응답에 포함한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192) — 이메일은 인증 대상 아닌 미검증 연락처). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 임대인 응답에도 포함한다** — 온보딩에서 서버가 `KR`·`ko`로 고정 부여하기 때문이며(클라이언트가 보내지 않는다), 이는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 국적 미수집" 결정을 개정한 것이다. **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
 
 #### 발생 가능한 에러
 
@@ -830,7 +830,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 > **세입자 전용 — `country`·`lang` 독립**: `country`와 `lang`은 서로 독립이다 — `country`만 바꿔도 `lang`은 그대로 유지되고(국적을 바꿔도 표시 언어는 따라 바뀌지 않는다), `lang`만 보내면 `country`는 그대로 둔다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
 > 필수 약관 동의(`termsOfServiceAgreed`/`privacyPolicyAgreed`)는 이 엔드포인트로 철회할 수 없다(탈퇴 경로로만 처리). (확인 필요: 동의 철회 정책)
-> `nickname`은 시스템 배정값이라 수정 대상이 아니다(세입자·임대인 공통 불변). **세입자** `email` 변경은 **#192 범위 밖(후속 이슈)** 이라 이 엔드포인트로 수정하지 않는다 — 당분간 소셜 로그인 값으로 고정한다(임대인은 `email` 미보유). 정식(ACTIVE) 사용자의 이메일 인증 API(§3·§4)는 접근만 ACTIVE로 열어 두었고, 실제 이메일 변경 반영은 후속 이슈다.
+> `nickname`은 시스템 배정값이라 수정 대상이 아니다(세입자·임대인 공통 불변). **세입자·임대인 모두** `email` 변경은 **#192 범위 밖(후속 이슈)** 이라 이 엔드포인트로 수정하지 않는다 — 당분간 소셜 로그인 provider 값으로 고정한다(임대인도 소셜 로그인 시 provider email을 보유하며, 수정은 세입자와 동일하게 후속 이슈다). 정식(ACTIVE) 사용자의 이메일 인증 API(§3·§4)는 접근만 ACTIVE로 열어 두었고, 실제 이메일 변경 반영은 후속 이슈다.
 > **임대인 전용**: `userType`은 온보딩으로 확정된 뒤 불변이다. `birthDate`는 온보딩에서 수집·확정하며 이 경로의 수정 대상이 아니다(임대인 조회 전용 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)). `businessRegistrationNumber`는 온보딩·프로필에서 수집·저장하지 않으므로 이 경로의 수정 대상이 아니다(필요 시 별도 검증 API §5-1로 무상태 검증). **`phoneNumber` 변경은 SMS 재인증(§4-1·§4-2)이 필요하다** — 새 번호를 재인증(VERIFIED)한 뒤에만 반영하며, 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **클라이언트 계약**: 앱은 연락처 변경 시 **PATCH 이전에 새 번호 인증(§4-1·§4-2)을 먼저 수행**한다(정상 흐름). `422 AUTH_PHONE_NOT_VERIFIED`는 happy path가 아니라 **미인증·마커 TTL 만료·불일치 제출에 대한 서버 가드**다.
 
 #### 성공 Response — 200 OK
@@ -860,7 +860,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 개인정보(세입자: 이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·국적·표시 언어·닉네임, 사업자번호 해시가 저장돼 있으면 함께)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
+본문 없음. 개인정보(세입자: 이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·국적·표시 언어·이메일·닉네임, 사업자번호 해시가 저장돼 있으면 함께)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 #### 발생 가능한 에러
 
