@@ -5,6 +5,7 @@
 | 번호 | ADR-0038 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-07-21 |
+| 기준 코드 | `develop` @ `4b64c92`. 본 ADR의 수치·파일 참조는 전부 이 시점 기준이며, 재검증 없이 인용하지 않는다 |
 | 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0010](./0010-jwt-authentication-filter.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0019](./0019-infrastructure-as-code-terraform.md), [ADR-0026](./0026-dev-host-memory-budget.md), [ADR-0031](./0031-apple-sign-in-authorization-code-flow.md), [#152](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/152) |
 
 ## Status
@@ -18,7 +19,8 @@ Proposed
 | 항목 | 실태 |
 |---|---|
 | 로깅 설정 | `logback-spring.xml`·`logging.*`·MDC·`traceId` 전부 0건. 전량 STDOUT |
-| 인증·인가 실패 | 401/403은 `SecurityErrorResponder`가 직접 write해 `GlobalExceptionHandler`를 안 거친다 — 로그 0건 |
+| 인증·인가 실패 | 401/403은 `SecurityErrorResponder`가 직접 write해 `GlobalExceptionHandler`를 안 거친다 — 로그 0건. write 호출자는 `RestAuthenticationEntryPoint`·`RestAccessDeniedHandler`·`JwtAuthenticationFilter` 만료 분기 셋이다 |
+| 게스트 접근 | 매물 탐색 GET·퀴즈·생활 팁·v2 진단이 `permitAll`(#181·#182·#185). 게스트는 `AuthPrincipals.userIdOrNull`로 `userId == null` — 익명이 오류가 아니라 정상 트래픽이다 |
 | 외부 연동 | 6개 중 3건 타임아웃 미설정, 재시도·서킷브레이커 0건. 스텁 폴백 3개가 조용히 통과시킨다 |
 | cross-store | `@Transactional`이 `JpaTransactionManager`뿐이라 Mongo·Redis는 롤백 대상이 아니다([ADR-0005](./0005-polyglot-persistence.md)) |
 | 비동기 | `@Async`·`@Scheduled`·브로커 0건 — MDC 스레드풀 오염·전파는 존재하지 않는 문제다 |
@@ -55,6 +57,8 @@ Proposed
 | `traceId` | UUID | `MdcLoggingFilter`(`HIGHEST_PRECEDENCE`)가 put, `finally`에서 `MDC.clear()` |
 | `userId` | 숫자 또는 `anonymous` | `JwtAuthenticationFilter` 인증 성공 분기([ADR-0010](./0010-jwt-authentication-filter.md)) |
 | `userId`(로그인류) | 발급 결과 | social-login·reissue는 익명 요청이라 MDC에 값이 없다. `AuthService`가 직접 채운다 |
+| `userId`(게스트) | `anonymous` | `permitAll` 경로의 비회원. 코드는 `null`(`AuthPrincipals.userIdOrNull`)이지만 MDC가 `Map<String,String>`이라 문자열로 적는다 — 미인증과 같은 값이라 로그만으로는 구분되지 않는다 |
+| `guestSessionId` | 세션 id 또는 없음 | v2 진단 전용. 게스트는 `userId`가 없어 이 키가 유일한 활동 추적 축이다(`DiagnosisFlowService.next`) |
 | `onboarding` | boolean | `AuthPrincipal` |
 
 **기반은 아래로 확정한다.**
@@ -84,21 +88,21 @@ Proposed
 | `pathVars` | 현 매핑의 경로 변수는 전부 id·코드(`bookingId`·`listingId`·`postId`·`commentId`·`userId`·`diagnosisId`·`quizId`·`roomId`·`step`·`topicCode`) — 마스킹 불필요. 비-id를 경로에 두는 엔드포인트가 생기면 `LogMasker` 경유가 전제다 |
 | 토큰·Apple private key | 어떤 레벨에서도 금지 |
 | 이메일·전화·실명·여권·사업자번호 | `common`의 `LogMasker`로 마스킹(`mask(phone)` 선례 승격) |
-| 인증번호 | `LoggingVerificationSmsSender`의 평문 출력 제거 |
+| 인증번호 | `LoggingVerificationSmsSender`가 `code`를 평문 WARN으로 찍는다 — 제거. 고정 인증번호 발급자 2종은 `userId`만 남겨 이미 안전하다 |
 
 ### 용도 1 — 사용자 활동 추적
 
-**컨트롤러 매핑 65개 전 요청에 접근 로그 한 줄을 남긴다.** `HandlerInterceptor`·INFO. 동작 46개와 미구현 껍데기 19개(chat 5·community 12·report 2)를 모두 포함한다 — 껍데기 호출은 500이라 용도 5와 같은 `traceId`로 묶여야 한다.
+**컨트롤러 매핑 65개 전 요청에 접근 로그 한 줄을 남긴다.** `HandlerInterceptor`·INFO. 동작 46개와 미구현 껍데기 19개(chat 5·community 12·report 2)를 모두 포함한다 — 껍데기 호출은 500이라 용도 5와 같은 `traceId`로 묶여야 한다. 프리픽스는 `/api/v1`과 `/api/v2`(v2 진단) 둘 다이며 인터셉터는 프리픽스로 거르지 않는다.
 
 | 항목 | 값 |
 |---|---|
 | 필드 | `traceId`, `userId`, `method`, `pathPattern`, `pathVars`, `status`, `latencyMs`, `errorCode`, `onboarding` |
-| 제외 경로 | `/actuator/health`, `/docs/**`, `/swagger-ui/**`, 정적 리소스 |
+| 제외 경로 | `/actuator/health`, `/docs/**`, `/swagger-ui/**`, 정적 리소스. `PublicPaths`와 셋이 겹치지만 별개 개념이다 — social-login·reissue는 공개 티어여도 용도 3이 필요로 하므로 접근 로그에 **남긴다** |
 | `pathPattern` | 원경로가 아닌 템플릿 — 엔드포인트 집계의 전제 |
 | `pathVars` | 템플릿에 채워진 실제 값(`{bookingId:42}`). 인터셉터가 `HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE`로 취득 |
 | `onboarding` | `SecurityConfig` 정확 매처 구멍에 `ROLE_ONBOARDING` 토큰이 도달했는지가 로그로만 관측된다 |
 
-**경로만으로 재구성되지 않는 데이터 변경 6종만 별도 이벤트로 남긴다.** `userId`·`traceId`는 전 이벤트 공통이며 이 키로 접근 로그와 조인한다.
+**경로만으로 재구성되지 않는 데이터 변경 6종만 별도 이벤트로 남긴다.** `userId`·`traceId`는 전 이벤트 공통이며 이 키로 접근 로그와 조인한다. 단 v2 진단은 게스트가 닿아 `userId`가 `anonymous`일 수 있다.
 
 | 이벤트 | 추가로 남길 값 | 위치 |
 |---|---|---|
@@ -106,7 +110,7 @@ Proposed
 | `USER_BLOCKED` | `blockedUserId`, `bookingId` | `BookingService.blockBooking` |
 | `BOOKING_REPORTED` | `reportId`, `reportedUserId`, `reasonCode` | `BookingService.reportBooking` |
 | `DIAGNOSIS_COMPLETED` | `diagnosisId`, 추천 결과 유형 | `POST /api/v1/diagnoses` |
-| `DIAGNOSIS_STEP_ADVANCED` | `sessionId`, `step`, 선택지·분기 | `DiagnosisFlowService.next` |
+| `DIAGNOSIS_STEP_ADVANCED` | `sessionId`, `step`, 선택지·분기 | `DiagnosisFlowService.next` — 게스트도 닿아 `userId`가 `anonymous`일 수 있고 그때는 `guestSessionId`가 유일한 축이다 |
 | `PROFILE_UPDATED` | 바뀐 필드명 목록만(값은 PII), `lang`은 값까지(번역을 좌우) | `UserService.updateMyProfile` |
 
 **아래는 접근 로그로 충분해 이벤트를 만들지 않는다.**
@@ -132,7 +136,7 @@ Proposed
 | # | 연동 | 클래스 | 타임아웃 | 실패 매핑 |
 |---|---|---|---|---|
 | 1 | Apple 토큰 교환·폐기 | `AppleAuthClientImpl` | 3000 / 5000ms | 4xx→401, 그 외 502 |
-| 2 | OIDC JWKS(Apple·Google) | `OidcTokenVerifierImpl:52-64` | **미설정** | 전부 401 |
+| 2 | OIDC JWKS(Apple·Google) | `OidcTokenVerifierImpl:54-57` | **미설정** | 전부 401 |
 | 3 | 네이버 지역검색 | `NaverPlaceSearchClient` | 3000 / 5000ms | 전부 502. 키 미주입이면 호출 없이 502 |
 | 4 | 비즈노 사업자번호 | `BiznoBusinessRegistryVerifier` | 3000 / 5000ms | 4xx→422, 그 외 502 |
 | 5 | SOLAPI SMS | `SolapiVerificationSmsSender` | **미설정**(SDK 기본) | 502 |
@@ -147,15 +151,18 @@ Proposed
 | `LoggingVerificationSmsSender` | `app.solapi.enabled=false` | 인증번호 평문 출력 |
 | `StubBusinessRegistryVerifier` | `app.bizno.enabled=false` | 숫자 10자리면 무조건 통과 |
 | `TestLoginOidcTokenVerifier` | `@Profile({local,dev})` + `app.auth.test-login.enabled` | `master:<role>:<secret>`이면 OIDC 검증 없이 세션 발급 |
+| `FixedCodeEmailVerificationCodeIssuer` | `@Profile({local,dev})` + `app.auth.fixed-verification.enabled` | 지정 심사 계정은 이메일 인증번호가 고정값이고 메일이 안 나간다(#184) |
+| `FixedCodePhoneVerificationCodeIssuer` | `@Profile({local,dev})` + `app.auth.fixed-verification.enabled` | 지정 심사 계정은 SMS 인증번호가 고정값이고 문자가 안 나간다(#184) |
 
 ### 용도 3 — 보안 감사
 
-**401/403을 `SecurityErrorResponder`(또는 각 `EntryPoint`/`Handler`)에서 직접 로깅한다.** 현재 0건이라 무차별 토큰 대입·권한 우회 시도가 통째로 관측 밖에 있다. 용도 3의 최대 근거다.
+**401/403을 `SecurityErrorResponder.write`에서 직접 로깅한다.** 현재 0건이라 무차별 토큰 대입·권한 우회 시도가 통째로 관측 밖에 있다. 용도 3의 최대 근거다. write 호출자가 `RestAuthenticationEntryPoint`·`RestAccessDeniedHandler`·`JwtAuthenticationFilter`(만료 분기) 셋이므로, 호출자마다가 아니라 `write` 한 곳에 넣어야 누락이 없다.
 
 | 갈래 | 이벤트·판정 | 레벨 |
 |---|---|---|
 | 인증 | social-login 성공·실패, `reissue`(회전), logout, 이메일·휴대폰 인증코드 발송·검증 | INFO |
 | 인가 | 401 거부, 403 거부 | `TOKEN_EXPIRED`=INFO, 그 외 WARN |
+| 인가 | 만료 401을 `PublicPaths` 밖에서는 필터가 직접 끊고 공개 티어는 통과시킨다(#181). 게스트 허용 경로는 `permitAll`이라 EntryPoint가 안 돌아 필터가 유일한 관측점이다 | INFO |
 | 보안 | 토큰 위조·서명 오류 | WARN |
 | 보안 | refresh 재사용 — 키 삭제 대신 `status`가 `REVOKED`로 전이되므로 이미 `REVOKED`인 토큰의 `reissue`로 판정 | WARN |
 | 감사 | `users.status` 전이(`PENDING`→`TERMS_AGREED`→`ACTIVE`→`WITHDRAWN`), 임대인 승격, 사업자 검증 결과, 탈퇴 | INFO |
@@ -177,9 +184,9 @@ Proposed
 
 | 오류 | 처리 | 현행 대비 델타 |
 |---|---|---|
-| 5xx(껍데기 19개 포함, 코드 버그) | ERROR + 스택 | 이미 `GlobalExceptionHandler:41-46`·`:82-84`가 남긴다. 델타는 `traceId` 결합뿐 |
-| `java.lang.Error` | `handleUnexpected`의 catch를 `Throwable`로 확대 | 신규. `build.gradle:29`가 SOLAPI SDK Kotlin `NoSuchMethodError` 실사고를 기록 |
-| 삼킨 예외 | 이니셜라이저 5개 WARN → ERROR 승격 | 신규. `Diagnosis`·`DiagnosisQuestion`·`DiagnosisFlowSession`·`Quiz`·`LifeTip` `IndexInitializer` |
+| 5xx(껍데기 19개 포함, 코드 버그) | ERROR + 스택 | 이미 `GlobalExceptionHandler:38-48`(5xx만)·`:81-84`가 남긴다. 델타는 `traceId` 결합뿐 |
+| `java.lang.Error` | `handleUnexpected`의 catch를 `Throwable`로 확대 | 신규. `build.gradle:28-31`이 SOLAPI SDK Kotlin `NoSuchMethodError` 실사고를 기록 |
+| 삼킨 예외 | 이니셜라이저 4개 WARN → ERROR 승격 | 신규. `Diagnosis`·`DiagnosisQuestion`·`Quiz`·`LifeTip` `IndexInitializer`. `DiagnosisFlowSession`은 아래 기동 경로 표 참조 |
 | 커넥션 풀 고갈 | Hikari leak-detection + `latencyMs` 급증으로 간접 탐지 | 직접 관측은 메트릭 영역 |
 | 기동 실패 | 신규 로깅 불필요 | 아래 기동 경로 표 |
 | OOM 컨테이너 사망 | 로깅 불가 | 메트릭·알람 영역([ADR-0027](./0027-dev-discord-alerting.md)) |
@@ -199,7 +206,7 @@ Proposed
 | `AuthService.socialLogin` | MySQL tx + Apple HTTP + Redis | `mysql`, `apple`, `redis` | 용도 3 social-login |
 | `BookingService.createBooking` | MySQL tx + Mongo 읽기 | `mysql`, `mongo` | 용도 1 `BOOKING_CREATED` |
 
-근거: `revokeAllByUserId`는 `SMEMBERS`→루프 `HSET`이라 원자성이 없다. `AuthService:152-153` 주석은 롤백 시 Apple refresh token 유실 가능성을 자인하되 이를 [ADR-0031](./0031-apple-sign-in-authorization-code-flow.md)의 best-effort 범위로 규정하고, 토큰 부재는 `UserWithdrawnEventListener`의 skip WARN으로 이미 가시화된다. `apple` 키는 그 WARN을 대체하지 않고 유실을 탈퇴 시점보다 먼저 드러낸다. `createBooking`의 Mongo는 읽기라 잔여물이 없고, `mongo` 키는 유령 참조 판별용이다.
+근거: `revokeAllByUserId`는 `SMEMBERS`→루프 `HSET`이라 원자성이 없다. `AuthService:182-184` 주석은 롤백 시 Apple refresh token 유실 가능성을 자인한다 — 다만 그 주석의 "Apple은 일반 재로그인에 refresh token을 재발급하지 않는다"는 사실과 다르다. [ADR-0031 #4](./0031-apple-sign-in-authorization-code-flow.md)가 "교환 응답에 보통 매번 포함"이라고 못박았고(최초 1회만 내려오는 건 refresh token이 아니라 `email`·`fullName`이다), 같은 파일의 재로그인 분기가 실제로 매번 upsert한다. 따라서 유실은 영구가 아니라 **다음 Apple 로그인까지의 창**이며, 그 창 안에 탈퇴하면 `UserWithdrawnEventListener`의 skip WARN으로 드러난다. `apple` 키는 그 WARN을 대체하지 않고 창의 존재를 탈퇴 시점보다 먼저 드러낸다. `createBooking`의 Mongo는 읽기라 잔여물이 없고, `mongo` 키는 유령 참조 판별용이다.
 
 **기동 경로에는 새 로그를 추가하지 않는다.** 이미 충분히 남으며, logback 초기화가 아래 전부보다 앞서 `JSON_FILE`이 기동 로그를 포착한다.
 
@@ -209,7 +216,8 @@ Proposed
 | Mongock 5.5.0 | ChangeUnit마다 `APPLIED` INFO. 실패는 catch 없이 전파 | 없음 |
 | 예외 전파 3경로의 실패 | `Application run failed` + 전체 스택 | 없음 |
 | `ListingMongoIndexInitializer` | 로그 0건. `try/catch`가 없어 실패는 예외 전파로 커버 | **철회.** 침묵은 성공 경로뿐이고 용도 5는 성공을 안 남긴다 |
-| 이니셜라이저 5개 | 실패를 `catch(RuntimeException)`→WARN으로 삼키고 기동 계속 | **ERROR 승격.** 유일한 '실패해도 기동은 계속' 경로 |
+| 이니셜라이저 4개 | 실패를 `catch(RuntimeException)`→WARN으로 삼키고 기동 계속 | **ERROR 승격.** 유일한 '실패해도 기동은 계속' 경로 |
+| `DiagnosisFlowSessionIndexInitializer` | 두 분기다 — 인덱스 조회 실패는 WARN 삼킴, 정합화 실패는 `IllegalStateException` 전파(#185) | 삼키는 앞 분기만 **ERROR 승격**. 전파 분기는 무변경 |
 | `MasterAccountSeedRunner` | 성공을 WARN 2줄로 남김 | **INFO 강등 또는 제거** |
 | `logging.level` | 저장소 전체 0건, Boot 기본값에 암묵 의존 | **명시.** `root`·`org.flywaydb`·`io.mongock`=INFO |
 
@@ -258,14 +266,15 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 구분 | 내용 |
 |---|---|
 | 긍정 | 401/403이 처음 관측되고, 타임아웃 없는 외부 호출 3건이 `latencyMs`로 드러나며, 스텁 폴백 활성 여부가 기동 로그로 판별된다 |
-| 긍정 | `userId`가 숫자라 원천 PII-안전이고 MDC 생명주기가 필터 하나로 닫힌다 |
+| 긍정 | `userId`가 숫자(게스트는 `anonymous`)라 원천 PII-안전이고 MDC 생명주기가 필터 하나로 닫힌다 |
 | 부정 | 신규 의존·필터·인터셉터로 표면적이 늘고 `JSON_FILE`이 볼륨 마운트·로테이션을 요구한다 |
 | 부정 | 데이터 변경 6종과 `stores`는 도메인 서비스에 로깅 호출이 들어가 침습적이다 |
 
 | 잔여 사각지대 | 이유 |
 |---|---|
 | 커넥션 풀 포화·힙 사용량 | 메트릭 영역. 풀 설정 자체가 전무해 선행 과제다 |
-| `GET /listings/{listingId}`의 Mongo 쓰기(`ListingService:157`) | 최근 본 매물 이벤트 제외의 대가로 수용 |
+| `GET /listings/{listingId}`의 Mongo 쓰기(`ListingService:162`) | 최근 본 매물 이벤트 제외의 대가로 수용 |
+| 게스트와 미인증이 로그에서 같은 `anonymous` | 정상 게스트 트래픽과 토큰 미전송 오류가 `userId`만으로는 안 갈린다 — `pathPattern`이 `permitAll` 경로인지로 사후 판별한다 |
 | `ApplicationRunner` 8개의 실행 순서 | `@Order`가 없어 미보장 — 관측만 하고 보장하지 않는다 |
 | prod 반출 검증 | `deploy.yml`이 dev만 배선. ECS Terraform은 CD 미연결이라 실적재 확인 불가 |
 
@@ -294,9 +303,11 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 1 | 매핑 65개와 제외 경로 호출, 연속 요청 | 65건 각 1줄·제외 0줄·익명은 `anonymous`, `traceId` 잔류 0건 |
 | 1 | 제외 4종(예약 삭제·차단 해제·찜 추가·해제) 유발 | `pathVars`로 대상 식별자가 복원돼 별도 이벤트 없이 "누가 무엇을"이 확정된다 |
 | 1 | 데이터 변경 6종 유발 | 접근 로그와 같은 `traceId`로 조인, `PROFILE_UPDATED`는 `lang`만 값 노출 |
+| 1 | 게스트로 퀴즈·생활 팁·v2 진단·매물 탐색 GET 호출 | `userId=anonymous`로 접근 로그 1줄, v2 진단 단계는 `guestSessionId`로 추적된다 |
 | 2 | 어댑터 6개를 성공·4xx·타임아웃으로 유발 | `outcome`·`latencyMs`가 기대값, 502 1건에 WARN 1줄만(ERROR 중복 0) |
-| 2 | 스텁 3개 활성으로 기동 | 활성 어댑터 3줄, 인증번호 출력 0건 |
+| 2 | 스텁·폴백 5개 활성으로 기동 | 활성 어댑터 5줄, 인증번호 출력 0건 |
 | 3 | 만료 401·위조 401·403·`REVOKED` 토큰 `reissue` | 각각 INFO·WARN·WARN·WARN |
+| 3 | 만료 토큰으로 게스트 허용 경로(퀴즈)와 공개 티어(`reissue`) 호출 | 전자는 필터가 401 INFO 1줄, 후자는 통과해 401 0줄 — 조용한 게스트 강등이 로그로 구분된다 |
 | 3 | social-login 성공 | `userId`가 발급된 숫자(`anonymous` 아님) |
 | 4 | 외부 호출이 포함된 요청 1건 | 같은 `traceId`로 총 지연 중 외부 구간 분해 가능 |
 | 5 | 5xx·`java.lang.Error`·이니셜라이저 실패 유발 | 전부 ERROR + 스택 |
