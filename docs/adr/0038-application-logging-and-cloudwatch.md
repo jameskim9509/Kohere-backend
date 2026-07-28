@@ -81,6 +81,7 @@ Proposed
 | 값 | 정책 |
 |---|---|
 | `userId`·`onboarding` | `AuthPrincipal`에 PII 없음 — 마스킹 불필요 |
+| `pathVars` | 현 매핑의 경로 변수는 전부 id·코드(`bookingId`·`listingId`·`postId`·`commentId`·`userId`·`diagnosisId`·`quizId`·`roomId`·`step`·`topicCode`) — 마스킹 불필요. 비-id를 경로에 두는 엔드포인트가 생기면 `LogMasker` 경유가 전제다 |
 | 토큰·Apple private key | 어떤 레벨에서도 금지 |
 | 이메일·전화·실명·여권·사업자번호 | `common`의 `LogMasker`로 마스킹(`mask(phone)` 선례 승격) |
 | 인증번호 | `LoggingVerificationSmsSender`의 평문 출력 제거 |
@@ -91,9 +92,10 @@ Proposed
 
 | 항목 | 값 |
 |---|---|
-| 필드 | `traceId`, `userId`, `method`, `pathPattern`, `status`, `latencyMs`, `errorCode`, `onboarding` |
+| 필드 | `traceId`, `userId`, `method`, `pathPattern`, `pathVars`, `status`, `latencyMs`, `errorCode`, `onboarding` |
 | 제외 경로 | `/actuator/health`, `/docs/**`, `/swagger-ui/**`, 정적 리소스 |
 | `pathPattern` | 원경로가 아닌 템플릿 — 엔드포인트 집계의 전제 |
+| `pathVars` | 템플릿에 채워진 실제 값(`{bookingId:42}`). 인터셉터가 `HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE`로 취득 |
 | `onboarding` | `SecurityConfig` 정확 매처 구멍에 `ROLE_ONBOARDING` 토큰이 도달했는지가 로그로만 관측된다 |
 
 **경로만으로 재구성되지 않는 데이터 변경 6종만 별도 이벤트로 남긴다.** `userId`·`traceId`는 전 이벤트 공통이며 이 키로 접근 로그와 조인한다.
@@ -111,7 +113,7 @@ Proposed
 
 | 제외 | 이유 |
 |---|---|
-| 예약 소프트 삭제 · 차단 해제 · 찜 추가·해제 | 식별자가 경로에 있음 |
+| 예약 소프트 삭제 · 차단 해제 · 찜 추가·해제 | 식별자가 경로에 있어 `pathVars`로 포착되고, `method`가 추가·해제를 가른다 |
 | 최근 본 매물 기록 | 최대 볼륨인데 UX 편의 기능 |
 
 접근 로그의 전 요청 INFO는 단일 t3.small에서 최대 수집원이다. 일 수집량 1GB를 넘으면 `DIAGNOSIS_STEP_ADVANCED`(진단 1회당 5~8건) → 조회성 GET 접근 로그 → `JSON_FILE` 반출 WARN 이상 제한 순으로 줄인다.
@@ -290,6 +292,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 용도 | 검증 | 통과 기준 |
 |---|---|---|
 | 1 | 매핑 65개와 제외 경로 호출, 연속 요청 | 65건 각 1줄·제외 0줄·익명은 `anonymous`, `traceId` 잔류 0건 |
+| 1 | 제외 4종(예약 삭제·차단 해제·찜 추가·해제) 유발 | `pathVars`로 대상 식별자가 복원돼 별도 이벤트 없이 "누가 무엇을"이 확정된다 |
 | 1 | 데이터 변경 6종 유발 | 접근 로그와 같은 `traceId`로 조인, `PROFILE_UPDATED`는 `lang`만 값 노출 |
 | 2 | 어댑터 6개를 성공·4xx·타임아웃으로 유발 | `outcome`·`latencyMs`가 기대값, 502 1건에 WARN 1줄만(ERROR 중복 0) |
 | 2 | 스텁 3개 활성으로 기동 | 활성 어댑터 3줄, 인증번호 출력 0건 |
@@ -300,6 +303,6 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 5 | 정상 요청 100건 | 용도 5 라인 0건 |
 | 5 | cross-store 3흐름 유발 | `stores`에 흐름별 키가 4상태 중 하나로 기록 |
 | 공통 | 코드리뷰 게이트, `./gradlew build` | 토큰·인증코드·PII 원문 0건, `ModularityTest` green |
-| 수집 | Logs Insights 쿼리, 수집량·메모리 실측 | 이중 래핑 없는 JSON에 `userId`·`traceId`·`pathPattern`·`target` 필터 동작, 1GB/일 이내·여유 300MB 이상(미달 시 ⑥ 보류) |
+| 수집 | Logs Insights 쿼리, 수집량·메모리 실측 | 이중 래핑 없는 JSON에 `userId`·`traceId`·`pathPattern`·`pathVars`·`target` 필터 동작, 1GB/일 이내·여유 300MB 이상(미달 시 ⑥ 보류) |
 
 재검토 시점: 비동기 경로가 생길 때(MDC 전파), MSA 전환 시(Micrometer Tracing), prod CD 연결 시(Log Group 통일), 수집량이 예산을 넘을 때(감축 순서).
