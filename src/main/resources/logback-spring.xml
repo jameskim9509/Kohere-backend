@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  로그 appender 구성(ADR-0038 "공통 기반", 롤아웃 ①).
+
+  CONSOLE(텍스트)은 전 프로파일, JSON_FILE(1줄 JSON)은 dev·prod에만 붙인다. 콘솔까지 JSON이면
+  `docker logs` 가독성이 죽고, 반대로 파일이 텍스트면 Logs Insights가 필드로 못 쪼갠다.
+
+  로그 "내용"(JSON·MDC)과 "전송 경로"(CloudWatch)는 직교 결정이다. 앱은 파일까지만 책임지고,
+  반출은 dev=CloudWatch Agent tail, prod=ECS awslogs 드라이버가 맡는다.
+
+  파일명이 logback.xml이 아니라 logback-spring.xml이어야 <springProfile>이 동작한다.
+-->
+<configuration>
+
+  <!--
+    traceId·userId는 MDC라 요청 중에는 모든 줄에 자동으로 붙는다. 기동·백그라운드처럼 요청 밖에서
+    찍히는 줄은 MDC가 비어 있으므로 `:-` 기본값으로 '-'를 채워 열이 밀리지 않게 한다.
+  -->
+  <property name="CONSOLE_PATTERN"
+            value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{traceId:--},%X{userId:--}] %logger{36} : %msg%n"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${CONSOLE_PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <springProfile name="dev,prod">
+    <!--
+      LogstashEncoder가 MDC 항목과 StructuredArguments(kv)를 JSON 최상위 필드로 펼친다.
+      MDC 값은 Map<String,String>이라 문자열("7")이고, kv는 타입을 보존한다(42는 숫자).
+
+      로테이션은 여기서 닫는다 — 파일이 무한히 자라면 t3.small 디스크가 먼저 죽는다.
+      컨테이너 stdout 쪽 로테이션(compose logging 블록)은 별개 과제다.
+    -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+      <file>/logs/app.json</file>
+      <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+        <fileNamePattern>/logs/app.%d{yyyy-MM-dd}.%i.json.gz</fileNamePattern>
+        <maxFileSize>50MB</maxFileSize>
+        <maxHistory>7</maxHistory>
+        <totalSizeCap>500MB</totalSizeCap>
+      </rollingPolicy>
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <includeMdc>true</includeMdc>
+      </encoder>
+    </appender>
+
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+      <appender-ref ref="JSON_FILE"/>
+    </root>
+  </springProfile>
+
+  <!-- local·test는 콘솔만. 레벨 상세는 application-*.yml의 logging.level이 덮는다. -->
+  <springProfile name="!dev &amp; !prod">
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+
+</configuration>

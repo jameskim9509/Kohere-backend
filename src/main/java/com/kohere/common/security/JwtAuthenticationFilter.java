@@ -1,6 +1,7 @@
 package com.kohere.common.security;
 
 import com.kohere.common.exception.ErrorCode;
+import com.kohere.common.logging.LogFields;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -10,6 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -51,6 +53,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       String token = header.substring(BEARER_PREFIX.length());
       try {
         AuthPrincipal principal = jwtTokenService.parse(token);
+        // 신원을 아는 첫 시점이라 여기서 MDC를 채운다 — MdcLoggingFilter가 anonymous로 깔아둔 값을 덮어
+        // 이후 이 요청이 남기는 모든 줄에 실제 userId가 붙는다(ADR-0038). 정리는 MdcLoggingFilter의 finally가 한다.
+        MDC.put(LogFields.USER_ID, String.valueOf(principal.userId()));
+        MDC.put(LogFields.ONBOARDING, String.valueOf(principal.onboardingCompleted()));
         String role = principal.onboardingCompleted() ? "ROLE_USER" : "ROLE_ONBOARDING";
         var authentication =
             new UsernamePasswordAuthenticationToken(
