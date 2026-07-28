@@ -179,10 +179,12 @@ public class AuthService {
       }
       case APPLE -> {
         requireCredential(request.authorizationCode());
-        // 인가코드는 1회용(약 5분)이라 즉시 교환한다. 교환은 이 @Transactional 안에서 일어나므로, 최초 동의 시 받은 (유일한)
-        // refresh token이 이후 단계 실패로 롤백되면 유실될 수 있다 — Apple은 일반 재로그인에 refresh token을 재발급하지
-        // 않는다. 이는 ADR-0031이 수용한 best-effort 폐기 범위(durable 재시도 없음)이며, 토큰 부재 시 탈퇴 흐름이
-        // skip+WARN+metric으로 가시화한다(UserWithdrawnEventListener). 빈도를 더 줄이려면 교환을 트랜잭션 밖으로 분리한다.
+        // 인가코드는 1회용(약 5분)이라 트랜잭션 밖으로 미룰 수 없어 여기서 교환한다. 교환은 HTTP라 롤백되지 않으므로,
+        // 이후 단계 실패로 롤백되면 소모된 인가코드로 받아온 refresh token이 저장되지 못하고 사라진다.
+        // Apple은 재로그인마다 새 인가코드로 refresh token을 다시 내려주므로(ADR-0031 #4 — 최초 1회만 내려오는 건
+        // refresh token이 아니라 email·fullName이다) 다음 로그인에 백필되지만, 그 창 안에 탈퇴하면 /auth/revoke를
+        // 스킵한다(skip+WARN, UserWithdrawnEventListener). ADR-0031이 수용한 best-effort 범위(durable 재시도
+        // 없음)다. 창 자체를 없애려면 교환을 트랜잭션 밖으로 분리한다.
         AppleAuthClient.AppleTokens tokens =
             appleAuthClient.exchangeAuthorizationCode(request.authorizationCode());
         yield new ResolvedIdentity(
