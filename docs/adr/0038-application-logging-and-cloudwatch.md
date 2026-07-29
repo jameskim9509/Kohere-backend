@@ -206,7 +206,7 @@ Proposed
 | `AuthService.socialLogin` | MySQL tx + Apple HTTP + Redis | `mysql`, `apple`, `redis` | 용도 3 social-login |
 | `BookingService.createBooking` | MySQL tx + Mongo 읽기 | `mysql`, `mongo` | 용도 1 `BOOKING_CREATED` |
 
-근거: `revokeAllByUserId`는 `SMEMBERS`→루프 `HSET`이라 원자성이 없다. `AuthService:182-184` 주석은 롤백 시 Apple refresh token 유실 가능성을 자인한다 — 다만 그 주석의 "Apple은 일반 재로그인에 refresh token을 재발급하지 않는다"는 사실과 다르다. [ADR-0031 #4](./0031-apple-sign-in-authorization-code-flow.md)가 "교환 응답에 보통 매번 포함"이라고 못박았고(최초 1회만 내려오는 건 refresh token이 아니라 `email`·`fullName`이다), 같은 파일의 재로그인 분기가 실제로 매번 upsert한다. 따라서 유실은 영구가 아니라 **다음 Apple 로그인까지의 창**이며, 그 창 안에 탈퇴하면 `UserWithdrawnEventListener`의 skip WARN으로 드러난다. `apple` 키는 그 WARN을 대체하지 않고 창의 존재를 탈퇴 시점보다 먼저 드러낸다. `createBooking`의 Mongo는 읽기라 잔여물이 없고, `mongo` 키는 유령 참조 판별용이다.
+근거: `revokeAllByUserId`는 `SMEMBERS`→루프 `HSET`이라 원자성이 없다. `AuthService:182-191` 주석이 롤백 시 Apple refresh token 유실을 자인한다. 유실은 영구가 아니라 **다음 Apple 로그인까지의 창**이다 — [ADR-0031 #4](./0031-apple-sign-in-authorization-code-flow.md)가 "교환 응답에 보통 매번 포함"이라고 못박았고(최초 1회만 내려오는 건 refresh token이 아니라 `email`·`fullName`이다), 같은 파일의 재로그인 분기가 실제로 매번 upsert한다. 창 안에 탈퇴하면 `UserWithdrawnEventListener`의 skip WARN으로 드러난다. `apple` 키는 그 WARN을 대체하지 않고 창의 존재를 탈퇴 시점보다 먼저 드러낸다. **트랜잭션 경계로는 이 창이 닫히지 않는다** — 교환을 밖으로 빼면 외부 호출 동안 DB 커넥션을 잡지 않아 롤백 유발 요인이 줄어 빈도는 낮아지지만, 토큰이 커밋 전까지 메모리에만 있는 건 같다. 없애려면 토큰을 별도 커밋으로 먼저 저장해야 하고, 신규 가입은 붙일 `social_accounts` 행이 아직 없어 구조 변경이 선행된다. `createBooking`의 Mongo는 읽기라 잔여물이 없고, `mongo` 키는 유령 참조 판별용이다.
 
 **기동 경로에는 새 로그를 추가하지 않는다.** 이미 충분히 남으며, logback 초기화가 아래 전부보다 앞서 `JSON_FILE`이 기동 로그를 포착한다.
 
