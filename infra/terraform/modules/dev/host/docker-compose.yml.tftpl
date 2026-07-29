@@ -3,11 +3,26 @@
 # 시크릿은 /opt/kohere/.env(SSM Parameter Store에서 부팅 시 주입)에서 읽는다.
 # 메모리: t3.small(2GB) 기준 엔진 캡(mongo WiredTiger 0.25GB · mysql buffer pool 128M+perf_schema off · app JVM Xmx512m) + 호스트 스왑 2GB로 OOM 완충(ADR-0026).
 name: kohere-dev
+
+# 컨테이너 로그 상한(ADR-0038). json-file 드라이버 기본값은 max-file=1에 크기 무제한이라, 접근 로그가
+# 전 요청 INFO로 들어온 뒤로는 20GB 루트 볼륨이 차는 것이 시간 문제다. app은 최대 생산자라 별도 상한을 준다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+x-app-logging: &app-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   caddy:
     image: caddy:2
     container_name: kohere-caddy
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -19,6 +34,7 @@ services:
     image: mysql:8.0
     container_name: kohere-mysql
     restart: unless-stopped
+    logging: *default-logging
     # t3.small(2GB) 메모리 캡 — innodb 버퍼풀 명시 + performance_schema OFF로 baseline RSS↓(ADR-0026).
     command: ["--innodb-buffer-pool-size=128M", "--performance-schema=OFF"]
     # 비번은 .env(SSM→refresh-env) 값으로 compose가 인터폴레이션($${...}). 최초 init 시드, 이후 변경은 reconcile-db.sh가 적용(ADR-0025).
@@ -35,6 +51,7 @@ services:
     image: mongo:7
     container_name: kohere-mongo
     restart: unless-stopped
+    logging: *default-logging
     # t3.small(2GB) 메모리 캡 — WiredTiger 캐시 0.25GB(기본 50%×(RAM-1GB)≈512MB의 절반, ADR-0026). 엔트리포인트가 --auth 유지.
     command: ["--wiredTigerCacheSizeGB", "0.25"]
     environment:
@@ -48,12 +65,19 @@ services:
     image: redis:7
     container_name: kohere-redis
     restart: unless-stopped
+    logging: *default-logging
   app:
     image: ${app_image}
     container_name: kohere-app
     restart: unless-stopped
+    logging: *app-logging
     env_file:
       - /opt/kohere/.env
+    # logback JSON_FILE의 출력 지점(ADR-0038). 바인드 마운트가 없으면 컨테이너 쓰기 레이어에 쌓여
+    # (1) 호스트의 CloudWatch Agent가 tail할 수 없고 (2) deploy.yml의 --force-recreate가 컨테이너를
+    # 지울 때 로그도 함께 사라진다. 파일 자체의 로테이션은 RollingFileAppender가 담당한다(50MB×7일, 총 500MB).
+    volumes:
+      - /opt/kohere/logs:/logs
     depends_on:
       - mysql
       - mongo

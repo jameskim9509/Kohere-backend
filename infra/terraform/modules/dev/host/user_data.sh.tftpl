@@ -61,6 +61,9 @@ chmod +x /opt/kohere/refresh-env.sh
 bash /opt/kohere/refresh-env.sh
 
 # 5) Caddyfile · docker-compose.yml + reconcile-db.sh (Terraform이 렌더한 결과 주입)
+#    app 컨테이너의 /logs 바인드 마운트 대상(ADR-0038). 호스트에 두어야 CloudWatch Agent가 tail할 수 있고
+#    --force-recreate로 컨테이너를 갈아도 로그가 남는다.
+mkdir -p /opt/kohere/logs
 cat >/opt/kohere/Caddyfile <<'CADDY'
 ${caddyfile}
 CADDY
