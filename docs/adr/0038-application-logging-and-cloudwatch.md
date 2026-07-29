@@ -58,6 +58,8 @@ Proposed
 | `userId` | 숫자 또는 `anonymous` | `JwtAuthenticationFilter` 인증 성공 분기([ADR-0010](./0010-jwt-authentication-filter.md)) |
 | `userId`(로그인류) | 발급 결과 | social-login·reissue는 익명 요청이라 MDC에 값이 없다. `AuthService`가 직접 채운다 |
 | `userId`(게스트) | `anonymous` | `permitAll` 경로의 비회원. 코드는 `null`(`AuthPrincipals.userIdOrNull`)이지만 MDC가 `Map<String,String>`이라 문자열로 적는다 — 미인증과 같은 값이라 로그만으로는 구분되지 않는다 |
+| `userId`(만료 401) | 숫자 | JJWT가 서명을 먼저 검증하고 `exp`를 나중에 보므로 `ExpiredJwtException`은 **서명이 유효했다**는 뜻이다. `sub`를 신뢰할 수 있어 거부를 실제 사용자에게 귀속시킨다(숫자 19자 이하만 통과시키는 심층 방어 포함) |
+| `userId`(위조 401) | `anonymous` | 서명 검증이 실패해 `sub`가 검증되지 않은 공격자 입력이다. 채우면 감사 로그의 신원이 위조 가능해져 용도 3이 무력화되고, 콘솔 appender가 값을 그대로 써서 개행 섞인 `sub`가 가짜 로그 줄을 만든다 |
 | `guestSessionId` | 세션 id 또는 없음 | v2 진단 전용. 게스트는 `userId`가 없어 이 키가 유일한 활동 추적 축이다(`DiagnosisFlowService.next`) |
 | `onboarding` | boolean | `AuthPrincipal` |
 
@@ -309,6 +311,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 3 | 만료 401·위조 401·403·`REVOKED` 토큰 `reissue` | 각각 INFO·WARN·WARN·WARN |
 | 3 | 만료 토큰으로 게스트 허용 경로(퀴즈)와 공개 티어(`reissue`) 호출 | 전자는 필터가 401 INFO 1줄, 후자는 의도대로 통과해 401 0줄 — `PublicPaths` 경계가 로그로 확인된다. 401 자체는 #181부터 나가고 있었고 본 ADR의 델타는 그 401을 관측 가능하게 만드는 것뿐이다 |
 | 3 | social-login 성공 | `userId`가 발급된 숫자(`anonymous` 아님) |
+| 3 | 만료 401과 위조 401을 각각 유발 | 만료는 `userId`가 실제 숫자, 위조는 `anonymous` — 검증되지 않은 `sub`가 로그에 절대 들어가지 않는다 |
 | 4 | 외부 호출이 포함된 요청 1건 | 같은 `traceId`로 총 지연 중 외부 구간 분해 가능 |
 | 5 | 5xx·`java.lang.Error`·이니셜라이저 실패 유발 | 전부 ERROR + 스택 |
 | 5 | 정상 요청 100건 | 용도 5 라인 0건 |

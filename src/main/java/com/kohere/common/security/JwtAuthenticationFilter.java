@@ -2,6 +2,7 @@ package com.kohere.common.security;
 
 import com.kohere.common.exception.ErrorCode;
 import com.kohere.common.logging.LogFields;
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -42,6 +43,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private static final String BEARER_PREFIX = "Bearer ";
 
+  /** {@code Long.MAX_VALUE}의 자릿수. 이보다 긴 {@code sub}는 우리가 발급한 값이 아니다. */
+  private static final int MAX_USER_ID_DIGITS = 19;
+
   private final JwtTokenService jwtTokenService;
 
   @Override
@@ -67,13 +71,45 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (!PublicPaths.matches(request)) {
           // 만료 토큰은 게스트로 강등하지 않고 여기서 401로 끊는다 — permitAll 경로는 EntryPoint가 돌지 않기
           // 때문이다(#181). 공개 티어(로그인·재발급 등)만 예외로 통과시켜 재발급 교착을 막는다.
+          // 거부를 실제 사용자에게 귀속시킨다(ADR-0038 용도 3). 통과 분기는 익명으로 처리되므로 채우지 않아
+          // MDC가 앱의 실제 취급과 어긋나지 않게 한다.
+          putUserIdIfNumeric(e.getClaims());
           SecurityErrorResponder.write(response, ErrorCode.TOKEN_EXPIRED);
           return;
         }
       } catch (JwtException | IllegalArgumentException e) {
-        // 위조·형식 오류 → 익명으로 통과(차단은 인가 단계)
+        // 위조·형식 오류 → 익명으로 통과(차단은 인가 단계).
+        // 여기서는 MDC를 절대 채우지 않는다 — 서명 검증이 실패해 sub가 검증되지 않은 공격자 입력이다.
+        // 채우면 감사 로그의 신원이 위조 가능해지고(용도 3 무력화), 콘솔 appender는 값을 그대로 써서
+        // 개행이 섞인 sub가 가짜 로그 줄을 만든다.
       }
     }
     filterChain.doFilter(request, response);
+  }
+
+  /**
+   * 만료 토큰의 {@code sub}를 MDC {@code userId}에 채운다(ADR-0038 용도 3).
+   *
+   * <p><b>이 경로만 안전한 이유</b>: JJWT는 서명을 먼저 검증하고 그 뒤에 {@code exp}를 본다 — 서명이 틀리면 {@code
+   * SignatureException}({@link JwtException})이지 {@link ExpiredJwtException}이 아니다. 따라서 {@code
+   * ExpiredJwtException}이 던져졌다는 것 자체가 <b>서명이 유효했다</b>는 뜻이라 클레임을 신뢰할 수 있다(만료됐을 뿐이다).
+   *
+   * <p>그럼에도 숫자만 통과시킨다. 발급 경로가 바뀌어 비숫자 {@code sub}가 서명될 가능성에 대한 심층 방어이고, 개행이 섞인 값이 콘솔 appender에 그대로
+   * 실려 가짜 로그 줄을 만드는 것과 과대 값이 MDC를 타고 그 요청의 모든 줄에 복제되는 것을 함께 막는다.
+   */
+  private static void putUserIdIfNumeric(Claims claims) {
+    if (claims == null) {
+      return;
+    }
+    String subject = claims.getSubject();
+    if (subject == null || subject.isEmpty() || subject.length() > MAX_USER_ID_DIGITS) {
+      return;
+    }
+    for (int i = 0; i < subject.length(); i++) {
+      if (!Character.isDigit(subject.charAt(i))) {
+        return;
+      }
+    }
+    MDC.put(LogFields.USER_ID, subject);
   }
 }
