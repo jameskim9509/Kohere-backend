@@ -24,3 +24,9 @@ variable "images_bucket_arn" {
   type        = string
   default     = ""
 }
+
+variable "log_group_arn" {
+  description = "앱 로그 Log Group ARN(logs 모듈). CloudWatch Agent 권한을 이 그룹으로만 스코프한다. 빈 값이면 로그 권한 미부여"
+  type        = string
+  default     = ""
+}

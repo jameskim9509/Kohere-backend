@@ -1,0 +1,19 @@
+{
+  "agent": {
+    "run_as_user": "root"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/opt/kohere/logs/app.json",
+            "log_group_name": "${log_group_name}",
+            "log_stream_name": "{instance_id}/kohere-app",
+            "timezone": "UTC"
+          }
+        ]
+      }
+    }
+  }
+}

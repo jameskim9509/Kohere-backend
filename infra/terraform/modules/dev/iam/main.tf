@@ -55,6 +55,19 @@ data "aws_iam_policy_document" "params" {
       resources = [var.images_bucket_arn, "${var.images_bucket_arn}/*"]
     }
   }
+
+  # CloudWatch Agent가 /opt/kohere/logs/app.json을 tail해 보낼 권한(ADR-0038).
+  # 관리형 CloudWatchAgentServerPolicy(logs:* + 전 Log Group)를 쓰지 않고 이 Log Group 하나로 스코프한다.
+  # Log Group과 보존기간은 Terraform(logs 모듈)이 소유하므로 CreateLogGroup·PutRetentionPolicy는 주지 않는다 —
+  # Agent가 임의 그룹을 만들거나 보존 정책을 덮을 수 없다.
+  dynamic "statement" {
+    for_each = var.log_group_arn != "" ? [1] : []
+    content {
+      sid       = "AppLogsToCloudWatch"
+      actions   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
+      resources = [var.log_group_arn, "${trimsuffix(var.log_group_arn, ":*")}:log-stream:*"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "params" {

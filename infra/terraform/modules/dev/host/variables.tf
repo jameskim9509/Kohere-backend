@@ -106,3 +106,22 @@ variable "images_cdn_domain" {
   type        = string
   default     = ""
 }
+
+# ----- 로그 반출 (ADR-0038 롤아웃 ⑥) -----
+variable "log_group_name" {
+  description = "CloudWatch Agent가 /opt/kohere/logs/app.json을 실어 보낼 Log Group 이름(logs 모듈)"
+  type        = string
+  default     = ""
+}
+
+variable "enable_cloudwatch_agent" {
+  description = <<-EOT
+    CloudWatch Agent 설치·기동 여부. ADR-0038의 도입 게이트("여유 300MB 미만이면 보류")를
+    dev 호스트 실측으로 통과해 기본 true다 — available 656Mi(스왑 2Gi 중 29Mi만 사용).
+    판단 기준은 free가 아니라 available이다. free가 낮은 것은 커널이 남는 RAM을 페이지 캐시로
+    쓰기 때문이고 그 캐시는 회수 가능하다. Agent 상주는 ~50-100MB다.
+    끄면 Log Group·IAM 권한·로그 파일은 그대로 두고 반출만 멈춘다.
+  EOT
+  type        = bool
+  default     = true
+}

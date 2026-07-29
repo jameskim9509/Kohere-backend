@@ -110,3 +110,24 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 systemctl enable --now docker-prune.timer
+
+# 8) CloudWatch Agent — /opt/kohere/logs/app.json(logback JSON_FILE)을 tail해 Log Group으로 반출(ADR-0038 ⑥).
+#    앱은 AWS SDK를 물지 않고 파일까지만 책임진다 — 로그 내용과 전송 경로를 직교로 유지한다.
+#
+#    ADR-0038의 도입 게이트("여유 300MB 미만이면 보류")는 dev 호스트 실측으로 통과했다 —
+#    available 656Mi, 스왑 2Gi 중 29Mi만 사용. 기준은 free가 아니라 available이다(free가 낮은 것은
+#    회수 가능한 페이지 캐시 때문). Agent 상주는 ~50-100MB. 압박이 생기면 스왑 사용량이 먼저 오르므로
+#    그 값을 지표로 보고, 지속되면 enable_cloudwatch_agent=false 또는 t3.medium으로 되돌린다.
+%{ if enable_cloudwatch_agent ~}
+dnf install -y amazon-cloudwatch-agent
+cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'
+${cloudwatch_agent_config}
+CWAGENT
+# fetch-config가 설정을 적용하고 에이전트를 기동한다(-s). 실패해도 부트는 계속한다 —
+# 로그 반출이 안 되는 것보다 앱이 안 뜨는 게 더 나쁘다.
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json \
+  || echo "WARN: CloudWatch Agent 기동 실패 — 앱은 정상, 로그 반출만 중단(SSM으로 진단)"
+%{ else ~}
+echo "INFO: CloudWatch Agent 비활성(enable_cloudwatch_agent=false). 로그는 /opt/kohere/logs/app.json에만 쌓인다 — ADR-0026 메모리 게이트."
+%{ endif ~}
