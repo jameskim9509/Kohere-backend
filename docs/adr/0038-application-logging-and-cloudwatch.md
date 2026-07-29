@@ -236,7 +236,7 @@ Proposed
 | Log Stream | `{instance-id}/kohere-app` | `app/{container-name}/{task-id}`(`awslogs-stream-prefix = "app"`) |
 | retention | 30일, 무기한 금지 | 기존 `log_retention_days` 변수 |
 | IAM | `CreateLogStream`·`PutLogEvents`·`DescribeLogStreams`를 Log Group ARN에 스코프한 인라인 정책(관리형 `logs:*` 미사용) | 기존 task execution role |
-| 도입 게이트 | 여유 메모리 300MB 미만이면 보류([ADR-0026](./0026-dev-host-memory-budget.md)) | CD 연결 시점에 실적재 검증 |
+| 도입 게이트 | **통과.** 실측 `available` 656 MiB > 300MB, 스왑 2 GiB 중 29 MiB만 사용([ADR-0026](./0026-dev-host-memory-budget.md)). `free`가 아니라 `available`로 판정한다 — `free`가 낮은 것은 회수 가능한 페이지 캐시 때문이다. 되돌리려면 `enable_cloudwatch_agent=false` | CD 연결 시점에 실적재 검증 |
 
 Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이미 커밋했기 때문이다. 통일은 prod CD 연결 시점에 재검토하고, 그전까지 쿼리는 Log Group을 명시한다. 둘 다 terraform 관리다([ADR-0019](./0019-infrastructure-as-code-terraform.md)).
 
