@@ -231,7 +231,7 @@ Proposed
 
 | 항목 | dev | prod |
 |---|---|---|
-| 경로 | Agent가 `/logs/app.json` tail | `awslogs` 드라이버(`infra/terraform/modules/prod/ecs/main.tf:57-64`) |
+| 경로 | Agent가 `/logs/app.json` tail. 컨테이너의 `/logs`는 호스트 `/opt/kohere/logs` 바인드 마운트다 — 마운트가 없으면 컨테이너 쓰기 레이어에 갇혀 Agent가 못 읽고 `--force-recreate`에 사라진다 | `awslogs` 드라이버(`infra/terraform/modules/prod/ecs/main.tf:57-64`) |
 | Log Group | `/kohere/dev/app` | `/ecs/${name_prefix}`(기존 유지) |
 | Log Stream | `{instance-id}/kohere-app` | `app/{container-name}/{task-id}`(`awslogs-stream-prefix = "app"`) |
 | retention | 30일, 무기한 금지 | 기존 `log_retention_days` 변수 |
@@ -246,7 +246,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 |---|---|
 | 기동 실패 로그 영구 소실 | `container_name` 고정 + `deploy.yml:87`의 `--force-recreate`가 옛 컨테이너를 rm → 로그 디렉터리째 삭제. 보존 기간이 구조적으로 0이고 복구 수단이 곧 증거 삭제 수단이다 |
 | CI가 기동 결과를 안 본다 | `deploy.yml:83-89`가 SSM CommandId만 echo하고 종료. `up -d`는 즉시 반환해 마이그레이션 성패가 출력에 들어올 수 없다 — 기동 실패해도 워크플로가 초록색이다 |
-| 로테이션 없음 | compose `app`에 `logging` 블록도 `daemon.json`도 없어 json-file 기본값(`max-file=1`, 무제한). `/logs/app.json`도 같은 문제라 `RollingFileAppender`와 compose `max-size`가 함께 필요하다 |
+| ~~로테이션 없음~~ **해소** | 두 겹을 함께 닫았다 — `/logs/app.json`은 `RollingFileAppender`(50MB×7일, 총 500MB 상한), 컨테이너 stdout은 compose `logging` 블록(app 50MB×3, 나머지 10MB×3). 접근 로그가 전 요청 INFO라 방치하면 20GB 루트 볼륨이 차는 것은 시간 문제였다 |
 
 ### 범위 제외
 
