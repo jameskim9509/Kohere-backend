@@ -123,7 +123,16 @@ Proposed
 | 예약 소프트 삭제 · 차단 해제 · 찜 추가·해제 | 식별자가 경로에 있어 `pathVars`로 포착되고, `method`가 추가·해제를 가른다 |
 | 최근 본 매물 기록 | 최대 볼륨인데 UX 편의 기능 |
 
-접근 로그의 전 요청 INFO는 단일 t3.small에서 최대 수집원이다. 일 수집량 1GB를 넘으면 `DIAGNOSIS_STEP_ADVANCED`(진단 1회당 5~8건) → 조회성 GET 접근 로그 → `JSON_FILE` 반출 WARN 이상 제한 순으로 줄인다.
+접근 로그의 전 요청 INFO는 단일 t3.small에서 최대 수집원이다. **일 수집량 상한은 200MB로 둔다.** 넘으면 `DIAGNOSIS_STEP_ADVANCED`(진단 1회당 5~8건) → 조회성 GET 접근 로그 → `JSON_FILE` 반출 WARN 이상 제한 순으로 줄인다.
+
+**상한을 볼륨이 아니라 비용으로 정했다.** CloudWatch Logs는 수집 GB당 과금(서울 기준 ~$0.76/GB)이라 상한이 곧 월 비용 상한이다.
+
+| 일 수집량 | 월 수집 | 월 비용(수집+저장 어림) | 판단 |
+|---|---|---|---|
+| 200MB(**채택**) | 6GB | **~$5** | dev 호스트(~$17/월)의 1/3 — 수용 가능 |
+| 1GB | 30GB | ~$24 | **호스트 비용을 넘는다** — [ADR-0021](./0021-cost-optimization-profile.md) 비용 최소화와 배치 |
+
+접근 로그 1줄이 ~400B이므로 200MB는 **일 50만 요청** 수준이다. dev 실트래픽은 그보다 훨씬 낮을 것으로 보므로 상한은 정상 운영을 제약하지 않고 **사고(무한 루프·봇 트래픽)를 조기에 잡는 브레이크로 기능한다.** 단가는 리전·시점에 따라 바뀌므로 실청구로 재확인한다.
 
 ### 용도 2 — 외부 의존성 관측
 
@@ -319,6 +328,6 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 5 | 정상 요청 100건 | 용도 5 라인 0건 |
 | 5 | cross-store 3흐름 유발 | `stores`에 흐름별 키가 4상태 중 하나로 기록 |
 | 공통 | 코드리뷰 게이트, `./gradlew build` | 토큰·인증코드·PII 원문 0건, `ModularityTest` green |
-| 수집 | Logs Insights 쿼리, 수집량·메모리 실측 | 이중 래핑 없는 JSON에 `userId`·`traceId`·`pathPattern`·`pathVars`·`target` 필터 동작, 1GB/일 이내·여유 300MB 이상(미달 시 ⑥ 보류) |
+| 수집 | Logs Insights 쿼리, 수집량·메모리 실측 | 이중 래핑 없는 JSON에 `userId`·`traceId`·`pathPattern`·`pathVars`·`target` 필터 동작, 200MB/일 이내(≈ 월 $5)·여유 300MB 이상(미달 시 ⑥ 보류) |
 
 재검토 시점: 비동기 경로가 생길 때(MDC 전파), MSA 전환 시(Micrometer Tracing), prod CD 연결 시(Log Group 통일), 수집량이 예산을 넘을 때(감축 순서).
