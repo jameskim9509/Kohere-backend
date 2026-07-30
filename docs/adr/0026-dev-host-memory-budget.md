@@ -41,19 +41,23 @@ dev는 EC2 1대 위 `docker-compose`로 **app(Spring Boot/JVM) · mysql:8.0 · m
   - **app(JVM)**: `JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=160m"` — 힙을 *명시*한다. mem_limit이 없으면 `MaxRAMPercentage`는 호스트 2GB를 기준으로 산정하므로 의미가 없어 **명시 `-Xmx`** 로 잡는다.
 - **스왑 2GB** ([user_data.sh.tftpl](../../infra/terraform/modules/dev/host/user_data.sh.tftpl) step 0) — `/swapfile`(`vm.swappiness=10`). 정상 워크로드는 RAM에 두고, GC·쿼리·이미지 pull 같은 **일시적 스파이크만 스왑으로 흡수**해 하드 OOM을 막는다. 스왑 설정 실패가 부팅을 막지 않도록 best-effort(`set -e` 회피).
 
-캡 적용 후 대략 예산:
+캡 적용 후 dev 호스트 실측(2026-07-29):
 
-| 구성요소 | 캡/설정 | 대략 RSS |
-|---|---|---|
-| OS + docker daemon | — | ~250 MB |
-| caddy | — | ~40 MB |
-| redis | — | ~30 MB |
-| mysql 8.0 | 버퍼풀 128M + `performance_schema` OFF | ~300 MB |
-| mongo 7 | WiredTiger 캐시 0.25 GB | ~400 MB |
-| app(JVM) | `-Xmx512m` + Metaspace≤160m + 스레드/오프힙 | ~800 MB |
-| **합계** | | **~1820 MB** |
+```text
+               total        used        free      shared  buff/cache   available
+Mem:           1.9Gi       1.1Gi        94Mi       0.0Ki       722Mi       656Mi
+Swap:          2.0Gi        29Mi       2.0Gi
+```
 
-가용 ~1950 MB 안에 **~130 MB 여유**로 들어가고, 스파이크는 스왑 2GB가 받는다.
+| 항목 | 값 |
+|---|---|
+| 사용량 | ~1.1 GiB |
+| 여유(`available`) | **656 MiB** |
+| 스왑 사용 | **29 MiB / 2 GiB** |
+
+**판단 기준은 `free`가 아니라 `available`이다.** `free`가 94 MiB로 낮아 보이는 것은 커널이 남는 RAM을 페이지 캐시(722 MiB)로 쓰기 때문이고, 그 캐시는 필요 시 회수된다. `available`이 그 회수 가능분을 반영한 값이다. **스왑이 2 GiB 중 29 MiB만 쓰였다는 점이 메모리 압박이 없다는 가장 직접적인 증거**다 — 압박이 있으면 스왑 사용량부터 오른다.
+
+이 실측으로 [ADR-0038](./0038-application-logging-and-cloudwatch.md)의 CloudWatch Agent 도입 게이트(여유 300MB 이상)를 통과했다.
 
 **왜 per-컨테이너 `mem_limit`은 안 두나**: 2GB는 5개 한도의 합을 안전히 나눠 갖기엔 너무 빠듯하다. 한도를 낮게 잡으면 정상 부하에서도 cgroup OOM으로 *개별 컨테이너*가 반복 kill되는 역효과가 난다. 베이스라인 캡(위)으로 footprint를 줄이고 스왑으로 완충하는 편이 dev에서 더 안정적이다. 하드 격리가 필요해지면 후속으로 도입한다.
 
@@ -69,8 +73,9 @@ dev는 EC2 1대 위 `docker-compose`로 **app(Spring Boot/JVM) · mysql:8.0 · m
 ## Consequences
 
 - 긍정: t3.small(2GB)에서 5개 컨테이너가 **OOM 루프 없이** 기동. 인스턴스 비용 ~50%↓([ADR-0021] 갱신: ~$32→~$17/mo). 캡 값은 compose/user_data 주석으로 자기설명적.
-- 부정/트레이드오프: 헤드룸이 얇아(**~130MB**) 부하·데이터가 커지면 스왑 의존도가 올라 **지연**이 생길 수 있다 → 그때는 t3.medium으로 복귀(인스턴스 타입만 변경). mongo 캐시 256MB·JVM 힙 512MB는 dev 트래픽 가정값이라 **prod엔 적용하지 않는다**(prod는 관리형 RDS/DocumentDB + ECS 태스크 사이징).
-- 후속 작업: dev에서 OOM/스왑 스래싱이 관측되면 (a) t3.medium 승격 또는 (b) 컨테이너별 `mem_limit` 도입을 검토. CloudWatch 메모리 지표는 기본 미수집이라 필요 시 CloudWatch Agent 추가.
+- 부정/트레이드오프: 부하·데이터가 커지면 스왑 의존도가 올라 **지연**이 생길 수 있다 → 그때는 t3.medium으로 복귀(인스턴스 타입만 변경). 판단은 `available`과 스왑 사용량으로 하되, **둘 다 자동 수집되지 않는다** — EC2 기본 지표에 메모리가 없고 [ADR-0038](./0038-application-logging-and-cloudwatch.md)로 도입한 CloudWatch Agent는 `logs` 전용이라 `metrics` 섹션이 없다. 확인은 SSM 접속 후 `free -m`이며 알람도 없다(아래 후속 작업). mongo 캐시 256MB·JVM 힙 512MB는 dev 트래픽 가정값이라 **prod엔 적용하지 않는다**(prod는 관리형 RDS/DocumentDB + ECS 태스크 사이징).
+- 후속 작업: dev에서 OOM/스왑 스래싱이 관측되면 (a) t3.medium 승격 또는 (b) 컨테이너별 `mem_limit` 도입을 검토.
+- **후속 작업(미해결) — 메모리·스왑 지표화.** CloudWatch Agent는 [ADR-0038](./0038-application-logging-and-cloudwatch.md)로 **로그 반출용으로만** 도입됐다(상주 ~50-100MB). 지금 압박을 확인하는 유일한 방법이 SSM 접속 후 `free -m`이라, 사람이 안 보면 아무도 모른다. 닫으려면 셋이 필요하다 — ① Agent 설정에 `metrics` 섹션(`mem_available_percent`·`swap_used_percent`) ② `cloudwatch:PutMetricData` 권한(현재 IAM은 로그 그룹만 스코프) ③ 스왑 임계 알람([ADR-0027](./0027-dev-discord-alerting.md) SNS 재사용). 커스텀 지표 2개면 월 ~$0.6이다.
 
 ## Validation
 

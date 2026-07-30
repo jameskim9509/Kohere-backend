@@ -48,7 +48,7 @@ data "aws_iam_policy_document" "task_execution_secrets" {
 
 resource "aws_iam_role_policy" "task_execution_secrets" {
   name   = "${var.name_prefix}-ecs-task-exec-secrets"
-  role   = aws_iam_role.task_execution.id
+  role   = aws_iam_role.task_execution.name
   policy = data.aws_iam_policy_document.task_execution_secrets.json
 }
 
@@ -84,7 +84,7 @@ data "aws_iam_policy_document" "task_exec_command" {
 
 resource "aws_iam_role_policy" "task_exec_command" {
   name   = "${var.name_prefix}-ecs-exec"
-  role   = aws_iam_role.task.id
+  role   = aws_iam_role.task.name
   policy = data.aws_iam_policy_document.task_exec_command.json
 }
 
@@ -194,6 +194,6 @@ data "aws_iam_policy_document" "github_deploy" {
 
 resource "aws_iam_role_policy" "github_deploy" {
   name   = "${var.name_prefix}-github-deploy"
-  role   = aws_iam_role.github_actions.id
+  role   = aws_iam_role.github_actions.name
   policy = data.aws_iam_policy_document.github_deploy.json
 }

@@ -47,6 +47,11 @@ resource "aws_instance" "host" {
     caddyfile = templatefile("${path.module}/Caddyfile.tftpl", {
       caddy_site = local.caddy_site
     })
+    # 로그 반출(ADR-0038 ⑥) — Agent가 /opt/kohere/logs/app.json을 tail한다. 게이트는 ADR-0026 메모리 예산.
+    enable_cloudwatch_agent = var.enable_cloudwatch_agent
+    cloudwatch_agent_config = templatefile("${path.module}/cloudwatch-agent.json.tftpl", {
+      log_group_name = var.log_group_name
+    })
     compose_yml = templatefile("${path.module}/docker-compose.yml.tftpl", {
       db_name           = var.db_name
       app_image         = var.app_image

@@ -73,6 +73,10 @@ dependencies {
   // API 문서 — Swagger UI 정적 자산(webjar). 우리 openapi3.yaml을 끼워 서빙 (ADR-0016)
   implementation "org.webjars:swagger-ui:${swaggerUiVersion}"
 
+  // 구조화 로깅 — MDC·StructuredArguments를 1줄 JSON으로 인코딩(ADR-0038). 로그 내용과 전송 경로를 직교로 두어
+  // 앱은 AWS SDK를 물지 않는다 — CloudWatch 반출은 Agent(dev)·awslogs 드라이버(prod)가 맡는다.
+  implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
+
   // 생성자 주입 보일러플레이트 제거 (docs/convention/code-style.md §3-4)
   compileOnly 'org.projectlombok:lombok'
   annotationProcessor 'org.projectlombok:lombok'

@@ -44,6 +44,9 @@ Thumbs.db
 # Logs
 *.log
 logs/
+# 예외: terraform logs 모듈(modules/<env>/logs)은 런타임 로그가 아니라 .tf 코드 → 추적한다(secrets 모듈과 동일).
+!infra/terraform/modules/**/logs/
+!infra/terraform/modules/**/logs/**
 
 # Terraform
 **/.terraform/*

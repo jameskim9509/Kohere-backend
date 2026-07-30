@@ -30,6 +30,15 @@ spring:
     locale: en
     locale-resolver: accept-header
 
+# 로그 레벨을 명시한다(ADR-0038). 이전에는 저장소 전체에 선언이 0건이라 Boot 기본값에 암묵 의존했다 —
+# 기본값이 바뀌면 조용히 따라 움직인다. appender 구성은 logback-spring.xml이 소유하고 레벨은 여기가 정본이다.
+# DEBUG는 local 전용(application-local.yml)이고 dev·prod는 root=INFO로 억제한다.
+logging:
+  level:
+    root: INFO
+    "[org.flywaydb]": INFO
+    "[io.mongock]": INFO
+
 # 인증·토큰 정책값(비밀 아님). 시크릿·환경 의존값(secret·pepper·oidc audience·datasource)은
 # 프로파일별 파일에서 주입한다 — base에는 운영-위험 기본값(시크릿 폴백·접속정보)을 두지 않는다.
 app:

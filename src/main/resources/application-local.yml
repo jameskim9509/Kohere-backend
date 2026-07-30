@@ -34,6 +34,10 @@ spring:
             enable: ${SPRING_MAIL_SMTP_STARTTLS:false}
 
 app:
+  # 로그 JSON 파일 디렉터리(logback-spring.xml의 JSON_FILE). /logs 대신 프로젝트 루트 상대경로 — 절대경로면 Windows에서 C:\logs로 튄다.
+  # compose로 띄울 때는 APP_LOG_DIR=/logs가 주입되고 ./logs 바인드 마운트로 호스트에서 바로 보인다.
+  log:
+    dir: ${APP_LOG_DIR:logs}
   seed:
     listings-enabled: ${LISTING_SEED_ENABLED:true}
   jwt:

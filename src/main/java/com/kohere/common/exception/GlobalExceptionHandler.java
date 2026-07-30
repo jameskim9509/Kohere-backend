@@ -1,5 +1,6 @@
 package com.kohere.common.exception;
 
+import com.kohere.common.logging.AccessLogContext;
 import com.kohere.common.response.ApiResponse;
 import com.kohere.common.response.FieldErrorDetail;
 import java.util.List;
@@ -43,6 +44,7 @@ public class GlobalExceptionHandler {
     if (ec.getHttpStatus().is5xxServerError()) {
       log.error("Business exception [{}]: {}", ec.getCode(), e.getMessage(), e);
     }
+    AccessLogContext.errorCode(ec.getCode());
     return ResponseEntity.status(ec.getHttpStatus())
         .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, e.getMessage())));
   }
@@ -54,6 +56,7 @@ public class GlobalExceptionHandler {
             .map(GlobalExceptionHandler::toFieldErrorDetail)
             .toList();
     ErrorCode ec = ErrorCode.INVALID_INPUT;
+    AccessLogContext.errorCode(ec.getCode());
     return ResponseEntity.badRequest()
         .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, ec.getDefaultMessage()), details));
   }
@@ -85,6 +88,7 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiResponse<Void>> errorResponse(ErrorCode ec) {
+    AccessLogContext.errorCode(ec.getCode());
     return ResponseEntity.status(ec.getHttpStatus())
         .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, ec.getDefaultMessage())));
   }
