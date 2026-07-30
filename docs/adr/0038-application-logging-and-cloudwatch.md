@@ -276,6 +276,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 잔여 사각지대 | 이유 |
 |---|---|
 | 커넥션 풀 포화·힙 사용량 | 메트릭 영역. 풀 설정 자체가 전무해 선행 과제다 |
+| 호스트 메모리·스왑 | 도입한 CloudWatch Agent가 `logs` 전용이라 `metrics` 섹션이 없다. 도입 게이트를 통과시킨 근거(`available`·스왑)를 정작 지속 관측할 수단이 없어 확인이 SSM `free -m` 수동이다 — 지표화는 [ADR-0026](./0026-dev-host-memory-budget.md) 후속 작업 |
 | `GET /listings/{listingId}`의 Mongo 쓰기(`ListingService:162`) | 최근 본 매물 이벤트 제외의 대가로 수용 |
 | 게스트와 미인증이 로그에서 같은 `anonymous` | 정상 게스트 트래픽과 토큰 미전송 오류가 `userId`만으로는 안 갈린다 — `pathPattern`이 `permitAll` 경로인지로 사후 판별한다 |
 | `ApplicationRunner` 8개의 실행 순서 | `@Order`가 없어 미보장 — 관측만 하고 보장하지 않는다 |
