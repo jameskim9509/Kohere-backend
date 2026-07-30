@@ -94,7 +94,8 @@ mail_from     = "noreply@kohere.app"
 # 기본 true — ADR-0038의 도입 게이트를 dev 호스트 실측으로 통과했다(available 656Mi > 300MB,
 # 스왑 2Gi 중 29Mi만 사용). 여유 판단은 free가 아니라 available로 한다.
 # user_data는 부팅 시에만 실행되므로 최초 반영에는 EC2 재생성 1회가 필요하다.
-# 켠 뒤 지표: 스왑 사용량이 계속 오르면 압박 신호 — false로 되돌리거나 instance_type=t3.medium.
+# 켠 뒤 확인: 메모리·스왑은 자동 수집되지 않으므로(EC2 기본 지표에 없고 Agent도 logs 전용) SSM 접속 후
+# free -m 을 직접 본다. 스왑 사용량이 계속 오르면 압박 신호 — false로 되돌리거나 instance_type=t3.medium.
 # enable_cloudwatch_agent = true
 # log_retention_days      = 30          # 무기한 금지
 

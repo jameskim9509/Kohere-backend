@@ -116,8 +116,12 @@ systemctl enable --now docker-prune.timer
 #
 #    ADR-0038의 도입 게이트("여유 300MB 미만이면 보류")는 dev 호스트 실측으로 통과했다 —
 #    available 656Mi, 스왑 2Gi 중 29Mi만 사용. 기준은 free가 아니라 available이다(free가 낮은 것은
-#    회수 가능한 페이지 캐시 때문). Agent 상주는 ~50-100MB. 압박이 생기면 스왑 사용량이 먼저 오르므로
-#    그 값을 지표로 보고, 지속되면 enable_cloudwatch_agent=false 또는 t3.medium으로 되돌린다.
+#    회수 가능한 페이지 캐시 때문). Agent 상주는 ~50-100MB.
+#
+#    주의: 메모리·스왑은 자동 수집되지 않는다. EC2 기본 지표에 없고(하이퍼바이저에서 안 보인다) 이 Agent도
+#    logs 전용으로 설정돼 metrics 섹션이 없다 — 알람도 없다. 압박이 생기면 스왑 사용량이 먼저 오르지만
+#    그걸 보려면 SSM으로 접속해 `free -m`을 직접 확인해야 한다. 지속되면 enable_cloudwatch_agent=false
+#    또는 t3.medium으로 되돌린다. 지표화는 별도 이슈(ADR-0026 후속 작업).
 %{ if enable_cloudwatch_agent ~}
 dnf install -y amazon-cloudwatch-agent
 cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWAGENT'

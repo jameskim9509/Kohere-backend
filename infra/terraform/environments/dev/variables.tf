@@ -40,6 +40,7 @@ variable "enable_cloudwatch_agent" {
     ADR-0038의 도입 게이트("여유 300MB 미만이면 보류")를 dev 호스트 실측으로 통과했다:
     available 656Mi, 스왑 2Gi 중 29Mi만 사용(= 메모리 압박 없음). Agent 상주는 ~50-100MB다.
     판단은 free가 아니라 available로 한다 — free가 낮은 것은 회수 가능한 페이지 캐시 때문이다.
+    메모리·스왑은 자동 수집되지 않으므로(이 Agent는 logs 전용) 확인은 SSM 접속 후 free -m 으로 한다.
     끄면 Log Group·IAM 권한은 그대로 두고 반출만 멈춘다.
   EOT
   type        = bool
