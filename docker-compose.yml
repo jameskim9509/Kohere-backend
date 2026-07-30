@@ -10,11 +10,20 @@
 # 컨테이너는 서비스명(mysql·mongo·redis·mailhog)으로 서로를 찾는다. 기본 자격증명은 .env 로 덮어쓸 수 있다.
 name: kohere
 
+# 컨테이너 로그 상한(ADR-0038). json-file 드라이버 기본값은 max-file=1에 크기 무제한이다 — local은
+# 프로파일상 JSON_FILE이 안 붙지만 콘솔 출력은 그대로 쌓이므로, 오래 띄워두면 개발 머신 디스크를 먹는다.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   mysql:
     image: mysql:8.0
     container_name: kohere-mysql
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-kohere}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-kohere}
@@ -35,6 +44,7 @@ services:
     image: mongo:7
     container_name: kohere-mongo
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "27017:27017"
     volumes:
@@ -50,6 +60,7 @@ services:
     image: redis:7
     container_name: kohere-redis
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "6379:6379"
     volumes:
@@ -65,6 +76,7 @@ services:
     image: mailhog/mailhog:latest
     container_name: kohere-mailhog
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "1025:1025" # SMTP (앱이 메일을 발송하는 포트)
       - "8025:8025" # 웹 UI — 받은 인증 메일 확인: http://localhost:8025
@@ -78,6 +90,7 @@ services:
       dockerfile: Dockerfile
     container_name: kohere-app
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       mysql:
         condition: service_healthy
@@ -87,8 +100,14 @@ services:
         condition: service_healthy
       mailhog:
         condition: service_started
+    # logback JSON_FILE 출력 지점. 호스트 ./logs 에 바인드해 컨테이너 밖에서 바로 확인한다 —
+    # dev/prod와 같은 경로(/logs)를 써서 "배포하면 어떤 모양인지"를 로컬에서 그대로 재현한다.
+    #   확인: docker compose up -d app  →  tail -f logs/app.json
+    volumes:
+      - ./logs:/logs
     environment:
       SPRING_PROFILES_ACTIVE: local
+      APP_LOG_DIR: /logs
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-kohere}?serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-kohere}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-kohere}

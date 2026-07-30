@@ -61,6 +61,7 @@
 | [0035](./0035-gamification-quiz-random-stateless-catalog.md) | 학습 퀴즈를 무상태 랜덤 4지선다로 재설계하고 문항 카탈로그를 MongoDB에 언어-키 맵으로 저장 | Proposed | 2026-07-02 |
 | [0036](./0036-diagnosis-v2-server-driven-flow.md) | 진단 질의응답을 서버 주도(start/next) 흐름으로 /api/v2에 신설하고 진행 상태를 별도 flow-session에 둔다 | Proposed | 2026-07-15 |
 | [0037](./0037-listing-localization-and-code-catalog.md) | 매물 고유 문구는 listings에 임베드하고 공통 코드는 listingCatalog에서 번역한다 | Accepted | 2026-07-17 |
+| [0038](./0038-application-logging-and-cloudwatch.md) | 로그는 다섯 가지 용도가 요구하는 것만 남긴다 | Proposed | 2026-07-21 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

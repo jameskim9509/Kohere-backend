@@ -62,7 +62,18 @@ module "security" {
   db_ingress_cidrs = var.db_ingress_cidrs
 }
 
-# ===== IAM (인스턴스 프로파일 — SSM·ECR·파라미터·S3 이미지) =====
+# ===== 로그 (CloudWatch Log Group — 앱 로그 수집 대상) =====
+# 빈 Log Group은 비용이 없으므로 Agent 활성 여부와 무관하게 항상 만든다. 수집만 host 모듈의
+# enable_cloudwatch_agent로 토글해, 켜는 순간 권한·대상이 이미 준비된 상태가 되게 한다(ADR-0038 ⑥).
+module "logs" {
+  source = "../../modules/dev/logs"
+
+  tags              = local.common_tags
+  log_group_name    = "/${var.project}/${var.environment}/app"
+  retention_in_days = var.log_retention_days
+}
+
+# ===== IAM (인스턴스 프로파일 — SSM·ECR·파라미터·S3 이미지·로그 반출) =====
 module "iam" {
   source = "../../modules/dev/iam"
 
@@ -71,6 +82,7 @@ module "iam" {
   aws_region        = var.aws_region
   account_id        = data.aws_caller_identity.current.account_id
   images_bucket_arn = module.s3_cloudfront.bucket_arn
+  log_group_arn     = module.logs.log_group_arn
 }
 
 # ===== 시크릿 (SSM Parameter Store SecureString) =====
@@ -144,6 +156,10 @@ module "host" {
   images_bucket         = module.s3_cloudfront.bucket_name
   images_cdn_domain     = module.s3_cloudfront.cdn_domain
 
+  # 로그 반출(ADR-0038 ⑥) — Agent는 기본 비활성(ADR-0026 메모리 게이트). Log Group은 항상 준비돼 있다.
+  log_group_name          = module.logs.log_group_name
+  enable_cloudwatch_agent = var.enable_cloudwatch_agent
+
   # 시크릿·설정 파라미터가 먼저 존재해야 부팅 시 refresh-env가 .env로 주입할 수 있다.
   depends_on = [module.secrets]
 }
@@ -165,4 +181,7 @@ module "monitoring" {
   tags                = local.common_tags
   discord_webhook_url = var.discord_webhook_url
   instance_id         = module.host.instance_id
+
+  # 로그 일 수집량 상한 감시(ADR-0038). AWS가 Log Group당 하드 리밋을 주지 않아 조기 경보로 둔다.
+  log_group_name = module.logs.log_group_name
 }

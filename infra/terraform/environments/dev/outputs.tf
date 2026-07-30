@@ -13,6 +13,11 @@ output "instance_id" {
   value       = module.host.instance_id
 }
 
+output "app_log_group" {
+  description = "앱 로그 CloudWatch Log Group(Logs Insights 쿼리 대상). 수집 여부는 enable_cloudwatch_agent"
+  value       = module.logs.log_group_name
+}
+
 output "images_bucket" {
   description = "콘텐츠 이미지 S3 버킷"
   value       = module.s3_cloudfront.bucket_name

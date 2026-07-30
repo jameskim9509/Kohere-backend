@@ -78,6 +78,6 @@ data "aws_iam_policy_document" "github_deploy" {
 
 resource "aws_iam_role_policy" "github_deploy" {
   name   = "${local.name_prefix}-github-deploy"
-  role   = aws_iam_role.github_deploy.id
+  role   = aws_iam_role.github_deploy.name
   policy = data.aws_iam_policy_document.github_deploy.json
 }
