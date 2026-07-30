@@ -72,7 +72,7 @@ data "aws_iam_policy_document" "params" {
 
 resource "aws_iam_role_policy" "params" {
   name   = "${var.name_prefix}-params"
-  role   = aws_iam_role.host.id
+  role   = aws_iam_role.host.name
   policy = data.aws_iam_policy_document.params.json
 }
 
