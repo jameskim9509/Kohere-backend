@@ -275,8 +275,8 @@ flowchart TB
 | 이미지   | **S3 + CloudFront**(+ Route53 별칭, prod 동일 모듈)          | 앱은 S3 업로드 + URL 응답.**클라이언트는 `cdn.dev.kohere.app`(Route53 alias→CloudFront)에서 GET**(미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM                               |
 | 노출     | EIP → Route53 A 레코드(`dev.kohere.app`)                        | SG 80/443만. 관리자 접속은 SSM 전용(SSH 미개방)                                                                                                                                                       |
 | 데이터   | 전용 암호화 EBS(`/data`) bind-mount                              | 인스턴스 교체에도 보존                                                                                                                                                                                |
-| 모니터링 | CloudWatch StatusCheckFailed·CPU 알람 + SNS                       | 단일 박스 다운 → SNS →**Lambda → Discord** 통보([ADR-0027](../adr/0027-dev-discord-alerting.md)). **로그 기반 알람은 없다**(metric filter 미도입)                                             |
-| 로그     | 앱이 `/logs/app.json`(1줄 JSON) → **CloudWatch Agent** tail → Log Group `/kohere/dev/app`(보존 30일) | 컨테이너 `/logs`는 호스트 `/opt/kohere/logs` 바인드 — 없으면 컨테이너 레이어에 갇혀 Agent가 못 읽고 `--force-recreate`에 소실된다. 로테이션 두 겹(`RollingFileAppender` 50MB×7일 + compose `logging` app 50MB×3). 토글 `enable_cloudwatch_agent`([ADR-0038](../adr/0038-application-logging-and-cloudwatch.md)) |
+| 모니터링 | CloudWatch StatusCheckFailed·CPU·**로그 수집량** 알람 + SNS       | 단일 박스 다운·로그 폭주 → SNS →**Lambda → Discord** 통보([ADR-0027](../adr/0027-dev-discord-alerting.md)). 셋 다 같은 SNS 토픽을 쓴다. **로그 내용 기반 알람은 없다**(metric filter 미도입 — "ERROR가 N건" 같은 조건 불가) |
+| 로그     | 앱이 `/logs/app.json`(1줄 JSON) → **CloudWatch Agent** tail → Log Group `/kohere/dev/app`(보존 30일) | 컨테이너 `/logs`는 호스트 `/opt/kohere/logs` 바인드 — 없으면 컨테이너 레이어에 갇혀 Agent가 못 읽고 `--force-recreate`에 소실된다. 로테이션 두 겹(`RollingFileAppender` 50MB×7일 + compose `logging` app 50MB×3). 토글 `enable_cloudwatch_agent`. 일 수집량 상한 **200MB**는 `IncomingBytes`(AWS 기본 지표·무료) 알람으로 감시한다 — AWS가 Log Group당 하드 리밋을 주지 않아 **차단이 아닌 조기 경보**다([ADR-0038](../adr/0038-application-logging-and-cloudwatch.md)) |
 | 비용     | EC2 ~$30/mo + EBS~$2/mo + S3/CF(CF 무료티어) ≈ **~$32/mo+**, CloudWatch Logs 최대 ~$5/mo | 매니지드 복제 대비 큰 절감. **로그 비용은 수집량 비례**라 일 수집량 상한을 **200MB(≈ 월 $5)** 로 뒀다 — 1GB/일이면 월 ~$24로 호스트 비용을 넘는다([ADR-0038](../adr/0038-application-logging-and-cloudwatch.md)) |
 
 ```mermaid
@@ -295,7 +295,7 @@ flowchart TB
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
       CF["CloudFront<br/>이미지 서빙(별칭 cdn.dev.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
-      CW["CloudWatch 알람<br/>(StatusCheck·CPU)"]
+      CW["CloudWatch 알람<br/>(StatusCheck·CPU·로그 수집량)"]
       CWLOG[("CloudWatch Logs<br/>/kohere/dev/app · 보존 30일")]
       SNS["SNS 알람 토픽"]
       LMBD["Lambda<br/>discord_notify (SNS→Discord)"]
@@ -336,6 +336,7 @@ flowchart TB
     APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)·장소검색" .-> EXT
     APP -- "1줄 JSON 파일<br/>/logs → 호스트 바인드" --> AGENT
     AGENT -- "PutLogEvents<br/>(Log Group 1개로 스코프된 IAM)" --> CWLOG
+    CW -. "IncomingBytes 감시<br/>일 200MB 초과 시 경보" .-> CWLOG
 ```
 
 > dev는 클라우드 EC2 한 대에 각 서비스를 **컨테이너 박스**로 올린 구성이라 로컬↔dev 엔진이 일치한다(`SPRING_PROFILES_ACTIVE=dev`). MailHog는 로컬 전용이라 dev는 실 SMTP를 쓰고, HTTPS는 Caddy([ADR-0022](../adr/0022-dev-https-caddy.md))가, 시크릿은 SSM Parameter Store SecureString(무료·SM 미사용, [ADR-0023](../adr/0023-secrets-in-ssm-parameter-store.md))이 담당하며, **변경 반영은 배포(`refresh-env` + app recreate)** 경로로 한다([ADR-0024](../adr/0024-secret-change-propagation.md)). 단일 호스트 SPOF·인터넷 노출은 SG(80/443)·SSM 전용·IMDSv2·EBS 암호화로 통제하며 dev 단계에서 수용한다. 상태(state)는 prod·dev 공통 S3 + native lockfile([ADR-0020](../adr/0020-terraform-remote-state-s3-dynamodb.md)), `key`로 분리한다.
@@ -421,7 +422,7 @@ flowchart TB
 | 테스트          | JUnit 5 · AssertJ · Mockito · Modulith test                                           | 배선됨 | —                                                                                                                                                                                        |
 | 통합 테스트     | **Testcontainers** — MySQL·Redis(`@ServiceConnection`)                              | ✅ 배선 | auth-onboarding 통합/문서 테스트가 실제 MySQL·Redis로 검증(Docker 필요; TC **1.21.4**로 신버전 Docker 호환, [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)). MongoDB는 listing·diagnosis 도입 시 추가 |
 | 로깅            | **Logback + logstash-logback-encoder** — `CONSOLE` 텍스트 + `JSON_FILE` 1줄 JSON(`test` 제외 전 프로파일), MDC `traceId`·`userId`·`onboarding` | ✅ 배선 | **[ADR-0038](../adr/0038-application-logging-and-cloudwatch.md)** — 로그는 **다섯 용도**(활동추적·외부의존성·보안감사·성능지연·서버오류)가 요구하는 것만 남긴다("모든 예외 로깅" 폐기). 전 요청 접근 로그(`HandlerInterceptor`, `pathPattern`+`pathVars`+`latencyMs`), 401/403 감사 로그(`SecurityErrorResponder.write` 한 곳). PII 원천 배제. 4xx는 스택 없이 `status`·`errorCode`로만([error-response-guide §6](../api/error-response-guide.md)) |
-| 로그 수집       | **dev**: CloudWatch Agent가 `/logs/app.json` tail → Log Group `/kohere/dev/app`(보존 30일) · **prod**: ECS `awslogs` 드라이버 → `/ecs/<name_prefix>` | dev ✅ 배선 / prod 미검증 | 로그 **내용**(JSON·MDC)과 **전송 경로**(CloudWatch)는 직교 — 앱은 파일까지만 책임지고 **AWS SDK를 물지 않는다**. IAM은 해당 Log Group 하나로 스코프(관리형 `logs:*` 미사용, `CreateLogGroup`·`PutRetentionPolicy` 미부여). prod은 CD 미연결이라 실적재 미검증 |
+| 로그 수집       | **dev**: CloudWatch Agent가 `/logs/app.json` tail → Log Group `/kohere/dev/app`(보존 30일) · **prod**: ECS `awslogs` 드라이버 → `/ecs/<name_prefix>` | dev ✅ 배선 / prod 미검증 | 로그 **내용**(JSON·MDC)과 **전송 경로**(CloudWatch)는 직교 — 앱은 파일까지만 책임지고 **AWS SDK를 물지 않는다**. IAM은 해당 Log Group 하나로 스코프(관리형 `logs:*` 미사용, `CreateLogGroup`·`PutRetentionPolicy` 미부여). **일 수집량 상한 200MB**(≈ 월 $5)는 `IncomingBytes` 알람으로 감시 — 비용 기준으로 정했고 AWS가 하드 리밋을 주지 않아 조기 경보다. prod은 CD 미연결이라 실적재 미검증 |
 | 메트릭/트레이싱 | Actuator(health)                                                                         | 도입   | Micrometer/Prometheus → 추후. **호스트 메모리·스왑은 미수집** — EC2 기본 지표에 없고 CloudWatch Agent도 logs 전용이라 확인이 SSM `free -m` 수동이다([ADR-0026](../adr/0026-dev-host-memory-budget.md) 후속 작업) |
 | API 문서        | **REST Docs**(HTML) + **OpenAPI3(restdocs-api-spec)→Swagger UI**                   | ✅ 배선   | [ADR-0007](../adr/0007-api-docs-spring-rest-docs.md)·[ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md). 같은 테스트로 `/docs/index.html`(HTML)·`/swagger-ui/index.html`(try-it-out) 생성. 어노테이션 미사용(드리프트 0). [api/specs](../api/specs/README.md) Markdown은 설계 정본 |
 | DTO 매핑        | 수동 정적 팩토리(`of(...)`)                                                            | 도입   | MapStruct → 추후                                                                                                                                                                         |
