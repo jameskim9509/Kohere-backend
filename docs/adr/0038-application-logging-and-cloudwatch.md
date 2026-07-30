@@ -134,6 +134,8 @@ Proposed
 
 접근 로그 1줄이 ~400B이므로 200MB는 **일 50만 요청** 수준이다. dev 실트래픽은 그보다 훨씬 낮을 것으로 보므로 상한은 정상 운영을 제약하지 않고 **사고(무한 루프·봇 트래픽)를 조기에 잡는 브레이크로 기능한다.** 단가는 리전·시점에 따라 바뀌므로 실청구로 재확인한다.
 
+**상한은 알람으로 감시하되 차단하지는 않는다.** AWS는 Log Group당 수집량 하드 리밋을 제공하지 않으므로, 상한은 본질적으로 "정책 + 경보 + 대응"이다. CloudWatch Logs가 Log Group별로 자동 발행하는 **`IncomingBytes`**(`AWS/Logs`, AWS 기본 지표라 무료)에 일 단위 합계 알람을 걸어 [ADR-0027](./0027-dev-discord-alerting.md)의 SNS→Discord 경로로 통보한다. Agent의 `metrics` 섹션이나 `PutMetricData` 권한은 필요 없다 — 호스트 메모리·스왑이 미수집인 것과 대비되는 지점이다.
+
 ### 용도 2 — 외부 의존성 관측
 
 **외부 호출 6개를 공통 래퍼로 감싸 호출당 1건을 남긴다.** 구현이 `RestClient`·`NimbusJwtDecoder`·SDK·`JavaMailSender`로 제각각이라 공통 AOP 지점이 없어 어댑터 내부에서 호출한다.
