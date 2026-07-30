@@ -28,6 +28,9 @@ spring:
             enable: true
 
 app:
+  # 로그 JSON 파일 디렉터리(logback-spring.xml의 JSON_FILE). CloudWatch Agent가 tail하는 경로. 컨테이너 /logs는 호스트 /opt/kohere/logs 바인드 마운트다(ADR-0038).
+  log:
+    dir: ${APP_LOG_DIR:/logs}
   jwt:
     secret: ${JWT_SECRET} # Terraform 자동생성, 미설정 시 기동 실패(ADR-0011 D5)
   auth:

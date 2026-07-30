@@ -100,8 +100,14 @@ services:
         condition: service_healthy
       mailhog:
         condition: service_started
+    # logback JSON_FILE 출력 지점. 호스트 ./logs 에 바인드해 컨테이너 밖에서 바로 확인한다 —
+    # dev/prod와 같은 경로(/logs)를 써서 "배포하면 어떤 모양인지"를 로컬에서 그대로 재현한다.
+    #   확인: docker compose up -d app  →  tail -f logs/app.json
+    volumes:
+      - ./logs:/logs
     environment:
       SPRING_PROFILES_ACTIVE: local
+      APP_LOG_DIR: /logs
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-kohere}?serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-kohere}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-kohere}

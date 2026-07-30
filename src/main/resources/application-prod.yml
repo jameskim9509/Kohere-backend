@@ -23,6 +23,9 @@ spring:
             enable: true
 
 app:
+  # 로그 JSON 파일 디렉터리(logback-spring.xml의 JSON_FILE). ECS 태스크의 로그 파일 경로. 반출은 awslogs 드라이버(stdout)가 담당한다(ADR-0038).
+  log:
+    dir: ${APP_LOG_DIR:/logs}
   jwt:
     secret: ${JWT_SECRET} # 미설정 시 기동 실패 (ADR-0011 D5)
   auth:

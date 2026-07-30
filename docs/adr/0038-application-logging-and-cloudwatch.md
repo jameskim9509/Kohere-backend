@@ -67,7 +67,8 @@ Proposed
 
 | 항목 | 결정 |
 |---|---|
-| appender | `CONSOLE` 텍스트(전 프로파일) + `JSON_FILE` 1줄 JSON(`dev,prod`, `/logs/app.json`). 콘솔까지 JSON이면 `docker logs` 가독성이 죽는다 |
+| appender | `CONSOLE` 텍스트(전 프로파일) + `JSON_FILE` 1줄 JSON(`test` 제외 전 프로파일). 콘솔까지 JSON이면 `docker logs` 가독성이 죽는다. `local`도 켜서 "배포하면 어떤 모양인지"를 로컬에서 그대로 확인한다 — `test`만 빼는 이유는 테스트가 작업 트리에 파일을 남기지 않게 하기 위해서다 |
+| 로그 파일 경로 | `app.log.dir`이 정한다 — `local`(bootRun)은 상대경로 `logs`(절대경로면 Windows에서 `C:\logs`로 튄다), `local`(compose)·`dev`·`prod`는 `/logs`. compose는 `./logs`·`/opt/kohere/logs`를 바인드해 컨테이너 밖에서 읽는다 |
 | 의존 | `logstash-logback-encoder` 하나. 앱은 AWS SDK를 물지 않는다 |
 | 내용·전송 직교 | 로그 내용(JSON·MDC)과 전송 경로(CloudWatch)는 독립 결정이다. 앱은 파일까지만 책임진다 |
 | 분산 추적 | Micrometer Tracing 미도입. 단일 EC2라 전파 이점이 없고, 키만 `traceId`로 맞춰 MSA 전환 시 이행 |

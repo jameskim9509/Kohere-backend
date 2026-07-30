@@ -2,15 +2,28 @@
 <!--
   로그 appender 구성(ADR-0038 "공통 기반", 롤아웃 ①).
 
-  CONSOLE(텍스트)은 전 프로파일, JSON_FILE(1줄 JSON)은 dev·prod에만 붙인다. 콘솔까지 JSON이면
-  `docker logs` 가독성이 죽고, 반대로 파일이 텍스트면 Logs Insights가 필드로 못 쪼갠다.
+  CONSOLE(텍스트)과 JSON_FILE(1줄 JSON)을 함께 쓴다. 콘솔까지 JSON이면 `docker logs` 가독성이
+  죽고, 반대로 파일이 텍스트면 스택트레이스가 개행마다 쪼개져 CloudWatch가 이벤트 40개로 센다.
 
   로그 "내용"(JSON·MDC)과 "전송 경로"(CloudWatch)는 직교 결정이다. 앱은 파일까지만 책임지고,
   반출은 dev=CloudWatch Agent tail, prod=ECS awslogs 드라이버가 맡는다.
 
-  파일명이 logback.xml이 아니라 logback-spring.xml이어야 <springProfile>이 동작한다.
+  파일명이 logback.xml이 아니라 logback-spring.xml이어야 <springProfile>·<springProperty>가 동작한다.
 -->
 <configuration>
+
+  <!--
+    로그 디렉터리는 프로파일이 정한다(app.log.dir).
+      local(bootRun) = logs        — 프로젝트 루트 상대경로. 절대경로면 Windows에서 C:\logs로 튄다
+      local(compose) = /logs       — ./logs 바인드 마운트로 호스트에서 바로 확인
+      dev·prod       = /logs       — /opt/kohere/logs 바인드 마운트(Agent가 tail)
+    defaultValue는 스프링 컨텍스트 없이 logback만 뜨는 경우의 안전망이다.
+
+    scope는 기본값(local)을 쓴다 — context로 두면 logback 컨텍스트 속성이 되어
+    LogstashEncoder가 이 값을 모든 JSON 줄에 "LOG_DIR":"logs"로 실어보낸다.
+    설정용 변수일 뿐 로그 데이터가 아니므로 파일 안에서만 치환되게 한다.
+  -->
+  <springProperty name="LOG_DIR" source="app.log.dir" defaultValue="logs"/>
 
   <!--
     traceId·userId는 MDC라 요청 중에는 모든 줄에 자동으로 붙는다. 기동·백그라운드처럼 요청 밖에서
@@ -26,18 +39,24 @@
     </encoder>
   </appender>
 
-  <springProfile name="dev,prod">
+  <!--
+    test를 제외한 전 프로파일에서 JSON 파일을 쓴다. 로컬에서도 같은 파일이 떨어져야
+    "Logs Insights에서 볼 모양"을 배포 전에 그대로 확인할 수 있다.
+    test만 빼는 이유는 테스트 실행이 작업 트리에 로그 파일을 남기지 않게 하기 위해서다.
+  -->
+  <springProfile name="!test">
     <!--
       LogstashEncoder가 MDC 항목과 StructuredArguments(kv)를 JSON 최상위 필드로 펼친다.
       MDC 값은 Map<String,String>이라 문자열("7")이고, kv는 타입을 보존한다(42는 숫자).
+      예외는 stack_trace 필드에 \n 이스케이프된 문자열 하나로 들어가 한 줄을 유지한다.
 
       로테이션은 여기서 닫는다 — 파일이 무한히 자라면 t3.small 디스크가 먼저 죽는다.
-      컨테이너 stdout 쪽 로테이션(compose logging 블록)은 별개 과제다.
+      컨테이너 stdout 쪽 로테이션은 compose의 logging 블록이 담당한다.
     -->
     <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-      <file>/logs/app.json</file>
+      <file>${LOG_DIR}/app.json</file>
       <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-        <fileNamePattern>/logs/app.%d{yyyy-MM-dd}.%i.json.gz</fileNamePattern>
+        <fileNamePattern>${LOG_DIR}/app.%d{yyyy-MM-dd}.%i.json.gz</fileNamePattern>
         <maxFileSize>50MB</maxFileSize>
         <maxHistory>7</maxHistory>
         <totalSizeCap>500MB</totalSizeCap>
@@ -53,8 +72,8 @@
     </root>
   </springProfile>
 
-  <!-- local·test는 콘솔만. 레벨 상세는 application-*.yml의 logging.level이 덮는다. -->
-  <springProfile name="!dev &amp; !prod">
+  <!-- test는 콘솔만 — 테스트가 작업 트리에 파일을 만들지 않게 한다. -->
+  <springProfile name="test">
     <root level="INFO">
       <appender-ref ref="CONSOLE"/>
     </root>
