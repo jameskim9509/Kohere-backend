@@ -38,6 +38,32 @@ resource "aws_cloudwatch_metric_alarm" "cpu" {
   tags                = var.tags
 }
 
+# 로그 수집량 — ADR-0038이 정한 일 상한(200MB)을 넘는지 감시한다.
+# `IncomingBytes`는 CloudWatch Logs가 Log Group별로 자동 발행하는 AWS 기본 지표라 무료다
+# (Agent의 metrics 섹션도 PutMetricData 권한도 필요 없다).
+#
+# 이 알람은 차단이 아니라 조기 경보다 — AWS는 Log Group 수집량 하드 리밋을 제공하지 않는다.
+# 발동하면 ADR-0038의 감축 순서(DIAGNOSIS_STEP_ADVANCED → 조회성 GET 접근 로그 → WARN 이상 제한)를 적용한다.
+# period=86400(1일)이라 판정이 하루 단위다. 급증을 더 빨리 잡으려면 period를 줄이고 임계를 비례 축소한다.
+resource "aws_cloudwatch_metric_alarm" "log_ingestion" {
+  count = var.log_group_name != "" ? 1 : 0
+
+  alarm_name          = "${var.name_prefix}-log-ingestion-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "IncomingBytes"
+  namespace           = "AWS/Logs"
+  period              = 86400
+  statistic           = "Sum"
+  threshold           = var.log_ingestion_daily_limit_bytes
+  treat_missing_data  = "notBreaching" # 로그가 없는 것은 이상이 아니다
+  alarm_description   = "dev 앱 로그 일 수집량이 상한(ADR-0038)을 초과 — 비용 증가·수집 폭주 점검"
+  dimensions          = { LogGroupName = var.log_group_name }
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  tags                = var.tags
+}
+
 # ===== Discord 웹훅 알림 — CloudWatch 알람 → SNS → Lambda → Discord (ADR-0027) =====
 # Discord 웹훅은 SNS HTTPS 구독을 못 받는다(구독 확인 핸드셰이크·메시지 포맷 불일치) → Lambda가 변환·전달.
 # discord_webhook_url 이 비어 있으면 전부 미생성(count=0).

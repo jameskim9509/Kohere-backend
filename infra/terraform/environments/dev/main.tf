@@ -181,4 +181,7 @@ module "monitoring" {
   tags                = local.common_tags
   discord_webhook_url = var.discord_webhook_url
   instance_id         = module.host.instance_id
+
+  # 로그 일 수집량 상한 감시(ADR-0038). AWS가 Log Group당 하드 리밋을 주지 않아 조기 경보로 둔다.
+  log_group_name = module.logs.log_group_name
 }
