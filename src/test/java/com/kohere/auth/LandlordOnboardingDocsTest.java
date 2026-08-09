@@ -2,23 +2,35 @@ package com.kohere.auth;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
-import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static com.kohere.docs.ApiDocsErrors.assertError;
+import static com.kohere.docs.ApiDocsErrors.errorSnippet;
+import static com.kohere.docs.ApiDocsFields.errorNull;
+import static com.kohere.docs.ApiDocsFields.field;
+import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static com.kohere.docs.UserProfileDocsFields.ME_DESCRIPTION;
+import static com.kohere.docs.UserProfileDocsFields.ME_SUMMARY;
+import static com.kohere.docs.UserProfileDocsFields.PATCH_ME_422;
+import static com.kohere.docs.UserProfileDocsFields.PATCH_ME_DESCRIPTION;
+import static com.kohere.docs.UserProfileDocsFields.PATCH_ME_SUMMARY;
+import static com.kohere.docs.UserProfileDocsFields.meResponseFields;
+import static com.kohere.docs.UserProfileDocsFields.onboardingResponseFields;
+import static com.kohere.docs.UserProfileDocsFields.patchRequestFields;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
-import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
@@ -33,16 +45,13 @@ import com.kohere.auth.domain.SmsDispatchException;
 import com.kohere.auth.domain.VerificationEmailSender;
 import com.kohere.auth.domain.VerificationSmsSender;
 import com.kohere.common.security.JwtProperties;
-import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsTags;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import javax.crypto.SecretKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,12 +65,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.mockmvc.RestDocumentationResultHandler;
 import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
@@ -74,6 +84,12 @@ import org.springframework.web.context.WebApplicationContext;
  * <p>임대인 흐름: 소셜로그인(PENDING) → 약관 동의(TERMS_AGREED) → 연락처 인증(코드 발송·확인) → 임대인
  * 온보딩(ACTIVE·userType=LANDLORD). 사업자등록번호 검증은 온보딩에서 분리되어, 온보딩을 마친(ACTIVE) 임대인이 정식 토큰(ROLE_USER)으로 별도
  * 호출한다(§5-1). SMS 발송 모킹으로 인증번호를 캡처한다.
+ *
+ * <p><b>문서 규약(#151)</b> — {@code GET /users/me}는 {@code AuthOnboardingDocsTest}(세입자 예시)와 <b>같은
+ * 오퍼레이션</b>이라 문구·필드 기술자를 {@code com.kohere.docs.UserProfileDocsFields}에서 공유한다. 임대인 예시의 identifier가
+ * {@code user-get-me-landlord}인 것도 그 때문이다 — operationId는 스니펫 identifier들의 공통 접두사라, 예전 이름 {@code
+ * users-me-landlord}는 {@code user-get-me*}와 겹치는 접두사가 {@code user}뿐이라 operationId를 {@code user}로
+ * 붕괴시켰다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -84,8 +100,112 @@ class LandlordOnboardingDocsTest {
   private static final String INVALID_SOCIAL_TOKEN = "invalid-social-token";
   private static final String MALFORMED_BODY = "{ \"oops\" }";
   private static final String PHONE = "01012345678";
+
+  /** SMS 인증을 거치지 않은 번호 — 임대인 프로필 연락처 변경의 422 예시에 쓴다(어떤 테스트도 이 번호로 발송하지 않는다). */
+  private static final String UNVERIFIED_PHONE = "01033332222";
+
   private static final String BIRTH_DATE = "1988-05-20";
   private static final String BIZ_NUMBER = "1234567890";
+
+  /** 세입자 온보딩 본문 — 임대인 전용 API의 역할 거부(403 FORBIDDEN) 예시용 계정을 만들 때만 쓴다. */
+  private static final String TENANT_ONBOARDING_BODY =
+      """
+      {
+        "gender": "FEMALE",
+        "birthDate": "1995-03-11",
+        "country": "VN",
+        "visaType": "SHORT_TERM_VISIT"
+      }
+      """;
+
+  // ---- 오퍼레이션 문구·에러코드 상수(규약 1·3·4·11) ----
+
+  private static final String PHONE_CODE_SUMMARY = "연락처 인증번호 발송";
+
+  private static final String PHONE_CODE_DESCRIPTION =
+      """
+      입력한 휴대폰 번호로 SMS 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `phoneNumber`는 마스킹된다(예 `010-****-5678`).
+
+      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 <b>둘 다</b> 허용한다 — 온보딩(US-1-10)과 정식 회원의 프로필 연락처 변경(US-1-5)이 같은 엔드포인트를 쓰기 때문이다(ADR-0034 §6·§8).
+
+      - 약관 동의(`TERMS_AGREED`)가 선행돼야 한다 — `PENDING` 상태 호출은 422다.
+      - 발송이 실패하면(SMS provider 장애·타임아웃) 챌린지를 저장하지 않고 502다.
+      - 재발송 간격을 채우지 않은 재요청은 429다.
+      - `expiresIn`은 인증번호 만료까지의 초다.
+
+      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 422 `AUTH_TERMS_AGREEMENT_REQUIRED`, 429 `TOO_MANY_REQUESTS`, 502 `UPSTREAM_ERROR`.
+      """;
+
+  private static final String[] PHONE_CODE_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  private static final String[] PHONE_CODE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  private static final String[] PHONE_CODE_422 = {"AUTH_TERMS_AGREEMENT_REQUIRED"};
+  private static final String[] PHONE_CODE_429 = {"TOO_MANY_REQUESTS"};
+  private static final String[] PHONE_CODE_502 = {"UPSTREAM_ERROR"};
+
+  private static final String PHONE_VERIFY_SUMMARY = "연락처 인증번호 확인";
+
+  private static final String PHONE_VERIFY_DESCRIPTION =
+      """
+      발송된 인증번호를 확인해 연락처를 검증 완료(VERIFIED)로 마킹한다. 임대인 온보딩(§5-2)·프로필 연락처 변경(§9)의 선행 단계다.
+
+      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 둘 다 허용한다.
+
+      - `phoneNumber`는 인증번호를 발송한 번호와 일치해야 한다.
+      - 챌린지 부재·만료·코드 불일치는 모두 422 하나로 응답한다(어느 쪽인지 구분해 주지 않는다).
+      - 코드 불일치가 시도 상한까지 누적되면 429로 잠긴다.
+
+      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 422 `AUTH_PHONE_VERIFICATION_FAILED`, 429 `TOO_MANY_REQUESTS`.
+      """;
+
+  private static final String[] PHONE_VERIFY_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  private static final String[] PHONE_VERIFY_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  private static final String[] PHONE_VERIFY_422 = {"AUTH_PHONE_VERIFICATION_FAILED"};
+  private static final String[] PHONE_VERIFY_429 = {"TOO_MANY_REQUESTS"};
+
+  private static final String BUSINESS_SUMMARY = "사업자등록번호 검증";
+
+  private static final String BUSINESS_DESCRIPTION =
+      """
+      사업자등록번호를 외부 registry로 검증한다. 결과를 저장하지 않는 무상태 검증이라 응답 본문으로만 돌려주며, 번호는 마스킹된다(예 `****567890`).
+
+      인증: 필수(정식 토큰 — `ACTIVE`·`ROLE_USER`, 임대인 전용). 온보딩 흐름이 아니라서 온보딩 토큰으로 호출하면 403이다.
+
+      - 온보딩 제출(§5-2)에는 포함되지 않는다 — 온보딩을 마친 임대인이 매물 등록 시점에 따로 호출한다.
+      - 허용 형식은 숫자 10자리와 하이픈 형식(`123-45-67890`) <b>둘 다</b>다(어댑터가 숫자만 정규화해 대조한다). 형식 위반은 외부 호출 전에 400 `INVALID_INPUT`으로 거른다.
+      - 미등록·휴폐업·진위 실패는 422, 외부 검증 API 장애·타임아웃은 502이며 어느 쪽도 결과를 저장하지 않는다.
+
+      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 403 `AUTH_ONBOARDING_REQUIRED`·`FORBIDDEN`, 422 `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 502 `UPSTREAM_ERROR`.
+      """;
+
+  private static final String[] BUSINESS_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  private static final String[] BUSINESS_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  // 403이 둘로 갈린다 — 온보딩 토큰(필터)은 AUTH_ONBOARDING_REQUIRED, 정식 토큰이지만 세입자(서비스)는 FORBIDDEN이다.
+  private static final String[] BUSINESS_403 = {"AUTH_ONBOARDING_REQUIRED", "FORBIDDEN"};
+  private static final String[] BUSINESS_422 = {"AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED"};
+  private static final String[] BUSINESS_502 = {"UPSTREAM_ERROR"};
+
+  private static final String LANDLORD_ONBOARDING_SUMMARY = "임대인 온보딩 제출";
+
+  private static final String LANDLORD_ONBOARDING_DESCRIPTION =
+      """
+      연락처·생년월일을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고 `userType`을 `LANDLORD`로 확정한 뒤 정식 토큰을 발급한다.
+
+      인증: 필수(온보딩 토큰, 상태 `TERMS_AGREED`). 약관 미동의(`PENDING`)면 422, 이미 완료(`ACTIVE`)면 409다.
+
+      - 요청은 `phoneNumber`·`birthDate` 둘뿐이다 — `phoneNumber`는 빈값만 막고(번호 형식 검증은 없다), `birthDate`는 필수이며 과거 날짜만 허용한다(미래면 400).
+      - `phoneNumber`는 사전 SMS 인증(§4-1·§4-2)한 번호와 일치해야 한다 — 미인증·불일치는 422 `AUTH_PHONE_NOT_VERIFIED`다(약관 검사가 연락처 검사보다 먼저다).
+      - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않고, 사업자등록번호도 받지 않는다(온보딩 후 별도 검증 §5-1).
+      - 국적·표시 언어는 서버가 `KR`·`ko`로 고정 부여한다. 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 필드 자체가 생략되고 `phoneNumber`는 마스킹된다.
+
+      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 409 `AUTH_ONBOARDING_ALREADY_COMPLETED`, 422 `AUTH_TERMS_AGREEMENT_REQUIRED`·`AUTH_PHONE_NOT_VERIFIED`.
+      """;
+
+  private static final String[] LANDLORD_ONBOARDING_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  private static final String[] LANDLORD_ONBOARDING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  private static final String[] LANDLORD_ONBOARDING_409 = {"AUTH_ONBOARDING_ALREADY_COMPLETED"};
+  private static final String[] LANDLORD_ONBOARDING_422 = {
+    "AUTH_TERMS_AGREEMENT_REQUIRED", "AUTH_PHONE_NOT_VERIFIED"
+  };
 
   // 서명이 깨진(다른 키) 액세스 토큰 — 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라 restdocs-api-spec 이
   // 무인증 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다(AuthOnboardingDocsTest 와 동일 의도).
@@ -115,7 +235,6 @@ class LandlordOnboardingDocsTest {
   }
 
   @Autowired private WebApplicationContext context;
-  @Autowired private JwtTokenService jwtTokenService;
   @Autowired private JwtProperties jwtProperties;
   @Autowired private PhoneVerificationProperties phoneProperties;
   @MockitoBean private VerificationSmsSender smsSender;
@@ -162,7 +281,9 @@ class LandlordOnboardingDocsTest {
             document(
                 "auth-phone-verification-code",
                 resourceDetails()
-                    .summary("연락처 인증번호 발송(임대인) — 동기 발송 성공 후 챌린지 저장(phoneNumber 마스킹 반환)"),
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(PHONE_CODE_SUMMARY)
+                    .description(PHONE_CODE_DESCRIPTION),
                 requestFields(phoneCodeRequestFields()),
                 responseFields(phoneCodeResponseFields())));
 
@@ -182,11 +303,16 @@ class LandlordOnboardingDocsTest {
         .andDo(
             document(
                 "auth-phone-verify",
-                resourceDetails().summary("연락처 인증번호 확인(임대인) — 검증 완료(VERIFIED) 마킹"),
+                resourceDetails()
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(PHONE_VERIFY_SUMMARY)
+                    .description(PHONE_VERIFY_DESCRIPTION),
                 requestFields(phoneVerifyRequestFields()),
                 responseFields(phoneVerifyResponseFields())));
 
     // 임대인 온보딩 제출 → 정식 토큰(사업자번호는 온보딩에서 수집하지 않음)
+    // 규약 13: 응답 필드를 세입자·임대인 합집합으로 합치며 세입자 전용 필드를 optional로 낮췄으므로,
+    // 임대인 응답에 그 필드가 없다는 계약을 단정으로 되메운다.
     String onboardingBody =
         mockMvc
             .perform(
@@ -196,14 +322,18 @@ class LandlordOnboardingDocsTest {
                     .content(landlordJson(PHONE)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.user.userType").value("LANDLORD"))
+            .andExpect(jsonPath("$.data.user.gender").doesNotExist())
+            .andExpect(jsonPath("$.data.user.occupation").doesNotExist())
+            .andExpect(jsonPath("$.data.user.visaType").doesNotExist())
             .andDo(
                 document(
                     "auth-landlord-onboarding",
                     resourceDetails()
-                        .summary(
-                            "임대인 온보딩 제출 — 약관·연락처 인증만으로 TERMS_AGREED→ACTIVE 전이, userType=LANDLORD 확정·정식 토큰 발급"),
+                        .tag(ApiDocsTags.AUTH)
+                        .summary(LANDLORD_ONBOARDING_SUMMARY)
+                        .description(LANDLORD_ONBOARDING_DESCRIPTION),
                     requestFields(landlordOnboardingRequestFields()),
-                    responseFields(landlordOnboardingResponseFields())))
+                    responseFields(onboardingResponseFields())))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -221,23 +351,60 @@ class LandlordOnboardingDocsTest {
             document(
                 "auth-business-verify",
                 resourceDetails()
-                    .summary(
-                        "사업자등록번호 검증(임대인 전용, 온보딩 후) — 정식 토큰(ACTIVE)으로 정상 사업자 무상태 검증(번호 마스킹 반환)"),
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(BUSINESS_SUMMARY)
+                    .description(BUSINESS_DESCRIPTION),
                 requestFields(businessVerifyRequestFields()),
                 responseFields(businessVerifyResponseFields())));
 
-    // 임대인 내 프로필 조회 — 생년월일 포함(프로필 조회 §8, #131). 세입자 전용 필드·이메일 미포함, 연락처는 본인이라 평문.
+    // 임대인 내 프로필 조회 — GET /users/me의 임대인 예시(세입자 예시는 AuthOnboardingDocsTest의 user-get-me).
+    // 규약 13: 세입자 전용 필드가 임대인 응답에 없다는 계약을 단정으로 되메운다.
     mockMvc
         .perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.userType").value("LANDLORD"))
         .andExpect(jsonPath("$.data.birthDate").value(BIRTH_DATE))
+        .andExpect(jsonPath("$.data.gender").doesNotExist())
+        .andExpect(jsonPath("$.data.occupation").doesNotExist())
+        .andExpect(jsonPath("$.data.visaType").doesNotExist())
         .andDo(
             document(
-                "users-me-landlord",
+                "user-get-me-landlord",
                 resourceDetails()
-                    .summary("내 프로필 조회(임대인) — name·생년월일·연락처(평문) 중심, 세입자 전용 필드·이메일 미포함"),
-                responseFields(landlordProfileResponseFields())));
+                    .tag(ApiDocsTags.USERS)
+                    .summary(ME_SUMMARY)
+                    .description(ME_DESCRIPTION),
+                responseFields(meResponseFields())));
+
+    // 임대인 내 프로필 수정 — PATCH /users/me의 임대인 예시(세입자 예시는 AuthOnboardingDocsTest의 user-patch-me).
+    // 임대인이 바꿀 수 있는 건 name·phoneNumber·marketingAgreed뿐이다. 여기서는 이미 SMS 인증된 현재 번호를 그대로
+    // 보내므로 재인증 게이트(§9, 미인증 422)에 걸리지 않는다.
+    // 규약 13: 세입자 전용 필드가 임대인 응답에 없다는 계약을 단정으로 되메운다.
+    mockMvc
+        .perform(
+            patch("/api/v1/users/me")
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"name\":\"Kim Imdae\",\"phoneNumber\":\""
+                        + PHONE
+                        + "\",\"marketingAgreed\":true}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.userType").value("LANDLORD"))
+        .andExpect(jsonPath("$.data.phoneNumber").value(PHONE))
+        .andExpect(jsonPath("$.data.marketingAgreed").value(true))
+        .andExpect(jsonPath("$.data.gender").doesNotExist())
+        .andExpect(jsonPath("$.data.occupation").doesNotExist())
+        .andExpect(jsonPath("$.data.visaType").doesNotExist())
+        .andDo(
+            document(
+                "user-patch-me-landlord",
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary(PATCH_ME_SUMMARY)
+                    .description(PATCH_ME_DESCRIPTION),
+                requestFields(patchRequestFields()),
+                responseFields(meResponseFields())));
   }
 
   /** 스펙의 "발생 가능한 에러"를 엔드포인트별로 실제 트리거해 스니펫으로 생성하고 status·error.code를 단정한다. */
@@ -248,7 +415,7 @@ class LandlordOnboardingDocsTest {
     agreeTerms(termsToken); // TERMS_AGREED(연락처 미검증, 온보딩 토큰)
     String activeAccess = onboardLandlordCompletely("err-l-active"); // 정식 ACTIVE 임대인 access
 
-    String expiredToken = expiredAccessToken();
+    String expiredToken = expiredAccessToken(jwtProperties);
 
     // ===== phone/verification-code =====
     perform(
@@ -259,37 +426,57 @@ class LandlordOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-phone-verification-code-invalid-input",
-        "연락처 인증번호 발송 — 입력 검증 실패 (400 INVALID_INPUT): phoneNumber 누락/빈값");
+        ApiDocsTags.AUTH,
+        PHONE_CODE_SUMMARY,
+        PHONE_CODE_DESCRIPTION,
+        PHONE_CODE_400);
 
-    perform(
+    // 문서 스니펫은 본문 없이 만든다(#151-4) — 본문 누락도 같은 MALFORMED_REQUEST 라 예시가 중복되지 않는다.
+    // 「깨진 JSON 거부」계약은 스니펫 없이 단정만 남겨 회귀를 막는다.
+    assertError(
+        mockMvc,
         post("/api/v1/auth/phone/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/phone/verification-code")
+            .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-phone-verification-code-malformed",
-        "연락처 인증번호 발송 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        PHONE_CODE_SUMMARY,
+        PHONE_CODE_DESCRIPTION,
+        PHONE_CODE_400);
 
+    // 401은 시큐리티 필터가 본문 파싱 전에 끊는다 — 요청 본문 없이도 같은 에러다(#151-4).
     perform(
         post("/api/v1/auth/phone/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"phoneNumber\":\"" + PHONE + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-phone-verification-code-unauthenticated",
-        "연락처 인증번호 발송 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        PHONE_CODE_SUMMARY,
+        PHONE_CODE_DESCRIPTION,
+        PHONE_CODE_401);
 
     perform(
         post("/api/v1/auth/phone/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"phoneNumber\":\"" + PHONE + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-phone-verification-code-token-expired",
-        "연락처 인증번호 발송 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        PHONE_CODE_SUMMARY,
+        PHONE_CODE_DESCRIPTION,
+        PHONE_CODE_401);
 
     // 약관 미동의(PENDING) 상태 발송 → 약관 동의 선행 안내 422
     perform(
@@ -300,7 +487,10 @@ class LandlordOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_TERMS_AGREEMENT_REQUIRED",
         "auth-phone-verification-code-terms-required",
-        "연락처 인증번호 발송 — 약관 미동의(PENDING) 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
+        ApiDocsTags.AUTH,
+        PHONE_CODE_SUMMARY,
+        PHONE_CODE_DESCRIPTION,
+        PHONE_CODE_422);
 
     // 재발송 간격 미달 → 429 (첫 발송 성공 직후 즉시 재요청)
     String resendToken = read(socialLogin("err-l-resend"), "data", "accessToken");
@@ -320,7 +510,10 @@ class LandlordOnboardingDocsTest {
         status().isTooManyRequests(),
         "TOO_MANY_REQUESTS",
         "auth-phone-verification-code-rate-limited",
-        "연락처 인증번호 발송 — 재발송 간격 미달 (429 TOO_MANY_REQUESTS)");
+        ApiDocsTags.AUTH,
+        PHONE_CODE_SUMMARY,
+        PHONE_CODE_DESCRIPTION,
+        PHONE_CODE_429);
 
     // SMS 발송 실패(provider 장애·타임아웃) → 502, 챌린지 미저장
     String smsFailToken = read(socialLogin("err-l-sms"), "data", "accessToken");
@@ -337,7 +530,10 @@ class LandlordOnboardingDocsTest {
         status().isBadGateway(),
         "UPSTREAM_ERROR",
         "auth-phone-verification-code-dispatch-failed",
-        "연락처 인증번호 발송 — SMS 발송 실패 (502 UPSTREAM_ERROR): 챌린지 미저장");
+        ApiDocsTags.AUTH,
+        PHONE_CODE_SUMMARY,
+        PHONE_CODE_DESCRIPTION,
+        PHONE_CODE_502);
 
     // US-1-5: 정식(ACTIVE) 임대인도 프로필 연락처 변경을 위해 인증번호를 받을 수 있다(온보딩 전용 아님 — 409 아님, ADR-0034 §6·§8).
     mockMvc
@@ -357,7 +553,10 @@ class LandlordOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_PHONE_VERIFICATION_FAILED",
         "auth-phone-verify-failed",
-        "연락처 인증 — 챌린지 부재/만료/불일치 (422 AUTH_PHONE_VERIFICATION_FAILED)");
+        ApiDocsTags.AUTH,
+        PHONE_VERIFY_SUMMARY,
+        PHONE_VERIFY_DESCRIPTION,
+        PHONE_VERIFY_422);
 
     perform(
         post("/api/v1/auth/phone/verify")
@@ -367,37 +566,54 @@ class LandlordOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-phone-verify-invalid-input",
-        "연락처 인증 확인 — 입력 검증 실패 (400 INVALID_INPUT): phoneNumber/code 누락·빈값");
+        ApiDocsTags.AUTH,
+        PHONE_VERIFY_SUMMARY,
+        PHONE_VERIFY_DESCRIPTION,
+        PHONE_VERIFY_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/phone/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/phone/verify")
+            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-phone-verify-malformed",
-        "연락처 인증 확인 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        PHONE_VERIFY_SUMMARY,
+        PHONE_VERIFY_DESCRIPTION,
+        PHONE_VERIFY_400);
 
     perform(
         post("/api/v1/auth/phone/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"phoneNumber\":\"" + PHONE + "\",\"code\":\"000000\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-phone-verify-unauthenticated",
-        "연락처 인증 확인 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        PHONE_VERIFY_SUMMARY,
+        PHONE_VERIFY_DESCRIPTION,
+        PHONE_VERIFY_401);
 
     perform(
         post("/api/v1/auth/phone/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"phoneNumber\":\"" + PHONE + "\",\"code\":\"000000\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-phone-verify-token-expired",
-        "연락처 인증 확인 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        PHONE_VERIFY_SUMMARY,
+        PHONE_VERIFY_DESCRIPTION,
+        PHONE_VERIFY_401);
 
     // 코드 불일치 누적 → 시도 상한 초과 429
     String attemptsToken = read(socialLogin("err-l-attempts"), "data", "accessToken");
@@ -426,7 +642,10 @@ class LandlordOnboardingDocsTest {
         status().isTooManyRequests(),
         "TOO_MANY_REQUESTS",
         "auth-phone-verify-rate-limited",
-        "연락처 인증 확인 — 코드 불일치 누적·시도 상한 초과 (429 TOO_MANY_REQUESTS)");
+        ApiDocsTags.AUTH,
+        PHONE_VERIFY_SUMMARY,
+        PHONE_VERIFY_DESCRIPTION,
+        PHONE_VERIFY_429);
 
     // ===== business/verify (온보딩 후 ACTIVE 임대인 전용) =====
     // 형식 위반 — 정식 토큰(ACTIVE 임대인) 인가 통과 후 입력 검증 실패
@@ -438,48 +657,84 @@ class LandlordOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-business-verify-invalid-input",
-        "사업자번호 검증 — 입력 검증 실패 (400 INVALID_INPUT): 숫자 10자리 형식 위반");
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/business/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/business/verify")
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-business-verify-malformed",
-        "사업자번호 검증 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_400);
 
     perform(
         post("/api/v1/auth/business/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"businessRegistrationNumber\":\"" + BIZ_NUMBER + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-business-verify-unauthenticated",
-        "사업자번호 검증 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_401);
 
     perform(
         post("/api/v1/auth/business/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"businessRegistrationNumber\":\"" + BIZ_NUMBER + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-business-verify-token-expired",
-        "사업자번호 검증 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_401);
 
-    // 온보딩 미완료(온보딩 토큰, ROLE_ONBOARDING) 호출 → 정식 토큰 필요 403
+    // 온보딩 미완료(온보딩 토큰, ROLE_ONBOARDING) 호출 → 정식 토큰 필요 403.
+    // 인가는 필터 체인에서 끝나므로 요청 본문이 필요 없다(#151-4).
     perform(
         post("/api/v1/auth/business/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(termsToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"businessRegistrationNumber\":\"" + BIZ_NUMBER + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
         "auth-business-verify-onboarding-required",
-        "사업자번호 검증 — 온보딩 미완료(온보딩 토큰) 호출 (403 AUTH_ONBOARDING_REQUIRED): 온보딩 완료 후 호출");
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_403);
+
+    // 온보딩을 마친 세입자(정식 토큰·ROLE_USER)가 호출 → 임대인 전용이라 403 FORBIDDEN.
+    // 필터(ROLE_USER)는 통과하고 서비스의 assertLandlord가 막는 판정이라 유효 본문이 필요하다(#151-4).
+    String tenantAccess = onboardTenantCompletely("err-l-tenant");
+    perform(
+        post("/api/v1/auth/business/verify")
+            .header(HttpHeaders.AUTHORIZATION, bearer(tenantAccess))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"businessRegistrationNumber\":\"" + BIZ_NUMBER + "\"}"),
+        status().isForbidden(),
+        "FORBIDDEN",
+        "auth-business-verify-forbidden",
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_403);
 
     // 미등록·휴폐업·진위 실패 → 422 (외부 검증 결과 false)
     String failNumber = "9999999999";
@@ -492,7 +747,10 @@ class LandlordOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED",
         "auth-business-verify-failed",
-        "사업자번호 검증 — 미등록·휴폐업·진위 실패 (422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED)");
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_422);
 
     // 외부 검증 API 장애·타임아웃 → 502
     String upstreamNumber = "8888888888";
@@ -506,9 +764,13 @@ class LandlordOnboardingDocsTest {
         status().isBadGateway(),
         "UPSTREAM_ERROR",
         "auth-business-verify-upstream-error",
-        "사업자번호 검증 — 외부 검증 API 장애·타임아웃 (502 UPSTREAM_ERROR): 검증 결과 미저장");
+        ApiDocsTags.AUTH,
+        BUSINESS_SUMMARY,
+        BUSINESS_DESCRIPTION,
+        BUSINESS_502);
 
     // ===== landlord/onboarding =====
+    // phoneNumber 빈값(@NotBlank) — 번호 형식 검증은 없다. birthDate 는 @NotNull·@Past 라 미래 날짜도 여기로 온다.
     perform(
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
@@ -517,37 +779,54 @@ class LandlordOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-landlord-onboarding-invalid-input",
-        "임대인 온보딩 — 입력 검증 실패 (400 INVALID_INPUT): phoneNumber 누락·빈값·형식 위반");
+        ApiDocsTags.AUTH,
+        LANDLORD_ONBOARDING_SUMMARY,
+        LANDLORD_ONBOARDING_DESCRIPTION,
+        LANDLORD_ONBOARDING_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/landlord/onboarding")
+            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-landlord-onboarding-malformed",
-        "임대인 온보딩 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        LANDLORD_ONBOARDING_SUMMARY,
+        LANDLORD_ONBOARDING_DESCRIPTION,
+        LANDLORD_ONBOARDING_400);
 
     perform(
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson(PHONE)),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-landlord-onboarding-unauthenticated",
-        "임대인 온보딩 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        LANDLORD_ONBOARDING_SUMMARY,
+        LANDLORD_ONBOARDING_DESCRIPTION,
+        LANDLORD_ONBOARDING_401);
 
     perform(
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(landlordJson(PHONE)),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-landlord-onboarding-token-expired",
-        "임대인 온보딩 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        LANDLORD_ONBOARDING_SUMMARY,
+        LANDLORD_ONBOARDING_DESCRIPTION,
+        LANDLORD_ONBOARDING_401);
 
     // 약관 미동의(PENDING) 상태 제출 → 약관 동의 선행 안내 422(연락처 검사보다 먼저)
     perform(
@@ -558,7 +837,10 @@ class LandlordOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_TERMS_AGREEMENT_REQUIRED",
         "auth-landlord-onboarding-terms-required",
-        "임대인 온보딩 — 약관 미동의 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
+        ApiDocsTags.AUTH,
+        LANDLORD_ONBOARDING_SUMMARY,
+        LANDLORD_ONBOARDING_DESCRIPTION,
+        LANDLORD_ONBOARDING_422);
 
     // 약관 동의했으나 연락처 미인증 → 422 AUTH_PHONE_NOT_VERIFIED
     String phoneNeedToken = read(socialLogin("err-l-phoneneed"), "data", "accessToken");
@@ -571,7 +853,10 @@ class LandlordOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_PHONE_NOT_VERIFIED",
         "auth-landlord-onboarding-phone-not-verified",
-        "임대인 온보딩 — 연락처 미인증·불일치 (422 AUTH_PHONE_NOT_VERIFIED)");
+        ApiDocsTags.AUTH,
+        LANDLORD_ONBOARDING_SUMMARY,
+        LANDLORD_ONBOARDING_DESCRIPTION,
+        LANDLORD_ONBOARDING_422);
 
     perform(
         post("/api/v1/auth/landlord/onboarding")
@@ -581,84 +866,61 @@ class LandlordOnboardingDocsTest {
         status().isConflict(),
         "AUTH_ONBOARDING_ALREADY_COMPLETED",
         "auth-landlord-onboarding-already-completed",
-        "임대인 온보딩 — 이미 완료한 사용자의 재요청 (409 AUTH_ONBOARDING_ALREADY_COMPLETED)");
+        ApiDocsTags.AUTH,
+        LANDLORD_ONBOARDING_SUMMARY,
+        LANDLORD_ONBOARDING_DESCRIPTION,
+        LANDLORD_ONBOARDING_409);
+
+    // ===== PATCH /users/me (임대인 연락처 변경) =====
+    // 현재 번호와 다른 새 번호를 보내면 그 번호의 SMS 재인증 마커를 확인한다 — 미인증·불일치는 422(§9, ADR-0034).
+    // 이 계정의 검증 마커는 온보딩에 쓴 PHONE이라 다른 번호로는 통과하지 못한다. 서비스 단계 판정이라 유효 본문이 필요하다.
+    perform(
+        patch("/api/v1/users/me")
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"phoneNumber\":\"" + UNVERIFIED_PHONE + "\"}"),
+        status().isUnprocessableEntity(),
+        "AUTH_PHONE_NOT_VERIFIED",
+        "user-patch-me-phone-not-verified",
+        ApiDocsTags.USERS,
+        PATCH_ME_SUMMARY,
+        PATCH_ME_DESCRIPTION,
+        PATCH_ME_422);
   }
 
   // ---- helpers ----
 
+  /**
+   * 에러 스니펫 1건. summary·description·tag는 <b>성공 스니펫과 같은 상수</b>를 받아야 한다 — 생성기가 같은 {@code (path,
+   * method)} 모델의 문구 중 첫 non-blank 하나만 채택하고 그 순서가 파일 순회에 좌우되기 때문이다. {@code errorCodes}는 오퍼레이션+status
+   * 단위 상수다.
+   */
   private void perform(
-      org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
-      org.springframework.test.web.servlet.ResultMatcher expectedStatus,
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
       String expectedCode,
       String identifier,
-      String summary)
+      String tag,
+      String summary,
+      String description,
+      String... errorCodes)
       throws Exception {
     mockMvc
         .perform(request)
         .andExpect(expectedStatus)
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
-        .andDo(errorSnippet(identifier, summary));
-  }
-
-  private static RestDocumentationResultHandler errorSnippet(String identifier, String summary) {
-    return document(
-        identifier,
-        resource(
-            ResourceSnippetParameters.builder()
-                .summary(summary)
-                .description(
-                    "실패 응답 — 공통 래퍼(success=false·data=null·error). 클라이언트는 error.code로 분기한다"
-                        + "(error-response-guide §1·§4).")
-                .responseFields(errorFields())
-                .build()));
-  }
-
-  private static List<FieldDescriptor> errorFields() {
-    return List.of(
-        fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 — 에러 응답은 항상 false"),
-        fieldWithPath("data")
-            .type(JsonFieldType.NULL)
-            .optional()
-            .description("에러 응답의 data는 항상 null"),
-        fieldWithPath("error.code")
-            .type(JsonFieldType.STRING)
-            .description("에러 식별 코드(UPPER_SNAKE_CASE) — 클라이언트 분기 기준"),
-        fieldWithPath("error.message")
-            .type(JsonFieldType.STRING)
-            .description("사람이 읽는 설명(민감정보 미포함, message로 분기 금지)"),
-        fieldWithPath("error.errors")
-            .type(JsonFieldType.ARRAY)
-            .description("입력 검증 실패 시 필드별 상세 목록. 그 외 에러는 빈 배열"),
-        fieldWithPath("error.errors[].field")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("검증에 실패한 요청 필드 경로(INVALID_INPUT에서만)"),
-        fieldWithPath("error.errors[].reason")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("해당 필드의 실패 사유(INVALID_INPUT에서만)"));
+        .andDo(errorSnippet(identifier, tag, summary, description, errorCodes));
   }
 
   // ---- 성공 응답/요청 필드 기술자 ----
 
-  private static FieldDescriptor field(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).description(description);
-  }
-
-  private static FieldDescriptor optField(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).optional().description(description);
-  }
-
-  private static FieldDescriptor errorNull() {
-    return fieldWithPath("error")
-        .type(JsonFieldType.NULL)
-        .optional()
-        .description("성공 응답의 error는 항상 null");
-  }
-
   private static List<FieldDescriptor> phoneCodeRequestFields() {
-    return List.of(field("phoneNumber", JsonFieldType.STRING, "인증번호를 받을 휴대폰 번호(빈값 불가)"));
+    return List.of(
+        field(
+            "phoneNumber",
+            JsonFieldType.STRING,
+            "인증번호를 받을 휴대폰 번호(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다)"));
   }
 
   private static List<FieldDescriptor> phoneCodeResponseFields() {
@@ -671,21 +933,24 @@ class LandlordOnboardingDocsTest {
 
   private static List<FieldDescriptor> phoneVerifyRequestFields() {
     return List.of(
-        field("phoneNumber", JsonFieldType.STRING, "인증번호를 발송한 연락처와 일치"),
-        field("code", JsonFieldType.STRING, "발송된 인증번호(빈값 불가)"));
+        field("phoneNumber", JsonFieldType.STRING, "인증번호를 발송한 연락처와 일치(필수)"),
+        field("code", JsonFieldType.STRING, "발송된 인증번호(필수, 빈값 불가)"));
   }
 
   private static List<FieldDescriptor> phoneVerifyResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처"),
-        field("data.verified", JsonFieldType.BOOLEAN, "검증 완료 여부(true)"),
+        field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
+        field("data.verified", JsonFieldType.BOOLEAN, "검증 완료 여부 — 성공 응답은 항상 true"),
         errorNull());
   }
 
   private static List<FieldDescriptor> businessVerifyRequestFields() {
     return List.of(
-        field("businessRegistrationNumber", JsonFieldType.STRING, "사업자등록번호 숫자 10자리(형식 검증)"));
+        field(
+            "businessRegistrationNumber",
+            JsonFieldType.STRING,
+            "사업자등록번호(필수) — 숫자 10자리 또는 하이픈 형식(123-45-67890) 둘 다 허용한다. 어댑터가 숫자만 정규화해 대조하므로 두 형식이 동일하게 처리된다"));
   }
 
   private static List<FieldDescriptor> businessVerifyResponseFields() {
@@ -693,76 +958,17 @@ class LandlordOnboardingDocsTest {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field(
             "data.businessRegistrationNumber", JsonFieldType.STRING, "마스킹된 사업자등록번호(예: ****567890)"),
-        field("data.verified", JsonFieldType.BOOLEAN, "정상 사업자 검증 완료 여부(true)"),
+        field("data.verified", JsonFieldType.BOOLEAN, "정상 사업자 검증 완료 여부 — 성공 응답은 항상 true"),
         errorNull());
   }
 
   private static List<FieldDescriptor> landlordOnboardingRequestFields() {
     return List.of(
-        field("phoneNumber", JsonFieldType.STRING, "사전 SMS 인증된 연락처와 일치(필수)"),
-        field("birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD, 필수·과거 날짜만)"));
-  }
-
-  /**
-   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(gender·occupation·visaType)는 {@code null}이라 응답에서 생략된다(UserProfileView
-   * {@code @JsonInclude(NON_NULL)}). 이름({@code name})·이메일({@code email})은 소셜 로그인 시 provider 값으로 확정돼
-   * 임대인도 보유하므로 응답에 포함된다(#192). 국적({@code country})·표시 언어({@code lang})는 서버가 KR·ko로 고정 부여하므로 응답에
-   * 포함된다(ADR-0034 개정·#141). 임대인은 단일 {@code name}·생년월일({@code birthDate})·마스킹된 {@code phoneNumber}를
-   * 받는다(spec §5-2, #131·#192).
-   */
-  private static List<FieldDescriptor> landlordOnboardingResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.user.id", JsonFieldType.NUMBER, "회원 ID"),
-        field("data.user.name", JsonFieldType.STRING, "임대인 이름(소셜 로그인 캡처 — 성·이름 합친 전체 이름)"),
-        field("data.user.email", JsonFieldType.STRING, "이메일(소셜 로그인 provider 값 — 임대인도 보유, #192)"),
-        field("data.user.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
-        field("data.user.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
-        field("data.user.country", JsonFieldType.STRING, "국적 ISO 코드(임대인은 서버 고정 KR)"),
-        field("data.user.countryName", JsonFieldType.STRING, "국가 표시명(countries 참조 — South Korea)"),
-        field("data.user.countryFlag", JsonFieldType.STRING, "국기 이미지 URL(flagcdn.com SVG)"),
-        field("data.user.lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(임대인은 서버 고정 ko)"),
-        field("data.user.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
-        field("data.user.userType", JsonFieldType.STRING, "회원 역할(LANDLORD)"),
-        field("data.user.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"),
-        field("data.user.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"),
-        field("data.user.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"),
-        field("data.tokenType", JsonFieldType.STRING, "토큰 타입(Bearer)"),
         field(
-            "data.accessToken",
+            "phoneNumber",
             JsonFieldType.STRING,
-            "정식 access 토큰(JWT, onboardingCompleted=true)"),
-        field("data.refreshToken", JsonFieldType.STRING, "정식 refresh 토큰(불투명)"),
-        field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
-        errorNull());
-  }
-
-  /**
-   * 임대인 프로필 조회(GET /users/me) 응답 필드 — 세입자 전용 필드(gender·occupation·visaType)는 {@code null}이라
-   * 생략된다(UserProfileResponse {@code @JsonInclude(NON_NULL)}). 이름({@code name})·이메일({@code email})은
-   * 소셜 로그인 provider 값으로 임대인도 보유하므로 포함된다(#192). 국적({@code country})·표시 언어({@code lang})는 서버가 KR·ko로
-   * 고정 부여하므로 포함된다(ADR-0034 개정·#141). 본인 조회이므로 {@code phoneNumber}는 평문이다(spec §8, #131).
-   */
-  private static List<FieldDescriptor> landlordProfileResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.id", JsonFieldType.NUMBER, "회원 ID"),
-        field("data.userType", JsonFieldType.STRING, "회원 역할(LANDLORD)"),
-        field("data.name", JsonFieldType.STRING, "임대인 이름(성·이름 합친 전체 이름)"),
-        field("data.email", JsonFieldType.STRING, "이메일(소셜 로그인 provider 값 — 임대인도 보유, #192)"),
-        field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
-        field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
-        field("data.country", JsonFieldType.STRING, "국적 ISO 코드(임대인은 서버 고정 KR)"),
-        field("data.countryName", JsonFieldType.STRING, "국가 표시명(South Korea)"),
-        field("data.countryFlag", JsonFieldType.STRING, "국기 이미지 URL(flagcdn.com SVG)"),
-        field("data.lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(임대인은 서버 고정 ko)"),
-        field("data.phoneNumber", JsonFieldType.STRING, "연락처(본인 조회는 평문)"),
-        field("data.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"),
-        field("data.termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의 여부"),
-        field("data.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의 여부"),
-        field("data.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"),
-        field("data.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"),
-        errorNull());
+            "사전 SMS 인증된 연락처와 일치(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다). 불일치·미인증은 422"),
+        field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(필수, 과거 날짜만 — 미래면 400)"));
   }
 
   private String socialLogin(String subject) throws Exception {
@@ -833,17 +1039,25 @@ class LandlordOnboardingDocsTest {
     return read(body, "data", "accessToken");
   }
 
-  private String expiredAccessToken() {
-    SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
-    Instant now = Instant.now();
-    return Jwts.builder()
-        .issuer(jwtProperties.getIssuer())
-        .subject("1")
-        .claim("onboardingCompleted", true)
-        .issuedAt(Date.from(now.minusSeconds(7200)))
-        .expiration(Date.from(now.minusSeconds(3600)))
-        .signWith(key)
-        .compact();
+  /**
+   * 신규 소셜 로그인 → 약관 동의 → <b>세입자</b> 온보딩까지 수행하고 정식 access 토큰을 돌려준다. 임대인 전용 API가 역할로 거부하는(403
+   * FORBIDDEN) 예시를 만들기 위한 것이라 연락처 인증 단계가 없다 — 세입자 트랙 자체의 문서는 {@code AuthOnboardingDocsTest}가 만든다.
+   */
+  private String onboardTenantCompletely(String subject) throws Exception {
+    String token = read(socialLogin(subject), "data", "accessToken");
+    agreeTerms(token);
+    String body =
+        mockMvc
+            .perform(
+                post("/api/v1/auth/onboarding")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(TENANT_ONBOARDING_BODY))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return read(body, "data", "accessToken");
   }
 
   private String read(String json, String... path) throws Exception {
@@ -852,10 +1066,6 @@ class LandlordOnboardingDocsTest {
       node = node.path(key);
     }
     return node.asText();
-  }
-
-  private static String bearer(String token) {
-    return "Bearer " + token;
   }
 
   private static String landlordJson(String phone) {
