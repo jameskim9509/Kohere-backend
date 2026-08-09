@@ -1,13 +1,15 @@
 package com.kohere.user;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
+import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static com.kohere.docs.ApiDocsFields.errorNull;
+import static com.kohere.docs.ApiDocsFields.field;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
-import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
@@ -18,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsTags;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
 import com.kohere.user.api.UserAccountService;
@@ -62,6 +65,22 @@ class UserBlockDocsTest {
   private static final String LISTING_ID = "6858e2000000000000000001";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000abc";
   private static final Pattern BOOKING_ID = Pattern.compile("\"bookingId\"\\s*:\\s*(\\d+)");
+
+  private static final String BLOCKS_LIST_DESCRIPTION =
+      """
+      내가 차단한 상대 목록을 페이지로 조회한다.
+
+      인증: 정식(ACTIVE) 회원 본인.
+
+      차단은 예약 문맥(`POST /api/v1/bookings/{bookingId}/block`)에서만 생성된다.
+      """;
+
+  private static final String UNBLOCK_DESCRIPTION =
+      """
+      차단을 해제한다. 차단하지 않은 상대를 해제해도 204다(멱등).
+
+      인증: 정식(ACTIVE) 회원 본인. 본문·응답 본문이 없다.
+      """;
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
@@ -144,39 +163,24 @@ class UserBlockDocsTest {
         .andDo(
             document(
                 "user-blocks-list",
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary("내 차단 목록 조회")
+                    .description(BLOCKS_LIST_DESCRIPTION),
                 queryParameters(
                     parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
                     parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")),
                 responseFields(
-                    fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부"),
-                    fieldWithPath("data.content[].userId")
-                        .type(JsonFieldType.NUMBER)
-                        .description("차단한 상대 식별자"),
-                    fieldWithPath("data.content[].name")
-                        .type(JsonFieldType.STRING)
-                        .description("차단한 상대 표시명(마스킹 수준 확인 필요)"),
-                    fieldWithPath("data.content[].blockedAt")
-                        .type(JsonFieldType.STRING)
-                        .description("차단 시각(UTC)"),
-                    fieldWithPath("data.page.number")
-                        .type(JsonFieldType.NUMBER)
-                        .description("현재 페이지 번호"),
-                    fieldWithPath("data.page.size")
-                        .type(JsonFieldType.NUMBER)
-                        .description("페이지 크기"),
-                    fieldWithPath("data.page.totalElements")
-                        .type(JsonFieldType.NUMBER)
-                        .description("전체 건수"),
-                    fieldWithPath("data.page.totalPages")
-                        .type(JsonFieldType.NUMBER)
-                        .description("전체 페이지 수"),
-                    fieldWithPath("data.page.hasNext")
-                        .type(JsonFieldType.BOOLEAN)
-                        .description("다음 페이지 존재 여부"),
-                    fieldWithPath("error")
-                        .type(JsonFieldType.NULL)
-                        .optional()
-                        .description("성공 응답의 error는 항상 null"))));
+                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
+                    field("data.content[].userId", JsonFieldType.NUMBER, "차단한 상대 식별자"),
+                    field("data.content[].name", JsonFieldType.STRING, "차단한 상대 표시명(마스킹 수준 확인 필요)"),
+                    field("data.content[].blockedAt", JsonFieldType.STRING, "차단 시각(UTC)"),
+                    field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
+                    field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
+                    field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
+                    field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
+                    field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+                    errorNull())));
   }
 
   @Test
@@ -191,6 +195,10 @@ class UserBlockDocsTest {
         .andDo(
             document(
                 "user-blocks-unblock",
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary("차단 해제")
+                    .description(UNBLOCK_DESCRIPTION),
                 pathParameters(parameterWithName("userId").description("차단을 해제할 상대 식별자"))));
 
     mockMvc

@@ -3,6 +3,9 @@ package com.kohere.listing.infrastructure;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static com.kohere.docs.ApiDocsFields.errorFields;
+import static com.kohere.docs.ApiDocsFields.errorNull;
+import static com.kohere.docs.ApiDocsFields.field;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
@@ -22,6 +25,7 @@ import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsTags;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.place.PlaceSearchClient;
 import com.kohere.listing.domain.place.PlaceSearchResult;
@@ -327,6 +331,7 @@ class ListingDocsTest {
             document(
                 "listings-list",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(LISTINGS_LIST_SUMMARY)
                     .description(LISTINGS_LIST_DESCRIPTION),
                 queryParameters(listQueryParameters()),
@@ -351,6 +356,7 @@ class ListingDocsTest {
             document(
                 "listings-search",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(LISTINGS_SEARCH_SUMMARY)
                     .description(LISTINGS_SEARCH_DESCRIPTION),
                 queryParameters(searchQueryParameters()),
@@ -369,6 +375,7 @@ class ListingDocsTest {
             document(
                 "listings-search-empty-place",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(LISTINGS_SEARCH_SUMMARY)
                     .description(LISTINGS_SEARCH_DESCRIPTION),
                 queryParameters(searchQueryParameters()),
@@ -394,6 +401,7 @@ class ListingDocsTest {
             document(
                 "listings-map",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(LISTINGS_MAP_SUMMARY)
                     .description(LISTINGS_MAP_DESCRIPTION),
                 queryParameters(mapQueryParameters()),
@@ -418,6 +426,7 @@ class ListingDocsTest {
             document(
                 "listing-detail",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(LISTING_DETAIL_SUMMARY)
                     .description(LISTING_DETAIL_DESCRIPTION),
                 pathParameters(
@@ -435,6 +444,7 @@ class ListingDocsTest {
             document(
                 "listing-favorite-add-created",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(FAVORITE_ADD_SUMMARY)
                     .description(FAVORITE_ADD_DESCRIPTION),
                 pathParameters(favoritePathParameters()),
@@ -451,6 +461,7 @@ class ListingDocsTest {
             document(
                 "listing-favorite-add-existing",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary("매물 찜 등록 — 이미 찜한 상태")
                     .description(
                         FAVORITE_ADD_DESCRIPTION + " 이미 찜한 매물을 다시 호출해도 중복 저장하지 않고 현재 상태를 반환한다."),
@@ -474,6 +485,7 @@ class ListingDocsTest {
             document(
                 "my-favorites-list",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(FAVORITES_LIST_SUMMARY)
                     .description(FAVORITES_LIST_DESCRIPTION),
                 queryParameters(favoritesQueryParameters()),
@@ -504,6 +516,7 @@ class ListingDocsTest {
             document(
                 "my-recent-listings",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(RECENT_LISTINGS_SUMMARY)
                     .description(RECENT_LISTINGS_DESCRIPTION),
                 responseFields(recentListingsResponseFields())));
@@ -519,6 +532,7 @@ class ListingDocsTest {
             document(
                 "listing-favorite-remove",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(FAVORITE_REMOVE_SUMMARY)
                     .description(FAVORITE_REMOVE_DESCRIPTION),
                 pathParameters(favoritePathParameters()),
@@ -549,6 +563,7 @@ class ListingDocsTest {
             document(
                 "listing-places",
                 resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
                     .summary(LISTING_PLACES_SUMMARY)
                     .description(LISTING_PLACES_DESCRIPTION),
                 queryParameters(placeQueryParameters()),
@@ -937,6 +952,7 @@ class ListingDocsTest {
         identifier,
         resource(
             ResourceSnippetParameters.builder()
+                .tag(ApiDocsTags.LISTINGS)
                 .summary(summary)
                 .description(description)
                 .responseFields(errorFields())
@@ -1413,46 +1429,6 @@ class ListingDocsTest {
     fields.addAll(listingDocumentFields("data", null));
     fields.add(errorNull());
     return fields;
-  }
-
-  /** REST Docs 필드 설명을 짧게 만들기 위한 헬퍼다. */
-  private static FieldDescriptor field(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).description(description);
-  }
-
-  /** 공통 실패 응답 필드 문서 정의다. */
-  private static List<FieldDescriptor> errorFields() {
-    return List.of(
-        fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 — 에러 응답은 항상 false"),
-        fieldWithPath("data")
-            .type(JsonFieldType.NULL)
-            .optional()
-            .description("에러 응답의 data는 항상 null"),
-        fieldWithPath("error.code")
-            .type(JsonFieldType.STRING)
-            .description("에러 식별 코드(UPPER_SNAKE_CASE) — 클라이언트 분기 기준"),
-        fieldWithPath("error.message")
-            .type(JsonFieldType.STRING)
-            .description("사람이 읽는 설명(민감정보 미포함, message로 분기 금지)"),
-        fieldWithPath("error.errors")
-            .type(JsonFieldType.ARRAY)
-            .description("입력 검증 실패 시 필드별 상세 목록. 그 외 에러는 빈 배열"),
-        fieldWithPath("error.errors[].field")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("검증에 실패한 요청 필드 경로(INVALID_INPUT에서만)"),
-        fieldWithPath("error.errors[].reason")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("해당 필드의 실패 사유(INVALID_INPUT에서만)"));
-  }
-
-  /** 공통 성공 응답의 error=null 필드를 문서화한다. */
-  private static FieldDescriptor errorNull() {
-    return fieldWithPath("error")
-        .type(JsonFieldType.NULL)
-        .optional()
-        .description("성공 응답의 error는 항상 null");
   }
 
   private String expiredAccessToken() {
