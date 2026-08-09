@@ -1,25 +1,26 @@
 package com.kohere.booking;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
-import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
-import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsErrors;
+import com.kohere.docs.ApiDocsTags;
+import com.kohere.docs.BookingDocsFields;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
 import com.kohere.user.api.ApplicantProfileView;
@@ -38,11 +39,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
+import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
@@ -53,6 +55,10 @@ import org.springframework.web.context.WebApplicationContext;
  *
  * <p>예약 저장은 실제 MySQL(Testcontainers, JPA)에 하고, 교차 모듈 협력({@code listing :: api}·{@code user ::
  * api})은 {@link MockitoBean}으로 대체한다(listing::api는 스텁 미구현). 인증은 실제 access 토큰(ROLE_USER)을 발급해 사용한다.
+ *
+ * <p>오퍼레이션 문구·필드 기술자는 {@link BookingDocsFields}에 한 벌만 두고 여기서 참조한다 — 생성({@code POST
+ * /api/v1/listings/{listingId}/bookings})의 차단 403 스니펫이 {@code BookingManagementDocsTest}에 있어 한
+ * 오퍼레이션이 두 파일에 걸치기 때문이다(#151).
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -150,28 +156,21 @@ class BookingDocsTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequestJson(ROOM_OFFER_ID, "2030-01-01", 6)))
         .andExpect(status().isCreated())
+        .andExpect(header().exists(HttpHeaders.LOCATION))
         .andExpect(jsonPath("$.data.status").value("REQUESTED"))
         .andExpect(jsonPath("$.data.roomOfferId").value(ROOM_OFFER_ID))
         .andExpect(jsonPath("$.data.contractPeriod").value(6))
         .andDo(
             document(
                 "booking-create",
-                pathParameters(
-                    parameterWithName("listingId").description("예약 대상 매물 ID(ObjectId hex)")),
-                requestFields(
-                    field("roomOfferId", JsonFieldType.STRING, "예약 대상 방 상품 ID"),
-                    field("moveInDate", JsonFieldType.STRING, "타겟 입주일(YYYY-MM-DD)"),
-                    field("contractPeriod", JsonFieldType.NUMBER, "계약 개월수(양의 정수)")),
-                responseFields(
-                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
-                    field("data.bookingId", JsonFieldType.NUMBER, "예약 식별자"),
-                    field("data.status", JsonFieldType.STRING, "예약 상태(REQUESTED 고정)"),
-                    field("data.listingId", JsonFieldType.STRING, "매물 ID"),
-                    field("data.roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
-                    field("data.moveInDate", JsonFieldType.STRING, "타겟 입주일"),
-                    field("data.contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
-                    field("data.createdAt", JsonFieldType.STRING, "예약 일시(UTC)"),
-                    errorNull())));
+                resourceDetails()
+                    .tag(ApiDocsTags.BOOKINGS)
+                    .summary(BookingDocsFields.CREATE_SUMMARY)
+                    .description(BookingDocsFields.CREATE_DESCRIPTION),
+                pathParameters(BookingDocsFields.createPathParameters()),
+                requestFields(BookingDocsFields.createRequestFields()),
+                BookingDocsFields.createResponseHeaders(),
+                responseFields(BookingDocsFields.createResponseFields())));
   }
 
   @Test
@@ -181,7 +180,7 @@ class BookingDocsTest {
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
 
-    perform(
+    performCreateError(
         post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, tenantToken())
             .contentType(MediaType.APPLICATION_JSON)
@@ -189,7 +188,7 @@ class BookingDocsTest {
         status().isConflict(),
         "BOOKING_ALREADY_EXISTS",
         "booking-create-duplicate",
-        "동일 세입자가 동일 방 상품에 재신청하면 409 BOOKING_ALREADY_EXISTS");
+        BookingDocsFields.CREATE_409);
   }
 
   // ── §2 내 예약 목록 ───────────────────────────────────────────
@@ -207,31 +206,19 @@ class BookingDocsTest {
                 .param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].bookingId").exists())
+        // 규약 13 — 임대인 전용 키를 합집합 스키마에서 optional로 낮춘 대가로, 세입자 응답에 정말 없음을 단정한다.
+        .andExpect(jsonPath("$.data.content[0].roomOfferName").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].applicantName").doesNotExist())
         .andDo(
             document(
-                "booking-list",
-                queryParameters(
-                    parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
-                    parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")),
-                responseFields(
-                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
-                    field("data.content[].bookingId", JsonFieldType.NUMBER, "예약 식별자"),
-                    field("data.content[].listingId", JsonFieldType.STRING, "매물 ID"),
-                    optField(
-                        "data.content[].title", JsonFieldType.STRING, "매물 제목(조회 시 조인, 삭제 시 null)"),
-                    optField(
-                        "data.content[].thumbnailUrl", JsonFieldType.STRING, "매물 썸네일(삭제 시 null)"),
-                    field("data.content[].roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
-                    field("data.content[].moveInDate", JsonFieldType.STRING, "타겟 입주일"),
-                    field("data.content[].contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
-                    field("data.content[].status", JsonFieldType.STRING, "예약 상태"),
-                    field("data.content[].createdAt", JsonFieldType.STRING, "예약 일시"),
-                    field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
-                    field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
-                    field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
-                    field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
-                    field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
-                    errorNull())));
+                "booking-list-tenant",
+                resourceDetails()
+                    .tag(ApiDocsTags.BOOKINGS)
+                    .summary(BookingDocsFields.LIST_SUMMARY)
+                    .description(BookingDocsFields.LIST_DESCRIPTION),
+                queryParameters(BookingDocsFields.listQueryParameters()),
+                responseFields(BookingDocsFields.listResponseFields())));
   }
 
   // ── §3 예약 단건 상세 ─────────────────────────────────────────
@@ -251,30 +238,22 @@ class BookingDocsTest {
         .andExpect(jsonPath("$.data.deposit").value(5_000_000))
         .andExpect(jsonPath("$.data.totalAmount").value(8_000_000)) // 5,000,000 + 500,000 × 6
         .andExpect(jsonPath("$.data.tenantName").value("길동 홍"))
+        // 규약 13 — 임대인 전용 키(신청자 PII 포함)를 optional로 낮춘 대가로, 세입자 응답에 정말 없음을 단정한다.
+        .andExpect(jsonPath("$.data.applicantId").doesNotExist())
+        .andExpect(jsonPath("$.data.applicantName").doesNotExist())
+        .andExpect(jsonPath("$.data.applicantGender").doesNotExist())
+        .andExpect(jsonPath("$.data.applicantCountry").doesNotExist())
+        .andExpect(jsonPath("$.data.applicantCountryName").doesNotExist())
+        .andExpect(jsonPath("$.data.applicantEmail").doesNotExist())
         .andDo(
             document(
-                "booking-detail",
-                pathParameters(parameterWithName("bookingId").description("예약 식별자(본인 예약)")),
-                responseFields(
-                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
-                    field("data.bookingId", JsonFieldType.NUMBER, "예약 식별자"),
-                    field("data.status", JsonFieldType.STRING, "예약 상태"),
-                    field("data.listingId", JsonFieldType.STRING, "매물 ID"),
-                    field("data.roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
-                    optField("data.title", JsonFieldType.STRING, "매물 제목(조회 시 조인)"),
-                    optField("data.thumbnailUrl", JsonFieldType.STRING, "매물 썸네일"),
-                    optField("data.address", JsonFieldType.STRING, "매물 주소"),
-                    optField("data.roomOfferName", JsonFieldType.STRING, "방 상품명"),
-                    field("data.createdAt", JsonFieldType.STRING, "예약 일시(UTC)"),
-                    field("data.moveInDate", JsonFieldType.STRING, "타겟 입주일"),
-                    field("data.contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
-                    field("data.tenantName", JsonFieldType.STRING, "예약자 성명"),
-                    field("data.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
-                    field(
-                        "data.totalAmount",
-                        JsonFieldType.NUMBER,
-                        "총 금액 = 보증금 + 월세 × 계약 개월수(관리비 제외)"),
-                    errorNull())));
+                "booking-detail-tenant",
+                resourceDetails()
+                    .tag(ApiDocsTags.BOOKINGS)
+                    .summary(BookingDocsFields.DETAIL_SUMMARY)
+                    .description(BookingDocsFields.DETAIL_DESCRIPTION),
+                pathParameters(BookingDocsFields.detailPathParameters()),
+                responseFields(BookingDocsFields.detailResponseFields())));
   }
 
   // ── §2 임대인 분기 — 받은 신청 목록 ───────────────────────────
@@ -298,31 +277,12 @@ class BookingDocsTest {
         .andDo(
             document(
                 "booking-list-landlord",
-                queryParameters(
-                    parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
-                    parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")),
-                responseFields(
-                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
-                    field("data.content[].bookingId", JsonFieldType.NUMBER, "예약 식별자"),
-                    field("data.content[].listingId", JsonFieldType.STRING, "매물 ID"),
-                    optField(
-                        "data.content[].title", JsonFieldType.STRING, "매물 제목(조회 시 조인, 삭제 시 null)"),
-                    optField(
-                        "data.content[].thumbnailUrl", JsonFieldType.STRING, "매물 썸네일(삭제 시 null)"),
-                    field("data.content[].roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
-                    optField(
-                        "data.content[].roomOfferName", JsonFieldType.STRING, "방 상품명(조회 시 조인)"),
-                    field("data.content[].applicantName", JsonFieldType.STRING, "신청자(세입자) 성명"),
-                    field("data.content[].moveInDate", JsonFieldType.STRING, "타겟 입주일"),
-                    field("data.content[].contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
-                    field("data.content[].status", JsonFieldType.STRING, "예약 상태"),
-                    field("data.content[].createdAt", JsonFieldType.STRING, "예약 일시"),
-                    field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
-                    field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
-                    field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
-                    field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
-                    field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
-                    errorNull())));
+                resourceDetails()
+                    .tag(ApiDocsTags.BOOKINGS)
+                    .summary(BookingDocsFields.LIST_SUMMARY)
+                    .description(BookingDocsFields.LIST_DESCRIPTION),
+                queryParameters(BookingDocsFields.listQueryParameters()),
+                responseFields(BookingDocsFields.listResponseFields())));
   }
 
   // ── §3 임대인 분기 — 받은 신청 단건 상세 ──────────────────────
@@ -346,42 +306,17 @@ class BookingDocsTest {
         .andExpect(jsonPath("$.data.applicantName").value("길동 홍"))
         .andExpect(jsonPath("$.data.applicantEmail").value("hong@example.com"))
         .andExpect(jsonPath("$.data.totalAmount").value(8_000_000)) // 5,000,000 + 500,000 × 6
+        // 규약 13 — 세입자 전용 키를 optional로 낮춘 대가로, 임대인 응답에 정말 없음을 단정한다.
+        .andExpect(jsonPath("$.data.tenantName").doesNotExist())
         .andDo(
             document(
                 "booking-detail-landlord",
-                pathParameters(
-                    parameterWithName("bookingId").description("예약 식별자(내 소유 매물에 신청된 예약)")),
-                responseFields(
-                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
-                    field("data.bookingId", JsonFieldType.NUMBER, "예약 식별자"),
-                    field("data.status", JsonFieldType.STRING, "예약 상태"),
-                    field("data.listingId", JsonFieldType.STRING, "매물 ID"),
-                    field("data.roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
-                    optField("data.title", JsonFieldType.STRING, "매물 제목(조회 시 조인)"),
-                    optField("data.thumbnailUrl", JsonFieldType.STRING, "매물 썸네일"),
-                    optField("data.address", JsonFieldType.STRING, "매물 주소"),
-                    optField("data.roomOfferName", JsonFieldType.STRING, "방 상품명"),
-                    field("data.createdAt", JsonFieldType.STRING, "예약 일시(UTC)"),
-                    field("data.moveInDate", JsonFieldType.STRING, "타겟 입주일"),
-                    field("data.contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
-                    field("data.applicantId", JsonFieldType.NUMBER, "신청자(세입자) ID"),
-                    field("data.applicantName", JsonFieldType.STRING, "신청자 성명"),
-                    optField(
-                        "data.applicantGender",
-                        JsonFieldType.STRING,
-                        "신청자 성별(UPPER_SNAKE, 마스킹 없음 · 탈퇴 시 null)"),
-                    optField(
-                        "data.applicantCountry", JsonFieldType.STRING, "신청자 국적 ISO 코드(탈퇴 시 null)"),
-                    optField(
-                        "data.applicantCountryName", JsonFieldType.STRING, "신청자 국적 표시명(탈퇴 시 null)"),
-                    optField(
-                        "data.applicantEmail", JsonFieldType.STRING, "신청자 이메일(마스킹 없음 · 탈퇴 시 null)"),
-                    field("data.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
-                    field(
-                        "data.totalAmount",
-                        JsonFieldType.NUMBER,
-                        "총 금액 = 보증금 + 월세 × 계약 개월수(관리비 제외, 세입자 분기와 동일)"),
-                    errorNull())));
+                resourceDetails()
+                    .tag(ApiDocsTags.BOOKINGS)
+                    .summary(BookingDocsFields.DETAIL_SUMMARY)
+                    .description(BookingDocsFields.DETAIL_DESCRIPTION),
+                pathParameters(BookingDocsFields.detailPathParameters()),
+                responseFields(BookingDocsFields.detailResponseFields())));
   }
 
   // ── 에러 ─────────────────────────────────────────────────────
@@ -389,7 +324,7 @@ class BookingDocsTest {
   void createBooking_nonTenant_forbidden() throws Exception {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("LANDLORD");
 
-    perform(
+    performCreateError(
         post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, tenantToken())
             .contentType(MediaType.APPLICATION_JSON)
@@ -397,7 +332,7 @@ class BookingDocsTest {
         status().isForbidden(),
         "FORBIDDEN",
         "booking-create-forbidden",
-        "예약은 세입자 전용 — 임대인 등 비세입자 요청은 403 FORBIDDEN");
+        BookingDocsFields.CREATE_403);
   }
 
   @Test
@@ -406,7 +341,7 @@ class BookingDocsTest {
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
         .willReturn(Optional.empty());
 
-    perform(
+    performCreateError(
         post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, tenantToken())
             .contentType(MediaType.APPLICATION_JSON)
@@ -414,7 +349,7 @@ class BookingDocsTest {
         status().isNotFound(),
         "LISTING_NOT_FOUND",
         "booking-create-listing-not-found",
-        "매물/방 상품이 없거나 비공개면 404 LISTING_NOT_FOUND");
+        BookingDocsFields.CREATE_404);
   }
 
   @Test
@@ -423,7 +358,7 @@ class BookingDocsTest {
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
 
-    perform(
+    performCreateError(
         post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, tenantToken())
             .contentType(MediaType.APPLICATION_JSON)
@@ -431,14 +366,14 @@ class BookingDocsTest {
         status().isUnprocessableEntity(),
         "BOOKING_INVALID_MOVE_IN_DATE",
         "booking-create-invalid-move-in-date",
-        "타겟 입주일이 과거이거나 입주 가능일 이전이면 422");
+        BookingDocsFields.CREATE_422);
   }
 
   @Test
   void createBooking_missingRoomOfferId_invalidInput() throws Exception {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
 
-    perform(
+    performCreateError(
         post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, tenantToken())
             .contentType(MediaType.APPLICATION_JSON)
@@ -446,7 +381,18 @@ class BookingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "booking-create-invalid-input",
-        "필수값 누락·contractPeriod 비양수는 400 INVALID_INPUT");
+        BookingDocsFields.CREATE_400);
+  }
+
+  @Test
+  void createBooking_unauthenticated() throws Exception {
+    performCreateError(
+        post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "booking-create-unauthenticated",
+        BookingDocsFields.CREATE_401);
   }
 
   @Test
@@ -457,27 +403,40 @@ class BookingDocsTest {
         status().isNotFound(),
         "BOOKING_NOT_FOUND",
         "booking-detail-not-found",
-        "예약이 없거나 본인 예약이 아니면 404 BOOKING_NOT_FOUND");
+        BookingDocsFields.DETAIL_SUMMARY,
+        BookingDocsFields.DETAIL_DESCRIPTION,
+        BookingDocsFields.detailPathParameters(),
+        BookingDocsFields.DETAIL_404);
   }
 
-  @Test
-  void createBooking_unauthenticated() throws Exception {
+  /** 예약 생성 오퍼레이션의 실패 스니펫 — 문구·path 파라미터가 성공 스니펫과 동일해야 한다. */
+  private void performCreateError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
     perform(
-        post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(createRequestJson(ROOM_OFFER_ID, "2030-01-01", 6)),
-        status().isUnauthorized(),
-        "UNAUTHENTICATED",
-        "booking-create-unauthenticated",
-        "토큰이 없으면 401 UNAUTHENTICATED");
+        request,
+        expectedStatus,
+        expectedCode,
+        identifier,
+        BookingDocsFields.CREATE_SUMMARY,
+        BookingDocsFields.CREATE_DESCRIPTION,
+        BookingDocsFields.createPathParameters(),
+        errorCodes);
   }
 
   private void perform(
-      org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
-      org.springframework.test.web.servlet.ResultMatcher expectedStatus,
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
       String expectedCode,
       String identifier,
-      String summary)
+      String summary,
+      String description,
+      ParameterDescriptor[] pathParameters,
+      String... errorCodes)
       throws Exception {
     mockMvc
         .perform(request)
@@ -485,46 +444,12 @@ class BookingDocsTest {
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
         .andDo(
-            document(
+            ApiDocsErrors.errorSnippet(
                 identifier,
-                resource(
-                    ResourceSnippetParameters.builder()
-                        .summary(summary)
-                        .description("실패 응답 — 공통 래퍼(success=false·data=null·error).")
-                        .responseFields(errorFields())
-                        .build())));
-  }
-
-  private static FieldDescriptor field(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).description(description);
-  }
-
-  private static FieldDescriptor optField(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).optional().description(description);
-  }
-
-  private static FieldDescriptor errorNull() {
-    return fieldWithPath("error")
-        .type(JsonFieldType.NULL)
-        .optional()
-        .description("성공 응답의 error는 항상 null");
-  }
-
-  private static FieldDescriptor[] errorFields() {
-    return new FieldDescriptor[] {
-      fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부(false)"),
-      fieldWithPath("data").type(JsonFieldType.NULL).optional().description("실패 시 null"),
-      fieldWithPath("error.code").type(JsonFieldType.STRING).description("에러 코드"),
-      fieldWithPath("error.message").type(JsonFieldType.STRING).description("에러 메시지"),
-      fieldWithPath("error.errors").type(JsonFieldType.ARRAY).description("필드 오류 목록(없으면 빈 배열)"),
-      fieldWithPath("error.errors[].field")
-          .type(JsonFieldType.STRING)
-          .optional()
-          .description("위반 필드"),
-      fieldWithPath("error.errors[].reason")
-          .type(JsonFieldType.STRING)
-          .optional()
-          .description("위반 사유")
-    };
+                ApiDocsTags.BOOKINGS,
+                summary,
+                description,
+                pathParameters,
+                errorCodes));
   }
 }
