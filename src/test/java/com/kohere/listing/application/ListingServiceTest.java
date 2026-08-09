@@ -16,17 +16,17 @@ import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.ConditionTag;
-import com.kohere.listing.domain.FavoriteRepository;
 import com.kohere.listing.domain.Listing;
-import com.kohere.listing.domain.ListingCatalogCategory;
-import com.kohere.listing.domain.ListingCatalogEntry;
-import com.kohere.listing.domain.ListingCatalogRepository;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingType;
 import com.kohere.listing.domain.LocalizedText;
-import com.kohere.listing.domain.RecentListingRepository;
-import com.kohere.listing.domain.SearchPlaceRepository;
+import com.kohere.listing.domain.catalog.ListingCatalogCategory;
+import com.kohere.listing.domain.catalog.ListingCatalogEntry;
+import com.kohere.listing.domain.catalog.ListingCatalogRepository;
+import com.kohere.listing.domain.favorite.FavoriteRepository;
+import com.kohere.listing.domain.place.SearchPlaceRepository;
+import com.kohere.listing.domain.recent.RecentListingRepository;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
@@ -147,6 +147,7 @@ class ListingServiceTest {
     assertThat(response.contract().maxStayMonths()).isEqualTo(12);
     assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
     assertThat(response.genderPolicy().label()).isEqualTo("Female Only");
+    assertThat(response.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Sta.");
     assertThat(response.propertyPolicies().arcRequired()).isFalse();
     assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
@@ -227,6 +228,7 @@ class ListingServiceTest {
     assertThat(response.type().label()).isEqualTo("고시원");
     assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
     assertThat(response.genderPolicy().label()).isEqualTo("여성 전용");
+    assertThat(response.nearestTransit().name()).isEqualTo("서울대입구역");
     assertThat(response.roomOffers().getFirst().name()).isEqualTo("스탠다드 1인실");
     assertThat(response.descriptions().description()).isEqualTo("테스트 설명");
   }
