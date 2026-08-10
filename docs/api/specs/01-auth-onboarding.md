@@ -842,8 +842,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `birthDate` 미래(`@Past` 위반), `country` 미존재(`countries`에 없음), **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드·빈 문자열** 등 값 검증 위반 |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치. **`gender`/`visaType`/`occupation` 허용 외 enum 문자열·`birthDate` 형식 불가**는 역직렬화 단계에서 거부되어 이 코드로 처리(요청 DTO가 enum/날짜 타입이라 매핑 실패 → onboarding(§5)은 String 수집·서버 파싱이라 `INVALID_INPUT`인 점과 다름). **`lang`은 요청 DTO에서 String으로 받아 서버가 `Language`로 파싱하므로 역직렬화는 통과하고 서버 검증에서 걸린다 — 미지원 코드는 `MALFORMED_REQUEST`가 아니라 `INVALID_INPUT`**이다(요청 enum 필드와 코드가 갈리는 지점) |
+| 400 | `INVALID_INPUT` | **`gender`/`visaType`/`occupation`이 허용 목록 밖**, `birthDate` 미래(`@Past` 위반), `country` 미존재(`countries`에 없음), **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드·빈 문자열** 등 값 검증 위반 |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가, 또는 `birthDate`가 `YYYY-MM-DD` 형식이 아니어서 역직렬화에 실패. **enum 후보(`gender`/`visaType`/`occupation`)는 요청 DTO가 String으로 받아 서버가 파싱하므로 허용 외 값도 `INVALID_INPUT`이다** — 온보딩(§5)과 같은 코드다(#151에서 통일) |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(PENDING·TERMS_AGREED) 토큰으로 접근 |
 | 404 | `USER_NOT_FOUND` | 사용자가 `WITHDRAWN`이거나 삭제되어 없음 |

@@ -1153,7 +1153,7 @@ class AuthOnboardingDocsTest {
         patch("/api/v1/users/me")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"gender\":\"UNKNOWN\"}"),
+            .content("{\"birthDate\":\"2024-13-45\"}"),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "user-patch-me-malformed",
@@ -1161,6 +1161,18 @@ class AuthOnboardingDocsTest {
         PATCH_ME_SUMMARY,
         PATCH_ME_DESCRIPTION,
         PATCH_ME_400);
+
+    // enum 후보는 요청 DTO가 String으로 받아 서버가 파싱하므로 허용 외 값도 INVALID_INPUT이다 —
+    // 온보딩(§5)과 같은 코드로 통일한 계약이라(#151) enum 타입으로 되돌리면 여기서 깨진다.
+    // 스니펫은 user-patch-me-invalid-input 하나로 충분해 단정만 남긴다.
+    assertError(
+        mockMvc,
+        patch("/api/v1/users/me")
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"gender\":\"UNKNOWN\"}"),
+        status().isBadRequest(),
+        "INVALID_INPUT");
 
     // 401/403은 시큐리티 필터가 본문 파싱 전에 끊는다 — 요청 본문 없이도 같은 에러다(#151-4).
     perform(
