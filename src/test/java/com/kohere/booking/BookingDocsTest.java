@@ -442,14 +442,22 @@ class BookingDocsTest {
   /**
    * 목록·상세의 인증/입력 실패 스니펫. 전부 보안 필터 또는 MVC 바인딩 단계에서 끝나 예약 상태가 필요 없으므로 한 테스트에 모은다.
    *
-   * <p>{@code 400}은 값 범위가 아니라 <b>타입 불일치</b>다 — {@code BookingService.getBookings}가 {@code
-   * page}·{@code size}를 {@code Math.max}/{@code Math.min}으로 보정하므로 범위 위반으로는 400이 나지 않는다.
+   * <p>{@code 400}은 두 갈래라 스니펫도 둘이다 — 범위 위반({@code size=101})은 {@code BookingService.validatePage}가
+   * 던지는 {@code INVALID_INPUT}, 정수가 아닌 값({@code page=abc})은 바인딩 단계의 {@code MALFORMED_REQUEST}다.
    */
   @Test
   void listAndDetail_errorSnippets() throws Exception {
     String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
     String expiredToken = bearer(expiredAccessToken(jwtProperties));
 
+    performListError(
+        get("/api/v1/bookings")
+            .header(HttpHeaders.AUTHORIZATION, tenantToken())
+            .param("size", "101"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "booking-list-invalid-input",
+        LIST_400);
     performListError(
         get("/api/v1/bookings")
             .header(HttpHeaders.AUTHORIZATION, tenantToken())

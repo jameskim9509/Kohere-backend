@@ -175,13 +175,14 @@ public final class UserDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `MALFORMED_REQUEST` | `page`·`size`가 정수가 아님. 값 범위는 에러가 아니다 — 음수 `page`는 0으로, 초과 `size`는 100으로 보정된다 |
+      | 400 | `INVALID_INPUT` | `page`가 음수이거나 `size`가 1~100 밖 — 조용히 보정하지 않고 거절한다 |
+      | 400 | `MALFORMED_REQUEST` | `page`·`size`가 정수가 아님(쿼리 파라미터 타입 불일치) |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
 
-  public static final String[] BLOCKS_LIST_400 = {"MALFORMED_REQUEST"};
+  public static final String[] BLOCKS_LIST_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
   public static final String[] BLOCKS_LIST_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
   public static final String[] BLOCKS_LIST_403 = {"AUTH_ONBOARDING_REQUIRED"};
 
@@ -315,8 +316,8 @@ public final class UserDocsFields {
   /** {@code GET /users/me/blocks} 페이지 파라미터. */
   public static ParameterDescriptor[] blocksListQueryParameters() {
     return new ParameterDescriptor[] {
-      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
-      parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
+      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0). 음수는 400"),
+      parameterWithName("size").optional().description("페이지 크기(기본 20). 1~100 밖은 400")
     };
   }
 

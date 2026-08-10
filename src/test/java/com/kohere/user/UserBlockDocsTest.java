@@ -208,14 +208,23 @@ class UserBlockDocsTest {
   /**
    * 목록·해제의 실패 스니펫. 전부 보안 필터 또는 MVC 바인딩에서 끝나 차단 상태가 필요 없다.
    *
-   * <p>{@code 400}은 값 범위가 아니라 <b>타입 불일치</b>다 — {@code UserBlockServiceImpl.listBlocks}가 {@code
-   * page}·{@code size}를 보정하고, 해제는 멱등이라 차단하지 않은 상대에도 204를 준다(404가 없다).
+   * <p>{@code 400}은 두 갈래라 스니펫도 둘이다 — 범위 위반({@code size=101})은 {@code
+   * UserBlockServiceImpl.validatePage}가 던지는 {@code INVALID_INPUT}, 정수가 아닌 값은 바인딩 단계의 {@code
+   * MALFORMED_REQUEST}다. 해제는 멱등이라 차단하지 않은 상대에도 204를 주므로 404가 없다.
    */
   @Test
   void blocksErrorSnippets() throws Exception {
     String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
     String expiredToken = bearer(expiredAccessToken(jwtProperties));
 
+    performListError(
+        get("/api/v1/users/me/blocks")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
+            .param("size", "101"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "user-blocks-list-invalid-input",
+        BLOCKS_LIST_400);
     performListError(
         get("/api/v1/users/me/blocks")
             .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))

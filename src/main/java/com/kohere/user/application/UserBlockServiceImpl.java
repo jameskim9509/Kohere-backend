@@ -1,5 +1,6 @@
 package com.kohere.user.application;
 
+import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.user.api.BlockedUserView;
@@ -60,19 +61,32 @@ public class UserBlockServiceImpl implements UserBlockService {
     return userBlockRepository.existsBetween(userA, userB);
   }
 
+  /**
+   * 범위 밖 {@code page}·{@code size}는 보정하지 않고 {@code 400 INVALID_INPUT}으로 거절한다 — 조용히 깎으면 클라이언트가 「원래
+   * 그만큼」인지 「잘린 것」인지 구분할 수 없다. 저장소의 다른 목록 API와 같은 규칙이다.
+   */
   @Override
   @Transactional(readOnly = true)
   public PageResponse<BlockedUserView> listBlocks(long blockerId, int page, int size) {
-    int safePage = Math.max(page, 0);
-    int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+    validatePage(page, size);
     List<BlockedUserView> content =
-        userBlockRepository.findByBlockerId(blockerId, safePage, safeSize).stream()
+        userBlockRepository.findByBlockerId(blockerId, page, size).stream()
             .map(this::toView)
             .toList();
     long total = userBlockRepository.countByBlockerId(blockerId);
-    int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / safeSize);
-    boolean hasNext = safePage + 1 < totalPages;
-    return PageResponse.of(content, new PageInfo(safePage, safeSize, total, totalPages, hasNext));
+    int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
+    boolean hasNext = page + 1 < totalPages;
+    return PageResponse.of(content, new PageInfo(page, size, total, totalPages, hasNext));
+  }
+
+  /** 페이지 번호와 크기가 API 약속 범위 안에 있는지 확인한다. */
+  private static void validatePage(int page, int size) {
+    if (page < 0) {
+      throw new InvalidInputException("page는 0 이상이어야 합니다.");
+    }
+    if (size < 1 || size > MAX_PAGE_SIZE) {
+      throw new InvalidInputException("size는 1 이상 " + MAX_PAGE_SIZE + " 이하이어야 합니다.");
+    }
   }
 
   private BlockedUserView toView(UserBlock block) {

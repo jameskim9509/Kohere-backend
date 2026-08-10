@@ -246,7 +246,8 @@
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `size` 범위 초과 등 페이지 파라미터 오류 |
+| 400 | `INVALID_INPUT` | `page`/`size` 범위 위반(음수 `page`, `size` 1 미만·100 초과). 보정하지 않고 거절한다 |
+| 400 | `MALFORMED_REQUEST` | `page`/`size`가 정수가 아님(쿼리 파라미터 타입 불일치) |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 

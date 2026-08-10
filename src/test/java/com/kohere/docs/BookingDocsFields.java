@@ -134,7 +134,7 @@ public final class BookingDocsFields {
 
       - **Schema 탭의 필드 목록은 세입자·임대인 두 분기의 합집합이며 실제 한 응답에 둘 다 나오지 않는다.** `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 분기의 응답에서 **키 자체가 없다**(값이 null인 것이 아니다). 실제 형태는 Examples에서 역할을 골라 본다.
       - `status`는 MVP에서 `REQUESTED`만 반환된다(수락·거절·취소 엔드포인트 미구현).
-      - 정렬은 `createdAt,desc` 고정이며 쿼리로 바꿀 수 없다. `size`는 최대 100으로 잘린다.
+      - 정렬은 `createdAt,desc` 고정이며 쿼리로 바꿀 수 없다.
       - 요청자가 삭제한 예약과 요청자가 차단한 상대의 예약은 목록에서 빠진다. 삭제·차단 상태 자체는 응답 필드로 노출하지 않는다(사라지는 것으로만 관측된다).
       - 매물·방 상품이 삭제·비공개면 조인 대상이 사라져 `title`·`thumbnailUrl`·`roomOfferName`이 null이 된다(예약 코어 내역은 그대로 유지된다).
       - 결과가 없으면 `content: []` + `page.totalElements: 0`이다(에러 아님).
@@ -143,20 +143,21 @@ public final class BookingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `MALFORMED_REQUEST` | `page`·`size`가 정수가 아님. 값 범위는 에러가 아니다 — 음수 `page`는 0으로, 초과 `size`는 100으로 보정된다 |
+      | 400 | `INVALID_INPUT` | `page`가 음수이거나 `size`가 1~100 밖 — 조용히 보정하지 않고 거절한다 |
+      | 400 | `MALFORMED_REQUEST` | `page`·`size`가 정수가 아님(쿼리 파라미터 타입 불일치) |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
 
-  public static final String[] LIST_400 = {"MALFORMED_REQUEST"};
+  public static final String[] LIST_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
   public static final String[] LIST_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
   public static final String[] LIST_403 = {"AUTH_ONBOARDING_REQUIRED"};
 
   public static ParameterDescriptor[] listQueryParameters() {
     return new ParameterDescriptor[] {
-      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0). 음수는 0으로 보정"),
-      parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100). 초과분은 100으로 보정")
+      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0). 음수는 400"),
+      parameterWithName("size").optional().description("페이지 크기(기본 20). 1~100 밖은 400")
     };
   }
 
