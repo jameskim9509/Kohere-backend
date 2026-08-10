@@ -31,19 +31,16 @@ public final class QuizDocsFields {
       """
       활성 퀴즈 풀에서 4지선다 1개를 무작위로 골라 표시 언어로 번역해 반환한다(정답 키·해설 미포함).
 
-      **인증**
+      **헤더**
 
-      - `Authorization` 헤더는 선택이다. 헤더가 없거나 서명이 깨진 토큰이면 게스트로 처리해 200을 반환한다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
       - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
-      - 만료된 access token만 401 `TOKEN_EXPIRED`다. 게스트로 강등하지 않고 재발급을 유도한다.
+      - 서명이 깨진 토큰도 게스트로 처리해 200이지만, 만료된 access token은 게스트로 강등하지 않고 401 `TOKEN_EXPIRED`로 재발급을 유도한다.
 
-      **표시 언어와 필드**
+      **응답 주의사항**
 
-      - 게스트: `en` 고정 — 서버가 `getLanguage`를 호출하지 않는다.
-      - 세입자: 본인이 고른 `users.lang`. 미선택이면 `en`으로 폴백한다.
-      - 임대인: `ko` 고정 — 임대인 온보딩에서 서버가 `lang='ko'`로 확정한다.
-      - 번역 대상은 `question`과 `choices[].text`뿐이다. 보기 키 `choices[].key`(`A`~`D`)는 언어와 무관하게 동일하다.
-      - 정답 키와 해설은 이 응답에 없다. 채점은 `POST /api/v1/quizzes/{quizId}/answer`가 담당한다.
+      - 표시 언어가 호출자에 따라 갈린다 — 게스트는 `en` 고정, 세입자는 본인이 고른 `users.lang`(미선택이면 `en` 폴백), 임대인은 `ko` 고정.
+      - 채점은 이 응답이 아니라 `POST /api/v1/quizzes/{quizId}/answer`가 담당한다.
 
       **에러 코드**
 
@@ -74,18 +71,16 @@ public final class QuizDocsFields {
       """
       제출한 보기 키를 저장된 정답과 대조해 즉시 채점한다. 제출 기록·포인트가 없는 무상태 채점이라 멱등하며 무제한 반복할 수 있다.
 
-      **인증**
+      **헤더**
 
-      - `Authorization` 헤더는 선택이다. 헤더가 없거나 서명이 깨진 토큰이면 게스트로 처리해 200을 반환한다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
       - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
-      - 만료된 access token만 401 `TOKEN_EXPIRED`다. 게스트로 강등하지 않고 재발급을 유도한다.
+      - 서명이 깨진 토큰도 게스트로 처리해 200이지만, 만료된 access token은 게스트로 강등하지 않고 401 `TOKEN_EXPIRED`로 재발급을 유도한다.
 
-      **응답 분기와 표시 언어**
+      **응답 주의사항**
 
-      - `explanation`은 정답·오답 모두 내려간다.
       - `correctChoice`는 오답(`correct=false`)일 때만 내려간다. 정답이면 `null`이 아니라 **필드 자체가 생략된다**.
-      - 표시 언어는 게스트 `en` 고정, 세입자 `users.lang`(미선택이면 `en`), 임대인 `ko` 고정이다.
-      - 번역 대상은 `explanation`뿐이다. 보기 키 `A`~`D`는 언어와 무관하다.
+      - 표시 언어가 호출자에 따라 갈린다 — 게스트는 `en` 고정, 세입자는 `users.lang`(미선택이면 `en`), 임대인은 `ko` 고정.
 
       **에러 코드**
 

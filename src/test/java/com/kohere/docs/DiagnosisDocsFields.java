@@ -152,18 +152,19 @@ public final class DiagnosisDocsFields {
       """
       단계별로 저장해 둔 진행 중 진단을 확정해 이력에 남긴다.
 
-      **인증**
+      **헤더**
 
-      - 회원 전용이다. `Authorization: Bearer <accessToken>`가 필수이며 비회원은 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
-      - 확정 대상은 요청 본문이 아니라 토큰의 사용자로 찾는다. 사용자당 진행 중 진단은 1건이다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 비회원은 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
 
-      **동작 규칙**
+      **요청 주의사항**
 
       - 요청 본문이 없다. `POST /api/v1/diagnoses/answers`로 ①~⑥을 모두 저장한 뒤 호출한다.
-      - 확정되면 `status`가 `COMPLETED`가 되고 `diagnosisId`·`submittedAt`이 발급된다.
-      - 응답은 `201 Created`이며 `Location: /api/v1/diagnoses/{diagnosisId}` 헤더가 함께 실린다.
-      - ⑥ `arcStatus`가 `NO_ARC`이면 서버가 파생 조건 `NO_ARC`를 `conditions`에 더한다(④ 최대 3개 제한과 무관).
+      - 확정 대상은 요청 본문이 아니라 토큰의 사용자로 찾는다. 사용자당 진행 중 진단은 1건이다.
       - 재진단은 확정 뒤 답을 다시 저장하면 서버가 새 진행 중 진단을 만든다.
+
+      **응답 주의사항**
+
+      - ⑥ `arcStatus`가 `NO_ARC`이면 서버가 파생 조건 `NO_ARC`를 `conditions`에 더한다(④ 최대 3개 제한과 무관).
 
       **에러 코드**
 
@@ -198,17 +199,10 @@ public final class DiagnosisDocsFields {
       """
       확정된 진단 1건의 입력값 전체를 다시 보여준다(입력 다시 보기 화면).
 
-      **인증**
+      **헤더**
 
-      - 회원 전용이며 본인 소유 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 본인 소유 진단만 조회된다.
       - 게스트가 v2로 만든 진단은 신원 종류가 달라 회원 토큰으로도 본인 소유가 아니다.
-
-      **응답 규칙**
-
-      - ② `purpose`에 따라 ③이 갈린다 — `STUDY`면 `university`가 채워지고 `district`는 `null`, `NON_STUDY`면 그 반대다.
-      - `conditions[]`에는 ④에서 고른 조건(최대 3개)과 ⑥ `arcStatus=NO_ARC`에서 서버가 파생한 `NO_ARC`가 함께 들어간다.
-      - 금액은 KRW 정수이고 시각은 ISO-8601 UTC다.
-      - v2가 남기는 폐기 기록(`DISCARDED`)은 없는 것처럼 거절한다.
 
       **에러 코드**
 
@@ -388,20 +382,20 @@ public final class DiagnosisDocsFields {
       """
       진단 6단계 중 지정한 단계의 질문 1개와 선택지를 조회한다.
 
-      **인증**
-
-      - 회원 전용이다. `Authorization: Bearer <accessToken>`가 필요하다.
-      - 비회원은 서버가 순서를 정하는 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
-
-      **단계와 선택지**
-
       """
           + QUESTION_TABLE
           + """
 
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 비회원은 서버가 순서를 정하는 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
+
+      **요청 주의사항**
+
       - 다음 `step` 번호는 클라이언트가 정하며 이 조회는 답을 저장하지 않는다.
-      - ③(`step=3`)은 진행 중 진단에 저장된 ② `purpose`로 서버가 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 하나만 고른다. 클라이언트가 분기하지 않는다.
-      - 응답의 `data.field`를 `POST /api/v1/diagnoses/answers` 요청의 `field`에 그대로 싣는다.
+
+      **응답 주의사항**
+
       - `regionRetry`는 v2 흐름 전용 예외질문이라 이 엔드포인트로는 내려오지 않는다.
       - """
           + LANGUAGE_NOTE
@@ -471,23 +465,23 @@ public final class DiagnosisDocsFields {
       """
       현재 단계의 답 1개를 진행 중인 진단에 저장한다.
 
-      **인증**
-
-      - 회원 전용이다. 진행 중 진단은 토큰의 사용자로 식별하며 사용자당 1건이다.
-      - 진행 중 진단이 없으면 첫 답을 저장할 때 서버가 만든다.
-
-      **답의 세 가지 형태**
-
       | 단계 | `select.type` | 본문 |
       | --- | --- | --- |
       | ①②③⑥ 단일 선택 | `SINGLE` | `{ "field": "...", "code": "..." }` |
       | ④ 주거 조건 | `MULTI` | `{ "field": "conditions", "codes": ["...", "..."] }`(최대 3개·중복 불가) |
       | ⑤ 월세 범위 | `NUMBER_RANGE` | `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` |
 
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+
+      **요청 주의사항**
+
       - 해당하는 쪽만 채우고 나머지 필드는 보내지 않는다. 누적 답을 묶어 재전송하지 않는다.
-      - `field`는 직전 질문 응답의 `data.field`를 그대로 싣는다.
-      - `min`·`max`는 KRW 정수이며 각 0 이상이고 `min <= max`여야 한다.
-      - 파생 조건 `NO_ARC`는 ⑥ `arcStatus` 답에서 서버가 만들어 붙이는 값이라 `codes`로 직접 고를 수 없다.
+      - 진행 중 진단은 토큰의 사용자로 식별하며 사용자당 1건이다. 진행 중 진단이 없으면 첫 답을 저장할 때 서버가 만든다.
+
+      **응답 주의사항**
+
       - 저장된 답은 확정(`POST /api/v1/diagnoses`) 시점에 다시 검증된다.
 
       **에러 코드**
@@ -544,18 +538,14 @@ public final class DiagnosisDocsFields {
       """
       내가 확정한 진단 이력을 오프셋 페이지네이션으로 조회한다.
 
-      **인증**
+      **헤더**
 
-      - 회원 전용이며 토큰의 사용자 본인 이력만 조회된다.
-      - 게스트가 v2로 만든 진단은 이 목록의 대상이 아니다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 토큰의 사용자 본인 이력만 조회된다.
 
-      **응답 규칙**
+      **응답 주의사항**
 
       - 확정(`COMPLETED`) 진단만 나온다. 진행 중(`IN_PROGRESS`)과 v2 폐기 기록(`DISCARDED`)은 빠진다.
-      - 기본 정렬은 `submittedAt,desc`이고 허용 키는 `submittedAt` 하나다.
-      - `content[]` 항목은 진단 단건 상세와 같은 입력 요약이며 `status`·`submittedAt`이 더 붙는다.
-      - ② `purpose`에 따라 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 한쪽만 채워지고 반대쪽은 `null`이다.
-      - 이력이 없으면 `content=[]`이며 에러가 아니다.
+      - 게스트가 v2로 만든 진단은 이 목록의 대상이 아니다.
 
       **에러 코드**
 
@@ -592,15 +582,13 @@ public final class DiagnosisDocsFields {
       """
       홈 화면의 "진단 시작 / 재진단" 분기를 위해 가장 최근 확정 진단 1건을 조회한다.
 
-      **인증**
+      **헤더**
 
-      - 회원 전용이며 토큰의 사용자 본인 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 토큰의 사용자 본인 진단만 조회된다.
 
-      **응답 규칙**
+      **응답 주의사항**
 
       - 확정 이력이 없어도 404가 아니라 200이고 `data.completed=false`다. 클라이언트는 이 한 필드로 분기한다.
-      - `completed=false`일 때 나머지 요약 필드는 **키가 사라지지 않고 값이 `null`로 실린다**(`diagnosisId`·`region`·`purpose`·`university`·`district`·`conditions`·`monthlyRentMin`·`monthlyRentMax`·`arcStatus`·`submittedAt`).
-      - `completed=true`일 때도 ② `purpose`에 따라 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 한쪽은 `null`이다.
       - 진행 중(`IN_PROGRESS`) 진단은 대상이 아니다 — 확정된 것만 본다.
 
       **에러 코드**
@@ -669,23 +657,14 @@ public final class DiagnosisDocsFields {
       """
       확정된 진단 조건에 맞는 매물 카드와 지도 마커를 함께 조회한다.
 
-      **인증**
+      **헤더**
 
-      - 회원 전용이며 본인 소유 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 본인 소유 진단만 조회된다.
       - 게스트의 추천 조회는 v2-3(`GET /api/v2/diagnoses/{diagnosisId}/recommendations`)이 담당한다.
 
-      **화면 구성**
+      **응답 주의사항**
 
-      - 매물 카드는 `content[]`로, 지도 마커는 `markers[]`로 그리고 둘은 같은 `listingId`로 연결한다.
-      - 매물 유형과 조건 배지는 `type.label`·`conditions[].label`을 표시하고, 필터 재요청이나 내부 비교에는 같은 객체의 `code`를 쓴다.
-      - `title`과 `label`은 사용자 표시 언어로 선택되어 온다.
-      - 정렬 허용 키는 `recommended`·`price`·`distance`이며 기본은 `recommended,desc`다.
-
-      **추천이 0건일 때**
-
-      - `content=[]`·`markers=[]`는 정상 응답이며 에러가 아니다.
-      - 이때만 `suggestions`가 채워진다 — `reason`·`actions[].type`은 언어 무관 코드이고 `message`·`actions[].detail`은 사용자 언어 문구다.
-      - 결과가 있으면 `suggestions`는 `null`이다(키는 남는다). v2-3에는 이 필드 자체가 없다.
+      - 추천이 0건일 때만 `suggestions`가 채워지고, 결과가 있으면 `null`이다(키는 남는다). v2-3에는 이 필드 자체가 없다.
 
       **에러 코드**
 
@@ -745,19 +724,19 @@ public final class DiagnosisDocsFields {
       """
       진단을 처음부터 시작하고 ① 지역 질문을 받는다. 시작 시점은 클라이언트가 정한다.
 
-      **인증**
+      **헤더**
 
-      - 인증은 선택이다. 토큰을 보내면 회원, 안 보내면 게스트로 처리한다.
-      - 게스트로 호출하면 응답 `data.guestSessionId`에 세션 키(`anonymous<uuid>`)가 실린다. **키가 내려오는 유일한 지점**이며 회원 응답에서는 이 필드가 통째로 생략된다.
-      - 클라이언트는 그 키를 보관했다가 이후 `POST /next`와 추천 조회에 `X-Guest-Session-Id` 헤더로 되돌려보낸다.
-      - 요청에 `X-Guest-Session-Id`를 실어도 무시하고 새 키를 발급한다.
-      - 위조·형식 오류 토큰은 게스트와 같은 취급이다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
 
-      **동작 규칙**
+      **요청 주의사항**
 
       - 요청 본문이 없다.
       - 진행 중 세션이 있어도 버리고 새 세션을 만든다 — 다시 시작하면 언제나 ① 지역부터다.
-      - 응답은 항상 `resultCode=NEXT_QUESTION`이고 `question.field=region`이다. `diagnosisId`는 실리지 않는다.
+      - 요청에 `X-Guest-Session-Id`를 실어도 무시하고 새 키를 발급한다.
+
+      **응답 주의사항**
+
+      - 게스트로 호출하면 응답 `data.guestSessionId`에 세션 키(`anonymous<uuid>`)가 실린다. **키가 내려오는 유일한 지점**이며 회원 응답에서는 이 필드가 통째로 생략된다.
       - """
           + LANGUAGE_NOTE
           + """
@@ -810,13 +789,6 @@ public final class DiagnosisDocsFields {
       """
       현재 문항의 답 1개를 적용하고 서버가 정한 다음 결과를 결과코드로 받는다.
 
-      **인증**
-
-      - 인증은 선택이다. 회원은 `Authorization` 토큰으로, 게스트는 `X-Guest-Session-Id` 헤더로 진행 세션을 찾는다.
-      - 게스트가 헤더를 빠뜨렸거나 남의 키를 보내면 세션을 못 찾는다 — 남의 세션에 닿지 않는다.
-
-      **결과코드별 payload**
-
       | `resultCode` | 의미 | 실리는 필드 |
       | --- | --- | --- |
       | `NEXT_QUESTION` | 다음 질문이 남음. ① 지역 0건 예외질문(`field=regionRetry`)도 이 코드다 | `question` |
@@ -824,18 +796,23 @@ public final class DiagnosisDocsFields {
       | `RESTART` | 지역 예외질문에 "예"(`YES`) — 클라이언트가 `POST /start`로 재시도(세션 삭제) | 없음 |
       | `TERMINATED` | 지역 예외질문에 "아니오"(`NO`) — 진단 종료(세션 삭제). 에러가 아니라 정상 결과다 | 없음 |
 
-      - 채워지지 않는 payload는 값이 `null`인 것이 아니라 **필드 자체가 생략된다**.
-      - `COMPLETED`에도 추천 매물은 실리지 않는다. 서버는 이 시점에 매칭 유무조차 확인하지 않으며, 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
-      - 매칭 0건은 이 응답이 아니라 그 추천 응답의 `resultCode=NO_MATCH`로 드러난다.
-
-      **문항과 답의 형태**
-
       """
           + QUESTION_TABLE
           + """
 
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다. 회원은 이 토큰으로 진행 세션을 찾는다.
+      - `X-Guest-Session-Id` — 게스트는 이 헤더로 진행 세션을 찾는다. `POST /api/v2/diagnoses/start` 응답의 `guestSessionId`를 그대로 되돌려보낸다.
+
+      **요청 주의사항**
+
       - `step`은 클라이언트가 지정하지 않는다. 서버가 낸 문항의 `field`를 그대로 요청 `field`에 싣는다.
-      - ③ 대학/지역은 저장된 ② `purpose`로 서버가 택일한다.
+
+      **응답 주의사항**
+
+      - `COMPLETED`에도 추천 매물은 실리지 않는다. 서버는 이 시점에 매칭 유무조차 확인하지 않으며, 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
+      - 매칭 0건은 이 응답이 아니라 그 추천 응답의 `resultCode=NO_MATCH`로 드러난다.
       - ① 지역 답 직후 그 지역 매물이 0건이면 서버가 `field=regionRetry` 예외질문(`YES`/`NO`)을 끼워 넣는다 — 서버가 미리 필터링하는 유일한 지점이다.
       - """
           + LANGUAGE_NOTE
@@ -1002,23 +979,15 @@ public final class DiagnosisDocsFields {
       """
       v2에서 확정된 진단 조건에 맞는 매물 카드와 지도 마커를 조회한다. 조회 시점·페이지·정렬은 클라이언트가 정한다.
 
-      **인증**
+      **헤더**
 
-      - 인증은 선택이다. 회원은 `Authorization` 토큰으로, 게스트는 `X-Guest-Session-Id` 헤더로 소유권을 증명한다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다. 회원은 이 토큰으로 소유권을 증명한다.
+      - `X-Guest-Session-Id` — 게스트는 이 헤더로 소유권을 증명한다.
       - 소유는 신원 **종류와 값이 모두** 같을 때만 인정된다.
-      - 회원 요청에 게스트 키가 실려 와도 무시한다(키를 훔쳐도 통하지 않는다).
 
-      **화면 구성**
+      **응답 주의사항**
 
-      - 매물 카드는 `content[]`로, 지도 마커는 `markers[]`로 그리고 둘은 같은 `listingId`로 연결한다.
-      - 매물 유형과 조건 배지는 `type.label`·`conditions[].label`을 표시하고, 필터 재요청이나 내부 비교에는 같은 객체의 `code`를 쓴다.
       - `title`과 `label`은 사용자 표시 언어로 선택되어 온다(게스트는 `en` 고정).
-      - 정렬 허용 키는 `recommended`·`price`·`distance`이며 기본은 `recommended,desc`다.
-
-      **매칭 결과코드**
-
-      - `resultCode`는 항상 실린다 — `MATCHED`(매물 있음) 또는 `NO_MATCH`(0건).
-      - `NO_MATCH`는 에러가 아니며 `content=[]`·`markers=[]`다.
       - v1 §7과 달리 **조정 제안(`suggestions`) 필드가 없다** — 사유만 `resultCode`로 준다.
 
       **에러 코드**

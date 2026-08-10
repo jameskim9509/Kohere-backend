@@ -44,12 +44,19 @@ public final class AuthDocsFields {
       """
       소셜 자격(Apple/Google)을 검증하고 서버 토큰을 발급한다. 신규면 계정을 만들고 온보딩 전용 토큰만 준다.
 
-      인증: 불필요(공개). 요청 본문의 소셜 자격만으로 판정한다.
+      **헤더**
+
+      - 인증 불필요 — 토큰 없이 호출한다.
+
+      **요청 주의사항**
 
       - provider별 자격이 다르다 — `GOOGLE`은 `idToken`, `APPLE`은 1회용 `authorizationCode`(약 5분 만료)다.
+      - `email`·`name`은 최초 로그인에서만 캡처하고 재로그인 요청 값은 무시한다.
+
+      **응답 주의사항**
+
       - 응답 `status`가 클라이언트 재개 지점을 정한다 — `PENDING`은 약관 동의, `TERMS_AGREED`는 온보딩, `ACTIVE`는 홈이다.
       - 온보딩 미완료 응답은 `refreshToken`이 null이고 `accessToken`이 온보딩 전용 스코프(`expiresIn` 1800)다. `ACTIVE`는 정식 access+refresh(3600)를 받는다.
-      - `email`·`name`은 최초 로그인에서만 캡처하고 재로그인 요청 값은 무시한다. `email`은 토큰의 email 클레임과 교차 검증한다.
 
       **에러 코드**
 
@@ -79,10 +86,9 @@ public final class AuthDocsFields {
       """
       이용약관·개인정보처리방침·마케팅 동의를 기록하고 `PENDING`을 `TERMS_AGREED`로 전이한다.
 
-      인증: 필수(온보딩 토큰).
+      **헤더**
 
-      - `marketingAgreed`는 선택이며 미전송이면 false로 기록한다.
-      - 응답 `status`는 전이 후 값이라 항상 `TERMS_AGREED`다.
+      - `Authorization: Bearer <accessToken>` — 온보딩 토큰(소셜 로그인 직후 발급).
 
       **에러 코드**
 
@@ -90,7 +96,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | 필수 동의 2종(`termsOfServiceAgreed`·`privacyPolicyAgreed`) 중 하나라도 누락(null) |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 온보딩 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩을 마친(`ACTIVE`) 사용자의 재요청 |
       | 422 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 필수 동의 2종 중 하나라도 `false` |
@@ -109,10 +115,13 @@ public final class AuthDocsFields {
       """
       입력한 이메일로 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `email`은 마스킹된다(예 `mi***@example.com`).
 
-      인증: 필수(정식 토큰 — `ACTIVE`).
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+
+      **요청 주의사항**
 
       - 발송이 실패하면(메일 provider 장애·타임아웃) 챌린지를 저장하지 않는다.
-      - `expiresIn`은 인증번호 만료까지의 초다.
 
       **에러 코드**
 
@@ -120,7 +129,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `email` 누락·빈값이거나 이메일 형식 위반 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 정식 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 토큰(`PENDING`·`TERMS_AGREED`)으로 호출 |
       | 429 | `TOO_MANY_REQUESTS` | 재발송 간격을 채우지 않은 재요청 |
@@ -141,9 +150,9 @@ public final class AuthDocsFields {
       """
       발송된 인증번호를 확인해 이메일을 검증 완료(VERIFIED)로 마킹한다.
 
-      인증: 필수(정식 토큰 — `ACTIVE`).
+      **헤더**
 
-      - `email`은 인증번호를 발송한 이메일과 일치해야 한다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
 
       **에러 코드**
 
@@ -151,7 +160,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `email`·`code` 누락·빈값이거나 `email`이 이메일 형식 위반 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 정식 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 토큰(`PENDING`·`TERMS_AGREED`)으로 호출 |
       | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 챌린지 부재·만료·코드 불일치 — 어느 쪽인지 구분해 주지 않는다 |
@@ -172,12 +181,18 @@ public final class AuthDocsFields {
       """
       세입자 필수 프로필을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고, 닉네임 배정·정식 토큰 발급까지 한 번에 끝낸다.
 
-      인증: 필수(온보딩 토큰, 상태 `TERMS_AGREED`).
+      **헤더**
 
-      - 필수는 `gender`·`birthDate`(과거 날짜만)·`country`·`visaType`, 선택은 `occupation`·`lang`이다.
+      - `Authorization: Bearer <accessToken>` — 온보딩 토큰(소셜 로그인 직후 발급). 상태가 `TERMS_AGREED`여야 한다.
+
+      **요청 주의사항**
+
+      - 이메일 인증 선행 게이트는 폐지됐다 — 약관만 동의하면 곧바로 제출할 수 있다.
       - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않는다.
       - enum·날짜 값이 잘못되면 400 `INVALID_INPUT`이다 — 같은 위반이 `MALFORMED_REQUEST`가 되는 `PATCH /users/me`와 갈리는 지점이다.
-      - 이메일 인증 선행 게이트는 폐지됐다 — 약관만 동의하면 곧바로 제출할 수 있다.
+
+      **응답 주의사항**
+
       - 응답 `data.user`의 `phoneNumber`는 세입자 미수집이라 필드 자체가 생략된다.
 
       **에러 코드**
@@ -186,7 +201,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | 필수 필드 누락·빈값, `birthDate`가 미래 날짜, `gender`·`visaType`·`occupation`·`lang` 값이 지원 목록 밖 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 온보딩 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩을 완료(`ACTIVE`)한 사용자의 재요청 |
       | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 제출 |
@@ -205,7 +220,12 @@ public final class AuthDocsFields {
       """
       본문의 refresh 토큰으로 access 토큰을 재발급한다. refresh 토큰은 항상 회전한다.
 
-      인증: 불필요(공개 티어). 클라이언트가 모든 요청에 access 토큰을 붙이는 구조라 만료된 access 토큰이 헤더에 실려 와도 401로 막지 않는다(재발급 교착 방지).
+      **헤더**
+
+      - 인증 불필요 — 토큰 없이 호출한다.
+      - 만료된 access 토큰이 헤더에 실려 와도 401로 막지 않는다(재발급 교착 방지) — 클라이언트가 모든 요청에 access 토큰을 붙이는 구조이기 때문이다.
+
+      **응답 주의사항**
 
       - 제출한 refresh 토큰은 `ROTATED`로 폐기되고 새 refresh 토큰이 함께 내려온다 — 응답의 새 토큰으로 교체해야 다음 재발급이 된다.
 
@@ -229,9 +249,12 @@ public final class AuthDocsFields {
       """
       제출한 refresh 토큰을 무효화한다. 이미 무효한 토큰이어도 204다(멱등).
 
-      인증: 필수(정식 토큰).
+      **헤더**
 
-      - 성공 응답에는 본문이 없다(204).
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+
+      **응답 주의사항**
+
       - access 토큰은 stateless라 서버가 폐기하지 않는다 — 클라이언트가 버리고, 남은 만료 시간까지는 서명상 유효하다.
 
       **에러 코드**
@@ -257,11 +280,14 @@ public final class AuthDocsFields {
       """
       입력한 휴대폰 번호로 SMS 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `phoneNumber`는 마스킹된다(예 `010-****-5678`).
 
-      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 <b>둘 다</b> 허용한다 — 온보딩과 정식 회원의 프로필 연락처 변경이 같은 엔드포인트를 쓰기 때문이다.
+      **헤더**
 
+      - `Authorization: Bearer <accessToken>` — 온보딩 토큰·정식 토큰 모두 허용(온보딩과 정식 회원의 프로필 연락처 변경이 같은 엔드포인트를 쓰기 때문이다).
       - 약관 동의(`TERMS_AGREED`)가 선행돼야 한다.
+
+      **요청 주의사항**
+
       - 발송이 실패하면(SMS provider 장애·타임아웃) 챌린지를 저장하지 않는다.
-      - `expiresIn`은 인증번호 만료까지의 초다.
 
       **에러 코드**
 
@@ -269,7 +295,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 온보딩·정식 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 호출 |
       | 429 | `TOO_MANY_REQUESTS` | 재발송 간격을 채우지 않은 재요청 |
@@ -290,9 +316,9 @@ public final class AuthDocsFields {
       """
       발송된 인증번호를 확인해 연락처를 검증 완료(VERIFIED)로 마킹한다. 임대인 온보딩(§5-2)·프로필 연락처 변경(§9)의 선행 단계다.
 
-      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 둘 다 허용한다.
+      **헤더**
 
-      - `phoneNumber`는 인증번호를 발송한 번호와 일치해야 한다.
+      - `Authorization: Bearer <accessToken>` — 온보딩 토큰·정식 토큰 모두 허용.
 
       **에러 코드**
 
@@ -300,7 +326,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `phoneNumber`·`code` 누락·빈값 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 온보딩·정식 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 422 | `AUTH_PHONE_VERIFICATION_FAILED` | 챌린지 부재·만료·코드 불일치 — 어느 쪽인지 구분해 주지 않는다 |
       | 429 | `TOO_MANY_REQUESTS` | 코드 불일치가 시도 상한까지 누적돼 잠김 |
@@ -319,10 +345,13 @@ public final class AuthDocsFields {
       """
       사업자등록번호를 외부 registry로 검증한다. 결과를 저장하지 않는 무상태 검증이라 응답 본문으로만 돌려주며, 번호는 마스킹된다(예 `****567890`).
 
-      인증: 필수(정식 토큰 — `ACTIVE`, 임대인 전용). 온보딩 흐름이 아니다.
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 임대인 전용이다.
+
+      **요청 주의사항**
 
       - 온보딩 제출(§5-2)에는 포함되지 않는다 — 온보딩을 마친 임대인이 매물 등록 시점에 따로 호출한다.
-      - 허용 형식은 숫자 10자리와 하이픈 형식(`123-45-67890`) <b>둘 다</b>다(어댑터가 숫자만 정규화해 대조한다).
 
       **에러 코드**
 
@@ -330,7 +359,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `businessRegistrationNumber` 누락·빈값이거나 허용 형식 위반 — 외부 호출 전에 거른다 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 정식 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 토큰(`PENDING`·`TERMS_AGREED`)으로 호출 — 보안 필터가 거른다 |
       | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 정식 사용자의 요청 |
@@ -354,12 +383,19 @@ public final class AuthDocsFields {
       """
       연락처·생년월일을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고 `userType`을 `LANDLORD`로 확정한 뒤 정식 토큰을 발급한다.
 
-      인증: 필수(온보딩 토큰, 상태 `TERMS_AGREED`).
+      **헤더**
 
-      - 요청은 `phoneNumber`·`birthDate` 둘뿐이다 — `phoneNumber`는 빈값만 막고(번호 형식 검증은 없다), `birthDate`는 필수이며 과거 날짜만 허용한다.
+      - `Authorization: Bearer <accessToken>` — 온보딩 토큰(소셜 로그인 직후 발급). 상태가 `TERMS_AGREED`여야 한다.
+
+      **요청 주의사항**
+
       - `phoneNumber`는 사전 SMS 인증(§4-1·§4-2)한 번호와 일치해야 한다(약관 검사가 연락처 검사보다 먼저다).
       - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않고, 사업자등록번호도 받지 않는다(온보딩 후 별도 검증 §5-1).
-      - 국적·표시 언어는 서버가 `KR`·`ko`로 고정 부여한다. 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 필드 자체가 생략되고 `phoneNumber`는 마스킹된다.
+
+      **응답 주의사항**
+
+      - 국적·표시 언어는 서버가 `KR`·`ko`로 고정 부여한다.
+      - 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 필드 자체가 생략되고 `phoneNumber`는 마스킹된다.
 
       **에러 코드**
 
@@ -367,7 +403,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값, `birthDate` 누락이거나 미래 날짜 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `UNAUTHENTICATED` | 온보딩 토큰 누락·위조 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩을 완료(`ACTIVE`)한 사용자의 재요청 |
       | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 제출 |

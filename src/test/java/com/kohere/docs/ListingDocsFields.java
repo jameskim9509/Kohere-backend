@@ -35,29 +35,14 @@ public final class ListingDocsFields {
       """
       지도 화면의 바텀시트나 리스트 화면에 보여줄 매물 카드를 조회한다.
 
-      **프론트 화면 구성**
+      **헤더**
 
-      - 카드 제목·이미지·주소: `title`, `imageUrls[0]`, `address.fullAddress`
-      - 교통·계약 정보: `nearestTransit`, `contract`
-      - 가격 범위: 응답 `roomOffers[].pricing`의 최저값과 최고값으로 계산
-      - 조건 배지: `conditions[].label`
-      - 하트 상태: `favorited`, `favoriteCount`
-      - 거리: `distanceMeters`가 있을 때만 `320m`, `1.2km`처럼 표시
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
 
-      **필터와 방 타입**
+      **응답 주의사항**
 
       - 필터 요청 후 `content[].roomOffers[]`에는 실제 조건을 통과한 ACTIVE 방 타입만 포함된다.
-      - `conditions`는 ACTIVE 방 타입의 `filterTags`와 `NO_ARC` 같은 매물 정책 조건을 합친 결과다.
-
-      **다국어와 code/label 사용법**
-
-      - 화면에는 `label`을 표시한다.
-      - 필터 요청과 내부 비교에는 `code`를 사용한다.
-      - 제목·주소·역명·방 이름·설명은 서버가 사용자 언어 문자열 하나로 선택해서 전달한다.
-      - 인증 없이 사용할 수 있으며 비로그인·온보딩 미완료 사용자는 영어가 기본이다.
-      - 온보딩을 완료한 로그인 사용자는 계정 언어를 사용한다.
-
-      카드를 선택하면 같은 `listingId`로 상세 API를 호출하고 지도 마커의 선택 상태도 맞추면 된다.
+      - 제목·주소·역명·방 이름·설명은 서버가 사용자 언어 문자열 하나로 선택해서 전달한다. 비로그인·온보딩 미완료 사용자는 영어가 기본이고, 온보딩을 완료한 로그인 사용자는 계정 언어를 사용한다.
 
       **에러 코드**
 
@@ -77,14 +62,13 @@ public final class ListingDocsFields {
       """
       현재 지도 영역에 표시할 매물 마커 좌표만 빠르게 조회한다.
 
-      **프론트 사용 방법**
+      **헤더**
 
-      - 지도 SDK에서 현재 viewport의 `swLat`, `swLng`, `neLat`, `neLng`를 구해 네 값을 모두 보낸다.
-      - `markers[].lat`, `markers[].lng`로 지도 마커를 렌더링한다.
-      - `markers[].listingId`로 마커 선택, 목록 카드 선택, 상세 진입을 서로 연결한다.
-      - 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v1/listings`를 같은 필터로 함께 호출한다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
 
-      인증 없이 사용할 수 있다. 지도 마커 응답에는 화면 표시용 번역 문구가 없으며 좌표와 식별자만 포함된다.
+      **응답 주의사항**
+
+      - 지도 마커 응답에는 화면 표시용 번역 문구가 없으며 좌표와 식별자만 포함된다. 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v1/listings`를 같은 필터로 함께 호출한다.
 
       **에러 코드**
 
@@ -104,21 +88,15 @@ public final class ListingDocsFields {
       """
       학교명·지역명·지하철역명으로 장소를 찾고, 그 장소 주변의 매물을 함께 조회한다.
 
-      **프론트 사용 방법**
+      **헤더**
 
-      - `matchedPlace`가 있으면 해당 `lat/lng`로 지도 카메라를 이동한다.
-      - `content[]`는 검색 결과 매물 카드 목록으로 표시한다.
-      - `content[].distanceMeters`는 검색 장소에서 매물까지의 직선거리 라벨에 사용한다.
-      - `conditions[].label`은 카드 조건 배지에 표시한다.
-      - `roomOffers[]`로 가격 범위와 노출할 방 타입을 계산한다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
 
-      **빈 결과 구분**
+      **응답 주의사항**
 
       - `matchedPlace=null`, `content=[]`: 검색어와 일치하는 장소가 없음
       - `matchedPlace` 존재, `content=[]`: 장소는 찾았지만 주변 매물이 없음
-
-      인증 없이 사용할 수 있다. 매물의 다국어 문자열과 `code/label` 사용 규칙은 매물 목록 API와 동일하며, 비로그인·온보딩 미완료 사용자는 영어가
-      기본이다.
+      - 매물의 다국어 문자열과 `code/label` 사용 규칙은 매물 목록 API와 동일하며, 비로그인·온보딩 미완료 사용자는 영어가 기본이다.
 
       **에러 코드**
 
@@ -136,13 +114,13 @@ public final class ListingDocsFields {
       """
       지도 검색창의 `keyword`로 네이버 지역 검색을 호출하고 정확도순 장소 후보를 최대 5개 반환한다.
 
-      **프론트 사용 방법**
+      **헤더**
 
-      - 검색 결과에는 `items[].title`, `address`, `roadAddress`를 표시한다.
-      - 사용자가 후보를 선택하면 `items[].lat/lng`로 지도 카메라를 이동한다.
-      - 카메라 이동 후 지도 SDK에서 bounds를 계산해 매물 목록 API와 지도 마커 API를 호출한다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
 
-      인증 없이 사용할 수 있다. 이 API는 장소 후보만 반환하며 MongoDB의 실제 매물은 조회하지 않는다.
+      **응답 주의사항**
+
+      - 이 API는 장소 후보만 반환하며 MongoDB의 실제 매물은 조회하지 않는다.
 
       **에러 코드**
 
@@ -161,31 +139,15 @@ public final class ListingDocsFields {
       """
       목록 카드나 지도 마커에서 매물을 선택한 뒤 상세 화면 전체를 구성할 때 사용한다.
 
-      **인증에 따른 동작**
+      **헤더**
 
-      - 인증 없이 조회할 수 있다. 비로그인·온보딩 미완료 사용자는 `favorited=false`이며 최근 본 기록을 남기지 않는다.
+      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
+
+      **응답 주의사항**
+
       - 온보딩을 완료한 로그인 사용자는 실제 찜 상태와 계정 언어가 적용되고, 조회한 매물이 최근 본 목록에 기록된다.
-      - 로그인 전에 조회한 매물은 로그인 후 최근 본 목록으로 소급해 옮기지 않는다.
-
-      **상세 화면 구성**
-
-      - 상단 제목·하트: `title`, `favorited`, `favoriteCount`
-      - 사진 갤러리: `imageUrls`, `roomOffers[].roomImageUrls`
-      - 방 타입·가격·재고: `roomOffers[]`, `pricing`, `inventory`
-      - 계약기간: `contract`
-      - 주소·지도: `address`, `location`
-      - 교통 정보: `nearestTransit`
-      - 조건 배지: `conditions[].label`
-      - 건물·정책·시설: `building`, `propertyPolicies`, `facilities`
-
-      난방 정보는 `building`이 아니라 `facilities.heatingSystem[]`에서 읽는다. `roomOffers[]`에는 상세 화면의 Room Types에 표시할 ACTIVE 방 타입이 들어 있다.
-
-      **다국어와 code/label 사용법**
-
-      - `type`, `rentalType`, `genderPolicy`, 교통수단, 시설, `conditions`, `filterTags`는 `{code,label}` 구조다.
-      - 화면에는 `label`을 표시하고 필터 요청·내부 비교에는 `code`를 사용한다.
+      - 비로그인·온보딩 미완료 사용자는 `favorited=false`이며 최근 본 기록을 남기지 않는다. 로그인 전에 조회한 매물은 로그인 후 최근 본 목록으로 소급해 옮기지 않는다.
       - `title`, 주소, 역명, 방 이름, 환불 설명, `descriptions.description`은 서버가 사용자 언어로 선택한 문자열 하나다.
-      - 프론트는 `ko/en`을 직접 선택하거나 MongoDB 번역 구조를 알 필요가 없다.
 
       **에러 코드**
 
@@ -201,15 +163,15 @@ public final class ListingDocsFields {
 
   public static final String FAVORITE_ADD_DESCRIPTION =
       """
-      온보딩을 완료한 로그인 사용자가 공개 매물을 찜할 때 호출한다.
+      공개 매물을 찜할 때 호출한다.
 
-      **응답 처리**
+      **헤더**
 
-      - 처음 찜한 경우: `201 Created`
-      - 이미 찜한 매물을 다시 요청한 경우: `200 OK`
-      - 두 응답 모두 `favorited=true`와 변경 후 `favoriteCount`를 반환한다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
 
-      프론트는 상태코드와 관계없이 응답의 `favorited`, `favoriteCount`로 하트 상태와 숫자를 갱신하면 된다.
+      **응답 주의사항**
+
+      - 처음 찜한 경우 `201 Created`, 이미 찜한 매물을 다시 요청한 경우 `200 OK`다. 두 응답 모두 `favorited=true`와 변경 후 `favoriteCount`를 반환한다.
 
       **에러 코드**
 
@@ -227,11 +189,15 @@ public final class ListingDocsFields {
 
   public static final String FAVORITE_REMOVE_DESCRIPTION =
       """
-      온보딩을 완료한 로그인 사용자가 매물 찜을 해제할 때 호출한다.
+      매물 찜을 해제할 때 호출한다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+
+      **응답 주의사항**
 
       - 이미 찜하지 않은 상태에서 다시 호출해도 에러가 아니다.
-      - 성공 응답은 `200 OK`, `favorited=false`와 변경 후 `favoriteCount`다.
-      - 프론트는 응답값으로 카드와 상세 화면의 하트 상태·찜 수를 갱신하면 된다.
 
       **에러 코드**
 
@@ -249,16 +215,15 @@ public final class ListingDocsFields {
 
   public static final String FAVORITES_LIST_DESCRIPTION =
       """
-      온보딩을 완료한 로그인 사용자가 마이페이지의 찜한 매물 목록을 페이지 단위로 조회한다.
+      마이페이지의 찜한 매물 목록을 페이지 단위로 조회한다.
 
-      **프론트 사용 방법**
+      **헤더**
 
-      - `content[]`는 일반 매물 카드와 거의 같은 구조다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+
+      **응답 주의사항**
+
       - 목록의 `favorited`는 항상 `true`다.
-      - `favoritedAt`은 사용자가 찜한 시각으로, 최신순 표시나 보조 문구에 사용할 수 있다.
-      - 매물 표시 문구와 `{code,label}`은 현재 사용자 언어로 반환된다.
-
-      찜 해제 후 목록을 다시 조회하거나, 클라이언트에서 같은 `listingId` 항목을 즉시 제거하면 된다.
 
       **에러 코드**
 
@@ -278,17 +243,14 @@ public final class ListingDocsFields {
       """
       마이페이지나 홈의 최근 본 매물 영역에 사용할 최대 10개 매물을 조회한다.
 
-      **프론트 사용 방법**
+      **헤더**
 
-      - 별도 요청 파라미터는 없다.
-      - 온보딩 완료 사용자가 매물 상세 API를 호출하면 최근 본 기록이 서버에서 자동 갱신된다.
-      - 비로그인·온보딩 미완료 상태의 조회 기록은 저장하거나 로그인 후 소급 이전하지 않는다.
-      - `content[]`는 일반 매물 카드와 거의 같은 구조다.
-      - `viewedAt`은 마지막으로 상세 화면을 본 시각이다.
-      - `favorited`로 현재 하트 상태를 그린다.
-      - 매물 표시 문구와 `{code,label}`은 현재 사용자 언어로 반환된다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
 
-      오래되었거나 더 이상 공개 상태가 아닌 매물은 응답에 포함되지 않는다.
+      **응답 주의사항**
+
+      - 온보딩 완료 사용자가 매물 상세 API를 호출하면 최근 본 기록이 서버에서 자동 갱신된다. 비로그인·온보딩 미완료 상태의 조회 기록은 저장하거나 로그인 후 소급 이전하지 않는다.
+      - 오래되었거나 더 이상 공개 상태가 아닌 매물은 응답에 포함되지 않는다.
 
       **에러 코드**
 

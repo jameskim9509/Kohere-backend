@@ -70,15 +70,15 @@ public final class UserDocsFields {
       """
       인증된 본인의 프로필 전체를 반환한다.
 
-      인증: 정식(ACTIVE) 회원 본인.
+      **헤더**
 
-      응답 필드는 `userType`으로 갈린다. 스키마에 `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 역할의 응답에서 **키 자체가 없다**(값이 null인 것이 아니다).
-      - `TENANT`: `gender`·`visaType`을 받고 `phoneNumber`는 생략된다.
-      - `LANDLORD`: `phoneNumber`를 받고 `gender`·`occupation`·`visaType`은 생략된다. 본인 조회라 `phoneNumber`는 평문이다.
-      - `occupation`은 세입자도 선택값이라 미설정이면 생략된다.
-      - `lang`은 세입자가 고르지 않았으면 생략된다(표시 시 `en` 폴백). 임대인은 서버가 `ko`로 고정 부여한다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+
+      **응답 주의사항**
+
+      - 응답 필드는 `userType`으로 갈린다. 스키마에 `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 역할의 응답에서 **키 자체가 없다**(값이 null인 것이 아니다).
+      - 역할이 맞아도 세입자 `occupation`·`lang`은 미설정이면 같은 방식으로 생략된다 — `lang`이 없으면 표시는 `en` 폴백.
       - `country`·`countryName`·`countryFlag`는 임대인도 받는다 — 서버가 `KR`을 고정 부여한다.
-      - `email`은 세입자·임대인 모두 소셜 로그인 provider 값으로 보유한다.
 
       **에러 코드**
 
@@ -104,14 +104,18 @@ public final class UserDocsFields {
       """
       전송한 필드만 바꾸고 미전송 필드는 유지한다(미전송은 「값 비움」이 아니다). 응답은 수정된 프로필 전체이며 `GET /users/me`와 동일 스키마다.
 
-      인증: 필수(정식 토큰 — `ACTIVE` 본인).
+      **헤더**
 
-      수정 가능 필드가 `userType`으로 갈린다.
-      - `TENANT`: `name`·`gender`·`birthDate`·`country`·`occupation`·`visaType`·`lang`·`marketingAgreed`.
-      - `LANDLORD`: `name`·`phoneNumber`·`marketingAgreed`. `lang`은 `ko` 고정이라 바꿀 수 없고 `birthDate`는 조회 전용이다.
-      - `nickname`(서버 배정)·`email`(소셜 provider 값)은 역할과 무관하게 이 경로의 수정 대상이 아니다.
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+
+      **요청 주의사항**
+
+      - 수정 가능 필드가 `userType`으로 갈린다 — 임대인은 `name`·`phoneNumber`·`marketingAgreed`만 바꿀 수 있고, `lang`은 `ko` 고정이라 바꿀 수 없으며 `birthDate`는 조회 전용이다.
       - 임대인 `phoneNumber` 변경은 새 번호를 SMS로 재인증한 뒤에만 반영된다.
-      - 응답의 역할 전용 필드(`(세입자만)`·`(임대인만)`)는 다른 역할의 응답에서 키 자체가 없다(값이 null인 것이 아니다).
+
+      **응답 주의사항**
+
+      - 역할 전용 필드(`(세입자만)`·`(임대인만)`)는 다른 역할의 응답에서 키 자체가 없다(값이 null인 것이 아니다).
 
       **에러 코드**
 
@@ -140,7 +144,12 @@ public final class UserDocsFields {
       """
       본인 계정을 `WITHDRAWN`으로 전이하고 PII를 즉시 익명화하며 refresh 토큰을 일괄 무효화한다.
 
-      인증: 필수. 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 사용자도 탈퇴할 수 있다(온보딩 중단 정리 목적이라 403을 두지 않았다).
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 온보딩 토큰·정식 토큰 모두 허용.
+      - 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 사용자도 탈퇴할 수 있다 — 온보딩 중단 정리 목적이라 403을 두지 않았다.
+
+      **응답 주의사항**
 
       - 성공 응답에는 본문이 없다(204).
       - Apple 연동 계정은 매핑 삭제 전에 Apple `/auth/revoke`로 연동까지 폐기한다(best-effort — Apple 장애여도 탈퇴는 완료).
@@ -167,9 +176,11 @@ public final class UserDocsFields {
       """
       내가 차단한 상대 목록을 페이지로 조회한다.
 
-      인증: 정식(ACTIVE) 회원 본인.
-
       차단은 예약 문맥(`POST /api/v1/bookings/{bookingId}/block`)에서만 생성된다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
 
       **에러 코드**
 
@@ -194,7 +205,9 @@ public final class UserDocsFields {
       """
       차단을 해제한다. 차단하지 않은 상대를 해제해도 204다(멱등).
 
-      인증: 정식(ACTIVE) 회원 본인. 본문·응답 본문이 없다.
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
 
       **에러 코드**
 
