@@ -399,11 +399,13 @@ public final class DiagnosisDocsFields {
           + """
 
       - `regionRetry`는 v2 흐름 전용 예외질문이라 이 엔드포인트로는 내려오지 않는다.
-      - """
+      """
+          + "- "
           + LANGUAGE_NOTE
           + """
 
-      - """
+      """
+          + "- "
           + SEED_NOTE
           + """
 
@@ -744,11 +746,14 @@ public final class DiagnosisDocsFields {
       **응답 주의사항**
 
       - 게스트로 호출하면 응답 `data.guestSessionId`에 세션 키(`anonymous<uuid>`)가 실린다. **키가 내려오는 유일한 지점**이며 회원 응답에서는 이 필드가 통째로 생략된다.
-      - """
+      """
+          + "- "
           + LANGUAGE_NOTE
+          + " 게스트는 `users` 행이 없어 `en` 고정이다."
           + """
-       게스트는 `users` 행이 없어 `en` 고정이다.
-      - """
+
+      """
+          + "- "
           + SEED_NOTE
           + """
 
@@ -824,11 +829,13 @@ public final class DiagnosisDocsFields {
       - `COMPLETED`에도 추천 매물은 실리지 않는다. 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
       - 매칭 0건은 이 응답이 아니라 그 추천 응답의 `resultCode=NO_MATCH`로 드러난다.
       - ① 지역 답 직후 그 지역 매물이 0건이면 서버가 `field=regionRetry` 예외질문(`YES`/`NO`)을 끼워 넣는다 — 다른 단계에서는 예외질문이 끼어들지 않는다.
-      - """
+      """
+          + "- "
           + LANGUAGE_NOTE
           + """
 
-      - """
+      """
+          + "- "
           + SEED_NOTE
           + """
 
