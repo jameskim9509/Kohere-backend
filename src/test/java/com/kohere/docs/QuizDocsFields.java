@@ -79,7 +79,7 @@ public final class QuizDocsFields {
 
       **응답 주의사항**
 
-      - `correctChoice`는 오답(`correct=false`)일 때만 내려간다. 정답이면 `null`이 아니라 **필드 자체가 생략된다**.
+      - `correctChoice`는 오답(`correct=false`)일 때만 내려간다. 정답이면 값이 null이 아니라 **필드 자체가 생략**된다.
       - 표시 언어가 호출자에 따라 갈린다 — 게스트는 `en` 고정, 세입자는 `users.lang`(미선택이면 `en`), 임대인은 `ko` 고정.
 
       **에러 코드**
@@ -128,7 +128,7 @@ public final class QuizDocsFields {
         optEnumField(
             "data.correctChoice",
             ChoiceKey.class,
-            "정답 보기 키 — 오답일 때만 포함되고 정답이면 `null`이 아니라 필드 자체가 생략된다"),
+            "정답 보기 키 — 오답일 때만 포함되고 정답이면 값이 null이 아니라 필드 자체가 생략된다"),
         field("data.explanation", JsonFieldType.STRING, "해설(정답·오답 모두, 표시 언어로 번역)"),
         errorNull());
   }

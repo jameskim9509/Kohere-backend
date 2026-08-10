@@ -76,7 +76,7 @@ public final class UserDocsFields {
 
       **응답 주의사항**
 
-      - 응답 필드는 `userType`으로 갈린다. 스키마에 `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 역할의 응답에서 **키 자체가 없다**(값이 null인 것이 아니다).
+      - 응답 필드는 `userType`으로 갈린다. 스키마에 `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 역할의 응답에서 값이 null이 아니라 **필드 자체가 생략**된다.
       - 역할이 맞아도 세입자 `occupation`·`lang`은 미설정이면 같은 방식으로 생략된다 — `lang`이 없으면 표시는 `en` 폴백.
       - `country`·`countryName`·`countryFlag`는 임대인도 받는다 — 서버가 `KR`을 고정 부여한다.
 
@@ -115,7 +115,7 @@ public final class UserDocsFields {
 
       **응답 주의사항**
 
-      - 역할 전용 필드(`(세입자만)`·`(임대인만)`)는 다른 역할의 응답에서 키 자체가 없다(값이 null인 것이 아니다).
+      - 역할 전용 필드(`(세입자만)`·`(임대인만)`)는 다른 역할의 응답에서 값이 null이 아니라 **필드 자체가 생략**된다.
 
       **에러 코드**
 
@@ -237,7 +237,7 @@ public final class UserDocsFields {
         optField(
             prefix + "name",
             JsonFieldType.STRING,
-            "이름(성·이름을 합친 단일 이름). 소셜 로그인 시 provider 값으로 채우며 provider가 주지 않으면 생략된다"),
+            "이름(성·이름을 합친 단일 이름). 소셜 로그인 시 provider 값으로 채우며 provider가 주지 않으면 필드 자체가 생략된다"),
         field(prefix + "nickname", JsonFieldType.STRING, "닉네임(서버가 형용사+사물로 배정, 전역 유니크·수정 불가)"),
         optEnumField(prefix + "gender", Gender.class, "성별(세입자만)"),
         field(prefix + "birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),

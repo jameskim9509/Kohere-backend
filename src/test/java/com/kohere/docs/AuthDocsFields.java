@@ -193,7 +193,7 @@ public final class AuthDocsFields {
 
       **응답 주의사항**
 
-      - 응답 `data.user`의 `phoneNumber`는 세입자 미수집이라 필드 자체가 생략된다.
+      - 응답 `data.user`의 `phoneNumber`는 세입자 미수집이라 값이 null이 아니라 **필드 자체가 생략**된다.
 
       **에러 코드**
 
@@ -395,7 +395,7 @@ public final class AuthDocsFields {
       **응답 주의사항**
 
       - 국적·표시 언어는 서버가 `KR`·`ko`로 고정 부여한다.
-      - 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 필드 자체가 생략되고 `phoneNumber`는 마스킹된다.
+      - 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 값이 null이 아니라 **필드 자체가 생략**되고, `phoneNumber`는 마스킹된다.
 
       **에러 코드**
 
