@@ -171,6 +171,7 @@ provider별로 **자격 필드 하나**를 채우고(Google은 `idToken`, Apple�
 | 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패, 또는 Apple 교환 실패(`invalid_grant`/`invalid_client` — 만료·재사용 코드, 잘못된 client_secret)와 교환으로 받은 `id_token` 검증 실패. **provider JWKS 조회 실패 등 OIDC 연동 오류도 현재 구현은 이 코드로 통합 처리**한다(아래 노트) |
 | 422 | `AUTH_EMAIL_REQUIRED` | **최초 로그인(신규 가입) 시** 토큰의 `email` 클레임·요청 `email` 어느 쪽에도 이메일이 없음(provider 진본 이메일을 확정할 수 없음). 재로그인은 email 없이도 통과(저장값 사용) |
 | 422 | `AUTH_EMAIL_MISMATCH` | **최초 로그인 시** 요청 `email`이 토큰의 `email` 클레임과 불일치(요청 값 위조 방어 — email은 provider 진본으로 확정) |
+| 502 | `UPSTREAM_ERROR` | Apple `/auth/token` 인가코드 교환의 일시 장애(타임아웃·5xx·I/O). 자격 문제(401)가 아니므로 그대로 재시도할 수 있다(아래 노트) |
 
 > **연동 실패 처리(현행)**: `OidcTokenVerifierImpl`은 JWKS 조회 실패·provider 응답 오류를 포함한 모든 OIDC 검증 실패를 `401 AUTH_INVALID_SOCIAL_TOKEN`으로 변환한다. Apple `/auth/token` 교환 호출의 인증 실패(`invalid_grant`/`invalid_client`)도 `401`로 통합하고, Apple 측 일시 장애·타임아웃 등 I/O·5xx는 `502 UPSTREAM_ERROR`로 분리한다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)). Google 경로는 종전대로 `502`/`503`을 내지 않는다(시퀀스 [US-1-1](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-1-social-login.md)·REST Docs 스니펫과 정합). 외부 연동 견고화(타임아웃·재시도·서킷브레이커) 확대는 [error-response-guide](../error-response-guide.md) §3 참고.
 

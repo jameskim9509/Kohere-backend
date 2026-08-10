@@ -36,6 +36,7 @@ import static com.kohere.docs.AuthDocsFields.REISSUE_SUMMARY;
 import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_400;
 import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_401;
 import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_422;
+import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_502;
 import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_DESCRIPTION;
 import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_SUMMARY;
 import static com.kohere.docs.AuthDocsFields.TERMS_400;
@@ -97,6 +98,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.auth.application.EmailVerificationProperties;
 import com.kohere.auth.domain.AppleAuthClient;
+import com.kohere.auth.domain.AppleUpstreamException;
 import com.kohere.auth.domain.EmailDispatchException;
 import com.kohere.auth.domain.InvalidSocialTokenException;
 import com.kohere.auth.domain.OidcTokenVerifier;
@@ -107,6 +109,7 @@ import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsTags;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -569,6 +572,23 @@ class AuthOnboardingDocsTest {
         SOCIAL_LOGIN_SUMMARY,
         SOCIAL_LOGIN_DESCRIPTION,
         SOCIAL_LOGIN_422);
+
+    // Apple 인가코드 교환의 일시 장애 — 자격 문제(401)와 갈리는 유일한 지점이라 코드를 따로 둔다(ADR-0031).
+    // 어댑터가 타임아웃·5xx·I/O를 AppleUpstreamException으로 모아 던지므로 포트를 스텁해 재현한다.
+    // 서비스 단계에서 나는 에러라 유효 본문이 필요하다(#151-4).
+    when(appleAuthClient.exchangeAuthorizationCode("docs-apple-upstream-down"))
+        .thenThrow(new AppleUpstreamException(new SocketTimeoutException("Read timed out")));
+    perform(
+        post("/api/v1/auth/social-login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"provider\":\"APPLE\",\"authorizationCode\":\"docs-apple-upstream-down\"}"),
+        status().isBadGateway(),
+        "UPSTREAM_ERROR",
+        "auth-social-login-upstream-error",
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_502);
 
     // ===== terms =====
     perform(

@@ -61,6 +61,7 @@ public final class AuthDocsFields {
       | 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명·`aud`·`iss`·`exp` 검증 실패, Apple 인가코드 교환 실패(만료·재사용 코드), 교환으로 받은 `id_token` 검증 실패 |
       | 422 | `AUTH_EMAIL_MISMATCH` | 최초 로그인에서 요청 `email`이 토큰의 email 클레임과 불일치 |
       | 422 | `AUTH_EMAIL_REQUIRED` | 최초 로그인에서 토큰 클레임·요청 어느 쪽에도 `email`이 없어 provider 진본 이메일을 확정할 수 없음 |
+      | 502 | `UPSTREAM_ERROR` | Apple `/auth/token` 인가코드 교환이 타임아웃·5xx·I/O 오류로 실패 — 자격 문제가 아니므로 401과 달리 그대로 재시도할 수 있다 |
       """;
 
   public static final String[] SOCIAL_LOGIN_400 = {
@@ -68,6 +69,7 @@ public final class AuthDocsFields {
   };
   public static final String[] SOCIAL_LOGIN_401 = {"AUTH_INVALID_SOCIAL_TOKEN"};
   public static final String[] SOCIAL_LOGIN_422 = {"AUTH_EMAIL_MISMATCH", "AUTH_EMAIL_REQUIRED"};
+  public static final String[] SOCIAL_LOGIN_502 = {"UPSTREAM_ERROR"};
 
   // ── 약관 동의 — POST /api/v1/auth/terms ─────────────────────────────────────
 
