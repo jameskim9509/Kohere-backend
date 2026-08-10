@@ -58,10 +58,18 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiResponse<Void>> handleInvalidInput(InvalidInputException e) {
     ErrorCode ec = e.getErrorCode();
     AccessLogContext.errorCode(ec.getCode());
+    List<FieldErrorDetail> details =
+        e.getField() == null
+            ? List.of()
+            : List.of(new FieldErrorDetail(e.getField(), resolveReason(e)));
     return ResponseEntity.status(ec.getHttpStatus())
-        .body(
-            ApiResponse.error(
-                ec.getCode(), resolveMessage(ec, e.getMessage()), e.getFieldErrors()));
+        .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, ec.getDefaultMessage()), details));
+  }
+
+  /** 사유 번들 키를 요청 locale로 해소한다. 키가 없으면 넘어온 문자열을 그대로 쓴다 — 아직 키로 바꾸지 않은 호출부가 종전처럼 동작하게 하는 폴백이다. */
+  private String resolveReason(InvalidInputException e) {
+    return messageSource.getMessage(
+        e.getReasonCode(), e.getReasonArgs(), e.getReasonCode(), LocaleContextHolder.getLocale());
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

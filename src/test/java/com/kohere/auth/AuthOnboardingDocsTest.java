@@ -1175,7 +1175,9 @@ class AuthOnboardingDocsTest {
         .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
         // 어느 필드가 왜 거절됐는지는 errors[]로만 전달된다 — message는 일반 문구로 덮인다(#151).
         .andExpect(jsonPath("$.error.errors[0].field").value("gender"))
-        .andExpect(jsonPath("$.error.errors[0].reason").value("허용 목록 밖의 값입니다: UNKNOWN"));
+        // 문서 테스트는 Accept-Language 를 보내지 않아 기본 번들(영어)로 해소된다 — ko 번역은
+        // GlobalExceptionHandlerI18nTest 가 검증한다.
+        .andExpect(jsonPath("$.error.errors[0].reason").value("Not an allowed value: UNKNOWN"));
 
     // 401/403은 시큐리티 필터가 본문 파싱 전에 끊는다 — 요청 본문 없이도 같은 에러다(#151-4).
     perform(

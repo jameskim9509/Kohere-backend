@@ -33,7 +33,7 @@ public class DiagnosisAnswerApplier {
   Diagnosis apply(Diagnosis draft, AnswerRequest request) {
     String field = request.field();
     if (field == null || field.isBlank()) {
-      throw new InvalidInputException("field", "필요합니다.");
+      throw new InvalidInputException("field", "validation.required");
     }
     Diagnosis.DiagnosisBuilder builder = draft.toBuilder();
     switch (field) {
@@ -44,13 +44,13 @@ public class DiagnosisAnswerApplier {
               .university(null)
               .district(null);
       case "university" -> {
-        requirePurpose(draft, Purpose.STUDY, "university");
+        requirePurpose(draft, Purpose.STUDY);
         builder
             .university(parseEnum(UniversityGroup.class, CODE, requireCode(request)))
             .district(null);
       }
       case "district" -> {
-        requirePurpose(draft, Purpose.NON_STUDY, "district");
+        requirePurpose(draft, Purpose.NON_STUDY);
         builder.district(parseEnum(District.class, CODE, requireCode(request))).university(null);
       }
       case "conditions" ->
@@ -63,22 +63,21 @@ public class DiagnosisAnswerApplier {
         ArcStatus arcStatus = parseEnum(ArcStatus.class, CODE, requireCode(request));
         builder.arcStatus(arcStatus).conditions(withArcCondition(draft.getConditions(), arcStatus));
       }
-      default -> throw new InvalidInputException("field", "지원하지 않는 값입니다: " + field);
+      default -> throw new InvalidInputException("field", "validation.notAllowed", field);
     }
     return builder.build();
   }
 
   private static String requireCode(AnswerRequest request) {
     if (request.code() == null || request.code().isBlank()) {
-      throw new InvalidInputException(CODE, "필요합니다.");
+      throw new InvalidInputException(CODE, "validation.required");
     }
     return request.code();
   }
 
-  private static void requirePurpose(Diagnosis draft, Purpose expected, String field) {
+  private static void requirePurpose(Diagnosis draft, Purpose expected) {
     if (draft.getPurpose() != expected) {
-      throw new InvalidInputException(
-          "field", field + "는 purpose=" + expected.name() + "일 때만 저장할 수 있습니다.");
+      throw new InvalidInputException("field", "validation.onlyForPurpose", expected.name());
     }
   }
 
@@ -89,14 +88,14 @@ public class DiagnosisAnswerApplier {
         DiagnosisCondition condition = parseEnum(DiagnosisCondition.class, CODES, code);
         if (!condition.userSelectable()) {
           // NO_ARC는 ⑥ arcStatus에서 서버가 파생하는 필터라 ④에서 직접 선택할 수 없다.
-          throw new InvalidInputException(CODES, "선택할 수 없는 값입니다: " + code);
+          throw new InvalidInputException(CODES, "validation.notAllowed", code);
         }
         result.add(condition);
       }
     }
     if (result.size() > Diagnosis.MAX_CONDITIONS) {
       throw new InvalidInputException(
-          CODES, "최대 " + Diagnosis.MAX_CONDITIONS + "개까지 선택할 수 있습니다: " + result.size() + "개");
+          CODES, "validation.maxSelections", Diagnosis.MAX_CONDITIONS, result.size());
     }
     return result;
   }
@@ -122,20 +121,20 @@ public class DiagnosisAnswerApplier {
     // 두 필드를 따로 검사한다 — 「min·max 중 하나」로 묶으면 어느 쪽이 잘못됐는지 errors[]에 실을 수 없다.
     // 거절되는 요청 집합은 묶어서 검사할 때와 같다.
     if (request.min() == null) {
-      throw new InvalidInputException("min", "monthlyRent 단계에서는 필수입니다.");
+      throw new InvalidInputException("min", "validation.requiredForStep", "monthlyRent");
     }
     if (request.max() == null) {
-      throw new InvalidInputException("max", "monthlyRent 단계에서는 필수입니다.");
+      throw new InvalidInputException("max", "validation.requiredForStep", "monthlyRent");
     }
     if (request.min() < 0) {
-      throw new InvalidInputException("min", "0 이상이어야 합니다: " + request.min());
+      throw new InvalidInputException("min", "validation.min", 0, request.min());
     }
     if (request.max() < 0) {
-      throw new InvalidInputException("max", "0 이상이어야 합니다: " + request.max());
+      throw new InvalidInputException("max", "validation.min", 0, request.max());
     }
     if (request.min() > request.max()) {
       throw new InvalidInputException(
-          "min", "max 이하여야 합니다: min=" + request.min() + ", max=" + request.max());
+          "min", "validation.notGreaterThan", "max", request.min(), request.max());
     }
   }
 
@@ -146,7 +145,7 @@ public class DiagnosisAnswerApplier {
     try {
       return Enum.valueOf(type, value);
     } catch (IllegalArgumentException | NullPointerException e) {
-      throw new InvalidInputException(field, type.getSimpleName() + " 값이 올바르지 않습니다: " + value);
+      throw new InvalidInputException(field, "validation.notAllowed", value);
     }
   }
 }

@@ -82,10 +82,10 @@ public class UserBlockServiceImpl implements UserBlockService {
   /** 페이지 번호와 크기가 API 약속 범위 안에 있는지 확인한다. */
   private static void validatePage(int page, int size) {
     if (page < 0) {
-      throw new InvalidInputException("page", "0 이상이어야 합니다: " + page);
+      throw new InvalidInputException("page", "validation.min", 0, page);
     }
     if (size < 1 || size > MAX_PAGE_SIZE) {
-      throw new InvalidInputException("size", "1 이상 " + MAX_PAGE_SIZE + " 이하이어야 합니다: " + size);
+      throw new InvalidInputException("size", "validation.range", 1, MAX_PAGE_SIZE, size);
     }
   }
 

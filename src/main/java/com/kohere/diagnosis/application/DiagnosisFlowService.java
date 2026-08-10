@@ -119,12 +119,12 @@ public class DiagnosisFlowService {
     DiagnosisFlowSession session =
         findSession(userId, guestSessionId).orElseThrow(DiagnosisFlowSessionNotFoundException::new);
     if (request == null || request.field() == null || request.field().isBlank()) {
-      throw new InvalidInputException("field", "현재 문항의 답이 필요합니다.");
+      throw new InvalidInputException("field", "validation.currentQuestionRequired");
     }
     // 기대 답은 서버가 직전에 낸 문항(pendingField)이다 — 정본 순서로 역산하지 않으므로 6슬롯에 없는
     // 예외질문(regionRetry)도 일반 문항과 같은 규칙으로 검증된다.
     if (!request.field().equals(session.getPendingField())) {
-      throw new InvalidInputException("field", "현재 문항의 답이 아닙니다: " + request.field());
+      throw new InvalidInputException("field", "validation.notCurrentQuestion", request.field());
     }
     if (REGION_RETRY_FIELD.equals(session.getPendingField())) {
       return handleRegionRetry(session, request);
@@ -171,7 +171,7 @@ public class DiagnosisFlowService {
       DiagnosisFlowSession session, AnswerRequest request) {
     String code = request.code();
     if (!YES.equals(code) && !NO.equals(code)) {
-      throw new InvalidInputException("code", "regionRetry 응답은 YES 또는 NO여야 합니다: " + code);
+      throw new InvalidInputException("code", "validation.yesOrNo", code);
     }
     // 예("다른 지역")든 아니오(종료)든 이 시도는 여기서 끝난다 — 어느 쪽이든 "이 지역을 원했는데 매물이
     // 없었다"는 수요 신호라 폐기 기록으로 남긴다(사용자 비노출). 재시도를 안 남기면 사용자가 다른 지역으로

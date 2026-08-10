@@ -79,7 +79,8 @@ public class UserAccountServiceImpl implements UserAccountService {
     Occupation occupation = parseOccupation(profile.occupation());
     VisaType visaType = parseEnum(VisaType.class, "visaType", profile.visaType());
     if (profile.country() == null || !countryRepository.existsByCode(profile.country())) {
-      throw new InvalidInputException("country", "값이 올바르지 않습니다: " + profile.country());
+      throw new InvalidInputException(
+          "country", "validation.unsupportedCountry", profile.country());
     }
     Language lang = parseLanguage(profile.lang());
     String nickname = nicknameGenerator.generateUnique();
@@ -213,7 +214,8 @@ public class UserAccountServiceImpl implements UserAccountService {
       return null;
     }
     return Language.from(code)
-        .orElseThrow(() -> new InvalidInputException("lang", "값이 올바르지 않습니다: " + code));
+        .orElseThrow(
+            () -> new InvalidInputException("lang", "validation.unsupportedLanguage", code));
   }
 
   /**
@@ -235,7 +237,7 @@ public class UserAccountServiceImpl implements UserAccountService {
     try {
       return Enum.valueOf(type, value);
     } catch (IllegalArgumentException | NullPointerException e) {
-      throw new InvalidInputException(field, "값이 올바르지 않습니다: " + value);
+      throw new InvalidInputException(field, "validation.notAllowed", value);
     }
   }
 }

@@ -402,12 +402,12 @@ public class ListingService {
   /** keyword는 필수이며, 앞뒤 공백 제거 후 1~50자 안에 있어야 한다. */
   private static String validateAndNormalizeKeyword(String keyword) {
     if (keyword == null || keyword.trim().isEmpty()) {
-      throw new InvalidInputException("keyword", "필수입니다.");
+      throw new InvalidInputException("keyword", "validation.required");
     }
     String normalized = keyword.trim();
     if (normalized.length() > MAX_KEYWORD_LENGTH) {
       throw new InvalidInputException(
-          "keyword", "1자 이상 50자 이하이어야 합니다: " + normalized.length() + "자");
+          "keyword", "validation.lengthRange", 1, MAX_KEYWORD_LENGTH, normalized.length());
     }
     return normalized;
   }
@@ -477,23 +477,23 @@ public class ListingService {
   private static void validateMoneyRange(
       String minField, String maxField, Integer min, Integer max) {
     if (min != null && min < 0) {
-      throw new InvalidInputException(minField, "0 이상이어야 합니다: " + min);
+      throw new InvalidInputException(minField, "validation.min", 0, min);
     }
     if (max != null && max < 0) {
-      throw new InvalidInputException(maxField, "0 이상이어야 합니다: " + max);
+      throw new InvalidInputException(maxField, "validation.min", 0, max);
     }
     if (min != null && max != null && min > max) {
-      throw new InvalidInputException(minField, maxField + "보다 클 수 없습니다: " + min + " > " + max);
+      throw new InvalidInputException(minField, "validation.notGreaterThan", maxField, min, max);
     }
   }
 
   /** 페이지 번호와 크기가 API 약속 범위 안에 있는지 확인한다. */
   private static void validatePage(int page, int size) {
     if (page < 0) {
-      throw new InvalidInputException("page", "0 이상이어야 합니다: " + page);
+      throw new InvalidInputException("page", "validation.min", 0, page);
     }
     if (size < 1 || size > MAX_PAGE_SIZE) {
-      throw new InvalidInputException("size", "1 이상 100 이하이어야 합니다: " + size);
+      throw new InvalidInputException("size", "validation.range", 1, MAX_PAGE_SIZE, size);
     }
   }
 

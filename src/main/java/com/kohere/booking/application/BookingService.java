@@ -132,10 +132,10 @@ public class BookingService {
   /** 페이지 번호와 크기가 API 약속 범위 안에 있는지 확인한다. */
   private static void validatePage(int page, int size) {
     if (page < 0) {
-      throw new InvalidInputException("page", "0 이상이어야 합니다: " + page);
+      throw new InvalidInputException("page", "validation.min", 0, page);
     }
     if (size < 1 || size > MAX_PAGE_SIZE) {
-      throw new InvalidInputException("size", "1 이상 " + MAX_PAGE_SIZE + " 이하이어야 합니다: " + size);
+      throw new InvalidInputException("size", "validation.range", 1, MAX_PAGE_SIZE, size);
     }
   }
 
@@ -277,7 +277,7 @@ public class BookingService {
   /** 선택 사유 검증 — {@code null}은 사유 없음, 카탈로그에 없는(또는 비활성) 코드는 400 {@code INVALID_INPUT}. */
   private void validateReason(String reason) {
     if (reason != null && !reportReasonRepository.existsActiveByCode(reason)) {
-      throw new InvalidInputException("reason", "값이 올바르지 않습니다: " + reason);
+      throw new InvalidInputException("reason", "validation.notAllowed", reason);
     }
   }
 
