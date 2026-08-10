@@ -17,11 +17,7 @@ import org.springframework.util.AntPathMatcher;
 final class PublicPaths {
 
   private static final String[] ALL = {
-    "/api/v1/auth/social-login",
-    "/api/v1/auth/reissue",
-    "/actuator/health",
-    "/docs/**",
-    "/swagger-ui/**"
+    "/api/v1/auth/social-login", "/api/v1/auth/reissue", "/actuator/health", "/swagger-ui/**"
   };
 
   private static final AntPathMatcher MATCHER = new AntPathMatcher();

@@ -18,6 +18,6 @@ public class LoggingWebMvcConfig implements WebMvcConfigurer {
   public void addInterceptors(InterceptorRegistry registry) {
     registry
         .addInterceptor(new AccessLogInterceptor())
-        .excludePathPatterns("/actuator/health", "/docs/**", "/swagger-ui/**");
+        .excludePathPatterns("/actuator/health", "/swagger-ui/**");
   }
 }

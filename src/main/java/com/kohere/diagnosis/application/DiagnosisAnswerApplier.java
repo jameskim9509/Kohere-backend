@@ -23,27 +23,35 @@ import org.springframework.stereotype.Component;
 @Component
 public class DiagnosisAnswerApplier {
 
+  /** 단일 선택 답을 싣는 요청 본문 필드명({@code AnswerRequest.code}) — {@code errors[].field}로 나간다. */
+  private static final String CODE = "code";
+
+  /** 다중 선택 답을 싣는 요청 본문 필드명({@code AnswerRequest.codes}) — {@code errors[].field}로 나간다. */
+  private static final String CODES = "codes";
+
   /** 현재 답 1개를 초안에 적용한 새 초안을 반환한다(불변 애그리거트 전이). */
   Diagnosis apply(Diagnosis draft, AnswerRequest request) {
     String field = request.field();
     if (field == null || field.isBlank()) {
-      throw new InvalidInputException("field가 필요합니다.");
+      throw new InvalidInputException("field", "validation.required");
     }
     Diagnosis.DiagnosisBuilder builder = draft.toBuilder();
     switch (field) {
-      case "region" -> builder.region(parseEnum(Region.class, requireCode(request)));
+      case "region" -> builder.region(parseEnum(Region.class, CODE, requireCode(request)));
       case "purpose" ->
           builder
-              .purpose(parseEnum(Purpose.class, requireCode(request)))
+              .purpose(parseEnum(Purpose.class, CODE, requireCode(request)))
               .university(null)
               .district(null);
       case "university" -> {
-        requirePurpose(draft, Purpose.STUDY, "university");
-        builder.university(parseEnum(UniversityGroup.class, requireCode(request))).district(null);
+        requirePurpose(draft, Purpose.STUDY);
+        builder
+            .university(parseEnum(UniversityGroup.class, CODE, requireCode(request)))
+            .district(null);
       }
       case "district" -> {
-        requirePurpose(draft, Purpose.NON_STUDY, "district");
-        builder.district(parseEnum(District.class, requireCode(request))).university(null);
+        requirePurpose(draft, Purpose.NON_STUDY);
+        builder.district(parseEnum(District.class, CODE, requireCode(request))).university(null);
       }
       case "conditions" ->
           builder.conditions(withArcCondition(parseConditions(request), draft.getArcStatus()));
@@ -52,24 +60,24 @@ public class DiagnosisAnswerApplier {
         builder.monthlyRentMin(request.min()).monthlyRentMax(request.max());
       }
       case "arcStatus" -> {
-        ArcStatus arcStatus = parseEnum(ArcStatus.class, requireCode(request));
+        ArcStatus arcStatus = parseEnum(ArcStatus.class, CODE, requireCode(request));
         builder.arcStatus(arcStatus).conditions(withArcCondition(draft.getConditions(), arcStatus));
       }
-      default -> throw new InvalidInputException("지원하지 않는 field입니다: " + field);
+      default -> throw new InvalidInputException("field", "validation.notAllowed", field);
     }
     return builder.build();
   }
 
   private static String requireCode(AnswerRequest request) {
     if (request.code() == null || request.code().isBlank()) {
-      throw new InvalidInputException("code가 필요합니다.");
+      throw new InvalidInputException(CODE, "validation.required");
     }
     return request.code();
   }
 
-  private static void requirePurpose(Diagnosis draft, Purpose expected, String field) {
+  private static void requirePurpose(Diagnosis draft, Purpose expected) {
     if (draft.getPurpose() != expected) {
-      throw new InvalidInputException(field + "는 purpose=" + expected.name() + "일 때만 저장할 수 있습니다.");
+      throw new InvalidInputException("field", "validation.onlyForPurpose", expected.name());
     }
   }
 
@@ -77,16 +85,17 @@ public class DiagnosisAnswerApplier {
     Set<DiagnosisCondition> result = new LinkedHashSet<>();
     if (request.codes() != null) {
       for (String code : request.codes()) {
-        DiagnosisCondition condition = parseEnum(DiagnosisCondition.class, code);
+        DiagnosisCondition condition = parseEnum(DiagnosisCondition.class, CODES, code);
         if (!condition.userSelectable()) {
           // NO_ARC는 ⑥ arcStatus에서 서버가 파생하는 필터라 ④에서 직접 선택할 수 없다.
-          throw new InvalidInputException("conditions에서 선택할 수 없는 값입니다: " + code);
+          throw new InvalidInputException(CODES, "validation.notAllowed", code);
         }
         result.add(condition);
       }
     }
     if (result.size() > Diagnosis.MAX_CONDITIONS) {
-      throw new InvalidInputException("conditions는 최대 3개까지 선택할 수 있습니다.");
+      throw new InvalidInputException(
+          CODES, "validation.maxSelections", Diagnosis.MAX_CONDITIONS, result.size());
     }
     return result;
   }
@@ -109,22 +118,34 @@ public class DiagnosisAnswerApplier {
   }
 
   private static void validateRent(AnswerRequest request) {
-    if (request.min() == null || request.max() == null) {
-      throw new InvalidInputException("monthlyRent는 min과 max가 모두 필요합니다.");
+    // 두 필드를 따로 검사한다 — 「min·max 중 하나」로 묶으면 어느 쪽이 잘못됐는지 errors[]에 실을 수 없다.
+    // 거절되는 요청 집합은 묶어서 검사할 때와 같다.
+    if (request.min() == null) {
+      throw new InvalidInputException("min", "validation.requiredForStep", "monthlyRent");
     }
-    if (request.min() < 0 || request.max() < 0) {
-      throw new InvalidInputException("monthlyRent는 0 이상이어야 합니다.");
+    if (request.max() == null) {
+      throw new InvalidInputException("max", "validation.requiredForStep", "monthlyRent");
+    }
+    if (request.min() < 0) {
+      throw new InvalidInputException("min", "validation.min", 0, request.min());
+    }
+    if (request.max() < 0) {
+      throw new InvalidInputException("max", "validation.min", 0, request.max());
     }
     if (request.min() > request.max()) {
-      throw new InvalidInputException("monthlyRentMin은 monthlyRentMax 이하여야 합니다.");
+      throw new InvalidInputException(
+          "min", "validation.notGreaterThan", "max", request.min(), request.max());
     }
   }
 
-  private static <E extends Enum<E>> E parseEnum(Class<E> type, String value) {
+  /**
+   * @param field 값을 실어 보낸 요청 본문 필드명({@code code} 또는 {@code codes}) — {@code errors[].field}로 나간다
+   */
+  private static <E extends Enum<E>> E parseEnum(Class<E> type, String field, String value) {
     try {
       return Enum.valueOf(type, value);
     } catch (IllegalArgumentException | NullPointerException e) {
-      throw new InvalidInputException(type.getSimpleName() + " 값이 올바르지 않습니다: " + value);
+      throw new InvalidInputException(field, "validation.notAllowed", value);
     }
   }
 }

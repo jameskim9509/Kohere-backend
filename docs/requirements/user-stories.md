@@ -59,7 +59,7 @@
 - **입력 검증 실패**
   Given `provider`가 누락(null)이거나 `idToken`이 빈 문자열이면
   When `POST /api/v1/auth/social-login`을 호출하면
-  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다. (`provider`가 `APPLE`/`GOOGLE` 외 enum 문자열이면 역직렬화 단계에서 거부되어 `400` + `error.code=MALFORMED_REQUEST`로 처리한다 — 둘 다 별도 도메인 코드가 아닌 표준 입력 오류)
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다. (`provider`가 `APPLE`/`GOOGLE` 외 값이면 서버가 파싱해 `400` + `error.code=INVALID_INPUT`으로 처리한다 — 둘 다 별도 도메인 코드가 아닌 표준 입력 오류)
 - **인증·권한 — 소셜 검증 실패**
   Given `idToken`의 서명이 위조되었거나 `aud`/`iss`가 우리 앱과 불일치하거나 `exp`가 지났으면
   When `POST /api/v1/auth/social-login`을 호출하면

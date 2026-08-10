@@ -2,14 +2,87 @@ package com.kohere.auth;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
-import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static com.kohere.docs.ApiDocsErrors.assertError;
+import static com.kohere.docs.ApiDocsErrors.errorSnippet;
+import static com.kohere.docs.AuthDocsFields.EMAIL_CODE_400;
+import static com.kohere.docs.AuthDocsFields.EMAIL_CODE_401;
+import static com.kohere.docs.AuthDocsFields.EMAIL_CODE_403;
+import static com.kohere.docs.AuthDocsFields.EMAIL_CODE_429;
+import static com.kohere.docs.AuthDocsFields.EMAIL_CODE_502;
+import static com.kohere.docs.AuthDocsFields.EMAIL_CODE_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.EMAIL_CODE_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.EMAIL_VERIFY_400;
+import static com.kohere.docs.AuthDocsFields.EMAIL_VERIFY_401;
+import static com.kohere.docs.AuthDocsFields.EMAIL_VERIFY_403;
+import static com.kohere.docs.AuthDocsFields.EMAIL_VERIFY_422;
+import static com.kohere.docs.AuthDocsFields.EMAIL_VERIFY_429;
+import static com.kohere.docs.AuthDocsFields.EMAIL_VERIFY_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.EMAIL_VERIFY_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.LOGOUT_400;
+import static com.kohere.docs.AuthDocsFields.LOGOUT_401;
+import static com.kohere.docs.AuthDocsFields.LOGOUT_403;
+import static com.kohere.docs.AuthDocsFields.LOGOUT_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.LOGOUT_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.ONBOARDING_400;
+import static com.kohere.docs.AuthDocsFields.ONBOARDING_401;
+import static com.kohere.docs.AuthDocsFields.ONBOARDING_409;
+import static com.kohere.docs.AuthDocsFields.ONBOARDING_422;
+import static com.kohere.docs.AuthDocsFields.ONBOARDING_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.ONBOARDING_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.REISSUE_400;
+import static com.kohere.docs.AuthDocsFields.REISSUE_401;
+import static com.kohere.docs.AuthDocsFields.REISSUE_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.REISSUE_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_400;
+import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_401;
+import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_422;
+import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_502;
+import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.SOCIAL_LOGIN_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.TERMS_400;
+import static com.kohere.docs.AuthDocsFields.TERMS_401;
+import static com.kohere.docs.AuthDocsFields.TERMS_409;
+import static com.kohere.docs.AuthDocsFields.TERMS_422;
+import static com.kohere.docs.AuthDocsFields.TERMS_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.TERMS_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.emailCodeRequestFields;
+import static com.kohere.docs.AuthDocsFields.emailCodeResponseFields;
+import static com.kohere.docs.AuthDocsFields.emailVerifyRequestFields;
+import static com.kohere.docs.AuthDocsFields.emailVerifyResponseFields;
+import static com.kohere.docs.AuthDocsFields.onboardingRequestFields;
+import static com.kohere.docs.AuthDocsFields.refreshTokenRequestField;
+import static com.kohere.docs.AuthDocsFields.reissueResponseFields;
+import static com.kohere.docs.AuthDocsFields.socialLoginRequestFields;
+import static com.kohere.docs.AuthDocsFields.socialLoginResponseFields;
+import static com.kohere.docs.AuthDocsFields.termsRequestFields;
+import static com.kohere.docs.AuthDocsFields.termsResponseFields;
+import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static com.kohere.docs.UserDocsFields.ME_401;
+import static com.kohere.docs.UserDocsFields.ME_403;
+import static com.kohere.docs.UserDocsFields.ME_404;
+import static com.kohere.docs.UserDocsFields.ME_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.ME_SUMMARY;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_400;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_401;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_403;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_404;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_SUMMARY;
+import static com.kohere.docs.UserDocsFields.WITHDRAW_401;
+import static com.kohere.docs.UserDocsFields.WITHDRAW_404;
+import static com.kohere.docs.UserDocsFields.WITHDRAW_409;
+import static com.kohere.docs.UserDocsFields.WITHDRAW_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.WITHDRAW_SUMMARY;
+import static com.kohere.docs.UserDocsFields.meResponseFields;
+import static com.kohere.docs.UserDocsFields.onboardingResponseFields;
+import static com.kohere.docs.UserDocsFields.patchRequestFields;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
-import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -20,12 +93,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.auth.application.EmailVerificationProperties;
 import com.kohere.auth.domain.AppleAuthClient;
+import com.kohere.auth.domain.AppleUpstreamException;
 import com.kohere.auth.domain.EmailDispatchException;
 import com.kohere.auth.domain.InvalidSocialTokenException;
 import com.kohere.auth.domain.OidcTokenVerifier;
@@ -33,15 +106,13 @@ import com.kohere.auth.domain.OidcUser;
 import com.kohere.auth.domain.VerificationEmailSender;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsTags;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.Date;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import javax.crypto.SecretKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,12 +126,11 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.mockmvc.RestDocumentationResultHandler;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
@@ -71,6 +141,12 @@ import org.springframework.web.context.WebApplicationContext;
  *
  * <p>흐름: 소셜로그인(PENDING) → 약관 동의(TERMS_AGREED) → 이메일 인증(코드 발송·확인) → 온보딩(ACTIVE). 메일 발송은 {@link
  * VerificationEmailSender}를 모킹해 인증번호를 캡처한다.
+ *
+ * <p><b>문서 규약(#151)</b> — 오퍼레이션(path+method)당 summary/description 상수를 <b>1벌</b>만 두고 그 오퍼레이션의 성공·에러
+ * 스니펫이 전부 같은 문자열·같은 태그를 쓴다. 케이스 구분은 summary가 아니라 document identifier로 한다(그게 Swagger Examples 드롭다운
+ * 항목명이다). 문구·에러코드 배열·필드 기술자는 태그 단위 클래스가 보관한다 — Auth 태그는 {@code com.kohere.docs.AuthDocsFields},
+ * Users 태그({@code GET·PATCH·DELETE /users/me})는 {@code com.kohere.docs.UserDocsFields}이며, 후자는
+ * {@code LandlordOnboardingDocsTest}와 스니펫을 공유한다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -80,6 +156,14 @@ class AuthOnboardingDocsTest {
 
   private static final String INVALID_SOCIAL_TOKEN = "invalid-social-token";
   private static final String MALFORMED_BODY = "{ \"oops\" }";
+
+  /** 이 접두사로 시작하는 idToken은 {@link FakeOidcConfig}가 email 클레임 없는 소셜 계정으로 취급한다. */
+  private static final String NO_EMAIL_PREFIX = "noemail-";
+
+  // 오퍼레이션 문구·에러코드 상수(규약 1·3·4·11)와 요청/응답 필드 기술자는 태그 단위 클래스에 모여 있다 —
+  // Auth 태그는 com.kohere.docs.AuthDocsFields, Users 태그(GET·PATCH·DELETE /users/me)는
+  // com.kohere.docs.UserDocsFields다. 같은 오퍼레이션을 다른 파일(LandlordOnboardingDocsTest)도 문서화하므로
+  // 문구·기술자를 1벌만 두고 양쪽이 같은 상수·같은 메서드를 부른다.
 
   // 서명이 깨진(다른 키로 서명) 액세스 토큰. 서버 검증에서 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라,
   // restdocs-api-spec 이 "무인증" 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다. 무인증 예시는 본래 헤더를
@@ -105,7 +189,10 @@ class AuthOnboardingDocsTest {
         if (INVALID_SOCIAL_TOKEN.equals(idToken)) {
           throw new InvalidSocialTokenException();
         }
-        return new OidcUser(provider, idToken, idToken + "@example.com");
+        // provider가 email 클레임을 주지 않는 계정(Apple 이메일 가리기 등)을 재현한다 — 요청에도 email이 없으면
+        // 422 AUTH_EMAIL_REQUIRED다. 다른 테스트의 idToken은 이 접두사를 쓰지 않는다.
+        String email = idToken.startsWith(NO_EMAIL_PREFIX) ? null : idToken + "@example.com";
+        return new OidcUser(provider, idToken, email);
       };
     }
   }
@@ -158,7 +245,10 @@ class AuthOnboardingDocsTest {
             .andDo(
                 document(
                     "auth-social-login",
-                    resourceDetails().summary("소셜 로그인 — 자격 검증 후 서버 토큰 발급(status로 재개 지점 분기)"),
+                    resourceDetails()
+                        .tag(ApiDocsTags.AUTH)
+                        .summary(SOCIAL_LOGIN_SUMMARY)
+                        .description(SOCIAL_LOGIN_DESCRIPTION),
                     requestFields(socialLoginRequestFields()),
                     responseFields(socialLoginResponseFields())))
             .andReturn()
@@ -178,7 +268,9 @@ class AuthOnboardingDocsTest {
             document(
                 "auth-social-login-apple",
                 resourceDetails()
-                    .summary("소셜 로그인(Apple) — authorizationCode 교환·id_token 검증 후 토큰 발급"),
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(SOCIAL_LOGIN_SUMMARY)
+                    .description(SOCIAL_LOGIN_DESCRIPTION),
                 requestFields(socialLoginRequestFields()),
                 responseFields(socialLoginResponseFields())));
 
@@ -193,11 +285,16 @@ class AuthOnboardingDocsTest {
         .andDo(
             document(
                 "auth-terms",
-                resourceDetails().summary("약관 동의 — PENDING→TERMS_AGREED 전이, 동의·약관버전 기록"),
+                resourceDetails()
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(TERMS_SUMMARY)
+                    .description(TERMS_DESCRIPTION),
                 requestFields(termsRequestFields()),
                 responseFields(termsResponseFields())));
 
     // 온보딩 완료 → 정식 토큰(이메일 인증은 온보딩과 분리돼 정식 토큰 전용 — 아래에서 별도 생성, #192)
+    // 규약 13: 응답 필드를 세입자·임대인 합집합으로 합치며 phoneNumber를 optional로 낮췄으므로, 세입자 응답에
+    // 그 필드가 없다는 계약을 단정으로 되메운다.
     String onboarding =
         mockMvc
             .perform(
@@ -206,10 +303,14 @@ class AuthOnboardingDocsTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(onboardingJson()))
             .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.user.phoneNumber").doesNotExist())
             .andDo(
                 document(
                     "auth-onboarding",
-                    resourceDetails().summary("온보딩 제출 — TERMS_AGREED→ACTIVE 전이, 닉네임 배정·정식 토큰 발급"),
+                    resourceDetails()
+                        .tag(ApiDocsTags.AUTH)
+                        .summary(ONBOARDING_SUMMARY)
+                        .description(ONBOARDING_DESCRIPTION),
                     requestFields(onboardingRequestFields()),
                     responseFields(onboardingResponseFields())))
             .andReturn()
@@ -231,7 +332,10 @@ class AuthOnboardingDocsTest {
         .andDo(
             document(
                 "auth-social-login-active",
-                resourceDetails().summary("소셜 로그인 — 기존 회원(ACTIVE) 로그인: 정식 access+refresh 발급"),
+                resourceDetails()
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(SOCIAL_LOGIN_SUMMARY)
+                    .description(SOCIAL_LOGIN_DESCRIPTION),
                 requestFields(socialLoginRequestFields()),
                 responseFields(socialLoginResponseFields())));
 
@@ -247,7 +351,9 @@ class AuthOnboardingDocsTest {
             document(
                 "auth-email-verification-code",
                 resourceDetails()
-                    .summary("이메일 인증번호 발송(정식 ACTIVE 전용) — 동기 발송 성공 후 챌린지 저장(email 마스킹 반환)"),
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(EMAIL_CODE_SUMMARY)
+                    .description(EMAIL_CODE_DESCRIPTION),
                 requestFields(emailCodeRequestFields()),
                 responseFields(emailCodeResponseFields())));
 
@@ -262,20 +368,27 @@ class AuthOnboardingDocsTest {
         .andDo(
             document(
                 "auth-email-verify",
-                resourceDetails().summary("이메일 인증번호 확인(정식 ACTIVE 전용) — 검증 완료(VERIFIED) 마킹"),
+                resourceDetails()
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(EMAIL_VERIFY_SUMMARY)
+                    .description(EMAIL_VERIFY_DESCRIPTION),
                 requestFields(emailVerifyRequestFields()),
                 responseFields(emailVerifyResponseFields())));
 
-    // 내 프로필 조회
+    // 내 프로필 조회(세입자) — 규약 13: phoneNumber는 임대인 전용이라 세입자 응답에 없다.
     mockMvc
         .perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.lang").value("ko"))
+        .andExpect(jsonPath("$.data.phoneNumber").doesNotExist())
         .andDo(
             document(
                 "user-get-me",
-                resourceDetails().summary("내 프로필 조회"),
-                responseFields(profileResponseFields())));
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary(ME_SUMMARY)
+                    .description(ME_DESCRIPTION),
+                responseFields(meResponseFields())));
 
     // 내 프로필 부분 수정
     mockMvc
@@ -286,12 +399,16 @@ class AuthOnboardingDocsTest {
                 .content("{\"lang\":\"en\",\"marketingAgreed\":true}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.lang").value("en"))
+        .andExpect(jsonPath("$.data.phoneNumber").doesNotExist())
         .andDo(
             document(
                 "user-patch-me",
-                resourceDetails().summary("내 프로필 부분 수정 — 전송한 필드만 변경(예: 표시 언어 lang)"),
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary(PATCH_ME_SUMMARY)
+                    .description(PATCH_ME_DESCRIPTION),
                 requestFields(patchRequestFields()),
-                responseFields(profileResponseFields())));
+                responseFields(meResponseFields())));
 
     // 재발급(회전)
     String reissue =
@@ -304,12 +421,13 @@ class AuthOnboardingDocsTest {
             .andDo(
                 document(
                     "auth-reissue",
-                    resourceDetails().summary("토큰 재발급 — refresh로 access 재발급(항상 회전)"),
+                    resourceDetails()
+                        .tag(ApiDocsTags.AUTH)
+                        .summary(REISSUE_SUMMARY)
+                        .description(REISSUE_DESCRIPTION),
                     requestFields(
                         refreshTokenRequestField("서버가 발급·보관(해시) 중인 불투명 refresh 토큰(빈값 불가)")),
-                    responseFields(
-                        tokenResponseFields(
-                            "새 access 토큰(JWT)", "새 refresh 토큰(회전 — 제출 토큰은 ROTATED 폐기)"))))
+                    responseFields(reissueResponseFields())))
             .andReturn()
             .getResponse()
             .getContentAsString();
@@ -322,7 +440,7 @@ class AuthOnboardingDocsTest {
         mockMvc
             .perform(
                 post("/api/v1/auth/reissue")
-                    .header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken()))
+                    .header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken(jwtProperties)))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"refreshToken\":\"" + newRefreshToken + "\"}"))
             .andExpect(status().isOk())
@@ -342,7 +460,10 @@ class AuthOnboardingDocsTest {
         .andDo(
             document(
                 "auth-logout",
-                resourceDetails().summary("로그아웃 — 제출 refresh 토큰 무효화(멱등, 204)"),
+                resourceDetails()
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(LOGOUT_SUMMARY)
+                    .description(LOGOUT_DESCRIPTION),
                 requestFields(refreshTokenRequestField("무효화할 refresh 토큰(빈값 불가)"))));
 
     // 탈퇴
@@ -352,7 +473,10 @@ class AuthOnboardingDocsTest {
         .andDo(
             document(
                 "user-withdraw",
-                resourceDetails().summary("회원 탈퇴 — WITHDRAWN 전이·PII 익명화·refresh 토큰 일괄 무효화")));
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary(WITHDRAW_SUMMARY)
+                    .description(WITHDRAW_DESCRIPTION)));
   }
 
   /** 스펙의 "발생 가능한 에러"를 엔드포인트별로 실제 트리거해 스니펫으로 생성하고 status·error.code를 단정한다. */
@@ -362,7 +486,7 @@ class AuthOnboardingDocsTest {
     String activeAccess = onboardCompletely("err-active"); // 정식 ACTIVE access 토큰
     String withdrawAccess = onboardCompletely("err-withdraw"); // 탈퇴 시나리오 전용 ACTIVE 토큰
 
-    String expiredToken = expiredAccessToken();
+    String expiredToken = expiredAccessToken(jwtProperties);
     String ghostToken = jwtTokenService.issueAccessToken(999_999_999L);
 
     // ===== social-login =====
@@ -373,7 +497,10 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-social-login-invalid-input",
-        "소셜 로그인 — 입력 검증 실패 (400 INVALID_INPUT): provider 누락(@NotNull)");
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_400);
 
     perform(
         post("/api/v1/auth/social-login")
@@ -382,16 +509,29 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "AUTH_MISSING_CREDENTIAL",
         "auth-social-login-missing-credential",
-        "소셜 로그인 — 자격 누락 (400 AUTH_MISSING_CREDENTIAL): provider별 자격(Google idToken / Apple authorizationCode) 누락/빈값");
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_400);
 
-    perform(
+    // 문서 스니펫은 본문 없이 만든다(#151-4) — 본문 누락도 같은 MALFORMED_REQUEST 라 예시가 중복되지 않는다.
+    // 「깨진 JSON 거부」계약은 스니펫 없이 단정만 남겨 회귀를 막는다.
+    assertError(
+        mockMvc,
         post("/api/v1/auth/social-login")
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/social-login").contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-social-login-malformed",
-        "소셜 로그인 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_400);
 
     perform(
         post("/api/v1/auth/social-login")
@@ -400,7 +540,55 @@ class AuthOnboardingDocsTest {
         status().isUnauthorized(),
         "AUTH_INVALID_SOCIAL_TOKEN",
         "auth-social-login-invalid-token",
-        "소셜 로그인 — 소셜 토큰 검증 실패 (401 AUTH_INVALID_SOCIAL_TOKEN)");
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_401);
+
+    // 최초 로그인(신규 가입)에서 요청 email이 소셜 토큰 email 클레임과 다르면 422 (#192 교차 검증).
+    // 서비스 단계 판정이라 유효 본문이 필요하다(#151-4).
+    perform(
+        post("/api/v1/auth/social-login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                "{\"provider\":\"GOOGLE\",\"idToken\":\"err-mismatch\",\"email\":\"typo@example.com\"}"),
+        status().isUnprocessableEntity(),
+        "AUTH_EMAIL_MISMATCH",
+        "auth-social-login-email-mismatch",
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_422);
+
+    // 토큰에도 요청에도 email이 없으면 계정을 만들 수 없어 422 (provider가 email 클레임을 주지 않는 계정).
+    perform(
+        post("/api/v1/auth/social-login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"provider\":\"GOOGLE\",\"idToken\":\"" + NO_EMAIL_PREFIX + "1\"}"),
+        status().isUnprocessableEntity(),
+        "AUTH_EMAIL_REQUIRED",
+        "auth-social-login-email-required",
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_422);
+
+    // Apple 인가코드 교환의 일시 장애 — 자격 문제(401)와 갈리는 유일한 지점이라 코드를 따로 둔다(ADR-0031).
+    // 어댑터가 타임아웃·5xx·I/O를 AppleUpstreamException으로 모아 던지므로 포트를 스텁해 재현한다.
+    // 서비스 단계에서 나는 에러라 유효 본문이 필요하다(#151-4).
+    when(appleAuthClient.exchangeAuthorizationCode("docs-apple-upstream-down"))
+        .thenThrow(new AppleUpstreamException(new SocketTimeoutException("Read timed out")));
+    perform(
+        post("/api/v1/auth/social-login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"provider\":\"APPLE\",\"authorizationCode\":\"docs-apple-upstream-down\"}"),
+        status().isBadGateway(),
+        "UPSTREAM_ERROR",
+        "auth-social-login-upstream-error",
+        ApiDocsTags.AUTH,
+        SOCIAL_LOGIN_SUMMARY,
+        SOCIAL_LOGIN_DESCRIPTION,
+        SOCIAL_LOGIN_502);
 
     // ===== terms =====
     perform(
@@ -411,7 +599,10 @@ class AuthOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_REQUIRED_AGREEMENT_MISSING",
         "auth-terms-agreement-missing",
-        "약관 동의 — 필수 약관 미동의 (422 AUTH_REQUIRED_AGREEMENT_MISSING)");
+        ApiDocsTags.AUTH,
+        TERMS_SUMMARY,
+        TERMS_DESCRIPTION,
+        TERMS_422);
 
     perform(
         post("/api/v1/auth/terms")
@@ -421,37 +612,55 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-terms-invalid-input",
-        "약관 동의 — 입력 검증 실패 (400 INVALID_INPUT): 필수 동의 필드 누락(@NotNull)");
+        ApiDocsTags.AUTH,
+        TERMS_SUMMARY,
+        TERMS_DESCRIPTION,
+        TERMS_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/terms")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/terms")
+            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-terms-malformed",
-        "약관 동의 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        TERMS_SUMMARY,
+        TERMS_DESCRIPTION,
+        TERMS_400);
 
+    // 401/403은 시큐리티 필터가 본문 파싱 전에 끊는다 — 요청 본문 없이도 같은 에러다(#151-4).
     perform(
         post("/api/v1/auth/terms")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(termsJson(true, true, false)),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-terms-unauthenticated",
-        "약관 동의 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        TERMS_SUMMARY,
+        TERMS_DESCRIPTION,
+        TERMS_401);
 
     perform(
         post("/api/v1/auth/terms")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(termsJson(true, true, false)),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-terms-token-expired",
-        "약관 동의 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        TERMS_SUMMARY,
+        TERMS_DESCRIPTION,
+        TERMS_401);
 
     perform(
         post("/api/v1/auth/terms")
@@ -461,7 +670,10 @@ class AuthOnboardingDocsTest {
         status().isConflict(),
         "AUTH_ONBOARDING_ALREADY_COMPLETED",
         "auth-terms-already-completed",
-        "약관 동의 — 이미 온보딩 완료(ACTIVE) 사용자의 재요청 (409 AUTH_ONBOARDING_ALREADY_COMPLETED)");
+        ApiDocsTags.AUTH,
+        TERMS_SUMMARY,
+        TERMS_DESCRIPTION,
+        TERMS_409);
 
     // ===== email verification-code (정식 ACTIVE 토큰 전용 — #192) =====
     perform(
@@ -472,48 +684,68 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-email-verification-code-invalid-input",
-        "이메일 인증번호 발송 — 입력 검증 실패 (400 INVALID_INPUT): email 누락/빈값/형식");
+        ApiDocsTags.AUTH,
+        EMAIL_CODE_SUMMARY,
+        EMAIL_CODE_DESCRIPTION,
+        EMAIL_CODE_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/email/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/email/verification-code")
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-email-verification-code-malformed",
-        "이메일 인증번호 발송 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        EMAIL_CODE_SUMMARY,
+        EMAIL_CODE_DESCRIPTION,
+        EMAIL_CODE_400);
 
     perform(
         post("/api/v1/auth/email/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-active") + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-email-verification-code-unauthenticated",
-        "이메일 인증번호 발송 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        EMAIL_CODE_SUMMARY,
+        EMAIL_CODE_DESCRIPTION,
+        EMAIL_CODE_401);
 
     perform(
         post("/api/v1/auth/email/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-active") + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-email-verification-code-token-expired",
-        "이메일 인증번호 발송 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        EMAIL_CODE_SUMMARY,
+        EMAIL_CODE_DESCRIPTION,
+        EMAIL_CODE_401);
 
-    // 온보딩 미완료(온보딩 토큰, ROLE_ONBOARDING) 호출 → 정식 토큰 필요 403 (#192 반전)
+    // 온보딩 미완료(온보딩 토큰, ROLE_ONBOARDING) 호출 → 정식 토큰 필요 403 (#192 반전).
+    // 인가는 필터 체인에서 끝나므로 요청 본문이 필요 없다(#151-4).
     perform(
         post("/api/v1/auth/email/verification-code")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-pending") + "\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
         "auth-email-verification-code-onboarding-required",
-        "이메일 인증번호 발송 — 온보딩 미완료(온보딩 토큰) 호출 (403 AUTH_ONBOARDING_REQUIRED): 정식(ACTIVE) 토큰 필요");
+        ApiDocsTags.AUTH,
+        EMAIL_CODE_SUMMARY,
+        EMAIL_CODE_DESCRIPTION,
+        EMAIL_CODE_403);
 
     // 재발송 간격 미달 → 429 (정식 ACTIVE 사용자, 첫 발송 성공 직후 즉시 재요청)
     String resendAccess = onboardCompletely("err-resend");
@@ -532,7 +764,10 @@ class AuthOnboardingDocsTest {
         status().isTooManyRequests(),
         "TOO_MANY_REQUESTS",
         "auth-email-verification-code-rate-limited",
-        "이메일 인증번호 발송 — 재발송 간격 미달 (429 TOO_MANY_REQUESTS)");
+        ApiDocsTags.AUTH,
+        EMAIL_CODE_SUMMARY,
+        EMAIL_CODE_DESCRIPTION,
+        EMAIL_CODE_429);
 
     // 메일 발송 실패(provider 장애·타임아웃) → 502, 챌린지 미저장 (정식 ACTIVE 사용자)
     String smtpAccess = onboardCompletely("err-smtp");
@@ -548,7 +783,10 @@ class AuthOnboardingDocsTest {
         status().isBadGateway(),
         "UPSTREAM_ERROR",
         "auth-email-verification-code-dispatch-failed",
-        "이메일 인증번호 발송 — 메일 발송 실패 (502 UPSTREAM_ERROR): 챌린지 미저장");
+        ApiDocsTags.AUTH,
+        EMAIL_CODE_SUMMARY,
+        EMAIL_CODE_DESCRIPTION,
+        EMAIL_CODE_502);
 
     // ===== email verify (정식 ACTIVE 토큰 전용 — #192) =====
     perform(
@@ -559,7 +797,10 @@ class AuthOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_EMAIL_VERIFICATION_FAILED",
         "auth-email-verify-failed",
-        "이메일 인증 — 챌린지 부재/만료/불일치 (422 AUTH_EMAIL_VERIFICATION_FAILED)");
+        ApiDocsTags.AUTH,
+        EMAIL_VERIFY_SUMMARY,
+        EMAIL_VERIFY_DESCRIPTION,
+        EMAIL_VERIFY_422);
 
     perform(
         post("/api/v1/auth/email/verify")
@@ -569,48 +810,67 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-email-verify-invalid-input",
-        "이메일 인증 확인 — 입력 검증 실패 (400 INVALID_INPUT): email/code 누락·빈값");
+        ApiDocsTags.AUTH,
+        EMAIL_VERIFY_SUMMARY,
+        EMAIL_VERIFY_DESCRIPTION,
+        EMAIL_VERIFY_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/email/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/email/verify")
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-email-verify-malformed",
-        "이메일 인증 확인 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        EMAIL_VERIFY_SUMMARY,
+        EMAIL_VERIFY_DESCRIPTION,
+        EMAIL_VERIFY_400);
 
     perform(
         post("/api/v1/auth/email/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-active") + "\",\"code\":\"000000\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-email-verify-unauthenticated",
-        "이메일 인증 확인 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        EMAIL_VERIFY_SUMMARY,
+        EMAIL_VERIFY_DESCRIPTION,
+        EMAIL_VERIFY_401);
 
     perform(
         post("/api/v1/auth/email/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-active") + "\",\"code\":\"000000\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-email-verify-token-expired",
-        "이메일 인증 확인 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        EMAIL_VERIFY_SUMMARY,
+        EMAIL_VERIFY_DESCRIPTION,
+        EMAIL_VERIFY_401);
 
-    // 온보딩 미완료(온보딩 토큰) 호출 → 정식 토큰 필요 403 (#192 반전)
+    // 온보딩 미완료(온보딩 토큰) 호출 → 정식 토큰 필요 403 (#192 반전). 인가는 필터 체인에서 끝나 본문이 필요 없다.
     perform(
         post("/api/v1/auth/email/verify")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"email\":\"" + emailFor("err-pending") + "\",\"code\":\"000000\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
         "auth-email-verify-onboarding-required",
-        "이메일 인증 확인 — 온보딩 미완료(온보딩 토큰) 호출 (403 AUTH_ONBOARDING_REQUIRED): 정식(ACTIVE) 토큰 필요");
+        ApiDocsTags.AUTH,
+        EMAIL_VERIFY_SUMMARY,
+        EMAIL_VERIFY_DESCRIPTION,
+        EMAIL_VERIFY_403);
 
     // 코드 불일치 누적 → 시도 상한 초과 429 (정식 ACTIVE 사용자, 오입력 maxAttempts회째에 거절)
     String attemptsAccess = onboardCompletely("err-attempts");
@@ -639,7 +899,10 @@ class AuthOnboardingDocsTest {
         status().isTooManyRequests(),
         "TOO_MANY_REQUESTS",
         "auth-email-verify-rate-limited",
-        "이메일 인증 확인 — 코드 불일치 누적·시도 상한 초과 (429 TOO_MANY_REQUESTS)");
+        ApiDocsTags.AUTH,
+        EMAIL_VERIFY_SUMMARY,
+        EMAIL_VERIFY_DESCRIPTION,
+        EMAIL_VERIFY_429);
 
     // ===== onboarding =====
     perform(
@@ -650,37 +913,54 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-onboarding-invalid-input",
-        "온보딩 — 입력 검증 실패 (400 INVALID_INPUT): 필수 필드 누락/형식 위반");
+        ApiDocsTags.AUTH,
+        ONBOARDING_SUMMARY,
+        ONBOARDING_DESCRIPTION,
+        ONBOARDING_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/onboarding")
+            .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-onboarding-malformed",
-        "온보딩 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        ONBOARDING_SUMMARY,
+        ONBOARDING_DESCRIPTION,
+        ONBOARDING_400);
 
     perform(
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson()),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-onboarding-unauthenticated",
-        "온보딩 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        ONBOARDING_SUMMARY,
+        ONBOARDING_DESCRIPTION,
+        ONBOARDING_401);
 
     perform(
         post("/api/v1/auth/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(onboardingJson()),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-onboarding-token-expired",
-        "온보딩 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        ONBOARDING_SUMMARY,
+        ONBOARDING_DESCRIPTION,
+        ONBOARDING_401);
 
     // 약관 미동의(PENDING) 상태로 온보딩 제출 → 약관 동의 선행 안내 422 (이메일 인증 안내보다 약관 동의가 먼저)
     perform(
@@ -691,7 +971,10 @@ class AuthOnboardingDocsTest {
         status().isUnprocessableEntity(),
         "AUTH_TERMS_AGREEMENT_REQUIRED",
         "auth-onboarding-terms-required",
-        "온보딩 — 약관 미동의 상태 (422 AUTH_TERMS_AGREEMENT_REQUIRED)");
+        ApiDocsTags.AUTH,
+        ONBOARDING_SUMMARY,
+        ONBOARDING_DESCRIPTION,
+        ONBOARDING_422);
 
     // #192: 온보딩에서 이메일 인증 선행 게이트가 제거됐다(AUTH_EMAIL_NOT_VERIFIED 폐지) — 약관만 동의하면 곧바로 온보딩 가능.
 
@@ -704,7 +987,10 @@ class AuthOnboardingDocsTest {
         status().isConflict(),
         "AUTH_ONBOARDING_ALREADY_COMPLETED",
         "auth-onboarding-already-completed",
-        "온보딩 — 이미 완료한 사용자의 재요청 (409 AUTH_ONBOARDING_ALREADY_COMPLETED)");
+        ApiDocsTags.AUTH,
+        ONBOARDING_SUMMARY,
+        ONBOARDING_DESCRIPTION,
+        ONBOARDING_409);
 
     // ===== reissue =====
     perform(
@@ -714,7 +1000,10 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-reissue-invalid-input",
-        "재발급 — 입력 검증 실패 (400 INVALID_INPUT): refreshToken 누락/빈값");
+        ApiDocsTags.AUTH,
+        REISSUE_SUMMARY,
+        REISSUE_DESCRIPTION,
+        REISSUE_400);
 
     perform(
         post("/api/v1/auth/reissue")
@@ -723,37 +1012,52 @@ class AuthOnboardingDocsTest {
         status().isUnauthorized(),
         "AUTH_INVALID_REFRESH_TOKEN",
         "auth-reissue-invalid-token",
-        "재발급 — refresh 토큰 만료/위조/무효화/재사용 탐지 (401 AUTH_INVALID_REFRESH_TOKEN)");
+        ApiDocsTags.AUTH,
+        REISSUE_SUMMARY,
+        REISSUE_DESCRIPTION,
+        REISSUE_401);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/reissue")
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/reissue").contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-reissue-malformed",
-        "재발급 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        REISSUE_SUMMARY,
+        REISSUE_DESCRIPTION,
+        REISSUE_400);
 
     // ===== logout =====
     perform(
         post("/api/v1/auth/logout")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"refreshToken\":\"rt_any\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "auth-logout-unauthenticated",
-        "로그아웃 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.AUTH,
+        LOGOUT_SUMMARY,
+        LOGOUT_DESCRIPTION,
+        LOGOUT_401);
 
     perform(
         post("/api/v1/auth/logout")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"refreshToken\":\"rt_any\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
         "auth-logout-onboarding-required",
-        "로그아웃 — 온보딩 미완료(PENDING/TERMS_AGREED) 토큰 접근 (403 AUTH_ONBOARDING_REQUIRED)");
+        ApiDocsTags.AUTH,
+        LOGOUT_SUMMARY,
+        LOGOUT_DESCRIPTION,
+        LOGOUT_403);
 
     perform(
         post("/api/v1/auth/logout")
@@ -763,27 +1067,42 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "auth-logout-invalid-input",
-        "로그아웃 — 입력 검증 실패 (400 INVALID_INPUT): refreshToken 누락/빈값");
+        ApiDocsTags.AUTH,
+        LOGOUT_SUMMARY,
+        LOGOUT_DESCRIPTION,
+        LOGOUT_400);
 
-    perform(
+    assertError(
+        mockMvc,
         post("/api/v1/auth/logout")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
+        "MALFORMED_REQUEST");
+    perform(
+        post("/api/v1/auth/logout")
+            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-logout-malformed",
-        "로그아웃 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        ApiDocsTags.AUTH,
+        LOGOUT_SUMMARY,
+        LOGOUT_DESCRIPTION,
+        LOGOUT_400);
 
     perform(
         post("/api/v1/auth/logout")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"refreshToken\":\"rt_any\"}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "auth-logout-token-expired",
-        "로그아웃 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.AUTH,
+        LOGOUT_SUMMARY,
+        LOGOUT_DESCRIPTION,
+        LOGOUT_401);
 
     // ===== GET /users/me =====
     perform(
@@ -791,21 +1110,30 @@ class AuthOnboardingDocsTest {
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "user-get-me-unauthenticated",
-        "내 프로필 조회 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.USERS,
+        ME_SUMMARY,
+        ME_DESCRIPTION,
+        ME_401);
 
     perform(
         get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(pendingToken)),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
         "user-get-me-onboarding-required",
-        "내 프로필 조회 — 온보딩 미완료(PENDING/TERMS_AGREED) 토큰 접근 (403 AUTH_ONBOARDING_REQUIRED)");
+        ApiDocsTags.USERS,
+        ME_SUMMARY,
+        ME_DESCRIPTION,
+        ME_403);
 
     perform(
         get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "user-get-me-token-expired",
-        "내 프로필 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.USERS,
+        ME_SUMMARY,
+        ME_DESCRIPTION,
+        ME_401);
 
     // ===== PATCH /users/me =====
     perform(
@@ -816,47 +1144,89 @@ class AuthOnboardingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "user-patch-me-invalid-input",
-        "내 프로필 수정 — 입력 검증 실패 (400 INVALID_INPUT): birthDate 미래 등");
+        ApiDocsTags.USERS,
+        PATCH_ME_SUMMARY,
+        PATCH_ME_DESCRIPTION,
+        PATCH_ME_400);
 
     perform(
         patch("/api/v1/users/me")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"gender\":\"UNKNOWN\"}"),
+            .content(MALFORMED_BODY),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "user-patch-me-malformed",
-        "내 프로필 수정 — 본문 해석 불가 (400 MALFORMED_REQUEST): enum 매핑 실패 등");
+        ApiDocsTags.USERS,
+        PATCH_ME_SUMMARY,
+        PATCH_ME_DESCRIPTION,
+        PATCH_ME_400);
 
+    // enum 후보는 요청 DTO가 String으로 받아 서버가 파싱하므로 허용 외 값도 INVALID_INPUT이다 —
+    // 온보딩(§5)과 같은 코드로 통일한 계약이라(#151) enum 타입으로 되돌리면 여기서 깨진다.
+    // 스니펫은 user-patch-me-invalid-input 하나로 충분해 단정만 남긴다.
+    mockMvc
+        .perform(
+            patch("/api/v1/users/me")
+                .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"gender\":\"UNKNOWN\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        // 어느 필드가 왜 거절됐는지는 errors[]로만 전달된다 — message는 일반 문구로 덮인다(#151).
+        .andExpect(jsonPath("$.error.errors[0].field").value("gender"))
+        // 문서 테스트는 Accept-Language 를 보내지 않아 기본 번들(영어)로 해소된다 — ko 번역은
+        // GlobalExceptionHandlerI18nTest 가 검증한다.
+        .andExpect(jsonPath("$.error.errors[0].reason").value("Not an allowed value: UNKNOWN"));
+
+    // 날짜 형식 위반도 같은 이유로 INVALID_INPUT이다 — DTO가 LocalDate를 선언하면 역직렬화가 먼저
+    // 거부해 MALFORMED_REQUEST가 되고 어느 필드인지도 남지 않는다(#151).
+    mockMvc
+        .perform(
+            patch("/api/v1/users/me")
+                .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"birthDate\":\"2024-13-45\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andExpect(jsonPath("$.error.errors[0].field").value("birthDate"));
+
+    // 401/403은 시큐리티 필터가 본문 파싱 전에 끊는다 — 요청 본문 없이도 같은 에러다(#151-4).
     perform(
         patch("/api/v1/users/me")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"marketingAgreed\":true}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "user-patch-me-unauthenticated",
-        "내 프로필 수정 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.USERS,
+        PATCH_ME_SUMMARY,
+        PATCH_ME_DESCRIPTION,
+        PATCH_ME_401);
 
     perform(
         patch("/api/v1/users/me")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"marketingAgreed\":true}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "user-patch-me-token-expired",
-        "내 프로필 수정 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.USERS,
+        PATCH_ME_SUMMARY,
+        PATCH_ME_DESCRIPTION,
+        PATCH_ME_401);
 
     perform(
         patch("/api/v1/users/me")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"marketingAgreed\":true}"),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
         "user-patch-me-onboarding-required",
-        "내 프로필 수정 — 온보딩 미완료(PENDING/TERMS_AGREED) 토큰 접근 (403 AUTH_ONBOARDING_REQUIRED)");
+        ApiDocsTags.USERS,
+        PATCH_ME_SUMMARY,
+        PATCH_ME_DESCRIPTION,
+        PATCH_ME_403);
 
     perform(
         patch("/api/v1/users/me")
@@ -866,7 +1236,10 @@ class AuthOnboardingDocsTest {
         status().isNotFound(),
         "USER_NOT_FOUND",
         "user-patch-me-not-found",
-        "내 프로필 수정 — 대상 사용자 없음 (404 USER_NOT_FOUND)");
+        ApiDocsTags.USERS,
+        PATCH_ME_SUMMARY,
+        PATCH_ME_DESCRIPTION,
+        PATCH_ME_404);
 
     // ===== DELETE /users/me =====
     perform(
@@ -874,21 +1247,30 @@ class AuthOnboardingDocsTest {
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "user-withdraw-unauthenticated",
-        "회원 탈퇴 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        ApiDocsTags.USERS,
+        WITHDRAW_SUMMARY,
+        WITHDRAW_DESCRIPTION,
+        WITHDRAW_401);
 
     perform(
         delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "user-withdraw-token-expired",
-        "회원 탈퇴 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        ApiDocsTags.USERS,
+        WITHDRAW_SUMMARY,
+        WITHDRAW_DESCRIPTION,
+        WITHDRAW_401);
 
     perform(
         delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(ghostToken)),
         status().isNotFound(),
         "USER_NOT_FOUND",
         "user-withdraw-not-found",
-        "회원 탈퇴 — 대상 사용자 없음 (404 USER_NOT_FOUND)");
+        ApiDocsTags.USERS,
+        WITHDRAW_SUMMARY,
+        WITHDRAW_DESCRIPTION,
+        WITHDRAW_404);
 
     mockMvc
         .perform(
@@ -900,285 +1282,45 @@ class AuthOnboardingDocsTest {
         status().isNotFound(),
         "USER_NOT_FOUND",
         "user-get-me-not-found",
-        "내 프로필 조회 — 탈퇴/삭제로 사용자 없음 (404 USER_NOT_FOUND)");
+        ApiDocsTags.USERS,
+        ME_SUMMARY,
+        ME_DESCRIPTION,
+        ME_404);
 
     perform(
         delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(withdrawAccess)),
         status().isConflict(),
         "USER_ALREADY_WITHDRAWN",
         "user-withdraw-already-withdrawn",
-        "회원 탈퇴 — 이미 탈퇴한 사용자의 재요청 (409 USER_ALREADY_WITHDRAWN)");
+        ApiDocsTags.USERS,
+        WITHDRAW_SUMMARY,
+        WITHDRAW_DESCRIPTION,
+        WITHDRAW_409);
   }
 
   // ---- helpers ----
 
+  /**
+   * 에러 스니펫 1건. summary·description·tag는 <b>성공 스니펫과 같은 상수</b>를 받아야 한다 — 생성기가 같은 {@code (path,
+   * method)} 모델의 문구 중 첫 non-blank 하나만 채택하고 그 순서가 파일 순회에 좌우되기 때문이다. {@code errorCodes}는 오퍼레이션+status
+   * 단위 상수다.
+   */
   private void perform(
-      org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
-      org.springframework.test.web.servlet.ResultMatcher expectedStatus,
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
       String expectedCode,
       String identifier,
-      String summary)
+      String tag,
+      String summary,
+      String description,
+      String... errorCodes)
       throws Exception {
     mockMvc
         .perform(request)
         .andExpect(expectedStatus)
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
-        .andDo(errorSnippet(identifier, summary));
-  }
-
-  private static RestDocumentationResultHandler errorSnippet(String identifier, String summary) {
-    return document(
-        identifier,
-        resource(
-            ResourceSnippetParameters.builder()
-                .summary(summary)
-                .description(
-                    "실패 응답 — 공통 래퍼(success=false·data=null·error). 클라이언트는 error.code로 분기한다"
-                        + "(error-response-guide §1·§4).")
-                .responseFields(errorFields())
-                .build()));
-  }
-
-  private static List<FieldDescriptor> errorFields() {
-    return List.of(
-        fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 — 에러 응답은 항상 false"),
-        fieldWithPath("data")
-            .type(JsonFieldType.NULL)
-            .optional()
-            .description("에러 응답의 data는 항상 null"),
-        fieldWithPath("error.code")
-            .type(JsonFieldType.STRING)
-            .description("에러 식별 코드(UPPER_SNAKE_CASE) — 클라이언트 분기 기준"),
-        fieldWithPath("error.message")
-            .type(JsonFieldType.STRING)
-            .description("사람이 읽는 설명(민감정보 미포함, message로 분기 금지)"),
-        fieldWithPath("error.errors")
-            .type(JsonFieldType.ARRAY)
-            .description("입력 검증 실패 시 필드별 상세 목록. 그 외 에러는 빈 배열"),
-        fieldWithPath("error.errors[].field")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("검증에 실패한 요청 필드 경로(INVALID_INPUT에서만)"),
-        fieldWithPath("error.errors[].reason")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("해당 필드의 실패 사유(INVALID_INPUT에서만)"));
-  }
-
-  // ---- 성공 응답/요청 필드 기술자 ----
-
-  private static FieldDescriptor field(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).description(description);
-  }
-
-  private static FieldDescriptor optField(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).optional().description(description);
-  }
-
-  private static FieldDescriptor errorNull() {
-    return fieldWithPath("error")
-        .type(JsonFieldType.NULL)
-        .optional()
-        .description("성공 응답의 error는 항상 null");
-  }
-
-  private static List<FieldDescriptor> socialLoginRequestFields() {
-    return List.of(
-        field("provider", JsonFieldType.STRING, "소셜 제공자: APPLE | GOOGLE"),
-        optField("idToken", JsonFieldType.STRING, "Google OIDC ID 토큰(GOOGLE 필수, APPLE 미사용)"),
-        optField(
-            "authorizationCode",
-            JsonFieldType.STRING,
-            "Apple 1회용 인가코드(APPLE 필수, GOOGLE 미사용, 약 5분 만료)"),
-        optField(
-            "email",
-            JsonFieldType.STRING,
-            "앱이 네이티브 SDK에서 받은 이메일(선택 — 최초 로그인 필수, 토큰 email 클레임과 교차 검증). 재로그인 값은 무시(#192)"),
-        optField(
-            "name",
-            JsonFieldType.STRING,
-            "앱이 네이티브 SDK에서 받은 표시 이름(선택 — 최초 로그인에서만 캡처, 검증 없이 신뢰). Apple은 최초 1회만 제공(#192)"));
-  }
-
-  private static List<FieldDescriptor> socialLoginResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field(
-            "data.onboardingRequired",
-            JsonFieldType.BOOLEAN,
-            "온보딩 필요 여부 — 신규/온보딩 미완료=true, 기존 ACTIVE=false"),
-        field(
-            "data.status",
-            JsonFieldType.STRING,
-            "사용자 상태(PENDING|TERMS_AGREED|ACTIVE) — 클라이언트 재개 지점 분기"),
-        field("data.email", JsonFieldType.STRING, "사용자 이메일(provider 진본) — 모든 분기에서 프리필용 반환(#192)"),
-        optField(
-            "data.name",
-            JsonFieldType.STRING,
-            "사용자 이름(단일 name) — 모든 분기에서 프리필용 반환, 아직 없으면 null(#192)"),
-        field("data.tokenType", JsonFieldType.STRING, "토큰 타입(Bearer)"),
-        field("data.accessToken", JsonFieldType.STRING, "access 토큰(JWT). 미완료는 온보딩 전용 스코프"),
-        optField("data.refreshToken", JsonFieldType.STRING, "refresh 토큰(불투명). 미완료 응답에서는 null"),
-        field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(온보딩 1800 / 정식 3600)"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> termsRequestFields() {
-    return List.of(
-        field("termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의(필수). false면 422"),
-        field("privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의(필수). false면 422"),
-        optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택, 기본 false)"));
-  }
-
-  private static List<FieldDescriptor> termsResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.status", JsonFieldType.STRING, "전이 후 상태(TERMS_AGREED)"),
-        field("data.termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의 여부"),
-        field("data.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의 여부"),
-        field("data.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"),
-        field("data.agreedAt", JsonFieldType.STRING, "동의 시각(ISO-8601 UTC)"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> emailCodeRequestFields() {
-    return List.of(field("email", JsonFieldType.STRING, "인증번호를 받을 이메일(형식 검증)"));
-  }
-
-  private static List<FieldDescriptor> emailCodeResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.email", JsonFieldType.STRING, "마스킹된 이메일(예: mi***@example.com)"),
-        field("data.expiresIn", JsonFieldType.NUMBER, "인증번호 만료까지 초"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> emailVerifyRequestFields() {
-    return List.of(
-        field("email", JsonFieldType.STRING, "인증번호를 발송한 이메일과 일치"),
-        field("code", JsonFieldType.STRING, "발송된 인증번호(빈값 불가)"));
-  }
-
-  private static List<FieldDescriptor> emailVerifyResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.email", JsonFieldType.STRING, "마스킹된 이메일"),
-        field("data.verified", JsonFieldType.BOOLEAN, "검증 완료 여부(true)"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> onboardingRequestFields() {
-    return List.of(
-        field("gender", JsonFieldType.STRING, "성별: MALE | FEMALE(필수)"),
-        field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(필수)"),
-        field("country", JsonFieldType.STRING, "국적 ISO 3166-1 alpha-2 코드 예: KR(필수)"),
-        optField(
-            "occupation",
-            JsonFieldType.STRING,
-            "직업 enum(선택 — 미전송·null이면 저장하지 않고 응답에서 생략, 값이 있으면 목록 검증 — #187): UNDERGRADUATE_STUDENT|GRADUATE_STUDENT|EXCHANGE_STUDENT|LANGUAGE_TEACHING|MANUFACTURING_PRODUCTION|BUSINESS_TRADE|ETC"),
-        field(
-            "visaType",
-            JsonFieldType.STRING,
-            "비자유형 enum(필수): SHORT_TERM_VISIT|STUDENTS_TRAINEES|NON_PROFESSIONAL_WORKERS|WORKING_HOLIDAY_WORK_AND_VISIT|OVERSEAS_KOREANS|FAMILY_MARRIAGE_MIGRANTS|PERMANENT_RESIDENTS|PROFESSIONALS|DIPLOMATIC_OFFICIAL_AND_OTHERS|ETC"),
-        optField(
-            "lang",
-            JsonFieldType.STRING,
-            "표시 언어 ISO 639-1 소문자 en|ko|ja(선택 — 미전송 시 미설정, 표시 시 en 폴백)"));
-  }
-
-  private static List<FieldDescriptor> refreshTokenRequestField(String description) {
-    return List.of(field("refreshToken", JsonFieldType.STRING, description));
-  }
-
-  private static List<FieldDescriptor> patchRequestFields() {
-    return List.of(
-        optField("name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름·선택 — #192)"),
-        optField("gender", JsonFieldType.STRING, "성별 MALE|FEMALE(세입자·선택)"),
-        optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(세입자·선택)"),
-        optField("country", JsonFieldType.STRING, "국적 ISO 코드(세입자·선택)"),
-        optField("occupation", JsonFieldType.STRING, "직업 enum(세입자·선택)"),
-        optField("visaType", JsonFieldType.STRING, "비자유형 enum(세입자·선택)"),
-        optField("lang", JsonFieldType.STRING, "표시 언어 en|ko|ja(세입자·선택 — 위반 시 INVALID_INPUT)"),
-        optField(
-            "phoneNumber",
-            JsonFieldType.STRING,
-            "연락처(임대인·선택) — 새 번호는 SMS 재인증(§4-1·§4-2) 후에만 반영(미인증 422)"),
-        optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택)"));
-  }
-
-  private static List<FieldDescriptor> tokenResponseFields(String accessDesc, String refreshDesc) {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.tokenType", JsonFieldType.STRING, "토큰 타입(Bearer)"),
-        field("data.accessToken", JsonFieldType.STRING, accessDesc),
-        field("data.refreshToken", JsonFieldType.STRING, refreshDesc),
-        field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> profileFields(String prefix) {
-    return List.of(
-        field(prefix + "id", JsonFieldType.NUMBER, "회원 ID"),
-        field(prefix + "name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름 — #192)"),
-        field(prefix + "nickname", JsonFieldType.STRING, "닉네임(서버 배정, 형용사+사물)"),
-        field(prefix + "gender", JsonFieldType.STRING, "성별(MALE|FEMALE)"),
-        field(prefix + "birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
-        field(prefix + "country", JsonFieldType.STRING, "국적 ISO 코드"),
-        field(prefix + "countryName", JsonFieldType.STRING, "국가 표시명(countries resolve)"),
-        field(prefix + "countryFlag", JsonFieldType.STRING, "국기 이미지 URL(countries resolve)"),
-        optField(prefix + "lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(세입자 선택 시 — 미선택이면 생략)"),
-        optField(prefix + "occupation", JsonFieldType.STRING, "직업 enum(온보딩 선택 — 미설정이면 생략, #187)"),
-        field(prefix + "email", JsonFieldType.STRING, "인증된 연락 이메일"),
-        field(prefix + "visaType", JsonFieldType.STRING, "비자유형 enum"));
-  }
-
-  private static List<FieldDescriptor> profileResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.id", JsonFieldType.NUMBER, "회원 ID"),
-        field("data.userType", JsonFieldType.STRING, "회원 역할(TENANT|LANDLORD) — 응답 필드가 이에 따라 갈린다"),
-        field("data.name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름 — #192)"),
-        field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정, 형용사+사물)"),
-        field("data.gender", JsonFieldType.STRING, "성별(MALE|FEMALE)"),
-        field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
-        field("data.country", JsonFieldType.STRING, "국적 ISO 코드"),
-        field("data.countryName", JsonFieldType.STRING, "국가 표시명(countries resolve)"),
-        field("data.countryFlag", JsonFieldType.STRING, "국기 이미지 URL(countries resolve)"),
-        optField("data.lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(세입자 선택 시 — 미선택이면 생략)"),
-        optField("data.occupation", JsonFieldType.STRING, "직업 enum(온보딩 선택 — 미설정이면 생략, #187)"),
-        field("data.email", JsonFieldType.STRING, "인증된 연락 이메일"),
-        field("data.visaType", JsonFieldType.STRING, "비자유형 enum"),
-        optField("data.phoneNumber", JsonFieldType.STRING, "연락처(임대인만·본인 조회 평문 — 세입자는 생략)"),
-        field("data.status", JsonFieldType.STRING, "회원 상태(PENDING|TERMS_AGREED|ACTIVE|WITHDRAWN)"),
-        field("data.termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의 여부"),
-        field("data.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의 여부"),
-        field("data.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"),
-        field("data.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> onboardingResponseFields() {
-    java.util.ArrayList<FieldDescriptor> fields = new java.util.ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.addAll(profileFields("data.user."));
-    fields.add(field("data.user.userType", JsonFieldType.STRING, "회원 역할(TENANT|LANDLORD)"));
-    fields.add(
-        optField(
-            "data.user.phoneNumber", JsonFieldType.STRING, "연락처 — 세입자는 미수집(null), 임대인은 인증된 연락처"));
-    fields.add(field("data.user.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"));
-    fields.add(field("data.user.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"));
-    fields.add(field("data.user.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"));
-    fields.add(field("data.tokenType", JsonFieldType.STRING, "토큰 타입(Bearer)"));
-    fields.add(
-        field(
-            "data.accessToken",
-            JsonFieldType.STRING,
-            "정식 access 토큰(JWT, onboardingCompleted=true)"));
-    fields.add(field("data.refreshToken", JsonFieldType.STRING, "정식 refresh 토큰(불투명)"));
-    fields.add(field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"));
-    fields.add(errorNull());
-    return fields;
+        .andDo(errorSnippet(identifier, tag, summary, description, errorCodes));
   }
 
   private String socialLogin(String subject) throws Exception {
@@ -1221,29 +1363,12 @@ class AuthOnboardingDocsTest {
     return read(body, "data", "accessToken");
   }
 
-  private String expiredAccessToken() {
-    SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
-    Instant now = Instant.now();
-    return Jwts.builder()
-        .issuer(jwtProperties.getIssuer())
-        .subject("1")
-        .claim("onboardingCompleted", true)
-        .issuedAt(Date.from(now.minusSeconds(7200)))
-        .expiration(Date.from(now.minusSeconds(3600)))
-        .signWith(key)
-        .compact();
-  }
-
   private String read(String json, String... path) throws Exception {
     JsonNode node = objectMapper.readTree(json);
     for (String key : path) {
       node = node.path(key);
     }
     return node.asText();
-  }
-
-  private static String bearer(String token) {
-    return "Bearer " + token;
   }
 
   private static String emailFor(String subject) {

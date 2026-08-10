@@ -1,17 +1,21 @@
 package com.kohere.user.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.RequestDates;
 import com.kohere.user.api.PhoneVerificationChecker;
 import com.kohere.user.api.UserWithdrawnEvent;
 import com.kohere.user.application.dto.UserProfileResponse;
 import com.kohere.user.domain.Country;
 import com.kohere.user.domain.CountryRepository;
+import com.kohere.user.domain.Gender;
 import com.kohere.user.domain.Language;
+import com.kohere.user.domain.Occupation;
 import com.kohere.user.domain.User;
 import com.kohere.user.domain.UserNotFoundException;
 import com.kohere.user.domain.UserRepository;
 import com.kohere.user.domain.UserStatus;
 import com.kohere.user.domain.UserType;
+import com.kohere.user.domain.VisaType;
 import com.kohere.user.presentation.dto.UpdateProfileRequest;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
@@ -50,27 +54,50 @@ public class UserService {
     return toResponse(userRepository.save(updated));
   }
 
-  /** 세입자 프로필 수정 — 이름·성별·생년월일·국적·직업·비자정보·마케팅 동의. country는 존재 검증한다. */
+  /**
+   * 세입자 프로필 수정 — 이름·성별·생년월일·국적·직업·비자정보·마케팅 동의. country는 존재 검증한다.
+   *
+   * <p>enum 후보는 요청 DTO가 String으로 받고 여기서 파싱한다 — 허용 외 값을 {@code MALFORMED_REQUEST}가 아니라 {@code
+   * INVALID_INPUT}으로 돌려주기 위해서다(온보딩 §5와 같은 코드). 미전송({@code null})은 「값 비움」이 아니라 유지이므로 파싱하지 않는다.
+   */
   private User updateTenantProfile(User user, UpdateProfileRequest request) {
     if (request.country() != null && !countryRepository.existsByCode(request.country())) {
-      throw new InvalidInputException("country 값이 올바르지 않습니다: " + request.country());
+      throw new InvalidInputException(
+          "country", "validation.unsupportedCountry", request.country());
     }
     Language lang =
         request.lang() == null
             ? null
             : Language.from(request.lang())
                 .orElseThrow(
-                    () -> new InvalidInputException("lang 값이 올바르지 않습니다: " + request.lang()));
+                    () ->
+                        new InvalidInputException(
+                            "lang", "validation.unsupportedLanguage", request.lang()));
     return user.updateProfile(
         request.name(),
-        request.gender(),
-        request.birthDate(),
+        parseEnum(Gender.class, "gender", request.gender()),
+        RequestDates.parsePast("birthDate", request.birthDate()),
         request.country(),
-        request.occupation(),
-        request.visaType(),
+        parseEnum(Occupation.class, "occupation", request.occupation()),
+        parseEnum(VisaType.class, "visaType", request.visaType()),
         lang,
         request.marketingAgreed(),
         Instant.now());
+  }
+
+  /**
+   * 미전송({@code null})은 미변경이라 그대로 통과시키고, 값이 있으면(빈 문자열 포함) enum 목록 밖은 {@code INVALID_INPUT}이다. 어느
+   * 필드인지 응답 {@code errors[]}에 실어야 클라이언트가 고칠 수 있으므로 요청 필드명을 함께 넘긴다(#151).
+   */
+  private static <E extends Enum<E>> E parseEnum(Class<E> type, String field, String value) {
+    if (value == null) {
+      return null;
+    }
+    try {
+      return Enum.valueOf(type, value);
+    } catch (IllegalArgumentException e) {
+      throw new InvalidInputException(field, "validation.notAllowed", value);
+    }
   }
 
   /**

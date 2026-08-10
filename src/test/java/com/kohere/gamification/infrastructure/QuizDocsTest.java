@@ -2,7 +2,23 @@ package com.kohere.gamification.infrastructure;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
-import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static com.kohere.docs.ApiDocsErrors.assertError;
+import static com.kohere.docs.ApiDocsErrors.errorSnippet;
+import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_400;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_401;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_404;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_DESCRIPTION;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_SUMMARY;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_401;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_404;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_DESCRIPTION;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_SUMMARY;
+import static com.kohere.docs.QuizDocsFields.answerPathParameters;
+import static com.kohere.docs.QuizDocsFields.answerRequestFields;
+import static com.kohere.docs.QuizDocsFields.answerResponseFields;
+import static com.kohere.docs.QuizDocsFields.randomResponseFields;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -10,29 +26,24 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
-import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsTags;
 import com.kohere.gamification.infrastructure.QuizDocument.ChoiceSpec;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import javax.crypto.SecretKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,12 +55,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.mockmvc.RestDocumentationResultHandler;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -69,6 +78,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * UNAUTHENTICATED·403 AUTH_ONBOARDING_REQUIRED·403 FORBIDDEN 스니펫은 도달 불가라 제거했고, 그 자리를 {@link
  * #guestAccessWithoutToken}·{@link #forgedTokenIsTreatedAsGuest}·{@link #landlordGetsKoreanLabels}가
  * 2xx 계약으로 고정한다. 401은 <b>만료 토큰</b>에만 남는다.
+ *
+ * <p>문서 문구는 오퍼레이션(path+method)당 상수 1벌({@code QUIZ_RANDOM_*}·{@code QUIZ_ANSWER_*})을 성공·에러 스니펫이
+ * 공유한다(#151) — 생성기가 같은 오퍼레이션의 summary/description 중 첫 non-blank 하나만 채택하기 때문이다. 그 상수와 필드 기술자는 태그 단위
+ * 클래스 {@link com.kohere.docs.QuizDocsFields}에 모아 두고 여기서는 static import로 부른다 — 이 파일에는 테스트 흐름만 남긴다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -81,8 +94,9 @@ class QuizDocsTest {
 
   private static final String MALFORMED_BODY = "{ \"oops\" }";
 
-  // 서명이 깨진 access 토큰 → 401 UNAUTHENTICATED. restdocs-api-spec 이 무인증 예시에서도 bearerAuthJWT 스킴을 도출하게
-  // 한다.
+  // 서명이 깨진 access 토큰. #181 이후 위조 토큰은 401이 아니라 "신원 없는 요청"과 같은 게스트 취급이라 200이다
+  // (forgedTokenIsTreatedAsGuest가 그 계약을 고정한다). restdocs-api-spec 이 무인증 예시에서도
+  // bearerAuthJWT 스킴을 도출하게 한다.
   private static final String FORGED_TOKEN =
       Jwts.builder()
           .issuer("kohere")
@@ -121,7 +135,7 @@ class QuizDocsTest {
     seedQuiz();
     String token = jwtTokenService.issueAccessToken(1L);
 
-    // ① 랜덤 퀴즈 조회 — 사용자 언어로 번역, 정답·해설 미포함
+    // ① 랜덤 퀴즈 조회 — 표시 언어로 번역, 정답·해설 미포함
     mockMvc
         .perform(get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
@@ -130,10 +144,15 @@ class QuizDocsTest {
         .andDo(
             document(
                 "quiz-get-random",
-                resourceDetails().summary("랜덤 퀴즈 조회 — 활성 풀에서 무작위 1개(등록 국가 언어로 번역, 정답·해설 미포함)"),
+                resourceDetails()
+                    .tag(ApiDocsTags.QUIZ)
+                    .summary(QUIZ_RANDOM_SUMMARY)
+                    .description(QUIZ_RANDOM_DESCRIPTION),
                 responseFields(randomResponseFields())));
 
     // ② 정답 제출 — 정답: correct=true + 번역된 해설(정답 키는 미노출)
+    //    correctChoice가 optional로 문서화되므로(정답/오답 200 스키마 통합) 「키 미노출」 계약은
+    //    아래 doesNotExist 단정이 지킨다 — 이게 없으면 정답 응답의 키 유출을 아무도 못 잡는다(#151 규약 13).
     mockMvc
         .perform(
             post("/api/v1/quizzes/{quizId}/answer", 4001L)
@@ -142,14 +161,18 @@ class QuizDocsTest {
                 .content(answerJson("A")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.correct").value(true))
+        .andExpect(jsonPath("$.data.correctChoice").doesNotExist())
         .andExpect(jsonPath("$.data.explanation").value("확정일자를 받으면 보증금을 보호받습니다."))
         .andDo(
             document(
                 "quiz-answer-correct",
-                resourceDetails().summary("정답 제출·채점 — 정답(correct=true + 번역된 해설, 무상태·정답 키 미노출)"),
-                pathParameters(parameterWithName("quizId").description("채점 대상 퀴즈 ID")),
+                resourceDetails()
+                    .tag(ApiDocsTags.QUIZ)
+                    .summary(QUIZ_ANSWER_SUMMARY)
+                    .description(QUIZ_ANSWER_DESCRIPTION),
+                pathParameters(answerPathParameters()),
                 requestFields(answerRequestFields()),
-                responseFields(answerCorrectResponseFields())));
+                responseFields(answerResponseFields())));
 
     // ③ 정답 제출 — 오답: 정답 키(correctChoice)와 번역된 해설(explanation)
     mockMvc
@@ -164,38 +187,41 @@ class QuizDocsTest {
         .andDo(
             document(
                 "quiz-answer-wrong",
-                resourceDetails().summary("정답 제출·채점 — 오답(correct=false + 정답 키·번역된 오답 해설)"),
-                pathParameters(parameterWithName("quizId").description("채점 대상 퀴즈 ID")),
+                resourceDetails()
+                    .tag(ApiDocsTags.QUIZ)
+                    .summary(QUIZ_ANSWER_SUMMARY)
+                    .description(QUIZ_ANSWER_DESCRIPTION),
+                pathParameters(answerPathParameters()),
                 requestFields(answerRequestFields()),
-                responseFields(answerWrongResponseFields())));
+                responseFields(answerResponseFields())));
   }
 
   /** 스펙의 "발생 가능한 에러"를 엔드포인트별로 실제 트리거해 스니펫으로 생성하고 status·error.code를 단정한다. */
   @Test
   void generatesQuizErrorSnippets() throws Exception {
     String token = jwtTokenService.issueAccessToken(1L);
-    String expiredToken = expiredAccessToken();
+    String expiredToken = expiredAccessToken(jwtProperties);
 
     // ===== GET /quizzes/random =====
     // #181로 퀴즈가 permitAll이 되면서 401 UNAUTHENTICATED(누락·위조)·403 AUTH_ONBOARDING_REQUIRED
     // ·403 FORBIDDEN(비-세입자) 세 케이스는 도달 불가가 됐다 — 아래 guestAccessWithoutToken·
     // landlordGetsKoreanLabels가 그 자리를 2xx 계약으로 대신 고정한다. 만료만 401로 남는다.
-    perform(
+    performRandomError(
         get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "quiz-get-random-token-expired",
-        "랜덤 퀴즈 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED, 게스트로 강등하지 않고 재발급을 유도한다)");
+        QUIZ_RANDOM_401);
 
-    perform(
+    performRandomError(
         get("/api/v1/quizzes/random").header(HttpHeaders.AUTHORIZATION, bearer(token)),
         status().isNotFound(),
         "QUIZ_NOT_FOUND",
         "quiz-get-random-not-found",
-        "랜덤 퀴즈 조회 — 활성 퀴즈 풀이 비어 있음 (404 QUIZ_NOT_FOUND)");
+        QUIZ_RANDOM_404);
 
     // ===== POST /quizzes/{quizId}/answer =====
-    perform(
+    performAnswerError(
         post("/api/v1/quizzes/{quizId}/answer", 4001L)
             .header(HttpHeaders.AUTHORIZATION, bearer(token))
             .contentType(MediaType.APPLICATION_JSON)
@@ -203,29 +229,42 @@ class QuizDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "quiz-answer-invalid-input",
-        "정답 제출 — selectedChoice가 A~D가 아님/누락 (400 INVALID_INPUT)");
+        QUIZ_ANSWER_400);
 
-    perform(
+    // 문서용 스니펫은 본문 없이 만든다(#151-4) — 본문이 비면 restdocs-api-spec이 requestBody 조립에서
+    // 이 스니펫을 통째로 빼므로 같은 요청 예시가 중복 노출되지 않는다. 본문 누락도 깨진 JSON과 같은
+    // HttpMessageNotReadableException이라 MALFORMED_REQUEST로 수렴한다.
+    performAnswerError(
+        post("/api/v1/quizzes/{quizId}/answer", 4001L)
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "quiz-answer-malformed",
+        QUIZ_ANSWER_400);
+
+    // 「깨진 JSON 거부」 계약은 문서화 없이 단정만으로 유지한다 — 위 스니펫이 검증하는 시나리오는
+    // 「본문 누락」이라 이게 없으면 파싱 실패 경로의 회귀 방어가 사라진다.
+    assertError(
+        mockMvc,
         post("/api/v1/quizzes/{quizId}/answer", 4001L)
             .header(HttpHeaders.AUTHORIZATION, bearer(token))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
         status().isBadRequest(),
-        "MALFORMED_REQUEST",
-        "quiz-answer-malformed",
-        "정답 제출 — 본문 해석 불가 (400 MALFORMED_REQUEST)");
+        "MALFORMED_REQUEST");
 
-    perform(
+    // 401은 시큐리티 필터(DispatcherServlet 이전)에서 끊기므로 본문과 무관하다 — 요청 예시 중복을 없애려 본문을 뺐다.
+    performAnswerError(
         post("/api/v1/quizzes/{quizId}/answer", 4001L)
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(answerJson("A")),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "quiz-answer-token-expired",
-        "정답 제출 — 액세스 토큰 만료 (401 TOKEN_EXPIRED, 게스트로 강등하지 않고 재발급을 유도한다)");
+        QUIZ_ANSWER_401);
 
-    perform(
+    performAnswerError(
         post("/api/v1/quizzes/{quizId}/answer", 9999L)
             .header(HttpHeaders.AUTHORIZATION, bearer(token))
             .contentType(MediaType.APPLICATION_JSON)
@@ -233,7 +272,7 @@ class QuizDocsTest {
         status().isNotFound(),
         "QUIZ_NOT_FOUND",
         "quiz-answer-not-found",
-        "정답 제출 — 대상 퀴즈가 존재하지 않음 (404 QUIZ_NOT_FOUND)");
+        QUIZ_ANSWER_404);
   }
 
   /**
@@ -241,6 +280,10 @@ class QuizDocsTest {
    *
    * <p>기본 언어가 {@code en}인 것만 보면 부족하다 — {@code getLanguage}를 부르고 예외를 삼키는 구현도 통과한다. 게스트는 {@code
    * users} 행이 없어 호출 자체가 404이므로 <b>한 번도 부르지 않음</b>을 함께 못 박는다.
+   *
+   * <p>이 흐름은 스니펫으로도 낸다(#151-3) — 회원 예시({@code quiz-get-random}·{@code quiz-answer-correct})는 ko
+   * 라벨이라 「토큰 없이 호출하면 en으로 온다」는 계약이 Swagger에 전혀 보이지 않았다. 같은 {@code (path, method, 200)}이라 스키마는 회원
+   * 예시와 병합되고(그래서 <b>같은 필드 헬퍼</b>를 쓴다) 예시만 identifier 별로 드롭다운에 나란히 남는다.
    */
   @Test
   void guestAccessWithoutToken() throws Exception {
@@ -250,7 +293,15 @@ class QuizDocsTest {
         .perform(get("/api/v1/quizzes/random"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.quizId").value(4001))
-        .andExpect(jsonPath("$.data.question").value("Which protects a jeonse tenant?"));
+        .andExpect(jsonPath("$.data.question").value("Which protects a jeonse tenant?"))
+        .andDo(
+            document(
+                "quiz-get-random-guest",
+                resourceDetails()
+                    .tag(ApiDocsTags.QUIZ)
+                    .summary(QUIZ_RANDOM_SUMMARY)
+                    .description(QUIZ_RANDOM_DESCRIPTION),
+                responseFields(randomResponseFields())));
 
     mockMvc
         .perform(
@@ -259,7 +310,18 @@ class QuizDocsTest {
                 .content(answerJson("A")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.correct").value(true))
-        .andExpect(jsonPath("$.data.explanation").value("A fixed date protects your deposit."));
+        .andExpect(jsonPath("$.data.correctChoice").doesNotExist())
+        .andExpect(jsonPath("$.data.explanation").value("A fixed date protects your deposit."))
+        .andDo(
+            document(
+                "quiz-answer-correct-guest",
+                resourceDetails()
+                    .tag(ApiDocsTags.QUIZ)
+                    .summary(QUIZ_ANSWER_SUMMARY)
+                    .description(QUIZ_ANSWER_DESCRIPTION),
+                pathParameters(answerPathParameters()),
+                requestFields(answerRequestFields()),
+                responseFields(answerResponseFields())));
 
     verify(userAccountService, never()).getLanguage(anyLong());
     verify(userAccountService, never()).getUserType(anyLong());
@@ -299,104 +361,48 @@ class QuizDocsTest {
 
   // ---- helpers ----
 
-  private void perform(
+  private void performRandomError(
       MockHttpServletRequestBuilder request,
-      org.springframework.test.web.servlet.ResultMatcher expectedStatus,
+      ResultMatcher expectedStatus,
       String expectedCode,
       String identifier,
-      String summary)
+      String... errorCodes)
       throws Exception {
     mockMvc
         .perform(request)
         .andExpect(expectedStatus)
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
-        .andDo(errorSnippet(identifier, summary));
+        .andDo(
+            errorSnippet(
+                identifier,
+                ApiDocsTags.QUIZ,
+                QUIZ_RANDOM_SUMMARY,
+                QUIZ_RANDOM_DESCRIPTION,
+                errorCodes));
   }
 
-  private static RestDocumentationResultHandler errorSnippet(String identifier, String summary) {
-    return document(
-        identifier,
-        resource(
-            ResourceSnippetParameters.builder()
-                .summary(summary)
-                .description(
-                    "실패 응답 — 공통 래퍼(success=false·data=null·error). 클라이언트는 error.code로 분기한다"
-                        + "(error-response-guide §1·§4).")
-                .responseFields(errorFields())
-                .build()));
-  }
-
-  private static FieldDescriptor field(String path, JsonFieldType type, String description) {
-    return fieldWithPath(path).type(type).description(description);
-  }
-
-  private static FieldDescriptor errorNull() {
-    return fieldWithPath("error")
-        .type(JsonFieldType.NULL)
-        .optional()
-        .description("성공 응답의 error는 항상 null");
-  }
-
-  private static List<FieldDescriptor> errorFields() {
-    return List.of(
-        fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 — 에러 응답은 항상 false"),
-        fieldWithPath("data")
-            .type(JsonFieldType.NULL)
-            .optional()
-            .description("에러 응답의 data는 항상 null"),
-        fieldWithPath("error.code")
-            .type(JsonFieldType.STRING)
-            .description("에러 식별 코드(UPPER_SNAKE_CASE) — 클라이언트 분기 기준"),
-        fieldWithPath("error.message")
-            .type(JsonFieldType.STRING)
-            .description("사람이 읽는 설명(민감정보 미포함, message로 분기 금지)"),
-        fieldWithPath("error.errors")
-            .type(JsonFieldType.ARRAY)
-            .description("입력 검증 실패 시 필드별 상세 목록. 그 외 에러는 빈 배열"),
-        fieldWithPath("error.errors[].field")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("검증에 실패한 요청 필드 경로(INVALID_INPUT에서만)"),
-        fieldWithPath("error.errors[].reason")
-            .type(JsonFieldType.STRING)
-            .optional()
-            .description("해당 필드의 실패 사유(INVALID_INPUT에서만)"));
-  }
-
-  private static List<FieldDescriptor> randomResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.quizId", JsonFieldType.NUMBER, "퀴즈 식별자(채점 시 경로로 사용)"),
-        field("data.question", JsonFieldType.STRING, "등록 국가 언어로 번역된 문항"),
-        field("data.choices[].key", JsonFieldType.STRING, "보기 키(A~D, 언어 무관)"),
-        field("data.choices[].text", JsonFieldType.STRING, "번역된 보기 텍스트"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> answerRequestFields() {
-    return List.of(field("selectedChoice", JsonFieldType.STRING, "선택한 보기 키(A~D 중 하나)"));
-  }
-
-  private static List<FieldDescriptor> answerCorrectResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.quizId", JsonFieldType.NUMBER, "채점 대상 퀴즈 ID"),
-        field("data.selectedChoice", JsonFieldType.STRING, "제출한 보기 키(A~D)"),
-        field("data.correct", JsonFieldType.BOOLEAN, "정답 여부(정답이면 true) — 정답 시 정답 키는 미노출"),
-        field("data.explanation", JsonFieldType.STRING, "해설(정답·오답 모두, 사용자 언어 번역)"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> answerWrongResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.quizId", JsonFieldType.NUMBER, "채점 대상 퀴즈 ID"),
-        field("data.selectedChoice", JsonFieldType.STRING, "제출한 보기 키(A~D)"),
-        field("data.correct", JsonFieldType.BOOLEAN, "정답 여부(오답이면 false)"),
-        field("data.correctChoice", JsonFieldType.STRING, "정답 보기 키(오답 시에만)"),
-        field("data.explanation", JsonFieldType.STRING, "해설(정답·오답 모두, 사용자 언어 번역)"),
-        errorNull());
+  /** path 변수가 있는 오퍼레이션이라 에러 스니펫에도 {@code pathParameters}를 선언한다(#151 규약 12). */
+  private void performAnswerError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(
+            errorSnippet(
+                identifier,
+                ApiDocsTags.QUIZ,
+                QUIZ_ANSWER_SUMMARY,
+                QUIZ_ANSWER_DESCRIPTION,
+                answerPathParameters(),
+                errorCodes));
   }
 
   private void seedQuiz() {
@@ -418,23 +424,6 @@ class QuizDocsTest {
             .explanation(
                 Map.of("en", "A fixed date protects your deposit.", "ko", "확정일자를 받으면 보증금을 보호받습니다."))
             .build());
-  }
-
-  private String expiredAccessToken() {
-    SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
-    Instant now = Instant.now();
-    return Jwts.builder()
-        .issuer(jwtProperties.getIssuer())
-        .subject("1")
-        .claim("onboardingCompleted", true)
-        .issuedAt(Date.from(now.minusSeconds(7200)))
-        .expiration(Date.from(now.minusSeconds(3600)))
-        .signWith(key)
-        .compact();
-  }
-
-  private static String bearer(String token) {
-    return "Bearer " + token;
   }
 
   private static String answerJson(String selectedChoice) {

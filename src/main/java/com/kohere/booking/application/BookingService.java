@@ -22,6 +22,7 @@ import com.kohere.booking.domain.TenantOnlyException;
 import com.kohere.booking.presentation.dto.BookingReportRequest;
 import com.kohere.booking.presentation.dto.BookingRequest;
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.RequestDates;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.BookingListingQueryService;
@@ -70,7 +71,8 @@ public class BookingService {
         listingQueryService
             .findPublishedRoomOffer(listingId, request.roomOfferId())
             .orElseThrow(ListingUnavailableException::new);
-    validateMoveInDate(request.moveInDate(), offer.nextAvailableFrom());
+    LocalDate moveInDate = RequestDates.parse("moveInDate", request.moveInDate());
+    validateMoveInDate(moveInDate, offer.nextAvailableFrom());
     if (userBlockService.isBlockedBetween(tenantId, offer.landlordId())) {
       throw new CounterpartBlockedException();
     }
@@ -85,7 +87,7 @@ public class BookingService {
                 .listingId(listingId)
                 .roomOfferId(request.roomOfferId())
                 .landlordId(offer.landlordId())
-                .moveInDate(request.moveInDate())
+                .moveInDate(moveInDate)
                 .contractPeriod(request.contractPeriod())
                 .status(BookingStatus.REQUESTED)
                 .createdAt(Instant.now())
@@ -105,30 +107,38 @@ public class BookingService {
    * 예약 목록 조회(userType 분기). {@code LANDLORD}면 내 소유 매물에 신청된 예약을({@code landlord_id} 스코프), 그 외(세입자)는 내
    * 예약을 {@code createdAt} 내림차순 오프셋 페이지네이션으로 반환한다. 삭제·차단 대상은 제외한다. 두 역할 모두 유효 요청이라 역할 {@code 403}은
    * 없다.
+   *
+   * <p>범위 밖 {@code page}·{@code size}는 보정하지 않고 {@code 400 INVALID_INPUT}으로 거절한다 — 조용히 깎으면 100개를 받은
+   * 클라이언트가 「원래 100개」인지 「잘린 것」인지 구분할 수 없다. 스펙 04 §2와 {@code listing}의 목록 API가 쓰는 규칙과 같다.
    */
   @Transactional(readOnly = true)
   public PageResponse<?> getBookings(long userId, int page, int size) {
-    int safePage = Math.max(page, 0);
-    int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+    validatePage(page, size);
     List<Long> blockedIds = userBlockService.findBlockedUserIds(userId);
 
     if (USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
       List<LandlordBookingSummaryResponse> content =
-          bookingRepository.findVisibleByLandlordId(userId, blockedIds, safePage, safeSize).stream()
+          bookingRepository.findVisibleByLandlordId(userId, blockedIds, page, size).stream()
               .map(this::toLandlordSummary)
               .toList();
       return page(
-          content,
-          safePage,
-          safeSize,
-          bookingRepository.countVisibleByLandlordId(userId, blockedIds));
+          content, page, size, bookingRepository.countVisibleByLandlordId(userId, blockedIds));
     }
     List<BookingSummaryResponse> content =
-        bookingRepository.findVisibleByTenantId(userId, blockedIds, safePage, safeSize).stream()
+        bookingRepository.findVisibleByTenantId(userId, blockedIds, page, size).stream()
             .map(this::toSummary)
             .toList();
-    return page(
-        content, safePage, safeSize, bookingRepository.countVisibleByTenantId(userId, blockedIds));
+    return page(content, page, size, bookingRepository.countVisibleByTenantId(userId, blockedIds));
+  }
+
+  /** 페이지 번호와 크기가 API 약속 범위 안에 있는지 확인한다. */
+  private static void validatePage(int page, int size) {
+    if (page < 0) {
+      throw new InvalidInputException("page", "validation.min", 0, page);
+    }
+    if (size < 1 || size > MAX_PAGE_SIZE) {
+      throw new InvalidInputException("size", "validation.range", 1, MAX_PAGE_SIZE, size);
+    }
   }
 
   /**
@@ -269,7 +279,7 @@ public class BookingService {
   /** 선택 사유 검증 — {@code null}은 사유 없음, 카탈로그에 없는(또는 비활성) 코드는 400 {@code INVALID_INPUT}. */
   private void validateReason(String reason) {
     if (reason != null && !reportReasonRepository.existsActiveByCode(reason)) {
-      throw new InvalidInputException("reason 값이 올바르지 않습니다: " + reason);
+      throw new InvalidInputException("reason", "validation.notAllowed", reason);
     }
   }
 

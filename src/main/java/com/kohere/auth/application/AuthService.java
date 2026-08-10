@@ -38,6 +38,8 @@ import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
+import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.RequestDates;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
@@ -111,7 +113,7 @@ public class AuthService {
           StringUtils.hasText(oidcUser.email()) ? oidcUser.email() : account.getEmail();
       String snapName = StringUtils.hasText(request.name()) ? request.name() : account.getName();
       String snapAppleRefreshToken =
-          request.provider() == Provider.APPLE && StringUtils.hasText(appleRefreshToken)
+          providerOf(request) == Provider.APPLE && StringUtils.hasText(appleRefreshToken)
               ? appleRefreshToken
               : account.getAppleRefreshToken();
       socialAccountRepository.save(
@@ -170,8 +172,20 @@ public class AuthService {
    * OidcTokenVerifier}로 재검증한다 — 교환 응답을 맹신하지 않는다(ADR-0031 #1). provider별 필수 자격 누락은 400 {@code
    * AUTH_MISSING_CREDENTIAL}.
    */
+  /**
+   * 요청의 {@code provider} 문자열을 {@link Provider}로 파싱한다. 허용 외 값은 {@code MALFORMED_REQUEST}가 아니라 {@code
+   * INVALID_INPUT} + {@code errors[].field}다 — 본문 JSON은 멀쩡하고 값 하나가 틀린 상황이기 때문이다(#151).
+   */
+  private static Provider providerOf(SocialLoginRequest request) {
+    try {
+      return Provider.valueOf(request.provider());
+    } catch (IllegalArgumentException e) {
+      throw new InvalidInputException("provider", "validation.notAllowed", request.provider());
+    }
+  }
+
   private ResolvedIdentity resolveIdentity(SocialLoginRequest request) {
-    return switch (request.provider()) {
+    return switch (providerOf(request)) {
       case GOOGLE -> {
         requireCredential(request.idToken());
         yield new ResolvedIdentity(
@@ -254,7 +268,7 @@ public class AuthService {
             userId,
             new OnboardingProfile(
                 request.gender(),
-                request.birthDate(),
+                RequestDates.parsePast("birthDate", request.birthDate()),
                 request.country(),
                 request.occupation(),
                 request.visaType(),
@@ -311,7 +325,9 @@ public class AuthService {
     phoneVerificationService.assertVerified(userId, request.phoneNumber());
     UserProfileView user =
         userAccountService.completeLandlordOnboarding(
-            userId, new LandlordOnboardingProfile(request.phoneNumber(), request.birthDate()));
+            userId,
+            new LandlordOnboardingProfile(
+                request.phoneNumber(), RequestDates.parsePast("birthDate", request.birthDate())));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());

@@ -24,12 +24,12 @@ Accepted
 
 ## Decision
 
-**테스트 기반 [Spring REST Docs]를 채택한다.** 컨트롤러 테스트(MockMvc)에서 요청/응답 스니펫(AsciiDoc)을 생성하고, 수기 prose와 합쳐 HTML 레퍼런스로 발행한다. **Swagger UI / springdoc-openapi(런타임 어노테이션 방식)는 채택하지 않는다.**
+**테스트 기반 [Spring REST Docs]를 채택한다.** 컨트롤러 테스트(MockMvc)에서 요청/응답을 캡처해 API 레퍼런스를 생성한다. **springdoc-openapi(런타임 어노테이션 방식)는 채택하지 않는다.** 발행 형식은 OpenAPI 3 + Swagger UI다([ADR-0017](./0017-openapi-swagger-ui-from-restdocs.md)).
 
 세부 정책:
 
 1. **스니펫 생성**: `spring-restdocs-mockmvc`로 컨트롤러 슬라이스 테스트에서 `curl`/`http-request`/`http-response`/`request-fields`/`response-fields` 스니펫을 만든다. 공통 래퍼(`success`/`data`/`error`)·에러 카탈로그는 공용 스니펫/프리프로세서로 재사용한다.
-2. **문서 빌드**: AsciiDoctor(Gradle `org.asciidoctor.jvm.convert`)로 `src/docs/asciidoc`의 prose + 생성 스니펫을 합쳐 HTML로 변환하고 빌드 산출물에 포함한다.
+2. **문서 빌드**: Gradle `openapi3` 태스크가 테스트가 캡처한 자원을 모아 `build/api-spec/openapi3.yaml`을 만들고, Swagger UI 정적 자산과 함께 실행 jar에 번들한다([ADR-0017](./0017-openapi-swagger-ui-from-restdocs.md)).
 3. **정확성 강제**: 문서화 대상 엔드포인트는 **테스트가 있어야 스니펫이 나온다.** 요청/응답이 바뀌면 테스트가 깨지므로 문서도 강제로 갱신된다 → **문서↔코드 드리프트 차단.**
 4. **컨트롤러 무오염**: 문서용 어노테이션을 프로덕션 코드에 두지 않는다([code-style §3](../convention/code-style.md) 클린 계층 유지).
 5. **Markdown specs와의 관계**: [api/specs](../api/specs/README.md)는 **설계 시점 정본**(사람이 쓰고 리뷰·합의하는 계약)으로 유지하고, REST Docs는 **테스트로 검증된 실제 동작 레퍼런스**로 보완한다(스펙=계약, REST Docs=검증). 중복은 점진적으로 REST Docs 산출물로 수렴시킨다.
@@ -39,7 +39,7 @@ Accepted
 
 | 대안 | 장점 | 단점 | 채택 안 한 이유 |
 |---|---|---|---|
-| **A. Spring REST Docs (채택)** — 테스트에서 스니펫 생성 | 테스트로 **정확성 보장·드리프트 차단**, 컨트롤러 무오염, 수기 prose 결합 유연, 공통 래퍼/에러 스니펫 재사용 | 엔드포인트별 테스트 작성 비용, 기본 인터랙티브 "try it out" UI 없음, AsciiDoctor 빌드 셋업 | — |
+| **A. Spring REST Docs (채택)** — 테스트에서 스니펫 생성 | 테스트로 **정확성 보장·드리프트 차단**, 컨트롤러 무오염, 공통 래퍼/에러 스니펫 재사용 | 엔드포인트별 테스트 작성 비용, 기본 인터랙티브 "try it out" UI 없음(→ [ADR-0017](./0017-openapi-swagger-ui-from-restdocs.md)이 보완) | — |
 | **B. Swagger UI / springdoc-openapi** — 어노테이션·런타임 자동 생성 | 즉시 **Swagger UI(try it out)** + OpenAPI 스펙 무료, 도입 빠름, 생태계 친숙 | **문서↔동작 드리프트**(설명·예시가 코드로 검증되지 않음), 컨트롤러/DTO **어노테이션 오염**(`@Operation`/`@Schema`), 런타임 의존·노출면 관리 필요 | 정확성·클린 계층이 우선이고 외부 try-it-out 수요가 낮음 |
 | **C. 수기 Markdown만 (현행 유지)** | 도구 0, 설계 의도 표현 자유 | 실제 응답과 **수기 동기화·검증 없음** → 드리프트 | 정확성 보장 불가, 규모가 커지면 신뢰 하락 |
 | **D. REST Docs + `restdocs-api-spec`로 OpenAPI 겸용** | 테스트 정확성 + Swagger UI/코드젠 | 셋업·산출물 2종으로 복잡도↑ | MVP엔 과투자 — 채택안(A)의 **후속 전환 경로**로 남긴다(필요 시 Decision 6) |
@@ -53,9 +53,9 @@ Accepted
 - **부정/트레이드오프**
   - 문서화할 엔드포인트마다 **테스트가 필요**하다(초기 작성 비용↑ — 단, 어차피 작성할 컨트롤러 테스트와 겹쳐 한계비용은 작다).
   - 기본 제공 **인터랙티브 "try it out" UI가 없다**(필요 시 대안 D).
-  - **AsciiDoctor 빌드 파이프라인**이 추가되고, 작성자가 AsciiDoc/스니펫 작성법을 익혀야 한다.
+  - 작성자가 REST Docs 스니펫 작성법을 익혀야 한다(문서 작성 규약은 [ADR-0017](./0017-openapi-swagger-ui-from-restdocs.md)).
 - **후속 작업**
-  - [build.gradle](../../build.gradle)에 `spring-restdocs-mockmvc` + `org.asciidoctor.jvm.convert` 플러그인 추가, `src/docs/asciidoc` 골격 작성.
+  - [build.gradle](../../build.gradle)에 `spring-restdocs-mockmvc` + `com.epages.restdocs-api-spec` 플러그인 추가.
   - 공통 래퍼/에러 응답 **스니펫 템플릿**(프리프로세서) 마련.
   - CI에서 문서 빌드(선택적으로 산출물 게시).
   - [system-overview §3-5](../architecture/system-overview.md) API 문서 항목 갱신(✅ 본 결정 반영).

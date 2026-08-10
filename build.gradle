@@ -1,10 +1,17 @@
+buildscript {
+  dependencies {
+    // verifyOpenApiSpec(#151)이 쓰는 YAML 파서. 플러그인 전이 의존에 얹으면 플러그인 업그레이드 한 번에
+    // 빌드 스크립트가 깨지므로 명시 선언한다.
+    classpath 'org.yaml:snakeyaml:2.4'
+  }
+  repositories { mavenCentral() }
+}
+
 plugins {
   id 'java'
   id 'org.springframework.boot' version '3.5.8'
   id 'io.spring.dependency-management' version '1.1.7'
   id 'com.diffplug.spotless' version '8.6.0'
-  // API 문서 — REST Docs 스니펫을 HTML로 렌더 (ADR-0007)
-  id 'org.asciidoctor.jvm.convert' version '4.0.4'
   // REST Docs 테스트 → OpenAPI3 yaml 생성 (Swagger UI 서빙용, ADR-0016)
   id 'com.epages.restdocs-api-spec' version '0.19.4'
 }
@@ -86,7 +93,7 @@ dependencies {
   testImplementation 'org.springframework.boot:spring-boot-starter-test'
   testImplementation 'org.springframework.modulith:spring-modulith-starter-test'
   testImplementation 'org.springframework.security:spring-security-test'
-  // API 문서 — 테스트 기반 REST Docs(HTML, ADR-0007) + OpenAPI3 캡처(Swagger UI, ADR-0016)
+  // API 문서 — 테스트 기반 REST Docs(ADR-0007) + OpenAPI3 캡처(Swagger UI, ADR-0017)
   testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
   testImplementation 'com.epages:restdocs-api-spec-mockmvc:0.19.4'
   // 통합 테스트 — 실제 엔진(MySQL·Redis·MongoDB)으로 검증 (test-strategy §4)
@@ -124,29 +131,118 @@ ext {
 
 tasks.named('test') {
   useJUnitPlatform()
-  // REST Docs 스니펫 출력 디렉터리 (ADR-0007)
+  // REST Docs 스니펫 출력 디렉터리 — openapi3 태스크가 수집한다 (ADR-0007·0017)
   outputs.dir snippetsDir
-}
-
-// 스니펫(test 산출물) → AsciiDoc/HTML 렌더 (ADR-0007)
-tasks.named('asciidoctor') {
-  inputs.dir snippetsDir
-  dependsOn test
-  attributes 'snippets': snippetsDir
 }
 
 // REST Docs 테스트로 캡처한 자원 → OpenAPI3 yaml(Swagger UI가 읽음, ADR-0016)
 openapi3 {
   setServer('/') // 상대경로 — Swagger를 서빙한 origin(local·dev·prod)을 자동으로 가리킨다(배포 도메인 대응)
   title = 'Kohere API'
-  description = 'REST Docs 테스트로 생성된 OpenAPI 3 명세(인증·온보딩·진단·추천 등 — 도메인별 *DocsTest가 캡처한 스니펫 통합)'
+  // info.description — Swagger UI 최상단에 마크다운으로 렌더된다. 스키마·필드 설명으로는 표현할 수 없는
+  // "이 문서를 읽는 법"만 둔다(#151). 공통 래퍼 필드 설명은 각 응답 스키마에 이미 들어 있다.
+  description = '''\
+인증: `Authorization: Bearer <accessToken>`
+
+- 케이스별 응답은 각 status 의 **Examples 드롭다운**에서 확인한다.
+- 하나의 엔드포인트가 Schema를 공유하므로 역할별로 요청·응답이 갈릴경우 대상 필드는 schema description을 참고한다.
+'''
+  // 태그 설명(tagDescriptionsPropertiesFile)은 쓰지 않는다 — 테스트가 태그 「이름」만 정할 수 있고
+  // 설명은 빌드 시점 별도 파일로만 넣을 수 있어, 문서의 단일 소스가 테스트라는 원칙(ADR-0007)에서 벗어난다.
+  // 태그 이름(com.kohere.docs.ApiDocsTags)이 자체로 설명적이고, 표시 순서는 swagger-ui-initializer.js 가 정한다.
   version = project.version.toString()
   format = 'yaml'
 }
 
+// 생성된 OpenAPI 명세의 문서 품질 게이트(#151).
+//
+// openapi3 가 dependsOn('check') 이므로 이 검증을 check 에 붙이면 순환 의존으로 빌드가 죽는다.
+// 산출물 경로(prepareSwaggerUi)에 걸면 assemble→bootJar→prepareSwaggerUi 로 ./gradlew build 에 자동 포함되고
+// CI 워크플로(spotlessCheck build)도 수정할 필요가 없다.
+//
+// 검사하지 않는 것: 응답 스키마의 nullable·enum 회귀. 스키마가 $ref 로 components 에 분리돼 ref 해석 +
+// 중첩 properties 재귀가 필요하고, 「null 이 아니라 빈 문자열」 같은 정당한 예외를 구분할 수 없다.
+// → docs/convention/test-strategy.md 의 리뷰 체크리스트로 내렸다.
+tasks.register('verifyOpenApiSpec') {
+  group = 'verification'
+  description = 'openapi3.yaml 의 태그·문구·operationId 규약을 검증한다 (#151)'
+  dependsOn tasks.named('openapi3')
+
+  // 설정 시점에 캡처 — doLast 에서 project 를 참조하지 않는다(설정 캐시 대비)
+  def specFile = layout.buildDirectory.file('api-spec/openapi3.yaml')
+  inputs.file(specFile)
+
+  doLast {
+    Map spec = new org.yaml.snakeyaml.Yaml().load(specFile.get().asFile.newInputStream())
+
+    def usedTags = [] as Set
+    def seenOperationIds = [:]
+    def violations = []
+    // operationId 는 그 오퍼레이션 스니펫 identifier 들의 commonPrefix 다 — 후행 하이픈(quiz-answer-)이 정상값이라
+    // 엄격한 케밥 정규식을 쓰면 정상값을 거부한다. 형식은 느슨하게 두고 유일성·붕괴를 직접 본다.
+    def ID_PATTERN = ~/^[a-z][a-z0-9]*(-[a-z0-9]*)*$/
+
+    spec.paths.each { path, methods ->
+      methods.each { method, op ->
+        def id = op.operationId
+        def where = "${method.toUpperCase()} ${path} (${id})"
+        def tags = op.tags ?: []
+
+        if (tags.isEmpty()) {
+          violations << "${where}: tags 미지정 — resourceDetails().tag(ApiDocsTags.X) 를 붙여라"
+        }
+        if (tags.contains('api')) {
+          violations << "${where}: 태그가 'api' 로 유추됐다 — 스니펫 하나가 tag 를 빠뜨렸다"
+        }
+        if (tags.size() > 1) {
+          violations << "${where}: 태그가 ${tags} 로 둘 이상이다 — 같은 오퍼레이션의 스니펫이 서로 다른 태그를 쓴다"
+        }
+        usedTags.addAll(tags)
+
+        if (!op.summary?.trim()) {
+          violations << "${where}: summary 없음"
+        } else if (op.summary.contains('\n')) {
+          violations << "${where}: summary 에 개행이 있다 — 상세는 description 으로 내려라"
+        } else if (op.summary.length() > 40) {
+          violations << "${where}: summary 가 ${op.summary.length()}자다(40자 이내) — '${op.summary}'"
+        }
+        if (!op.description?.trim()) {
+          violations << "${where}: description 없음"
+        }
+
+        if (!id || !(id ==~ ID_PATTERN)) {
+          violations << "${where}: operationId 형식 위반"
+        } else if (!id.contains('-')) {
+          violations << "${where}: operationId 가 '${id}' 로 붕괴했다 — 스니펫 identifier 들의 공통 접두사가 너무 짧다"
+        }
+        if (seenOperationIds.containsKey(id)) {
+          violations << "${where}: operationId '${id}' 가 ${seenOperationIds[id]} 와 중복이다"
+        } else {
+          seenOperationIds[id] = where
+        }
+
+        if (!op.responses.keySet().any { it.toString().startsWith('2') }) {
+          violations << "${where}: 2xx 응답 없음"
+        }
+      }
+    }
+
+    // 태그 이름은 com.kohere.docs.ApiDocsTags 상수라 오타가 컴파일 타임에 걸린다.
+    // 다만 상수를 새로 추가하면 swagger-ui-initializer.js 의 TAG_ORDER 에도 넣어야 정렬된다 —
+    // JS 파싱까지 하지는 않으므로 아래 목록을 눈으로 대조한다.
+    logger.lifecycle("verifyOpenApiSpec: 사용 태그 ${usedTags.sort()}")
+
+    if (violations) {
+      throw new GradleException(
+          "OpenAPI 문서 품질 위반 ${violations.size()}건:\n  - " + violations.join('\n  - '))
+    }
+    logger.lifecycle("verifyOpenApiSpec: 오퍼레이션 ${seenOperationIds.size()}개 · 태그 ${usedTags.size()}종 — 위반 없음")
+  }
+}
+
 // Swagger UI 정적 자산(webjar) + 우리 openapi3.yaml + 우리 initializer 를 한 디렉터리로 모음
 tasks.register('prepareSwaggerUi', Copy) {
-  dependsOn tasks.named('openapi3')
+  dependsOn tasks.named('openapi3'), tasks.named('verifyOpenApiSpec')
   into layout.buildDirectory.dir('swagger-ui')
   // webjar dist 추출(경로 prefix 제거), petstore용 기본 initializer 는 제외
   from({
@@ -164,14 +260,13 @@ tasks.register('prepareSwaggerUi', Copy) {
   from('src/main/resources/swagger-ui-initializer.js') { rename { 'swagger-initializer.js' } }
 }
 
-// bootRun(개발 실행)에서도 Swagger UI(/swagger-ui)·REST Docs(/docs)를 보기 위한 생성물 모음.
-// 무거운 생성(test→openapi3/asciidoctor)과 분리 — 필요할 때 한 번 `./gradlew prepareDevStatic` 실행 후
+// bootRun(개발 실행)에서도 Swagger UI(/swagger-ui)를 보기 위한 생성물 모음.
+// 무거운 생성(test→openapi3)과 분리 — 필요할 때 한 번 `./gradlew prepareDevStatic` 실행 후
 // bootRun 하면 serve된다(미실행 시 그냥 없음 → 빠른 dev 루프 유지).
 tasks.register('prepareDevStatic', Copy) {
-  dependsOn tasks.named('prepareSwaggerUi'), tasks.named('asciidoctor')
+  dependsOn tasks.named('prepareSwaggerUi')
   into layout.buildDirectory.dir('devstatic/static')
   from(layout.buildDirectory.dir('swagger-ui')) { into 'swagger-ui' }
-  from(layout.buildDirectory.dir('docs/asciidoc')) { into 'docs' }
 }
 
 // prepareDevStatic 으로 생성해두면 bootRun 이 classpath:/static/** 로 노출한다(dir 없으면 무시).
@@ -179,12 +274,9 @@ tasks.named('bootRun') {
   classpath += files(layout.buildDirectory.dir('devstatic'))
 }
 
-// 렌더된 REST Docs HTML(/docs) + Swagger UI(/swagger-ui)를 실행 jar의 정적 리소스로 번들
+// Swagger UI(/swagger-ui)를 실행 jar의 정적 리소스로 번들
 tasks.named('bootJar') {
-  dependsOn tasks.named('asciidoctor'), tasks.named('prepareSwaggerUi')
-  from(layout.buildDirectory.dir('docs/asciidoc')) {
-    into 'BOOT-INF/classes/static/docs'
-  }
+  dependsOn tasks.named('prepareSwaggerUi')
   from(layout.buildDirectory.dir('swagger-ui')) {
     into 'BOOT-INF/classes/static/swagger-ui'
   }

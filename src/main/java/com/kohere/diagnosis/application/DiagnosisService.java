@@ -58,7 +58,7 @@ public class DiagnosisService {
   /** 단계별 질문 1개 조회(③은 저장된 purpose로 university/district 택일, 등록 국가 언어로 번역). */
   public QuestionResponse getQuestion(long userId, int step) {
     if (step < 1 || step > 6) {
-      throw new InvalidInputException("step은 1~6 사이여야 합니다: " + step);
+      throw new InvalidInputException("step", "validation.range", 1, 6, step);
     }
     // ③(step 3)은 저장된 purpose로 어느 문항을 낼지 서버가 정한다(분기). 카탈로그 조회 전에 결정해 purpose
     // 미선행이면 INVALID_INPUT으로 먼저 막는다(카탈로그에는 분기 메타를 두지 않는다 — ADR-0028).
@@ -241,10 +241,10 @@ public class DiagnosisService {
 
   private static void validatePage(int page, int size) {
     if (page < 0) {
-      throw new InvalidInputException("page는 0 이상이어야 합니다: " + page);
+      throw new InvalidInputException("page", "validation.min", 0, page);
     }
     if (size < 1 || size > 100) {
-      throw new InvalidInputException("size는 1~100 사이여야 합니다: " + size);
+      throw new InvalidInputException("size", "validation.range", 1, 100, size);
     }
   }
 
@@ -255,12 +255,12 @@ public class DiagnosisService {
     String[] parts = sort.split(",");
     String key = parts[0].trim();
     if (!allowedKeys.contains(key)) {
-      throw new InvalidInputException("정렬 키가 올바르지 않습니다: " + key);
+      throw new InvalidInputException("sort", "validation.sortKey", key);
     }
     if (parts.length > 1) {
       String direction = parts[1].trim().toLowerCase();
       if (!direction.equals("asc") && !direction.equals("desc")) {
-        throw new InvalidInputException("정렬 방향이 올바르지 않습니다: " + parts[1]);
+        throw new InvalidInputException("sort", "validation.sortDirection", parts[1]);
       }
     }
   }

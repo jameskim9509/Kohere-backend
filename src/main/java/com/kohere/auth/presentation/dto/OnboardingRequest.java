@@ -1,9 +1,6 @@
 package com.kohere.auth.presentation.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Past;
-import java.time.LocalDate;
 
 /**
  * 온보딩 제출 요청 DTO. 필수 프로필을 담는다. 약관 동의(POST /auth/terms)가 선행되어야 한다. 이름·이메일은 소셜 로그인 시점에 이미 확정됐으므로 온보딩에서
@@ -19,7 +16,7 @@ import java.time.LocalDate;
  */
 public record OnboardingRequest(
     @NotBlank String gender,
-    @NotNull @Past LocalDate birthDate,
+    @NotBlank String birthDate,
     @NotBlank String country,
     String occupation,
     @NotBlank String visaType,
