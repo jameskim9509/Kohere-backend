@@ -1153,7 +1153,7 @@ class AuthOnboardingDocsTest {
         patch("/api/v1/users/me")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"birthDate\":\"2024-13-45\"}"),
+            .content(MALFORMED_BODY),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "user-patch-me-malformed",
@@ -1178,6 +1178,18 @@ class AuthOnboardingDocsTest {
         // 문서 테스트는 Accept-Language 를 보내지 않아 기본 번들(영어)로 해소된다 — ko 번역은
         // GlobalExceptionHandlerI18nTest 가 검증한다.
         .andExpect(jsonPath("$.error.errors[0].reason").value("Not an allowed value: UNKNOWN"));
+
+    // 날짜 형식 위반도 같은 이유로 INVALID_INPUT이다 — DTO가 LocalDate를 선언하면 역직렬화가 먼저
+    // 거부해 MALFORMED_REQUEST가 되고 어느 필드인지도 남지 않는다(#151).
+    mockMvc
+        .perform(
+            patch("/api/v1/users/me")
+                .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"birthDate\":\"2024-13-45\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andExpect(jsonPath("$.error.errors[0].field").value("birthDate"));
 
     // 401/403은 시큐리티 필터가 본문 파싱 전에 끊는다 — 요청 본문 없이도 같은 에러다(#151-4).
     perform(

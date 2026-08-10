@@ -698,7 +698,7 @@ class AuthServiceTest {
 
   private static OnboardingRequest onboardingRequest() {
     return new OnboardingRequest(
-        "MALE", LocalDate.of(1990, 1, 1), "KR", "UNDERGRADUATE_STUDENT", "SHORT_TERM_VISIT", null);
+        "MALE", "1990-01-01", "KR", "UNDERGRADUATE_STUDENT", "SHORT_TERM_VISIT", null);
   }
 
   /**
@@ -727,6 +727,6 @@ class AuthServiceTest {
   }
 
   private static LandlordOnboardingRequest landlordOnboardingRequest() {
-    return new LandlordOnboardingRequest("01012345678", LocalDate.of(1990, 1, 1));
+    return new LandlordOnboardingRequest("01012345678", "1990-01-01");
   }
 }

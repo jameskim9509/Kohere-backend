@@ -121,8 +121,8 @@ public final class UserDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `gender`·`occupation`·`visaType`가 허용 목록 밖, `birthDate`가 미래 날짜, `country` 미존재, `lang` 미지원 코드 |
-      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없거나 `birthDate`가 `YYYY-MM-DD` 형식이 아님 |
+      | 400 | `INVALID_INPUT` | `gender`·`occupation`·`visaType`가 허용 목록 밖, `birthDate`가 `YYYY-MM-DD` 형식이 아니거나 미래 날짜, `country` 미존재, `lang` 미지원 코드 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 토큰으로 접근 |

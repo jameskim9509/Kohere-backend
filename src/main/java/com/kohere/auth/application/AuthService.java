@@ -38,6 +38,7 @@ import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
 import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
+import com.kohere.common.request.RequestDates;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
@@ -254,7 +255,7 @@ public class AuthService {
             userId,
             new OnboardingProfile(
                 request.gender(),
-                request.birthDate(),
+                RequestDates.parsePast("birthDate", request.birthDate()),
                 request.country(),
                 request.occupation(),
                 request.visaType(),
@@ -311,7 +312,9 @@ public class AuthService {
     phoneVerificationService.assertVerified(userId, request.phoneNumber());
     UserProfileView user =
         userAccountService.completeLandlordOnboarding(
-            userId, new LandlordOnboardingProfile(request.phoneNumber(), request.birthDate()));
+            userId,
+            new LandlordOnboardingProfile(
+                request.phoneNumber(), RequestDates.parsePast("birthDate", request.birthDate())));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());

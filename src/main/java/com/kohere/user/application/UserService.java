@@ -1,6 +1,7 @@
 package com.kohere.user.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.RequestDates;
 import com.kohere.user.api.PhoneVerificationChecker;
 import com.kohere.user.api.UserWithdrawnEvent;
 import com.kohere.user.application.dto.UserProfileResponse;
@@ -75,7 +76,7 @@ public class UserService {
     return user.updateProfile(
         request.name(),
         parseEnum(Gender.class, "gender", request.gender()),
-        request.birthDate(),
+        RequestDates.parsePast("birthDate", request.birthDate()),
         request.country(),
         parseEnum(Occupation.class, "occupation", request.occupation()),
         parseEnum(VisaType.class, "visaType", request.visaType()),

@@ -842,8 +842,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | **`gender`/`visaType`/`occupation`이 허용 목록 밖**, `birthDate` 미래(`@Past` 위반), `country` 미존재(`countries`에 없음), **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드·빈 문자열** 등 값 검증 위반 |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가, 또는 `birthDate`가 `YYYY-MM-DD` 형식이 아니어서 역직렬화에 실패. **enum 후보(`gender`/`visaType`/`occupation`)는 요청 DTO가 String으로 받아 서버가 파싱하므로 허용 외 값도 `INVALID_INPUT`이다** — 온보딩(§5)과 같은 코드다(#151에서 통일) |
+| 400 | `INVALID_INPUT` | **`gender`/`visaType`/`occupation`이 허용 목록 밖**, `birthDate`가 `YYYY-MM-DD` 형식이 아니거나 미래 날짜, `country` 미존재(`countries`에 없음), **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드·빈 문자열** 등 값 검증 위반. 위반 필드는 `errors[]`로 반환한다 |
+| 400 | `MALFORMED_REQUEST` | 요청 본문을 JSON으로 해석할 수 없는 경우뿐이다. **enum 후보(`gender`/`visaType`/`occupation`)와 `birthDate`는 요청 DTO가 String으로 받아 서버가 파싱하므로 값 위반도 `INVALID_INPUT`이다** — 온보딩(§5)과 같은 코드다(#151에서 통일) |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(PENDING·TERMS_AGREED) 토큰으로 접근 |
 | 404 | `USER_NOT_FOUND` | 사용자가 `WITHDRAWN`이거나 삭제되어 없음 |

@@ -1,8 +1,5 @@
 package com.kohere.user.presentation.dto;
 
-import jakarta.validation.constraints.Past;
-import java.time.LocalDate;
-
 /**
  * 내 프로필 부분 수정 요청 DTO. 모든 필드가 선택이며, 전송한 필드만 변경하고 미전송 필드는 유지한다(미전송 ≠ 값 비움). {@code email}·{@code
  * nickname}은 이 경로로 수정하지 않는다(이메일은 재인증, 닉네임은 시스템 배정).
@@ -22,7 +19,7 @@ import java.time.LocalDate;
 public record UpdateProfileRequest(
     String name,
     String gender,
-    @Past LocalDate birthDate,
+    String birthDate,
     String country,
     String occupation,
     String visaType,
