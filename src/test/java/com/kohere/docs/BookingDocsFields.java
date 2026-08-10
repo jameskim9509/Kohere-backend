@@ -149,6 +149,10 @@ public final class BookingDocsFields {
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
 
+  public static final String[] LIST_400 = {"MALFORMED_REQUEST"};
+  public static final String[] LIST_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] LIST_403 = {"AUTH_ONBOARDING_REQUIRED"};
+
   public static ParameterDescriptor[] listQueryParameters() {
     return new ParameterDescriptor[] {
       parameterWithName("page").optional().description("0-base 페이지 번호(기본 0). 음수는 0으로 보정"),
@@ -205,6 +209,8 @@ public final class BookingDocsFields {
       | 404 | `BOOKING_NOT_FOUND` | 예약이 없거나 조회 권한 밖(세입자: 타인 예약 / 임대인: 내 소유 매물 신청 아님)이거나, 요청자가 이미 삭제했거나 상대를 차단한 예약 — 전부 404로 통일한다(존재 비노출) |
       """;
 
+  public static final String[] DETAIL_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] DETAIL_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] DETAIL_404 = {"BOOKING_NOT_FOUND"};
 
   public static ParameterDescriptor[] detailPathParameters() {
@@ -290,6 +296,9 @@ public final class BookingDocsFields {
       | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 403이 아니라 404로 통일한다(존재 비노출) |
       """;
 
+  public static final String[] DELETE_400 = {"MALFORMED_REQUEST"};
+  public static final String[] DELETE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] DELETE_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] DELETE_404 = {"BOOKING_NOT_FOUND"};
 
   public static ParameterDescriptor[] deletePathParameters() {
@@ -327,6 +336,11 @@ public final class BookingDocsFields {
       | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 404로 통일한다(존재 비노출) |
       """;
 
+  public static final String[] BLOCK_400 = {"MALFORMED_REQUEST"};
+  public static final String[] BLOCK_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] BLOCK_403 = {"AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] BLOCK_404 = {"BOOKING_NOT_FOUND"};
+
   public static ParameterDescriptor[] blockPathParameters() {
     return new ParameterDescriptor[] {
       parameterWithName("bookingId").description("차단 대상 상대를 도출할 예약 식별자 — 요청자가 참여한 예약이어야 한다")
@@ -362,6 +376,9 @@ public final class BookingDocsFields {
       | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 403이 아니라 404로 통일한다(존재 비노출) |
       """;
 
+  public static final String[] REPORT_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] REPORT_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] REPORT_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] REPORT_404 = {"BOOKING_NOT_FOUND"};
 
   public static ParameterDescriptor[] reportPathParameters() {
@@ -419,6 +436,9 @@ public final class BookingDocsFields {
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
+
+  public static final String[] REPORT_REASONS_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] REPORT_REASONS_403 = {"AUTH_ONBOARDING_REQUIRED"};
 
   public static List<FieldDescriptor> reportReasonsResponseFields() {
     return List.of(

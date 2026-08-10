@@ -2,8 +2,16 @@ package com.kohere.user;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_400;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_401;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_403;
 import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_DESCRIPTION;
 import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_SUMMARY;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_400;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_401;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_403;
 import static com.kohere.docs.UserDocsFields.UNBLOCK_DESCRIPTION;
 import static com.kohere.docs.UserDocsFields.UNBLOCK_SUMMARY;
 import static com.kohere.docs.UserDocsFields.blocksListQueryParameters;
@@ -23,7 +31,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsErrors;
 import com.kohere.docs.ApiDocsTags;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
@@ -45,6 +55,8 @@ import org.springframework.restdocs.RestDocumentationExtension;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
@@ -71,6 +83,7 @@ class UserBlockDocsTest {
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
+  @Autowired private JwtProperties jwtProperties;
 
   @MockitoBean private UserAccountService userAccountService;
   @MockitoBean private BookingListingQueryService listingQueryService;
@@ -190,5 +203,116 @@ class UserBlockDocsTest {
             delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID)
                 .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)))
         .andExpect(status().isNoContent());
+  }
+
+  /**
+   * 목록·해제의 실패 스니펫. 전부 보안 필터 또는 MVC 바인딩에서 끝나 차단 상태가 필요 없다.
+   *
+   * <p>{@code 400}은 값 범위가 아니라 <b>타입 불일치</b>다 — {@code UserBlockServiceImpl.listBlocks}가 {@code
+   * page}·{@code size}를 보정하고, 해제는 멱등이라 차단하지 않은 상대에도 204를 준다(404가 없다).
+   */
+  @Test
+  void blocksErrorSnippets() throws Exception {
+    String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
+    String expiredToken = bearer(expiredAccessToken(jwtProperties));
+
+    performListError(
+        get("/api/v1/users/me/blocks")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
+            .param("size", "abc"),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "user-blocks-list-malformed-request",
+        BLOCKS_LIST_400);
+    performListError(
+        get("/api/v1/users/me/blocks"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "user-blocks-list-unauthenticated",
+        BLOCKS_LIST_401);
+    performListError(
+        get("/api/v1/users/me/blocks").header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "user-blocks-list-token-expired",
+        BLOCKS_LIST_401);
+    performListError(
+        get("/api/v1/users/me/blocks").header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "user-blocks-list-onboarding-required",
+        BLOCKS_LIST_403);
+
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", "abc")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "user-blocks-unblock-malformed-request",
+        UNBLOCK_400);
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "user-blocks-unblock-unauthenticated",
+        UNBLOCK_401);
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID)
+            .header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "user-blocks-unblock-token-expired",
+        UNBLOCK_401);
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID)
+            .header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "user-blocks-unblock-onboarding-required",
+        UNBLOCK_403);
+  }
+
+  /** 목록은 path 변수가 없다 — 쿼리 파라미터는 생성기가 모델 전체를 합치므로 성공 스니펫의 선언이 그대로 남는다. */
+  private void performListError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                identifier,
+                ApiDocsTags.USERS,
+                BLOCKS_LIST_SUMMARY,
+                BLOCKS_LIST_DESCRIPTION,
+                errorCodes));
+  }
+
+  private void performUnblockError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                identifier,
+                ApiDocsTags.USERS,
+                UNBLOCK_SUMMARY,
+                UNBLOCK_DESCRIPTION,
+                unblockPathParameters(),
+                errorCodes));
   }
 }

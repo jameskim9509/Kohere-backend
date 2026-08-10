@@ -39,6 +39,8 @@ Accepted
 | `tags` | 스니펫 태그의 **union** | `com.kohere.docs.ApiDocsTags` 상수로만 부여하고 **모든 스니펫**에 붙인다. 하나만 빠뜨리면 URI 첫 세그먼트(`api`)가 섞여 두 그룹에 중복 노출된다 |
 | 응답 스키마 | 합집합이 아니라 `(path, type)` 기준 **dedup·last-wins** | 같은 `(path, method, status)`를 캡처하는 스니펫은 **동일한 필드 헬퍼**를 호출한다. 파일이 달라도 마찬가지다 |
 | `examples` | identifier를 키로 **전부 생존** | 역할·상태 분기는 여기서 보여준다. 케이스 구분은 summary가 아니라 **identifier**로 한다 |
+| path 파라미터 | **첫 모델 하나**에서만(`extractPathParameters(firstModelForPathAndMethod)`) | 에러 스니펫에도 **같은 `pathParameters()`를 넘긴다**. 빠뜨리면 순서에 따라 설명이 사라진다 |
+| query·header 파라미터 | 전 모델 `flatMap` + `distinctBy(name)` **합집합** | 에러 스니펫에 다시 선언하지 않아도 성공 스니펫의 것이 남는다 |
 
 #### 필드 기술
 

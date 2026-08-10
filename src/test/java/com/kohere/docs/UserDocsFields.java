@@ -170,7 +170,20 @@ public final class UserDocsFields {
       인증: 정식(ACTIVE) 회원 본인.
 
       차단은 예약 문맥(`POST /api/v1/bookings/{bookingId}/block`)에서만 생성된다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | `page`·`size`가 정수가 아님. 값 범위는 에러가 아니다 — 음수 `page`는 0으로, 초과 `size`는 100으로 보정된다 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
+
+  public static final String[] BLOCKS_LIST_400 = {"MALFORMED_REQUEST"};
+  public static final String[] BLOCKS_LIST_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] BLOCKS_LIST_403 = {"AUTH_ONBOARDING_REQUIRED"};
 
   // ---- DELETE /api/v1/users/me/blocks/{userId} 오퍼레이션 문구 ----
 
@@ -181,7 +194,20 @@ public final class UserDocsFields {
       차단을 해제한다. 차단하지 않은 상대를 해제해도 204다(멱등).
 
       인증: 정식(ACTIVE) 회원 본인. 본문·응답 본문이 없다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | 경로의 `userId`가 정수가 아님(경로 변수 타입 불일치) |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
+
+  public static final String[] UNBLOCK_400 = {"MALFORMED_REQUEST"};
+  public static final String[] UNBLOCK_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] UNBLOCK_403 = {"AUTH_ONBOARDING_REQUIRED"};
 
   // ---- 필드 기술자 ----
 

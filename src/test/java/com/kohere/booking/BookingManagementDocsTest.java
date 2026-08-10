@@ -2,16 +2,28 @@ package com.kohere.booking;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static com.kohere.docs.BookingDocsFields.BLOCK_400;
+import static com.kohere.docs.BookingDocsFields.BLOCK_401;
+import static com.kohere.docs.BookingDocsFields.BLOCK_403;
+import static com.kohere.docs.BookingDocsFields.BLOCK_404;
 import static com.kohere.docs.BookingDocsFields.BLOCK_DESCRIPTION;
 import static com.kohere.docs.BookingDocsFields.BLOCK_SUMMARY;
 import static com.kohere.docs.BookingDocsFields.CREATE_403;
 import static com.kohere.docs.BookingDocsFields.CREATE_DESCRIPTION;
 import static com.kohere.docs.BookingDocsFields.CREATE_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.DELETE_400;
+import static com.kohere.docs.BookingDocsFields.DELETE_401;
+import static com.kohere.docs.BookingDocsFields.DELETE_403;
 import static com.kohere.docs.BookingDocsFields.DELETE_404;
 import static com.kohere.docs.BookingDocsFields.DELETE_DESCRIPTION;
 import static com.kohere.docs.BookingDocsFields.DELETE_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.REPORT_400;
+import static com.kohere.docs.BookingDocsFields.REPORT_401;
+import static com.kohere.docs.BookingDocsFields.REPORT_403;
 import static com.kohere.docs.BookingDocsFields.REPORT_404;
 import static com.kohere.docs.BookingDocsFields.REPORT_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.REPORT_REASONS_401;
+import static com.kohere.docs.BookingDocsFields.REPORT_REASONS_403;
 import static com.kohere.docs.BookingDocsFields.REPORT_REASONS_DESCRIPTION;
 import static com.kohere.docs.BookingDocsFields.REPORT_REASONS_SUMMARY;
 import static com.kohere.docs.BookingDocsFields.REPORT_REASON_CODES;
@@ -23,6 +35,8 @@ import static com.kohere.docs.BookingDocsFields.reportPathParameters;
 import static com.kohere.docs.BookingDocsFields.reportReasonsResponseFields;
 import static com.kohere.docs.BookingDocsFields.reportRequestFields;
 import static com.kohere.docs.BookingDocsFields.reportResponseFields;
+import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
@@ -37,6 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsErrors;
 import com.kohere.docs.ApiDocsTags;
@@ -95,6 +110,7 @@ class BookingManagementDocsTest {
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
+  @Autowired private JwtProperties jwtProperties;
 
   @MockitoBean private com.kohere.user.api.UserAccountService userAccountService;
   @MockitoBean private BookingListingQueryService listingQueryService;
@@ -426,6 +442,222 @@ class BookingManagementDocsTest {
                     .summary(REPORT_REASONS_SUMMARY)
                     .description(REPORT_REASONS_DESCRIPTION),
                 responseFields(reportReasonsResponseFields())));
+  }
+
+  /**
+   * §4~§7의 인증·입력 실패 스니펫. 대부분 보안 필터나 MVC 바인딩에서 끝나 예약 상태가 필요 없고, 실제 예약이 있어야 하는 것은 신고 {@code
+   * INVALID_INPUT} 하나뿐이다({@code reportBooking}이 사유 검증보다 예약 조회를 먼저 한다).
+   *
+   * <p>본문은 <b>그 에러에 도달하는 데 필요할 때만</b> 싣는다(ADR-0017) — 필터가 거르는 401·403과, 본문 부재가 곧 트리거인 {@code
+   * MALFORMED_REQUEST}에는 {@code content}를 넣지 않는다. {@code contentType}은 지우면 415가 되므로 남긴다.
+   */
+  @Test
+  void managementErrorSnippets() throws Exception {
+    String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
+    String expiredToken = bearer(expiredAccessToken(jwtProperties));
+
+    // ===== §4 DELETE /api/v1/bookings/{bookingId} =====
+    performDeleteError(
+        delete("/api/v1/bookings/{bookingId}", "abc")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "booking-delete-malformed-request",
+        DELETE_400);
+    performDeleteError(
+        delete("/api/v1/bookings/{bookingId}", 1L),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "booking-delete-unauthenticated",
+        DELETE_401);
+    performDeleteError(
+        delete("/api/v1/bookings/{bookingId}", 1L).header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "booking-delete-token-expired",
+        DELETE_401);
+    performDeleteError(
+        delete("/api/v1/bookings/{bookingId}", 1L)
+            .header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "booking-delete-onboarding-required",
+        DELETE_403);
+
+    // ===== §5 POST /api/v1/bookings/{bookingId}/block =====
+    performBlockError(
+        post("/api/v1/bookings/{bookingId}/block", "abc")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "booking-block-malformed-request",
+        BLOCK_400);
+    performBlockError(
+        post("/api/v1/bookings/{bookingId}/block", 1L),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "booking-block-unauthenticated",
+        BLOCK_401);
+    performBlockError(
+        post("/api/v1/bookings/{bookingId}/block", 1L)
+            .header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "booking-block-token-expired",
+        BLOCK_401);
+    performBlockError(
+        post("/api/v1/bookings/{bookingId}/block", 1L)
+            .header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "booking-block-onboarding-required",
+        BLOCK_403);
+    performBlockError(
+        post("/api/v1/bookings/{bookingId}/block", 999_999L)
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)),
+        status().isNotFound(),
+        "BOOKING_NOT_FOUND",
+        "booking-block-not-found",
+        BLOCK_404);
+
+    // ===== §6 POST /api/v1/bookings/{bookingId}/report =====
+    long bookingId = createBooking();
+    performReportError(
+        post("/api/v1/bookings/{bookingId}/report", bookingId)
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"reason\":\"NOT_A_REASON\"}"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "booking-report-invalid-input",
+        REPORT_400);
+    performReportError(
+        post("/api/v1/bookings/{bookingId}/report", bookingId)
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "booking-report-malformed-request",
+        REPORT_400);
+    performReportError(
+        post("/api/v1/bookings/{bookingId}/report", bookingId)
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "booking-report-unauthenticated",
+        REPORT_401);
+    performReportError(
+        post("/api/v1/bookings/{bookingId}/report", bookingId)
+            .header(HttpHeaders.AUTHORIZATION, expiredToken)
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "booking-report-token-expired",
+        REPORT_401);
+    performReportError(
+        post("/api/v1/bookings/{bookingId}/report", bookingId)
+            .header(HttpHeaders.AUTHORIZATION, onboardingToken)
+            .contentType(MediaType.APPLICATION_JSON),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "booking-report-onboarding-required",
+        REPORT_403);
+
+    // ===== §7 GET /api/v1/bookings/report-reasons =====
+    performReportReasonsError(
+        get("/api/v1/bookings/report-reasons"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "booking-report-reasons-unauthenticated",
+        REPORT_REASONS_401);
+    performReportReasonsError(
+        get("/api/v1/bookings/report-reasons").header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "booking-report-reasons-token-expired",
+        REPORT_REASONS_401);
+    performReportReasonsError(
+        get("/api/v1/bookings/report-reasons").header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "booking-report-reasons-onboarding-required",
+        REPORT_REASONS_403);
+  }
+
+  private void performDeleteError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    perform(
+        request,
+        expectedStatus,
+        expectedCode,
+        identifier,
+        DELETE_SUMMARY,
+        DELETE_DESCRIPTION,
+        deletePathParameters(),
+        errorCodes);
+  }
+
+  private void performBlockError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    perform(
+        request,
+        expectedStatus,
+        expectedCode,
+        identifier,
+        BLOCK_SUMMARY,
+        BLOCK_DESCRIPTION,
+        blockPathParameters(),
+        errorCodes);
+  }
+
+  private void performReportError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    perform(
+        request,
+        expectedStatus,
+        expectedCode,
+        identifier,
+        REPORT_SUMMARY,
+        REPORT_DESCRIPTION,
+        reportPathParameters(),
+        errorCodes);
+  }
+
+  /** 신고 사유 목록은 path 변수가 없다 — {@code pathParameters} 없는 오버로드를 쓴다. */
+  private void performReportReasonsError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                identifier,
+                ApiDocsTags.BOOKINGS,
+                REPORT_REASONS_SUMMARY,
+                REPORT_REASONS_DESCRIPTION,
+                errorCodes));
   }
 
   private void perform(

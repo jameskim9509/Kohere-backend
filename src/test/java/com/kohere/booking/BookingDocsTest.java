@@ -10,9 +10,14 @@ import static com.kohere.docs.BookingDocsFields.CREATE_409;
 import static com.kohere.docs.BookingDocsFields.CREATE_422;
 import static com.kohere.docs.BookingDocsFields.CREATE_DESCRIPTION;
 import static com.kohere.docs.BookingDocsFields.CREATE_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.DETAIL_401;
+import static com.kohere.docs.BookingDocsFields.DETAIL_403;
 import static com.kohere.docs.BookingDocsFields.DETAIL_404;
 import static com.kohere.docs.BookingDocsFields.DETAIL_DESCRIPTION;
 import static com.kohere.docs.BookingDocsFields.DETAIL_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.LIST_400;
+import static com.kohere.docs.BookingDocsFields.LIST_401;
+import static com.kohere.docs.BookingDocsFields.LIST_403;
 import static com.kohere.docs.BookingDocsFields.LIST_DESCRIPTION;
 import static com.kohere.docs.BookingDocsFields.LIST_SUMMARY;
 import static com.kohere.docs.BookingDocsFields.createPathParameters;
@@ -23,6 +28,8 @@ import static com.kohere.docs.BookingDocsFields.detailPathParameters;
 import static com.kohere.docs.BookingDocsFields.detailResponseFields;
 import static com.kohere.docs.BookingDocsFields.listQueryParameters;
 import static com.kohere.docs.BookingDocsFields.listResponseFields;
+import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
@@ -38,6 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsErrors;
 import com.kohere.docs.ApiDocsTags;
@@ -96,6 +104,7 @@ class BookingDocsTest {
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
+  @Autowired private JwtProperties jwtProperties;
 
   @MockitoBean private UserAccountService userAccountService;
   @MockitoBean private BookingListingQueryService listingQueryService;
@@ -430,6 +439,64 @@ class BookingDocsTest {
         DETAIL_404);
   }
 
+  /**
+   * 목록·상세의 인증/입력 실패 스니펫. 전부 보안 필터 또는 MVC 바인딩 단계에서 끝나 예약 상태가 필요 없으므로 한 테스트에 모은다.
+   *
+   * <p>{@code 400}은 값 범위가 아니라 <b>타입 불일치</b>다 — {@code BookingService.getBookings}가 {@code
+   * page}·{@code size}를 {@code Math.max}/{@code Math.min}으로 보정하므로 범위 위반으로는 400이 나지 않는다.
+   */
+  @Test
+  void listAndDetail_errorSnippets() throws Exception {
+    String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
+    String expiredToken = bearer(expiredAccessToken(jwtProperties));
+
+    performListError(
+        get("/api/v1/bookings")
+            .header(HttpHeaders.AUTHORIZATION, tenantToken())
+            .param("page", "abc"),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "booking-list-malformed-request",
+        LIST_400);
+    performListError(
+        get("/api/v1/bookings"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "booking-list-unauthenticated",
+        LIST_401);
+    performListError(
+        get("/api/v1/bookings").header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "booking-list-token-expired",
+        LIST_401);
+    performListError(
+        get("/api/v1/bookings").header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "booking-list-onboarding-required",
+        LIST_403);
+
+    performDetailError(
+        get("/api/v1/bookings/{bookingId}", 1L),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "booking-detail-unauthenticated",
+        DETAIL_401);
+    performDetailError(
+        get("/api/v1/bookings/{bookingId}", 1L).header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "booking-detail-token-expired",
+        DETAIL_401);
+    performDetailError(
+        get("/api/v1/bookings/{bookingId}", 1L).header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "booking-detail-onboarding-required",
+        DETAIL_403);
+  }
+
   /** 예약 생성 오퍼레이션의 실패 스니펫 — 문구·path 파라미터가 성공 스니펫과 동일해야 한다. */
   private void performCreateError(
       MockHttpServletRequestBuilder request,
@@ -446,6 +513,46 @@ class BookingDocsTest {
         CREATE_SUMMARY,
         CREATE_DESCRIPTION,
         createPathParameters(),
+        errorCodes);
+  }
+
+  /**
+   * 목록 오퍼레이션의 실패 스니펫. path 변수가 없어 {@code pathParameters}를 넘기지 않는다 — 쿼리 파라미터는 생성기가 같은 {@code (path,
+   * method)} 모델 전체를 {@code flatMap} + {@code distinctBy(name)}로 합치므로 성공 스니펫의 선언이 그대로 살아남는다(path 변수만
+   * 첫 모델에서 가져온다).
+   */
+  private void performListError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                identifier, ApiDocsTags.BOOKINGS, LIST_SUMMARY, LIST_DESCRIPTION, errorCodes));
+  }
+
+  private void performDetailError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    perform(
+        request,
+        expectedStatus,
+        expectedCode,
+        identifier,
+        DETAIL_SUMMARY,
+        DETAIL_DESCRIPTION,
+        detailPathParameters(),
         errorCodes);
   }
 

@@ -37,8 +37,11 @@ public final class ApiDocsErrors {
   }
 
   /**
-   * path 변수가 있는 엔드포인트용. 에러 스니펫에도 선언해야 파라미터 설명이 순서에 좌우되지 않는다 — 생성기는 오퍼레이션의 {@code parameters}를 그룹의
-   * <b>첫 ResourceModel</b> 하나에서만 가져온다.
+   * path 변수가 있는 엔드포인트용. 에러 스니펫에도 선언해야 파라미터 설명이 순서에 좌우되지 않는다 — 생성기는 <b>path</b> 파라미터만 그룹의 <b>첫
+   * ResourceModel</b> 하나에서 가져오기 때문이다({@code extractPathParameters(firstModelForPathAndMethod)}).
+   *
+   * <p>반대로 query·header 파라미터는 같은 {@code (path, method)} 모델 전체를 {@code flatMap} + {@code
+   * distinctBy(name)}로 합치므로 에러 스니펫이 다시 선언할 필요가 없다 — 성공 스니펫의 선언이 그대로 남는다.
    */
   public static RestDocumentationResultHandler errorSnippet(
       String identifier,
