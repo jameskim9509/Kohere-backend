@@ -1,7 +1,7 @@
 package com.kohere.docs;
 
 /**
- * Swagger 오퍼레이션 태그. 값과 순서는 {@code src/docs/openapi/tags.yaml}과 1:1로 유지한다(#151).
+ * Swagger 오퍼레이션 태그. 표시 순서는 {@code swagger-ui-initializer.js}의 {@code TAG_ORDER}와 1:1로 유지한다(#151).
  *
  * <p>{@code resourceDetails().tag(...)}를 생략하면 {@code ResourceSnippet}이 URI 첫 세그먼트를 태그로 넣는다 — 우리 경로는
  * 전부 {@code /api/v1/...}이라 46개 오퍼레이션이 {@code api} 하나로 뭉친다(1단계 실측). 그리고 오퍼레이션 태그는 그 오퍼레이션에 속한 스니펫
@@ -11,7 +11,8 @@ package com.kohere.docs;
  * MyListingController}) 소유라 {@link #LISTINGS}, {@code /api/v1/users/me/blocks}는 user 모듈 소유라 {@link
  * #USERS}다.
  *
- * <p>deepLinking 앵커가 태그명을 URL 인코딩하므로 이름은 ASCII로 두고 한국어 설명은 {@code tags.yaml}에 둔다.
+ * <p>deepLinking 앵커가 태그명을 URL 인코딩하므로 이름은 ASCII로 둔다. 태그 <b>설명</b>은 넣지 않는다 — 테스트가 정할 수 없고 빌드 시점 별도
+ * 파일로만 넣을 수 있어 「문서의 단일 소스는 테스트」 원칙에서 벗어난다(ADR-0017).
  */
 public final class ApiDocsTags {
 

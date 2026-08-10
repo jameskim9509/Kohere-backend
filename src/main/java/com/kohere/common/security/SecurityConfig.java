@@ -50,7 +50,7 @@ public class SecurityConfig {
                     .requestMatchers(
                         HttpMethod.POST, "/api/v1/auth/social-login", "/api/v1/auth/reissue")
                     .permitAll()
-                    .requestMatchers("/actuator/health", "/docs/**", "/swagger-ui/**")
+                    .requestMatchers("/actuator/health", "/swagger-ui/**")
                     .permitAll()
                     // 매물 탐색은 가입 전에도 사용할 수 있는 공개 기능이다. HTTP method를 GET으로 한정하고 한 단계
                     // 하위 경로만 열어 /{listingId}/favorite·/{listingId}/bookings 같은 사용자 액션은 공개하지 않는다.
