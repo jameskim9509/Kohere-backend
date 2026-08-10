@@ -4,38 +4,47 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.docume
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.kohere.docs.ApiDocsErrors.assertError;
 import static com.kohere.docs.ApiDocsErrors.errorSnippet;
-import static com.kohere.docs.ApiDocsFields.codeField;
-import static com.kohere.docs.ApiDocsFields.enumField;
-import static com.kohere.docs.ApiDocsFields.errorNull;
-import static com.kohere.docs.ApiDocsFields.field;
-import static com.kohere.docs.ApiDocsFields.optCodeArrayField;
-import static com.kohere.docs.ApiDocsFields.optCodeField;
-import static com.kohere.docs.ApiDocsFields.optEnumField;
-import static com.kohere.docs.ApiDocsFields.optField;
-import static com.kohere.docs.DiagnosisDocsFields.ANSWER_FIELD_CODES;
+import static com.kohere.docs.DiagnosisDocsFields.ANSWER_400;
+import static com.kohere.docs.DiagnosisDocsFields.ANSWER_401;
+import static com.kohere.docs.DiagnosisDocsFields.ANSWER_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.ANSWER_SUMMARY;
 import static com.kohere.docs.DiagnosisDocsFields.DETAIL_401;
 import static com.kohere.docs.DiagnosisDocsFields.DETAIL_403;
 import static com.kohere.docs.DiagnosisDocsFields.DETAIL_404;
 import static com.kohere.docs.DiagnosisDocsFields.DETAIL_DESCRIPTION;
 import static com.kohere.docs.DiagnosisDocsFields.DETAIL_SUMMARY;
-import static com.kohere.docs.DiagnosisDocsFields.DIAGNOSIS_CONDITION_CODES;
-import static com.kohere.docs.DiagnosisDocsFields.LANGUAGE_NOTE;
-import static com.kohere.docs.DiagnosisDocsFields.QUESTION_FIELD_CODES;
-import static com.kohere.docs.DiagnosisDocsFields.QUESTION_TABLE;
-import static com.kohere.docs.DiagnosisDocsFields.SEED_NOTE;
-import static com.kohere.docs.DiagnosisDocsFields.SELECTABLE_CONDITION_CODES;
-import static com.kohere.docs.DiagnosisDocsFields.SELECT_TYPE_CODES;
+import static com.kohere.docs.DiagnosisDocsFields.HISTORY_400;
+import static com.kohere.docs.DiagnosisDocsFields.HISTORY_401;
+import static com.kohere.docs.DiagnosisDocsFields.HISTORY_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.HISTORY_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.LATEST_401;
+import static com.kohere.docs.DiagnosisDocsFields.LATEST_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.LATEST_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.QUESTION_400;
+import static com.kohere.docs.DiagnosisDocsFields.QUESTION_401;
+import static com.kohere.docs.DiagnosisDocsFields.QUESTION_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.QUESTION_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.RECOMMENDATIONS_400;
+import static com.kohere.docs.DiagnosisDocsFields.RECOMMENDATIONS_401;
+import static com.kohere.docs.DiagnosisDocsFields.RECOMMENDATIONS_403;
+import static com.kohere.docs.DiagnosisDocsFields.RECOMMENDATIONS_404;
+import static com.kohere.docs.DiagnosisDocsFields.RECOMMENDATIONS_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.RECOMMENDATIONS_SUMMARY;
 import static com.kohere.docs.DiagnosisDocsFields.SUBMIT_400;
 import static com.kohere.docs.DiagnosisDocsFields.SUBMIT_401;
 import static com.kohere.docs.DiagnosisDocsFields.SUBMIT_DESCRIPTION;
 import static com.kohere.docs.DiagnosisDocsFields.SUBMIT_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.answerRequestFields;
+import static com.kohere.docs.DiagnosisDocsFields.answerSavedResponseFields;
 import static com.kohere.docs.DiagnosisDocsFields.detailResponseFields;
 import static com.kohere.docs.DiagnosisDocsFields.diagnosisIdPathParameters;
-import static com.kohere.docs.DiagnosisDocsFields.diagnosisSummaryFields;
 import static com.kohere.docs.DiagnosisDocsFields.historyQueryParameters;
-import static com.kohere.docs.DiagnosisDocsFields.pageFields;
-import static com.kohere.docs.DiagnosisDocsFields.recommendationContentFields;
+import static com.kohere.docs.DiagnosisDocsFields.historyResponseFields;
+import static com.kohere.docs.DiagnosisDocsFields.latestResponseFields;
+import static com.kohere.docs.DiagnosisDocsFields.questionResponseFields;
 import static com.kohere.docs.DiagnosisDocsFields.recommendationQueryParameters;
+import static com.kohere.docs.DiagnosisDocsFields.recommendationResponseFields;
+import static com.kohere.docs.DiagnosisDocsFields.stepPathParameters;
 import static com.kohere.docs.DiagnosisDocsFields.submitResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
@@ -50,7 +59,6 @@ import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuild
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -64,12 +72,6 @@ import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
-import com.kohere.diagnosis.domain.ArcStatus;
-import com.kohere.diagnosis.domain.DiagnosisStatus;
-import com.kohere.diagnosis.domain.District;
-import com.kohere.diagnosis.domain.Purpose;
-import com.kohere.diagnosis.domain.Region;
-import com.kohere.diagnosis.domain.UniversityGroup;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisSuggestionDocument.ActionSpec;
@@ -81,7 +83,6 @@ import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,8 +96,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -134,181 +133,6 @@ class DiagnosisDocsTest {
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   private static final String MALFORMED_BODY = "{ \"oops\" }";
-
-  /** v1 조정 제안 액션 코드(MongoDB {@code diagnosisSuggestions} 카탈로그 — enum 클래스가 없다). */
-  private static final List<String> SUGGESTION_ACTION_CODES =
-      List.of("RELAX_REGION", "RELAX_CONDITIONS", "INCREASE_BUDGET");
-
-  /** v1 조정 제안 사유 코드. 현재 카탈로그에는 {@code NO_MATCH} 하나뿐이다. */
-  private static final List<String> SUGGESTION_REASON_CODES = List.of("NO_MATCH");
-
-  // ---- 오퍼레이션 상수: GET /api/v1/diagnoses/questions/{step} ----
-
-  private static final String QUESTION_SUMMARY = "단계별 진단 질문 조회";
-  private static final String QUESTION_DESCRIPTION =
-      """
-      진단 6단계 중 지정한 단계의 질문 1개와 선택지를 조회한다.
-
-      **인증**
-
-      - 회원 전용이다. `Authorization: Bearer <accessToken>`가 필요하다.
-      - 비회원은 서버가 순서를 정하는 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
-
-      **단계와 선택지**
-
-      """
-          + QUESTION_TABLE
-          + """
-
-      - 다음 `step` 번호는 클라이언트가 정하며 이 조회는 답을 저장하지 않는다.
-      - ③(`step=3`)은 진행 중 진단에 저장된 ② `purpose`로 서버가 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 하나만 고른다. 클라이언트가 분기하지 않으며, `purpose`를 저장하기 전에 호출하면 400이다.
-      - 응답의 `data.field`를 `POST /api/v1/diagnoses/answers` 요청의 `field`에 그대로 싣는다.
-      - `regionRetry`는 v2 흐름 전용 예외질문이라 이 엔드포인트로는 내려오지 않는다.
-      - """
-          + LANGUAGE_NOTE
-          + """
-
-      - """
-          + SEED_NOTE
-          + """
-
-
-      **에러 코드**
-
-      - `400 INVALID_INPUT` — `step`이 1~6 밖이거나, ③ 조회인데 ② `purpose`가 선행되지 않음
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
-      """;
-  private static final String[] QUESTION_400 = {"INVALID_INPUT"};
-  private static final String[] QUESTION_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-
-  // ---- 오퍼레이션 상수: POST /api/v1/diagnoses/answers ----
-
-  private static final String ANSWER_SUMMARY = "단계 답 저장";
-  private static final String ANSWER_DESCRIPTION =
-      """
-      현재 단계의 답 1개를 진행 중(IN_PROGRESS) 진단에 저장한다.
-
-      **인증**
-
-      - 회원 전용이다. 진행 중 진단은 토큰의 사용자로 식별하며 사용자당 1건이다.
-      - 진행 중 진단이 없으면 첫 답을 저장할 때 서버가 만든다.
-
-      **답의 세 가지 형태**
-
-      | 단계 | `select.type` | 본문 |
-      | --- | --- | --- |
-      | ①②③⑥ 단일 선택 | `SINGLE` | `{ "field": "...", "code": "..." }` |
-      | ④ 주거 조건 | `MULTI` | `{ "field": "conditions", "codes": ["...", "..."] }`(최대 3개·중복 불가) |
-      | ⑤ 월세 범위 | `NUMBER_RANGE` | `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` |
-
-      - 해당하는 쪽만 채우고 나머지 필드는 보내지 않는다. 누적 답을 묶어 재전송하지 않는다.
-      - `field`는 직전 질문 응답의 `data.field`를 그대로 싣는다.
-      - `min`·`max`는 KRW 정수이며 각 0 이상이고 `min <= max`여야 한다.
-      - 파생 조건 `NO_ARC`는 ⑥ `arcStatus` 답에서 서버가 만들어 붙이는 값이라 `codes`로 직접 고를 수 없다.
-      - 저장된 답은 확정(`POST /api/v1/diagnoses`) 시점에 다시 검증된다.
-
-      **에러 코드**
-
-      - `400 INVALID_INPUT` — 미정의 코드, 현재 단계와 맞지 않는 `field`, 목적과 대학/지역 불일치, `conditions` 4개 이상, 월세 범위 위반
-      - `400 MALFORMED_REQUEST` — 본문 JSON 해석 불가(검증 이전)
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
-      """;
-  private static final String[] ANSWER_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
-  private static final String[] ANSWER_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-
-  // ---- 오퍼레이션 상수: GET /api/v1/diagnoses ----
-
-  private static final String HISTORY_SUMMARY = "내 진단 이력 목록";
-  private static final String HISTORY_DESCRIPTION =
-      """
-      내가 확정한 진단 이력을 오프셋 페이지네이션으로 조회한다.
-
-      **인증**
-
-      - 회원 전용이며 토큰의 사용자 본인 이력만 조회된다.
-      - 게스트가 v2로 만든 진단은 이 목록의 대상이 아니다.
-
-      **응답 규칙**
-
-      - 확정(`COMPLETED`) 진단만 나온다. 진행 중(`IN_PROGRESS`)과 v2 폐기 기록(`DISCARDED`)은 빠진다.
-      - 기본 정렬은 `submittedAt,desc`이고 허용 키는 `submittedAt` 하나다.
-      - `content[]` 항목은 진단 단건 상세와 같은 입력 요약이며 `status`·`submittedAt`이 더 붙는다.
-      - ② `purpose`에 따라 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 한쪽만 채워지고 반대쪽은 `null`이다.
-      - 이력이 없으면 `content=[]`이며 에러가 아니다.
-
-      **에러 코드**
-
-      - `400 INVALID_INPUT` — `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
-      """;
-  private static final String[] HISTORY_400 = {"INVALID_INPUT"};
-  private static final String[] HISTORY_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-
-  // ---- 오퍼레이션 상수: GET /api/v1/diagnoses/latest ----
-
-  private static final String LATEST_SUMMARY = "최근 진단 단건";
-  private static final String LATEST_DESCRIPTION =
-      """
-      홈 화면의 "진단 시작 / 재진단" 분기를 위해 가장 최근 확정 진단 1건을 조회한다.
-
-      **인증**
-
-      - 회원 전용이며 토큰의 사용자 본인 진단만 조회된다.
-
-      **응답 규칙**
-
-      - 확정 이력이 없어도 404가 아니라 200이고 `data.completed=false`다. 클라이언트는 이 한 필드로 분기한다.
-      - `completed=false`일 때 나머지 요약 필드는 **키가 사라지지 않고 값이 `null`로 실린다**(`diagnosisId`·`region`·`purpose`·`university`·`district`·`conditions`·`monthlyRentMin`·`monthlyRentMax`·`arcStatus`·`submittedAt`).
-      - `completed=true`일 때도 ② `purpose`에 따라 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 한쪽은 `null`이다.
-      - 진행 중(`IN_PROGRESS`) 진단은 대상이 아니다 — 확정된 것만 본다.
-
-      **에러 코드**
-
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
-      """;
-  private static final String[] LATEST_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-
-  // ---- 오퍼레이션 상수: GET /api/v1/diagnoses/{diagnosisId}/recommendations ----
-
-  private static final String RECOMMENDATIONS_SUMMARY = "진단 결과 추천 매물";
-  private static final String RECOMMENDATIONS_DESCRIPTION =
-      """
-      확정된 진단 조건에 맞는 매물 카드와 지도 마커를 함께 조회한다.
-
-      **인증**
-
-      - 회원 전용이며 본인 소유 진단만 조회된다. 타인 소유는 `403 FORBIDDEN`이다.
-      - 게스트의 추천 조회는 v2-3(`GET /api/v2/diagnoses/{diagnosisId}/recommendations`)이 담당한다.
-
-      **화면 구성**
-
-      - 매물 카드는 `content[]`로, 지도 마커는 `markers[]`로 그리고 둘은 같은 `listingId`로 연결한다.
-      - 매물 유형과 조건 배지는 `type.label`·`conditions[].label`을 표시하고, 필터 재요청이나 내부 비교에는 같은 객체의 `code`를 쓴다.
-      - `title`과 `label`은 사용자 표시 언어로 선택되어 온다.
-      - 정렬 허용 키는 `recommended`·`price`·`distance`이며 기본은 `recommended,desc`다.
-
-      **추천이 0건일 때**
-
-      - `content=[]`·`markers=[]`는 정상 응답이며 에러가 아니다.
-      - 이때만 `suggestions`가 채워진다 — `reason`·`actions[].type`은 언어 무관 코드이고 `message`·`actions[].detail`은 사용자 언어 문구다.
-      - 결과가 있으면 `suggestions`는 `null`이다(키는 남는다). v2-3에는 이 필드 자체가 없다.
-
-      **에러 코드**
-
-      - `400 INVALID_INPUT` — `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
-      - `403 FORBIDDEN` — 타인 소유 진단 접근
-      - `404 DIAGNOSIS_NOT_FOUND` — 진단이 존재하지 않거나 폐기 기록
-      """;
-  private static final String[] RECOMMENDATIONS_400 = {"INVALID_INPUT"};
-  private static final String[] RECOMMENDATIONS_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-  private static final String[] RECOMMENDATIONS_403 = {"FORBIDDEN"};
-  private static final String[] RECOMMENDATIONS_404 = {"DIAGNOSIS_NOT_FOUND"};
 
   // 서명이 깨진(다른 키로 서명) access 토큰. 서버 검증에서 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라,
   // restdocs-api-spec 이 무인증 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다(모든 예시가 Bearer JWT 헤더를
@@ -1059,168 +883,6 @@ class DiagnosisDocsTest {
                 description,
                 pathParameters,
                 errorCodes));
-  }
-
-  // ---- field descriptors ----
-
-  private static List<FieldDescriptor> questionResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.step", JsonFieldType.NUMBER, "질문 단계(1~6) — 요청 path의 `step`과 같다"),
-        codeField(
-            "data.field",
-            QUESTION_FIELD_CODES,
-            "답을 보낼 때 쓸 제출 필드명. `POST /api/v1/diagnoses/answers`의 `field`에 그대로 싣는다."
-                + " `regionRetry`는 v2 흐름 전용이라 이 엔드포인트로는 내려오지 않는다"),
-        field("data.question", JsonFieldType.STRING, "사용자 표시 언어로 번역된 질문 문구(미지원 언어는 영어 폴백)"),
-        codeField(
-            "data.select.type",
-            SELECT_TYPE_CODES,
-            "선택 방식 — `SINGLE`은 1택, `MULTI`는 다중, `NUMBER_RANGE`는 선택지가 아니라 `min`·`max` 숫자 2개 입력"),
-        field("data.select.max", JsonFieldType.NUMBER, "최대 선택 개수 — ④ `MULTI`는 3, 그 외는 1"),
-        field(
-            "data.options",
-            JsonFieldType.ARRAY,
-            "선택지 목록. ⑤ `monthlyRent`(`NUMBER_RANGE`)만 빈 배열이며 클라이언트가 숫자 입력 2개를 그린다"),
-        field(
-            "data.options[].code",
-            JsonFieldType.STRING,
-            "선택지 코드 — 언어와 무관하게 같고 확정 검증 enum과 1:1이다. 답의 `code`/`codes`에 그대로 싣는다"),
-        field("data.options[].label", JsonFieldType.STRING, "번역된 선택지 표시 라벨"),
-        errorNull());
-  }
-
-  /**
-   * 단계 답 요청 바디. 단일/다중/월세 범위 세 형태가 같은 오퍼레이션이라 <b>기술자를 한 벌로 합친다</b> — 같은 {@code (path, method,
-   * status)}에 서로 다른 기술자를 쓰면 {@code (path, type)} dedup에서 한쪽이 조용히 사라진다.
-   */
-  private static List<FieldDescriptor> answerRequestFields() {
-    return List.of(
-        codeField(
-            "field",
-            ANSWER_FIELD_CODES,
-            "답을 저장할 제출 필드명 — 직전 질문 응답의 `data.field`를 그대로 싣는다."
-                + " v2 전용 `regionRetry`는 이 엔드포인트에서 `INVALID_INPUT`이다"),
-        optField(
-            "code",
-            JsonFieldType.STRING,
-            "단일 선택(`SINGLE`) 답의 코드. 선택지 `options[].code` 중 하나이며, 다중·범위 단계에서는 보내지 않는다"),
-        optCodeArrayField(
-            "codes",
-            SELECTABLE_CONDITION_CODES,
-            "다중 선택(`MULTI`) 답의 코드 집합 — ④ `conditions` 전용이며 최대 3개·중복 불가."
-                + " 파생 조건 `NO_ARC`는 ⑥에서 서버가 만들므로 여기서 고를 수 없다"),
-        optField("min", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 하한(KRW 정수, 0 이상이고 `max` 이하)"),
-        optField("max", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 상한(KRW 정수, `min` 이상)"));
-  }
-
-  private static List<FieldDescriptor> answerSavedResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.saved", JsonFieldType.BOOLEAN, "진행 중 진단에 저장됨 — 성공 응답에서는 항상 `true`"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> historyResponseFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(field("data.content", JsonFieldType.ARRAY, "확정 진단 목록(현재 페이지). 이력이 없으면 빈 배열"));
-    fields.addAll(diagnosisSummaryFields("data.content[]."));
-    fields.add(
-        enumField("data.content[].status", DiagnosisStatus.class, "진단 상태 — 이력에는 `COMPLETED`만 나온다"));
-    fields.add(field("data.content[].submittedAt", JsonFieldType.STRING, "확정 시각(ISO-8601 UTC)"));
-    fields.addAll(pageFields());
-    fields.add(errorNull());
-    return List.copyOf(fields);
-  }
-
-  /**
-   * {@code GET /latest} 전용 응답 기술자.
-   *
-   * <p>이력·상세와 필드 이름이 같지만 <b>헬퍼를 공유하지 않는다</b> — {@code LatestDiagnosisResponse}에는
-   * {@code @JsonInclude}가 없어 {@code completed=false}면 요약 10개 필드가 전부 <b>명시적 null</b>로 실린다. 공유하면
-   * 이력·상세의 「항상 있다」 계약까지 함께 풀린다.
-   *
-   * <p>확정 이력 있음({@code diagnosis-latest})·없음({@code diagnosis-latest-not-completed}) 두 스니펫이 <b>이 헬퍼
-   * 하나</b>를 쓴다 — 같은 {@code (path, method, status)}라 기술자가 어차피 하나로 접힌다. 그래서 요약 필드는 전부 {@code
-   * optional}이고, 두 스니펫이 값 단정({@code isEmpty()} 포함)으로 계약을 되메운다.
-   */
-  private static List<FieldDescriptor> latestResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field(
-            "data.completed",
-            JsonFieldType.BOOLEAN,
-            "확정 진단 존재 여부. `false`면 아래 요약 필드가 전부 `null`이다(키는 남는다). 클라이언트는 이 한 필드로 분기한다"),
-        optField(
-            "data.diagnosisId", JsonFieldType.NUMBER, "최근 확정 진단 식별자. `completed=false`면 `null`"),
-        optEnumField("data.region", Region.class, "① 지역. `completed=false`면 `null`"),
-        optEnumField("data.purpose", Purpose.class, "② 입국 목적. `completed=false`면 `null`"),
-        optEnumField(
-            "data.university",
-            UniversityGroup.class,
-            "③ 대학 그룹 — `purpose=STUDY`일 때만 채워진다. `NON_STUDY`이거나 `completed=false`면 `null`"),
-        optEnumField(
-            "data.district",
-            District.class,
-            "③ 지역(구) — `purpose=NON_STUDY`일 때만 채워진다. `STUDY`이거나 `completed=false`면 `null`"),
-        optCodeArrayField(
-            "data.conditions",
-            DIAGNOSIS_CONDITION_CODES,
-            "주거 조건 코드 목록(④ 선택 + ⑥ 파생 `NO_ARC`). `completed=false`면 빈 배열이 아니라 `null`"),
-        optField(
-            "data.monthlyRentMin", JsonFieldType.NUMBER, "⑤ 월세 하한(KRW). `completed=false`면 `null`"),
-        optField(
-            "data.monthlyRentMax", JsonFieldType.NUMBER, "⑤ 월세 상한(KRW). `completed=false`면 `null`"),
-        optEnumField("data.arcStatus", ArcStatus.class, "⑥ ARC 발급 상태. `completed=false`면 `null`"),
-        optField(
-            "data.submittedAt",
-            JsonFieldType.STRING,
-            "확정 시각(ISO-8601 UTC). `completed=false`면 `null`"),
-        errorNull());
-  }
-
-  /**
-   * 추천 200 응답. 결과 있음·0건 두 스니펫이 <b>같은 헬퍼</b>를 쓴다 — 같은 {@code (path, method, status)}라 기술자가 어차피 하나로
-   * 접히므로, 두 벌을 두면 승자가 파일 순회 순서에 좌우된다. 양쪽에서 사라지는 필드에는 {@code optional}을 건다.
-   */
-  private static List<FieldDescriptor> recommendationResponseFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.addAll(recommendationContentFields());
-    fields.addAll(pageFields());
-    fields.add(
-        optField(
-            "data.suggestions",
-            JsonFieldType.OBJECT,
-            "조정 제안 — 추천이 0건일 때만 채워지고 결과가 있으면 `null`이다(키는 남는다). v2-3에는 이 필드 자체가 없다"));
-    fields.add(
-        optCodeField(
-            "data.suggestions.reason",
-            SUGGESTION_REASON_CODES,
-            "조정 제안 사유(언어 무관 코드). 현재 카탈로그에는 `NO_MATCH` 하나뿐이다"));
-    fields.add(optField("data.suggestions.message", JsonFieldType.STRING, "사용자 언어로 번역된 안내 메시지"));
-    fields.add(optField("data.suggestions.actions", JsonFieldType.ARRAY, "조정 액션 목록"));
-    fields.add(
-        optCodeField(
-            "data.suggestions.actions[].type",
-            SUGGESTION_ACTION_CODES,
-            "조정 액션 종류(언어 무관 코드) — 화면 분기·로깅에 쓴다"));
-    fields.add(
-        optField("data.suggestions.actions[].detail", JsonFieldType.STRING, "사용자 언어로 번역된 액션 설명"));
-    fields.add(errorNull());
-    return List.copyOf(fields);
-  }
-
-  // ---- parameter descriptors (varargs — RequestDocumentation has no List overload) ----
-
-  private static ParameterDescriptor[] stepPathParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("step")
-          .description(
-              "조회할 단계(1~6) — 1=`region`, 2=`purpose`, 3=`university`/`district`(서버가 저장된 `purpose`로 택일),"
-                  + " 4=`conditions`, 5=`monthlyRent`, 6=`arcStatus`")
-    };
   }
 
   // ---- seed / fixtures ----

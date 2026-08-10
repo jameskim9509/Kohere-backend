@@ -7,6 +7,7 @@ import static com.kohere.docs.ApiDocsFields.field;
 import static com.kohere.docs.ApiDocsFields.optCodeField;
 import static com.kohere.docs.ApiDocsFields.optEnumField;
 import static com.kohere.docs.ApiDocsFields.optField;
+import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
 import com.kohere.user.domain.Gender;
 import com.kohere.user.domain.Occupation;
@@ -17,9 +18,11 @@ import java.util.ArrayList;
 import java.util.List;
 import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
+import org.springframework.restdocs.request.ParameterDescriptor;
 
 /**
- * 회원 프로필 응답(세입자·임대인 <b>합집합</b>)의 공용 필드 기술자와 {@code GET /api/v1/users/me} 오퍼레이션 문구 상수(#151).
+ * {@code Users} 태그(프로필 조회·수정·탈퇴 + 내 차단 목록·해제)의 문구·에러코드 상수와 필드 기술자(#151). 회원 프로필 응답은 세입자·임대인
+ * <b>합집합</b>이다.
  *
  * <p><b>왜 공용인가</b> — {@code GET /users/me}의 200 스니펫은 두 파일에서 캡처된다({@code AuthOnboardingDocsTest}의
  * {@code user-get-me}(세입자), {@code LandlordOnboardingDocsTest}의 {@code user-get-me-landlord}(임대인)).
@@ -31,11 +34,11 @@ import org.springframework.restdocs.payload.JsonFieldType;
  * 그만큼 느슨해지므로 호출부는 그 필드가 없어야 하는 케이스에 {@code jsonPath(...).doesNotExist()} 단정을 함께 둔다.
  *
  * <p>대응 스펙: docs/api/specs/01-auth-onboarding.md §5·§5-2(온보딩 응답의 {@code data.user})·§8(GET
- * /users/me)·§9(PATCH /users/me).
+ * /users/me)·§9(PATCH /users/me)·§10(DELETE /users/me)·§11·§12(차단 목록·해제).
  */
-public final class UserProfileDocsFields {
+public final class UserDocsFields {
 
-  private UserProfileDocsFields() {}
+  private UserDocsFields() {}
 
   /**
    * 표시 언어 코드. {@code Language} enum이 있지만 와이어 값이 상수명({@code EN})이 아니라 ISO 639-1 <b>소문자</b>라 {@code
@@ -112,6 +115,51 @@ public final class UserProfileDocsFields {
   public static final String[] PATCH_ME_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] PATCH_ME_404 = {"USER_NOT_FOUND"};
   public static final String[] PATCH_ME_422 = {"AUTH_PHONE_NOT_VERIFIED"};
+
+  // ---- DELETE /api/v1/users/me 오퍼레이션 문구 ----
+
+  public static final String WITHDRAW_SUMMARY = "회원 탈퇴";
+
+  public static final String WITHDRAW_DESCRIPTION =
+      """
+      본인 계정을 `WITHDRAWN`으로 전이하고 PII를 즉시 익명화하며 refresh 토큰을 일괄 무효화한다.
+
+      인증: 필수. 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 사용자도 탈퇴할 수 있다(온보딩 중단 정리 목적이라 403을 두지 않았다).
+
+      - 성공 응답에는 본문이 없다(204).
+      - Apple 연동 계정은 매핑 삭제 전에 Apple `/auth/revoke`로 연동까지 폐기한다(best-effort — Apple 장애여도 탈퇴는 완료).
+      - 탈퇴 후 같은 토큰으로 프로필을 조회하면 404, 탈퇴를 재요청하면 409다.
+
+      에러: 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 404 `USER_NOT_FOUND`, 409 `USER_ALREADY_WITHDRAWN`.
+      """;
+
+  public static final String[] WITHDRAW_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] WITHDRAW_404 = {"USER_NOT_FOUND"};
+  public static final String[] WITHDRAW_409 = {"USER_ALREADY_WITHDRAWN"};
+
+  // ---- GET /api/v1/users/me/blocks 오퍼레이션 문구 ----
+
+  public static final String BLOCKS_LIST_SUMMARY = "내 차단 목록 조회";
+
+  public static final String BLOCKS_LIST_DESCRIPTION =
+      """
+      내가 차단한 상대 목록을 페이지로 조회한다.
+
+      인증: 정식(ACTIVE) 회원 본인.
+
+      차단은 예약 문맥(`POST /api/v1/bookings/{bookingId}/block`)에서만 생성된다.
+      """;
+
+  // ---- DELETE /api/v1/users/me/blocks/{userId} 오퍼레이션 문구 ----
+
+  public static final String UNBLOCK_SUMMARY = "차단 해제";
+
+  public static final String UNBLOCK_DESCRIPTION =
+      """
+      차단을 해제한다. 차단하지 않은 상대를 해제해도 204다(멱등).
+
+      인증: 정식(ACTIVE) 회원 본인. 본문·응답 본문이 없다.
+      """;
 
   // ---- 필드 기술자 ----
 
@@ -214,5 +262,33 @@ public final class UserProfileDocsFields {
     descriptors.add(field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"));
     descriptors.add(errorNull());
     return List.copyOf(descriptors);
+  }
+
+  /** {@code GET /users/me/blocks} 페이지 파라미터. */
+  public static ParameterDescriptor[] blocksListQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
+      parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
+    };
+  }
+
+  /** {@code GET /users/me/blocks} 200 응답. */
+  public static List<FieldDescriptor> blocksListResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부"),
+        field("data.content[].userId", JsonFieldType.NUMBER, "차단한 상대 식별자"),
+        field("data.content[].name", JsonFieldType.STRING, "차단한 상대 표시명(마스킹 수준 확인 필요)"),
+        field("data.content[].blockedAt", JsonFieldType.STRING, "차단 시각(UTC)"),
+        field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
+        field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
+        field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
+        field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
+        field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+        errorNull());
+  }
+
+  /** {@code DELETE /users/me/blocks/{userId}} 경로 파라미터. */
+  public static ParameterDescriptor[] unblockPathParameters() {
+    return new ParameterDescriptor[] {parameterWithName("userId").description("차단을 해제할 상대 식별자")};
   }
 }

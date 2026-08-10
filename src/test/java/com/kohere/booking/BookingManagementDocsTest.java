@@ -2,11 +2,27 @@ package com.kohere.booking;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
-import static com.kohere.docs.ApiDocsFields.codeField;
-import static com.kohere.docs.ApiDocsFields.errorNull;
-import static com.kohere.docs.ApiDocsFields.field;
-import static com.kohere.docs.ApiDocsFields.optCodeField;
-import static com.kohere.docs.ApiDocsFields.optField;
+import static com.kohere.docs.BookingDocsFields.BLOCK_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.BLOCK_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.CREATE_403;
+import static com.kohere.docs.BookingDocsFields.CREATE_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.CREATE_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.DELETE_404;
+import static com.kohere.docs.BookingDocsFields.DELETE_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.DELETE_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.REPORT_404;
+import static com.kohere.docs.BookingDocsFields.REPORT_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.REPORT_REASONS_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.REPORT_REASONS_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.REPORT_REASON_CODES;
+import static com.kohere.docs.BookingDocsFields.REPORT_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.blockPathParameters;
+import static com.kohere.docs.BookingDocsFields.createPathParameters;
+import static com.kohere.docs.BookingDocsFields.deletePathParameters;
+import static com.kohere.docs.BookingDocsFields.reportPathParameters;
+import static com.kohere.docs.BookingDocsFields.reportReasonsResponseFields;
+import static com.kohere.docs.BookingDocsFields.reportRequestFields;
+import static com.kohere.docs.BookingDocsFields.reportResponseFields;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
@@ -15,7 +31,6 @@ import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuild
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -29,7 +44,6 @@ import com.kohere.docs.BookingDocsFields;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,8 +57,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -62,9 +74,10 @@ import org.springframework.web.context.WebApplicationContext;
  * {@code getUserType}·{@code getLanguage} 등)은 {@link MockitoBean}으로 대체한다. 차단(user_blocks)·삭제는 실제
  * 리포지토리에 기록되므로 테스트 격리를 위해 {@link Transactional}로 각 메서드 종료 시 롤백한다.
  *
- * <p>차단 관계 403({@code booking-create-blocked})만은 예약 <b>생성</b> 오퍼레이션({@code POST
- * /api/v1/listings/{listingId}/bookings})에 병합되므로 문구·path 파라미터·에러 코드 배열을 {@link BookingDocsFields}에서
- * 가져온다 — 같은 {@code (path, method)}의 summary/description은 첫 non-blank 하나만 채택되기 때문이다(#151).
+ * <p>오퍼레이션 문구·필드 기술자는 §4~§7까지 전부 {@link BookingDocsFields}(Bookings 태그 한 벌)에 두고 여기서는 static import로
+ * 참조한다 — 이 파일에는 테스트 흐름만 남긴다(#151). 특히 차단 관계 403({@code booking-create-blocked})은 예약 <b>생성</b>
+ * 오퍼레이션({@code POST /api/v1/listings/{listingId}/bookings})에 병합되므로 문구·path 파라미터·에러 코드 배열을 생성 오퍼레이션의
+ * 것과 공유해야 한다 — 같은 {@code (path, method)}의 summary/description은 첫 non-blank 하나만 채택되기 때문이다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -79,99 +92,6 @@ class BookingManagementDocsTest {
   private static final String LISTING_ID = "6858e2000000000000000001";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000abc";
   private static final Pattern BOOKING_ID = Pattern.compile("\"bookingId\"\\s*:\\s*(\\d+)");
-
-  // ── §4 예약 내역 삭제 — DELETE /api/v1/bookings/{bookingId} ────────────────
-  private static final String DELETE_SUMMARY = "예약 내역 삭제";
-
-  private static final String DELETE_DESCRIPTION =
-      """
-      내 목록·상세에서 예약을 숨긴다. 예약 행 자체는 지우지 않는다.
-
-      인증: 필수. 정식(`ACTIVE`) 회원 중 해당 예약의 참여자(세입자 또는 임대인)만 호출할 수 있다. 세입자·임대인 공통이라 역할 403은 없다.
-
-      - **취소가 아니다.** 요청자 쪽 소프트삭제 컬럼만 세팅하므로 **상대 목록에는 그대로 보이고** 상대에게 알림도 가지 않는다. 두 참여자의 삭제는 서로 완전히 독립이다.
-      - 멱등이다 — 이미 삭제한 예약을 다시 삭제해도 204다(변이 경로는 삭제·차단 필터가 걸리지 않은 조회를 쓴다).
-      - 차단(`POST .../block`)과 무관하다. 삭제해도 상대는 여전히 새 신청을 보낼 수 있다.
-      - 삭제해도 신고(`POST .../report`)는 계속 가능하다(증거 보존).
-      - 성공 응답은 본문이 없다(204). 공통 래퍼도 없다.
-      - 참여자가 아니거나 없는 예약이면 403이 아니라 404 `BOOKING_NOT_FOUND`다(존재 비노출).
-
-      에러 코드 — 400 `MALFORMED_REQUEST` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED` / 404 `BOOKING_NOT_FOUND`
-      """;
-
-  private static final String[] DELETE_404 = {"BOOKING_NOT_FOUND"};
-
-  // ── §5 예약 상대 차단 — POST /api/v1/bookings/{bookingId}/block ────────────
-  private static final String BLOCK_SUMMARY = "예약 상대 차단";
-
-  private static final String BLOCK_DESCRIPTION =
-      """
-      해당 예약의 상대 참여자를 사용자 단위로 차단한다.
-
-      인증: 필수. 정식(`ACTIVE`) 회원 중 해당 예약의 참여자만 호출할 수 있다. 세입자·임대인 공통이라 역할 403은 없다.
-
-      - **차단 대상을 요청 본문으로 보내지 않는다.** 서버가 예약에서 상대를 도출한다 — 요청자가 세입자면 임대인, 임대인이면 세입자다(임의의 사용자를 차단하는 경로를 만들지 않기 위해서다).
-      - 차단은 예약 단위가 아니라 **사용자 단위**다. 이후 요청자의 목록·상세에서 **그 상대와의 모든 예약**이 사라진다(이 예약 1건만이 아니다).
-      - 숨김은 **단방향**이다 — 상대의 목록은 그대로다. 다만 신규 신청 가드는 **양방향**이라 상대가 새 예약을 신청하면 403이 돌아온다.
-      - 멱등이다 — 이미 차단한 상대를 다시 차단해도 409가 아니라 204다.
-      - 삭제(`DELETE /api/v1/bookings/{bookingId}`)와 독립이다. 차단만 했다면 해제 시 그 예약들이 다시 보이고, 삭제까지 했다면 해제해도 계속 숨겨진다.
-      - 차단 목록 조회·해제는 예약과 무관해 `GET`·`DELETE /api/v1/users/me/blocks`(Users)에 있다.
-      - 성공 응답은 본문이 없다(204). 참여자가 아니거나 없는 예약이면 404 `BOOKING_NOT_FOUND`다(존재 비노출).
-
-      에러 코드 — 400 `MALFORMED_REQUEST` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED` / 404 `BOOKING_NOT_FOUND`
-      """;
-
-  // ── §6 예약 신고 접수 — POST /api/v1/bookings/{bookingId}/report ───────────
-  private static final String REPORT_SUMMARY = "예약 신고 접수";
-
-  private static final String REPORT_DESCRIPTION =
-      """
-      예약 1건에 대한 신고를 접수·저장한다. 범위는 접수까지이고 운영자 검토·제재는 포함하지 않는다.
-
-      인증: 필수. 정식(`ACTIVE`) 회원 중 해당 예약의 참여자만 호출할 수 있다. 신고자는 access 토큰으로 식별하며 본문에 넣지 않는다. 세입자·임대인 공통이라 역할 403은 없다.
-
-      - `reason`·`detail` 모두 **선택**이다. 본문 전체를 `{}`로 보내도 접수된다 — 사유를 고르기 전에 이탈해도 접수 사실은 남아야 하기 때문이다. 사유 없이 신고하면 응답 `data.reason`이 null이다.
-      - `reason`은 신고 사유 카탈로그(`booking_report_reasons`) 테이블의 **활성 `code`** 문자열이다. **행으로 늘어날 수 있으니 클라이언트에 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`로 받아 쓴다.** 미정의·비활성 코드는 400 `INVALID_INPUT`이다.
-      - **다건 허용** — 동일 신고자가 동일 예약을 여러 번 신고할 수 있다(409가 없다). 도배 방지 레이트리밋(429)은 미구현이다.
-      - 응답에 신고자 식별자와 `detail` 원문은 노출하지 않는다. 상태(`status`) 필드도 없다(전이할 상태가 없는 불변 기록).
-      - 단건 조회 엔드포인트가 없어 201이지만 `Location` 헤더를 주지 않는다.
-      - **삭제·차단 상태와 무관하다** — 이미 삭제했거나 상대를 차단한 예약도 신고할 수 있다(증거 보존). 그래서 같은 예약이 `GET /api/v1/bookings/{bookingId}`에서는 404인데 여기서는 201일 수 있다.
-      - 참여자가 아니거나 없는 예약이면 403이 아니라 404 `BOOKING_NOT_FOUND`다(존재 비노출).
-
-      에러 코드 — 400 `INVALID_INPUT`·`MALFORMED_REQUEST` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED` / 404 `BOOKING_NOT_FOUND`
-      """;
-
-  private static final String[] REPORT_404 = {"BOOKING_NOT_FOUND"};
-
-  // ── §7 예약 신고 사유 목록 — GET /api/v1/bookings/report-reasons ───────────
-  private static final String REPORT_REASONS_SUMMARY = "예약 신고 사유 목록";
-
-  private static final String REPORT_REASONS_DESCRIPTION =
-      """
-      예약 신고(`POST /api/v1/bookings/{bookingId}/report`)에 쓸 사유 선택지를 반환한다.
-
-      인증: 필수. 정식(`ACTIVE`) 회원. 역할 분기가 없다.
-
-      - `code`는 언어와 무관한 불변 식별자이고 `label`만 요청자의 표시 언어(`users.lang`, 미설정·미지원이면 `en` 폴백)로 서버가 번역한다. 파라미터로 언어를 고를 수 없다.
-      - 지원 언어는 `en`·`ko`·`ja` 3종이다(임대인은 `ko` 고정). 반환되는 **사유 집합과 순서는 `en` 행이 정본**이고, 요청 언어에 라벨이 없는 사유만 `en` 라벨로 폴백한다 — 언어를 바꿔도 항목 수·순서는 같다.
-      - **정렬은 카탈로그의 `display_order` 오름차순 고정**이며 클라이언트는 받은 순서를 그대로 노출한다.
-      - 페이지네이션이 없다 — 활성 사유 전체를 한 번에 반환한다.
-      - **사유는 DB 카탈로그 행이라 배포 없이 늘어난다.** 아래 `code` 목록은 현재 시드값 스냅샷일 뿐이니 클라이언트에 하드코딩하지 말고 이 엔드포인트 응답으로 선택지를 구성한다.
-
-      에러 코드 — 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED`
-      """;
-
-  /**
-   * 신고 사유 카탈로그({@code booking_report_reasons})의 현재 활성 code — enum이 아니라 <b>DB 행</b>이라 배포 없이 늘어난다
-   * (V17 시드 6종). 그래서 {@code enumField}가 아니라 {@code codeField}로 값을 직접 나열하고, description에 하드코딩 금지 안내를
-   * 단다.
-   */
-  private static final List<String> REPORT_REASON_CODES =
-      List.of("SPAM", "ABUSE", "SEXUAL_CONTENT", "EXTERNAL_CONTACT", "FALSE_INFO", "ETC");
-
-  private static final String REASON_CODE_DESCRIPTION =
-      "신고 사유 코드 — 언어 무관 불변 식별자. `booking_report_reasons` 테이블의 활성 행이라"
-          + " **배포 없이 늘어날 수 있으니 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`의 응답을 쓴다**";
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
@@ -206,24 +126,6 @@ class BookingManagementDocsTest {
         500_000,
         LocalDate.of(2026, 1, 1),
         LANDLORD_ID);
-  }
-
-  private static ParameterDescriptor[] deletePathParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("bookingId").description("삭제할 예약 식별자 — 요청자가 참여한 예약이어야 한다")
-    };
-  }
-
-  private static ParameterDescriptor[] blockPathParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("bookingId").description("차단 대상 상대를 도출할 예약 식별자 — 요청자가 참여한 예약이어야 한다")
-    };
-  }
-
-  private static ParameterDescriptor[] reportPathParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("bookingId").description("신고 대상 예약 식별자 — 요청자가 참여한 예약이어야 한다")
-    };
   }
 
   /** 세입자로 예약 1건 생성하고 bookingId를 반환한다(차단 없는 상태). */
@@ -375,10 +277,10 @@ class BookingManagementDocsTest {
         status().isForbidden(),
         "FORBIDDEN",
         "booking-create-blocked",
-        BookingDocsFields.CREATE_SUMMARY,
-        BookingDocsFields.CREATE_DESCRIPTION,
-        BookingDocsFields.createPathParameters(),
-        BookingDocsFields.CREATE_403);
+        CREATE_SUMMARY,
+        CREATE_DESCRIPTION,
+        createPathParameters(),
+        CREATE_403);
   }
 
   // ── §6 예약 신고 ─────────────────────────────────────────────
@@ -524,42 +426,6 @@ class BookingManagementDocsTest {
                     .summary(REPORT_REASONS_SUMMARY)
                     .description(REPORT_REASONS_DESCRIPTION),
                 responseFields(reportReasonsResponseFields())));
-  }
-
-  private static List<FieldDescriptor> reportRequestFields() {
-    return List.of(
-        optCodeField(
-            "reason",
-            REPORT_REASON_CODES,
-            "신고 사유(선택) — " + REASON_CODE_DESCRIPTION + ". 생략·null이면 사유 없이 접수된다"),
-        optField(
-            "detail",
-            JsonFieldType.STRING,
-            "신고 상세(선택) — 자유 입력 최대 500자. 초과는 400 `INVALID_INPUT`. 응답에는 노출하지 않는다"));
-  }
-
-  private static List<FieldDescriptor> reportResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
-        field("data.reportId", JsonFieldType.NUMBER, "접수된 신고 식별자"),
-        field("data.bookingId", JsonFieldType.NUMBER, "신고 대상 예약 식별자"),
-        optCodeField(
-            "data.reason",
-            REPORT_REASON_CODES,
-            "접수된 신고 사유 — " + REASON_CODE_DESCRIPTION + ". 사유 없이 신고했으면 null"),
-        field("data.createdAt", JsonFieldType.STRING, "신고 접수 일시(ISO-8601 UTC)"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> reportReasonsResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
-        codeField("data.reasons[].code", REPORT_REASON_CODES, REASON_CODE_DESCRIPTION),
-        field(
-            "data.reasons[].label",
-            JsonFieldType.STRING,
-            "사유 표시명 — 요청자의 표시 언어로 서버가 번역한 문자열. 화면에 그대로 노출한다(클라이언트가 code로 다시 매핑하지 않는다)"),
-        errorNull());
   }
 
   private void perform(

@@ -3,22 +3,27 @@ package com.kohere.diagnosis.infrastructure;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.kohere.docs.ApiDocsErrors.errorSnippet;
-import static com.kohere.docs.ApiDocsFields.codeField;
-import static com.kohere.docs.ApiDocsFields.enumField;
-import static com.kohere.docs.ApiDocsFields.errorNull;
-import static com.kohere.docs.ApiDocsFields.field;
-import static com.kohere.docs.ApiDocsFields.optCodeArrayField;
-import static com.kohere.docs.ApiDocsFields.optCodeField;
-import static com.kohere.docs.ApiDocsFields.optField;
-import static com.kohere.docs.DiagnosisDocsFields.LANGUAGE_NOTE;
-import static com.kohere.docs.DiagnosisDocsFields.QUESTION_FIELD_CODES;
-import static com.kohere.docs.DiagnosisDocsFields.QUESTION_TABLE;
-import static com.kohere.docs.DiagnosisDocsFields.SEED_NOTE;
-import static com.kohere.docs.DiagnosisDocsFields.SELECTABLE_CONDITION_CODES;
-import static com.kohere.docs.DiagnosisDocsFields.SELECT_TYPE_CODES;
-import static com.kohere.docs.DiagnosisDocsFields.pageFields;
-import static com.kohere.docs.DiagnosisDocsFields.recommendationContentFields;
+import static com.kohere.docs.DiagnosisDocsFields.GUEST_SESSION_HEADER;
+import static com.kohere.docs.DiagnosisDocsFields.V2_NEXT_400;
+import static com.kohere.docs.DiagnosisDocsFields.V2_NEXT_401;
+import static com.kohere.docs.DiagnosisDocsFields.V2_NEXT_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.V2_NEXT_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_400;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_401;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_403;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_404;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.V2_START_401;
+import static com.kohere.docs.DiagnosisDocsFields.V2_START_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.V2_START_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.guestSessionHeader;
+import static com.kohere.docs.DiagnosisDocsFields.nextRequestFields;
+import static com.kohere.docs.DiagnosisDocsFields.nextResponseFields;
 import static com.kohere.docs.DiagnosisDocsFields.recommendationQueryParameters;
+import static com.kohere.docs.DiagnosisDocsFields.startResponseFields;
+import static com.kohere.docs.DiagnosisDocsFields.v2DiagnosisIdPathParameters;
+import static com.kohere.docs.DiagnosisDocsFields.v2RecommendationFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,14 +33,12 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.springframework.restdocs.headers.HeaderDocumentation.headerWithName;
 import static org.springframework.restdocs.headers.HeaderDocumentation.requestHeaders;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -49,8 +52,6 @@ import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
-import com.kohere.diagnosis.application.dto.FlowResultCode;
-import com.kohere.diagnosis.application.dto.RecommendationResultCode;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.docs.ApiDocsTags;
@@ -61,7 +62,6 @@ import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,9 +75,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.headers.HeaderDescriptor;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -123,141 +120,6 @@ class DiagnosisV2DocsTest {
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   private static final String MALFORMED_BODY = "{ \"oops\" }";
-
-  /** 게스트 세션 키 에코 헤더(#181). 발급은 {@code /start} 응답이고 소비처는 {@code /next}·추천 조회다. */
-  private static final String GUEST_SESSION_HEADER = "X-Guest-Session-Id";
-
-  /** {@code POST /start}는 언제나 ① 지역 질문 하나만 낸다 — 다른 결과코드로 갈 수 없다. */
-  private static final List<String> START_RESULT_CODES = List.of("NEXT_QUESTION");
-
-  // ---- 오퍼레이션 상수: POST /api/v2/diagnoses/start ----
-
-  private static final String V2_START_SUMMARY = "v2 진단 시작";
-  private static final String V2_START_DESCRIPTION =
-      """
-      진단을 처음부터 시작하고 ① 지역 질문을 받는다. 시작 시점은 클라이언트가 정한다.
-
-      **인증**
-
-      - 인증은 선택이다. 토큰을 보내면 회원, 안 보내면 게스트로 처리한다.
-      - 게스트로 호출하면 응답 `data.guestSessionId`에 세션 키(`anonymous<uuid>`)가 실린다. **키가 내려오는 유일한 지점**이며 회원 응답에서는 이 필드가 통째로 생략된다.
-      - 클라이언트는 그 키를 보관했다가 이후 `POST /next`와 추천 조회에 `X-Guest-Session-Id` 헤더로 되돌려보낸다.
-      - 요청에 `X-Guest-Session-Id`를 실어도 무시하고 새 키를 발급한다.
-      - 위조·형식 오류 토큰은 게스트와 같은 취급이지만 **만료 토큰만은 401**이다(조용한 게스트 강등 금지).
-
-      **동작 규칙**
-
-      - 요청 본문이 없다.
-      - 진행 중 세션이 있어도 버리고 새 세션을 만든다 — 다시 시작하면 언제나 ① 지역부터다.
-      - 응답은 항상 `resultCode=NEXT_QUESTION`이고 `question.field=region`이다. `diagnosisId`는 실리지 않는다.
-      - """
-          + LANGUAGE_NOTE
-          + """
-       게스트는 `users` 행이 없어 `en` 고정이다.
-      - """
-          + SEED_NOTE
-          + """
-
-
-      **에러 코드**
-
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료. 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 이 엔드포인트에서 발생하지 않는다
-      """;
-  private static final String[] V2_START_401 = {"TOKEN_EXPIRED"};
-
-  // ---- 오퍼레이션 상수: POST /api/v2/diagnoses/next ----
-
-  private static final String V2_NEXT_SUMMARY = "v2 문항 답 적용";
-  private static final String V2_NEXT_DESCRIPTION =
-      """
-      현재 문항의 답 1개를 적용하고 서버가 정한 다음 결과를 결과코드로 받는다.
-
-      **인증**
-
-      - 인증은 선택이다. 회원은 `Authorization` 토큰으로, 게스트는 `X-Guest-Session-Id` 헤더로 진행 세션을 찾는다.
-      - 게스트가 헤더를 빠뜨렸거나 남의 키를 보내면 세션을 못 찾아 `400 DIAGNOSIS_SESSION_NOT_FOUND`다 — 남의 세션에 닿지 않는다.
-      - 만료 토큰만 401이며 위조 토큰은 게스트로 처리된다.
-
-      **결과코드별 payload**
-
-      | `resultCode` | 의미 | 실리는 필드 |
-      | --- | --- | --- |
-      | `NEXT_QUESTION` | 다음 질문이 남음. ① 지역 0건 예외질문(`field=regionRetry`)도 이 코드다 | `question` |
-      | `COMPLETED` | 마지막 슬롯(⑥ `arcStatus`)까지 답해 서버가 자동 확정 | `diagnosisId` |
-      | `RESTART` | 지역 예외질문에 "예"(`YES`) — 클라이언트가 `POST /start`로 재시도(세션 삭제) | 없음 |
-      | `TERMINATED` | 지역 예외질문에 "아니오"(`NO`) — 진단 종료(세션 삭제). 에러가 아니라 정상 결과다 | 없음 |
-
-      - 채워지지 않는 payload는 값이 `null`인 것이 아니라 **필드 자체가 생략된다**(`NON_NULL`).
-      - `COMPLETED`에도 추천 매물은 실리지 않는다. 서버는 이 시점에 매칭 유무조차 확인하지 않으며, 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
-      - 매칭 0건은 이 응답이 아니라 그 추천 응답의 `resultCode=NO_MATCH`로 드러난다.
-
-      **문항과 답의 형태**
-
-      """
-          + QUESTION_TABLE
-          + """
-
-      - `step`은 클라이언트가 지정하지 않는다. 서버가 낸 문항의 `field`를 그대로 요청 `field`에 싣는다(다르면 `INVALID_INPUT`).
-      - ③ 대학/지역은 저장된 ② `purpose`로 서버가 택일한다.
-      - ① 지역 답 직후 그 지역 매물이 0건이면 서버가 `field=regionRetry` 예외질문(`YES`/`NO`)을 끼워 넣는다 — 서버가 미리 필터링하는 유일한 지점이다.
-      - """
-          + LANGUAGE_NOTE
-          + """
-
-      - """
-          + SEED_NOTE
-          + """
-
-
-      **에러 코드**
-
-      - `400 DIAGNOSIS_SESSION_NOT_FOUND` — 진행 중 세션 없이 호출(앱 재시작·터미널 이후 재전송·게스트 키 누락/불일치) → `POST /start`로 복구
-      - `400 INVALID_INPUT` — `field` 없음, 현재 문항과 다른 `field`, 미정의 코드, `regionRetry`가 `YES`/`NO` 아님
-      - `400 MALFORMED_REQUEST` — 본문 JSON 해석 불가(검증 이전)
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료. 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다
-      """;
-  private static final String[] V2_NEXT_400 = {
-    "DIAGNOSIS_SESSION_NOT_FOUND", "INVALID_INPUT", "MALFORMED_REQUEST"
-  };
-  private static final String[] V2_NEXT_401 = {"TOKEN_EXPIRED"};
-
-  // ---- 오퍼레이션 상수: GET /api/v2/diagnoses/{diagnosisId}/recommendations ----
-
-  private static final String V2_RECOMMENDATIONS_SUMMARY = "v2 진단 결과 추천 매물";
-  private static final String V2_RECOMMENDATIONS_DESCRIPTION =
-      """
-      v2에서 확정된 진단 조건에 맞는 매물 카드와 지도 마커를 조회한다. 조회 시점·페이지·정렬은 클라이언트가 정한다.
-
-      **인증**
-
-      - 인증은 선택이다. 회원은 `Authorization` 토큰으로, 게스트는 `X-Guest-Session-Id` 헤더로 소유권을 증명한다.
-      - 소유는 신원 **종류와 값이 모두** 같을 때만 인정된다 — 게스트↔회원 교차 조회는 양방향 모두 `403 FORBIDDEN`이고, 신원 없는 요청도 403이다.
-      - 회원 요청에 게스트 키가 실려 와도 무시한다(키를 훔쳐도 통하지 않는다).
-
-      **화면 구성**
-
-      - 매물 카드는 `content[]`로, 지도 마커는 `markers[]`로 그리고 둘은 같은 `listingId`로 연결한다.
-      - 매물 유형과 조건 배지는 `type.label`·`conditions[].label`을 표시하고, 필터 재요청이나 내부 비교에는 같은 객체의 `code`를 쓴다.
-      - `title`과 `label`은 사용자 표시 언어로 선택되어 온다(게스트는 `en` 고정).
-      - 정렬 허용 키는 `recommended`·`price`·`distance`이며 기본은 `recommended,desc`다.
-
-      **매칭 결과코드**
-
-      - `resultCode`는 항상 실린다 — `MATCHED`(매물 있음) 또는 `NO_MATCH`(0건).
-      - `NO_MATCH`는 에러가 아니며 `content=[]`·`markers=[]`다.
-      - v1 §7과 달리 **조정 제안(`suggestions`) 필드가 없다** — 사유만 `resultCode`로 준다.
-
-      **에러 코드**
-
-      - `400 INVALID_INPUT` — `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료. 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다
-      - `403 FORBIDDEN` — 타인 소유 진단, 게스트↔회원 교차 조회, 게스트 키 미전송
-      - `404 DIAGNOSIS_NOT_FOUND` — 진단이 존재하지 않거나 폐기 기록
-      """;
-  private static final String[] V2_RECOMMENDATIONS_400 = {"INVALID_INPUT"};
-  private static final String[] V2_RECOMMENDATIONS_401 = {"TOKEN_EXPIRED"};
-  private static final String[] V2_RECOMMENDATIONS_403 = {"FORBIDDEN"};
-  private static final String[] V2_RECOMMENDATIONS_404 = {"DIAGNOSIS_NOT_FOUND"};
 
   // 서명이 깨진(다른 키로 서명) access 토큰. 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라, restdocs-api-spec 이
   // 무인증 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다(비결정적 스니펫 병합 순서와 무관하게 Swagger 자물쇠 유지 —
@@ -1122,188 +984,6 @@ class DiagnosisV2DocsTest {
                 description,
                 pathParameters,
                 errorCodes));
-  }
-
-  // ---- field descriptors ----
-
-  /** {@code POST /next} 요청 바디 — v1 §2 AnswerRequest와 같은 구조(해당하는 쪽만 채우고 나머지는 보내지 않는다). */
-  private static List<FieldDescriptor> nextRequestFields() {
-    return List.of(
-        codeField(
-            "field",
-            QUESTION_FIELD_CODES,
-            "현재 문항의 제출 필드명 — 서버가 직전에 낸 `question.field`와 같아야 한다(다르면 `INVALID_INPUT`)"),
-        optField(
-            "code",
-            JsonFieldType.STRING,
-            "단일 선택(`SINGLE`) 답의 코드. 선택지 `options[].code` 중 하나이며,"
-                + " ① 지역 0건 예외질문(`regionRetry`)은 `YES` 또는 `NO`다"),
-        optCodeArrayField(
-            "codes",
-            SELECTABLE_CONDITION_CODES,
-            "다중 선택(`MULTI`) 답의 코드 집합 — ④ `conditions` 전용이며 최대 3개·중복 불가."
-                + " 파생 조건 `NO_ARC`는 ⑥에서 서버가 만들므로 여기서 고를 수 없다"),
-        optField("min", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 하한(KRW 정수, 0 이상이고 `max` 이하)"),
-        optField("max", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 상한(KRW 정수, `min` 이상)"));
-  }
-
-  /**
-   * {@code POST /start} 200 응답. 회원·게스트 두 스니펫이 같은 헬퍼를 쓴다 — 다른 점은 {@code guestSessionId} 하나뿐이고, 그 필드는
-   * 회원 응답에서 <b>값이 null이 아니라 키 자체가 생략</b>된다({@code NON_NULL}).
-   */
-  private static List<FieldDescriptor> startResponseFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(
-        codeField(
-            "data.resultCode",
-            START_RESULT_CODES,
-            "결과코드 — `/start`는 언제나 `NEXT_QUESTION`이다(다른 코드로 갈 수 없다)"));
-    fields.addAll(questionFields(false));
-    fields.add(
-        optField(
-            "data.guestSessionId",
-            JsonFieldType.STRING,
-            "게스트 세션 키(`anonymous<uuid>`) — 비회원 `/start` 응답에만 실린다."
-                + " 회원 응답에서는 값이 null이 아니라 **필드 자체가 생략**된다."
-                + " 클라이언트는 이 값을 보관했다가 이후 `/next`·추천 조회에 `X-Guest-Session-Id` 헤더로 에코한다"));
-    fields.add(errorNull());
-    return List.copyOf(fields);
-  }
-
-  /**
-   * {@code POST /next} 200 응답. {@code resultCode} 네 갈래의 스니펫이 <b>모두 이 헬퍼 하나</b>를 쓴다 — 같은 {@code
-   * (path, method, status)}라 기술자가 어차피 하나로 접히므로 여러 벌을 두면 승자가 파일 순회 순서에 좌우된다. 갈래마다 사라지는 payload는
-   * {@code optional}이고, 각 스니펫이 {@code doesNotExist()}로 「이 케이스에는 없다」를 못 박는다.
-   */
-  private static List<FieldDescriptor> nextResponseFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(
-        enumField(
-            "data.resultCode",
-            FlowResultCode.class,
-            "다음에 할 일을 알리는 결과코드. 값에 따라 아래 payload 중 하나만 실린다"));
-    fields.addAll(questionFields(true));
-    fields.add(
-        optField(
-            "data.diagnosisId",
-            JsonFieldType.NUMBER,
-            "확정된 진단 식별자 — `resultCode=COMPLETED`일 때만 실린다."
-                + " 그 외 결과코드에서는 값이 null이 아니라 **필드 자체가 생략**된다."
-                + " 이 id로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다"));
-    fields.add(errorNull());
-    return List.copyOf(fields);
-  }
-
-  /**
-   * 흐름 응답의 {@code question} payload(v1 §1 {@code QuestionResponse}와 같은 형태).
-   *
-   * @param optional {@code true}면 {@code NEXT_QUESTION}이 아닌 갈래에서 통째로 생략되는 {@code /next}용
-   */
-  private static List<FieldDescriptor> questionFields(boolean optional) {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(
-        describe(
-            optional,
-            "data.question",
-            JsonFieldType.OBJECT,
-            "다음 문항 1개 — `resultCode=NEXT_QUESTION`일 때 실린다."
-                + " `/next`의 다른 결과코드(`COMPLETED`·`RESTART`·`TERMINATED`)에서는"
-                + " 값이 null이 아니라 **필드 자체가 생략**된다(`/start`는 언제나 이 필드가 있다)"));
-    fields.add(
-        describe(
-            optional, "data.question.step", JsonFieldType.NUMBER, "문항의 단계 번호(1~6). 정본 순서에서 파생된다"));
-    fields.add(
-        codeFieldMaybeOptional(
-            optional,
-            "data.question.field",
-            QUESTION_FIELD_CODES,
-            "제출 필드명 — 다음 `/next` 요청의 `field`에 그대로 싣는다."
-                + " `regionRetry`는 ① 지역 0건 예외질문이며 `YES`/`NO`로 답한다"));
-    fields.add(
-        describe(
-            optional,
-            "data.question.question",
-            JsonFieldType.STRING,
-            "사용자 표시 언어로 번역된 질문 문구(미지원 언어는 영어 폴백, 게스트는 영어)"));
-    fields.add(
-        codeFieldMaybeOptional(
-            optional,
-            "data.question.select.type",
-            SELECT_TYPE_CODES,
-            "선택 방식 — `SINGLE`은 1택, `MULTI`는 다중, `NUMBER_RANGE`는 선택지가 아니라 `min`·`max` 숫자 2개 입력"));
-    fields.add(
-        describe(
-            optional,
-            "data.question.select.max",
-            JsonFieldType.NUMBER,
-            "최대 선택 개수 — ④ `MULTI`는 3, 그 외는 1"));
-    fields.add(
-        describe(
-            optional,
-            "data.question.options",
-            JsonFieldType.ARRAY,
-            "선택지 목록. ⑤ `monthlyRent`(`NUMBER_RANGE`)만 빈 배열이며 클라이언트가 숫자 입력 2개를 그린다"));
-    fields.add(
-        optField(
-            "data.question.options[].code",
-            JsonFieldType.STRING,
-            "선택지 코드 — 언어와 무관하게 같고 확정 검증 enum과 1:1이다." + " `NUMBER_RANGE` 문항은 배열이 비어 원소가 없다"));
-    fields.add(optField("data.question.options[].label", JsonFieldType.STRING, "번역된 선택지 표시 라벨"));
-    return fields;
-  }
-
-  private static FieldDescriptor describe(
-      boolean optional, String path, JsonFieldType type, String description) {
-    return optional ? optField(path, type, description) : field(path, type, description);
-  }
-
-  private static FieldDescriptor codeFieldMaybeOptional(
-      boolean optional, String path, List<String> allowedValues, String description) {
-    return optional
-        ? optCodeField(path, allowedValues, description)
-        : codeField(path, allowedValues, description);
-  }
-
-  /**
-   * {@code GET /{id}/recommendations} 200 응답. MATCHED·NO_MATCH 두 스니펫이 같은 헬퍼를 쓴다 — 0건이면 배열이 비어 원소가
-   * 없으므로 원소 필드는 {@code optional}이고, 각 스니펫이 값 단정/{@code doesNotExist()}로 계약을 되메운다.
-   */
-  private static List<FieldDescriptor> v2RecommendationFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(
-        enumField(
-            "data.resultCode",
-            RecommendationResultCode.class,
-            "매칭 결과 — `MATCHED`는 매물 있음, `NO_MATCH`는 0건(에러가 아니며 v1과 달리 조정 제안이 없다)"));
-    fields.addAll(recommendationContentFields());
-    fields.addAll(pageFields());
-    fields.add(errorNull());
-    return List.copyOf(fields);
-  }
-
-  /**
-   * 게스트 세션 키 에코 요청 헤더 서술자({@code /next}·추천 조회 공용).
-   *
-   * <p><b>{@code optional()}이 필수다</b> — {@code HeaderDescriptorWithType.fromHeaderDescriptor}가
-   * {@code required = !optional}로 옮기므로, 빠뜨리면 회원도 반드시 보내야 하는 헤더로 문서화된다(#151 실측 버그).
-   */
-  private static HeaderDescriptor guestSessionHeader() {
-    return headerWithName(GUEST_SESSION_HEADER)
-        .optional()
-        .description(
-            "게스트 세션 키(`anonymous<uuid>`) — `/start` 응답의 `guestSessionId`를 그대로 실어 보낸다."
-                + " **회원은 보내지 않는다**(`Authorization` 토큰으로 식별하며 실려 와도 무시한다)."
-                + " 게스트가 빠뜨렸거나 남의 키면 세션을 못 찾아 `400 DIAGNOSIS_SESSION_NOT_FOUND`다");
-  }
-
-  private static ParameterDescriptor[] v2DiagnosisIdPathParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("diagnosisId")
-          .description("`resultCode=COMPLETED` 응답으로 받은 확정 진단 식별자(본인 신원 소유)")
-    };
   }
 
   // ---- seed / fixtures ----

@@ -4,18 +4,49 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.docume
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.kohere.docs.ApiDocsErrors.assertError;
 import static com.kohere.docs.ApiDocsErrors.errorSnippet;
-import static com.kohere.docs.ApiDocsFields.errorNull;
-import static com.kohere.docs.ApiDocsFields.field;
+import static com.kohere.docs.AuthDocsFields.BUSINESS_400;
+import static com.kohere.docs.AuthDocsFields.BUSINESS_401;
+import static com.kohere.docs.AuthDocsFields.BUSINESS_403;
+import static com.kohere.docs.AuthDocsFields.BUSINESS_422;
+import static com.kohere.docs.AuthDocsFields.BUSINESS_502;
+import static com.kohere.docs.AuthDocsFields.BUSINESS_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.BUSINESS_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.LANDLORD_ONBOARDING_400;
+import static com.kohere.docs.AuthDocsFields.LANDLORD_ONBOARDING_401;
+import static com.kohere.docs.AuthDocsFields.LANDLORD_ONBOARDING_409;
+import static com.kohere.docs.AuthDocsFields.LANDLORD_ONBOARDING_422;
+import static com.kohere.docs.AuthDocsFields.LANDLORD_ONBOARDING_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.LANDLORD_ONBOARDING_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.PHONE_CODE_400;
+import static com.kohere.docs.AuthDocsFields.PHONE_CODE_401;
+import static com.kohere.docs.AuthDocsFields.PHONE_CODE_422;
+import static com.kohere.docs.AuthDocsFields.PHONE_CODE_429;
+import static com.kohere.docs.AuthDocsFields.PHONE_CODE_502;
+import static com.kohere.docs.AuthDocsFields.PHONE_CODE_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.PHONE_CODE_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.PHONE_VERIFY_400;
+import static com.kohere.docs.AuthDocsFields.PHONE_VERIFY_401;
+import static com.kohere.docs.AuthDocsFields.PHONE_VERIFY_422;
+import static com.kohere.docs.AuthDocsFields.PHONE_VERIFY_429;
+import static com.kohere.docs.AuthDocsFields.PHONE_VERIFY_DESCRIPTION;
+import static com.kohere.docs.AuthDocsFields.PHONE_VERIFY_SUMMARY;
+import static com.kohere.docs.AuthDocsFields.businessVerifyRequestFields;
+import static com.kohere.docs.AuthDocsFields.businessVerifyResponseFields;
+import static com.kohere.docs.AuthDocsFields.landlordOnboardingRequestFields;
+import static com.kohere.docs.AuthDocsFields.phoneCodeRequestFields;
+import static com.kohere.docs.AuthDocsFields.phoneCodeResponseFields;
+import static com.kohere.docs.AuthDocsFields.phoneVerifyRequestFields;
+import static com.kohere.docs.AuthDocsFields.phoneVerifyResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
-import static com.kohere.docs.UserProfileDocsFields.ME_DESCRIPTION;
-import static com.kohere.docs.UserProfileDocsFields.ME_SUMMARY;
-import static com.kohere.docs.UserProfileDocsFields.PATCH_ME_422;
-import static com.kohere.docs.UserProfileDocsFields.PATCH_ME_DESCRIPTION;
-import static com.kohere.docs.UserProfileDocsFields.PATCH_ME_SUMMARY;
-import static com.kohere.docs.UserProfileDocsFields.meResponseFields;
-import static com.kohere.docs.UserProfileDocsFields.onboardingResponseFields;
-import static com.kohere.docs.UserProfileDocsFields.patchRequestFields;
+import static com.kohere.docs.UserDocsFields.ME_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.ME_SUMMARY;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_422;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.PATCH_ME_SUMMARY;
+import static com.kohere.docs.UserDocsFields.meResponseFields;
+import static com.kohere.docs.UserDocsFields.onboardingResponseFields;
+import static com.kohere.docs.UserDocsFields.patchRequestFields;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -49,7 +80,6 @@ import com.kohere.docs.ApiDocsTags;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,8 +95,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -86,10 +114,10 @@ import org.springframework.web.context.WebApplicationContext;
  * 호출한다(§5-1). SMS 발송 모킹으로 인증번호를 캡처한다.
  *
  * <p><b>문서 규약(#151)</b> — {@code GET /users/me}는 {@code AuthOnboardingDocsTest}(세입자 예시)와 <b>같은
- * 오퍼레이션</b>이라 문구·필드 기술자를 {@code com.kohere.docs.UserProfileDocsFields}에서 공유한다. 임대인 예시의 identifier가
- * {@code user-get-me-landlord}인 것도 그 때문이다 — operationId는 스니펫 identifier들의 공통 접두사라, 예전 이름 {@code
- * users-me-landlord}는 {@code user-get-me*}와 겹치는 접두사가 {@code user}뿐이라 operationId를 {@code user}로
- * 붕괴시켰다.
+ * 오퍼레이션</b>이라 문구·필드 기술자를 {@code com.kohere.docs.UserDocsFields}에서 공유한다(Auth 태그의 문구·기술자는 {@code
+ * com.kohere.docs.AuthDocsFields}에 있다). 임대인 예시의 identifier가 {@code user-get-me-landlord}인 것도 그 때문이다
+ * — operationId는 스니펫 identifier들의 공통 접두사라, 예전 이름 {@code users-me-landlord}는 {@code user-get-me*}와
+ * 겹치는 접두사가 {@code user}뿐이라 operationId를 {@code user}로 붕괴시켰다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -118,94 +146,9 @@ class LandlordOnboardingDocsTest {
       }
       """;
 
-  // ---- 오퍼레이션 문구·에러코드 상수(규약 1·3·4·11) ----
-
-  private static final String PHONE_CODE_SUMMARY = "연락처 인증번호 발송";
-
-  private static final String PHONE_CODE_DESCRIPTION =
-      """
-      입력한 휴대폰 번호로 SMS 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `phoneNumber`는 마스킹된다(예 `010-****-5678`).
-
-      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 <b>둘 다</b> 허용한다 — 온보딩(US-1-10)과 정식 회원의 프로필 연락처 변경(US-1-5)이 같은 엔드포인트를 쓰기 때문이다(ADR-0034 §6·§8).
-
-      - 약관 동의(`TERMS_AGREED`)가 선행돼야 한다 — `PENDING` 상태 호출은 422다.
-      - 발송이 실패하면(SMS provider 장애·타임아웃) 챌린지를 저장하지 않고 502다.
-      - 재발송 간격을 채우지 않은 재요청은 429다.
-      - `expiresIn`은 인증번호 만료까지의 초다.
-
-      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 422 `AUTH_TERMS_AGREEMENT_REQUIRED`, 429 `TOO_MANY_REQUESTS`, 502 `UPSTREAM_ERROR`.
-      """;
-
-  private static final String[] PHONE_CODE_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
-  private static final String[] PHONE_CODE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-  private static final String[] PHONE_CODE_422 = {"AUTH_TERMS_AGREEMENT_REQUIRED"};
-  private static final String[] PHONE_CODE_429 = {"TOO_MANY_REQUESTS"};
-  private static final String[] PHONE_CODE_502 = {"UPSTREAM_ERROR"};
-
-  private static final String PHONE_VERIFY_SUMMARY = "연락처 인증번호 확인";
-
-  private static final String PHONE_VERIFY_DESCRIPTION =
-      """
-      발송된 인증번호를 확인해 연락처를 검증 완료(VERIFIED)로 마킹한다. 임대인 온보딩(§5-2)·프로필 연락처 변경(§9)의 선행 단계다.
-
-      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 둘 다 허용한다.
-
-      - `phoneNumber`는 인증번호를 발송한 번호와 일치해야 한다.
-      - 챌린지 부재·만료·코드 불일치는 모두 422 하나로 응답한다(어느 쪽인지 구분해 주지 않는다).
-      - 코드 불일치가 시도 상한까지 누적되면 429로 잠긴다.
-
-      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 422 `AUTH_PHONE_VERIFICATION_FAILED`, 429 `TOO_MANY_REQUESTS`.
-      """;
-
-  private static final String[] PHONE_VERIFY_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
-  private static final String[] PHONE_VERIFY_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-  private static final String[] PHONE_VERIFY_422 = {"AUTH_PHONE_VERIFICATION_FAILED"};
-  private static final String[] PHONE_VERIFY_429 = {"TOO_MANY_REQUESTS"};
-
-  private static final String BUSINESS_SUMMARY = "사업자등록번호 검증";
-
-  private static final String BUSINESS_DESCRIPTION =
-      """
-      사업자등록번호를 외부 registry로 검증한다. 결과를 저장하지 않는 무상태 검증이라 응답 본문으로만 돌려주며, 번호는 마스킹된다(예 `****567890`).
-
-      인증: 필수(정식 토큰 — `ACTIVE`·`ROLE_USER`, 임대인 전용). 온보딩 흐름이 아니라서 온보딩 토큰으로 호출하면 403이다.
-
-      - 온보딩 제출(§5-2)에는 포함되지 않는다 — 온보딩을 마친 임대인이 매물 등록 시점에 따로 호출한다.
-      - 허용 형식은 숫자 10자리와 하이픈 형식(`123-45-67890`) <b>둘 다</b>다(어댑터가 숫자만 정규화해 대조한다). 형식 위반은 외부 호출 전에 400 `INVALID_INPUT`으로 거른다.
-      - 미등록·휴폐업·진위 실패는 422, 외부 검증 API 장애·타임아웃은 502이며 어느 쪽도 결과를 저장하지 않는다.
-
-      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 403 `AUTH_ONBOARDING_REQUIRED`·`FORBIDDEN`, 422 `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 502 `UPSTREAM_ERROR`.
-      """;
-
-  private static final String[] BUSINESS_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
-  private static final String[] BUSINESS_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-  // 403이 둘로 갈린다 — 온보딩 토큰(필터)은 AUTH_ONBOARDING_REQUIRED, 정식 토큰이지만 세입자(서비스)는 FORBIDDEN이다.
-  private static final String[] BUSINESS_403 = {"AUTH_ONBOARDING_REQUIRED", "FORBIDDEN"};
-  private static final String[] BUSINESS_422 = {"AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED"};
-  private static final String[] BUSINESS_502 = {"UPSTREAM_ERROR"};
-
-  private static final String LANDLORD_ONBOARDING_SUMMARY = "임대인 온보딩 제출";
-
-  private static final String LANDLORD_ONBOARDING_DESCRIPTION =
-      """
-      연락처·생년월일을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고 `userType`을 `LANDLORD`로 확정한 뒤 정식 토큰을 발급한다.
-
-      인증: 필수(온보딩 토큰, 상태 `TERMS_AGREED`). 약관 미동의(`PENDING`)면 422, 이미 완료(`ACTIVE`)면 409다.
-
-      - 요청은 `phoneNumber`·`birthDate` 둘뿐이다 — `phoneNumber`는 빈값만 막고(번호 형식 검증은 없다), `birthDate`는 필수이며 과거 날짜만 허용한다(미래면 400).
-      - `phoneNumber`는 사전 SMS 인증(§4-1·§4-2)한 번호와 일치해야 한다 — 미인증·불일치는 422 `AUTH_PHONE_NOT_VERIFIED`다(약관 검사가 연락처 검사보다 먼저다).
-      - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않고, 사업자등록번호도 받지 않는다(온보딩 후 별도 검증 §5-1).
-      - 국적·표시 언어는 서버가 `KR`·`ko`로 고정 부여한다. 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 필드 자체가 생략되고 `phoneNumber`는 마스킹된다.
-
-      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 409 `AUTH_ONBOARDING_ALREADY_COMPLETED`, 422 `AUTH_TERMS_AGREEMENT_REQUIRED`·`AUTH_PHONE_NOT_VERIFIED`.
-      """;
-
-  private static final String[] LANDLORD_ONBOARDING_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
-  private static final String[] LANDLORD_ONBOARDING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-  private static final String[] LANDLORD_ONBOARDING_409 = {"AUTH_ONBOARDING_ALREADY_COMPLETED"};
-  private static final String[] LANDLORD_ONBOARDING_422 = {
-    "AUTH_TERMS_AGREEMENT_REQUIRED", "AUTH_PHONE_NOT_VERIFIED"
-  };
+  // 오퍼레이션 문구·에러코드 상수(규약 1·3·4·11)와 요청/응답 필드 기술자는 태그 단위 클래스에 모여 있다 —
+  // Auth 태그는 com.kohere.docs.AuthDocsFields, Users 태그(GET·PATCH /users/me)는
+  // com.kohere.docs.UserDocsFields다.
 
   // 서명이 깨진(다른 키) 액세스 토큰 — 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라 restdocs-api-spec 이
   // 무인증 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다(AuthOnboardingDocsTest 와 동일 의도).
@@ -911,64 +854,6 @@ class LandlordOnboardingDocsTest {
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
         .andDo(errorSnippet(identifier, tag, summary, description, errorCodes));
-  }
-
-  // ---- 성공 응답/요청 필드 기술자 ----
-
-  private static List<FieldDescriptor> phoneCodeRequestFields() {
-    return List.of(
-        field(
-            "phoneNumber",
-            JsonFieldType.STRING,
-            "인증번호를 받을 휴대폰 번호(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다)"));
-  }
-
-  private static List<FieldDescriptor> phoneCodeResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
-        field("data.expiresIn", JsonFieldType.NUMBER, "인증번호 만료까지 초"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> phoneVerifyRequestFields() {
-    return List.of(
-        field("phoneNumber", JsonFieldType.STRING, "인증번호를 발송한 연락처와 일치(필수)"),
-        field("code", JsonFieldType.STRING, "발송된 인증번호(필수, 빈값 불가)"));
-  }
-
-  private static List<FieldDescriptor> phoneVerifyResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
-        field("data.verified", JsonFieldType.BOOLEAN, "검증 완료 여부 — 성공 응답은 항상 true"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> businessVerifyRequestFields() {
-    return List.of(
-        field(
-            "businessRegistrationNumber",
-            JsonFieldType.STRING,
-            "사업자등록번호(필수) — 숫자 10자리 또는 하이픈 형식(123-45-67890) 둘 다 허용한다. 어댑터가 숫자만 정규화해 대조하므로 두 형식이 동일하게 처리된다"));
-  }
-
-  private static List<FieldDescriptor> businessVerifyResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field(
-            "data.businessRegistrationNumber", JsonFieldType.STRING, "마스킹된 사업자등록번호(예: ****567890)"),
-        field("data.verified", JsonFieldType.BOOLEAN, "정상 사업자 검증 완료 여부 — 성공 응답은 항상 true"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> landlordOnboardingRequestFields() {
-    return List.of(
-        field(
-            "phoneNumber",
-            JsonFieldType.STRING,
-            "사전 SMS 인증된 연락처와 일치(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다). 불일치·미인증은 422"),
-        field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(필수, 과거 날짜만 — 미래면 400)"));
   }
 
   private String socialLogin(String subject) throws Exception {

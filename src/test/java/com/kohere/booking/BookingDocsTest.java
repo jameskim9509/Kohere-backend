@@ -2,6 +2,27 @@ package com.kohere.booking;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static com.kohere.docs.BookingDocsFields.CREATE_400;
+import static com.kohere.docs.BookingDocsFields.CREATE_401;
+import static com.kohere.docs.BookingDocsFields.CREATE_403;
+import static com.kohere.docs.BookingDocsFields.CREATE_404;
+import static com.kohere.docs.BookingDocsFields.CREATE_409;
+import static com.kohere.docs.BookingDocsFields.CREATE_422;
+import static com.kohere.docs.BookingDocsFields.CREATE_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.CREATE_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.DETAIL_404;
+import static com.kohere.docs.BookingDocsFields.DETAIL_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.DETAIL_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.LIST_DESCRIPTION;
+import static com.kohere.docs.BookingDocsFields.LIST_SUMMARY;
+import static com.kohere.docs.BookingDocsFields.createPathParameters;
+import static com.kohere.docs.BookingDocsFields.createRequestFields;
+import static com.kohere.docs.BookingDocsFields.createResponseFields;
+import static com.kohere.docs.BookingDocsFields.createResponseHeaders;
+import static com.kohere.docs.BookingDocsFields.detailPathParameters;
+import static com.kohere.docs.BookingDocsFields.detailResponseFields;
+import static com.kohere.docs.BookingDocsFields.listQueryParameters;
+import static com.kohere.docs.BookingDocsFields.listResponseFields;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
@@ -165,12 +186,12 @@ class BookingDocsTest {
                 "booking-create",
                 resourceDetails()
                     .tag(ApiDocsTags.BOOKINGS)
-                    .summary(BookingDocsFields.CREATE_SUMMARY)
-                    .description(BookingDocsFields.CREATE_DESCRIPTION),
-                pathParameters(BookingDocsFields.createPathParameters()),
-                requestFields(BookingDocsFields.createRequestFields()),
-                BookingDocsFields.createResponseHeaders(),
-                responseFields(BookingDocsFields.createResponseFields())));
+                    .summary(CREATE_SUMMARY)
+                    .description(CREATE_DESCRIPTION),
+                pathParameters(createPathParameters()),
+                requestFields(createRequestFields()),
+                createResponseHeaders(),
+                responseFields(createResponseFields())));
   }
 
   @Test
@@ -188,7 +209,7 @@ class BookingDocsTest {
         status().isConflict(),
         "BOOKING_ALREADY_EXISTS",
         "booking-create-duplicate",
-        BookingDocsFields.CREATE_409);
+        CREATE_409);
   }
 
   // ── §2 내 예약 목록 ───────────────────────────────────────────
@@ -215,10 +236,10 @@ class BookingDocsTest {
                 "booking-list-tenant",
                 resourceDetails()
                     .tag(ApiDocsTags.BOOKINGS)
-                    .summary(BookingDocsFields.LIST_SUMMARY)
-                    .description(BookingDocsFields.LIST_DESCRIPTION),
-                queryParameters(BookingDocsFields.listQueryParameters()),
-                responseFields(BookingDocsFields.listResponseFields())));
+                    .summary(LIST_SUMMARY)
+                    .description(LIST_DESCRIPTION),
+                queryParameters(listQueryParameters()),
+                responseFields(listResponseFields())));
   }
 
   // ── §3 예약 단건 상세 ─────────────────────────────────────────
@@ -250,10 +271,10 @@ class BookingDocsTest {
                 "booking-detail-tenant",
                 resourceDetails()
                     .tag(ApiDocsTags.BOOKINGS)
-                    .summary(BookingDocsFields.DETAIL_SUMMARY)
-                    .description(BookingDocsFields.DETAIL_DESCRIPTION),
-                pathParameters(BookingDocsFields.detailPathParameters()),
-                responseFields(BookingDocsFields.detailResponseFields())));
+                    .summary(DETAIL_SUMMARY)
+                    .description(DETAIL_DESCRIPTION),
+                pathParameters(detailPathParameters()),
+                responseFields(detailResponseFields())));
   }
 
   // ── §2 임대인 분기 — 받은 신청 목록 ───────────────────────────
@@ -279,10 +300,10 @@ class BookingDocsTest {
                 "booking-list-landlord",
                 resourceDetails()
                     .tag(ApiDocsTags.BOOKINGS)
-                    .summary(BookingDocsFields.LIST_SUMMARY)
-                    .description(BookingDocsFields.LIST_DESCRIPTION),
-                queryParameters(BookingDocsFields.listQueryParameters()),
-                responseFields(BookingDocsFields.listResponseFields())));
+                    .summary(LIST_SUMMARY)
+                    .description(LIST_DESCRIPTION),
+                queryParameters(listQueryParameters()),
+                responseFields(listResponseFields())));
   }
 
   // ── §3 임대인 분기 — 받은 신청 단건 상세 ──────────────────────
@@ -313,10 +334,10 @@ class BookingDocsTest {
                 "booking-detail-landlord",
                 resourceDetails()
                     .tag(ApiDocsTags.BOOKINGS)
-                    .summary(BookingDocsFields.DETAIL_SUMMARY)
-                    .description(BookingDocsFields.DETAIL_DESCRIPTION),
-                pathParameters(BookingDocsFields.detailPathParameters()),
-                responseFields(BookingDocsFields.detailResponseFields())));
+                    .summary(DETAIL_SUMMARY)
+                    .description(DETAIL_DESCRIPTION),
+                pathParameters(detailPathParameters()),
+                responseFields(detailResponseFields())));
   }
 
   // ── 에러 ─────────────────────────────────────────────────────
@@ -332,7 +353,7 @@ class BookingDocsTest {
         status().isForbidden(),
         "FORBIDDEN",
         "booking-create-forbidden",
-        BookingDocsFields.CREATE_403);
+        CREATE_403);
   }
 
   @Test
@@ -349,7 +370,7 @@ class BookingDocsTest {
         status().isNotFound(),
         "LISTING_NOT_FOUND",
         "booking-create-listing-not-found",
-        BookingDocsFields.CREATE_404);
+        CREATE_404);
   }
 
   @Test
@@ -366,7 +387,7 @@ class BookingDocsTest {
         status().isUnprocessableEntity(),
         "BOOKING_INVALID_MOVE_IN_DATE",
         "booking-create-invalid-move-in-date",
-        BookingDocsFields.CREATE_422);
+        CREATE_422);
   }
 
   @Test
@@ -381,7 +402,7 @@ class BookingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "booking-create-invalid-input",
-        BookingDocsFields.CREATE_400);
+        CREATE_400);
   }
 
   @Test
@@ -392,7 +413,7 @@ class BookingDocsTest {
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "booking-create-unauthenticated",
-        BookingDocsFields.CREATE_401);
+        CREATE_401);
   }
 
   @Test
@@ -403,10 +424,10 @@ class BookingDocsTest {
         status().isNotFound(),
         "BOOKING_NOT_FOUND",
         "booking-detail-not-found",
-        BookingDocsFields.DETAIL_SUMMARY,
-        BookingDocsFields.DETAIL_DESCRIPTION,
-        BookingDocsFields.detailPathParameters(),
-        BookingDocsFields.DETAIL_404);
+        DETAIL_SUMMARY,
+        DETAIL_DESCRIPTION,
+        detailPathParameters(),
+        DETAIL_404);
   }
 
   /** 예약 생성 오퍼레이션의 실패 스니펫 — 문구·path 파라미터가 성공 스니펫과 동일해야 한다. */
@@ -422,9 +443,9 @@ class BookingDocsTest {
         expectedStatus,
         expectedCode,
         identifier,
-        BookingDocsFields.CREATE_SUMMARY,
-        BookingDocsFields.CREATE_DESCRIPTION,
-        BookingDocsFields.createPathParameters(),
+        CREATE_SUMMARY,
+        CREATE_DESCRIPTION,
+        createPathParameters(),
         errorCodes);
   }
 

@@ -4,12 +4,21 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.docume
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.kohere.docs.ApiDocsErrors.assertError;
 import static com.kohere.docs.ApiDocsErrors.errorSnippet;
-import static com.kohere.docs.ApiDocsFields.enumField;
-import static com.kohere.docs.ApiDocsFields.errorNull;
-import static com.kohere.docs.ApiDocsFields.field;
-import static com.kohere.docs.ApiDocsFields.optEnumField;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_400;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_401;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_404;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_DESCRIPTION;
+import static com.kohere.docs.QuizDocsFields.QUIZ_ANSWER_SUMMARY;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_401;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_404;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_DESCRIPTION;
+import static com.kohere.docs.QuizDocsFields.QUIZ_RANDOM_SUMMARY;
+import static com.kohere.docs.QuizDocsFields.answerPathParameters;
+import static com.kohere.docs.QuizDocsFields.answerRequestFields;
+import static com.kohere.docs.QuizDocsFields.answerResponseFields;
+import static com.kohere.docs.QuizDocsFields.randomResponseFields;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -19,7 +28,6 @@ import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuild
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -29,7 +37,6 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsTags;
-import com.kohere.gamification.domain.ChoiceKey;
 import com.kohere.gamification.infrastructure.QuizDocument.ChoiceSpec;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
@@ -48,9 +55,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.payload.FieldDescriptor;
-import org.springframework.restdocs.payload.JsonFieldType;
-import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -76,7 +80,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 2xx 계약으로 고정한다. 401은 <b>만료 토큰</b>에만 남는다.
  *
  * <p>문서 문구는 오퍼레이션(path+method)당 상수 1벌({@code QUIZ_RANDOM_*}·{@code QUIZ_ANSWER_*})을 성공·에러 스니펫이
- * 공유한다(#151) — 생성기가 같은 오퍼레이션의 summary/description 중 첫 non-blank 하나만 채택하기 때문이다.
+ * 공유한다(#151) — 생성기가 같은 오퍼레이션의 summary/description 중 첫 non-blank 하나만 채택하기 때문이다. 그 상수와 필드 기술자는 태그 단위
+ * 클래스 {@link com.kohere.docs.QuizDocsFields}에 모아 두고 여기서는 static import로 부른다 — 이 파일에는 테스트 흐름만 남긴다.
  */
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
@@ -102,70 +107,6 @@ class QuizDocsTest {
                   "forged-doc-only-wrong-secret-please-override-32bytes-min!!"
                       .getBytes(StandardCharsets.UTF_8)))
           .compact();
-
-  // ===== GET /api/v1/quizzes/random =====
-
-  private static final String QUIZ_RANDOM_SUMMARY = "랜덤 퀴즈 조회";
-
-  private static final String QUIZ_RANDOM_DESCRIPTION =
-      """
-      활성 퀴즈 풀에서 4지선다 1개를 무작위로 골라 표시 언어로 번역해 반환한다(정답 키·해설 미포함).
-
-      **인증**
-
-      - `Authorization` 헤더는 선택이다. 헤더가 없거나 서명이 깨진 토큰이면 게스트로 처리해 200을 반환한다.
-      - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
-      - 만료된 access token만 401 `TOKEN_EXPIRED`다. 게스트로 강등하지 않고 재발급을 유도한다.
-
-      **표시 언어와 필드**
-
-      - 게스트: `en` 고정 — 서버가 `getLanguage`를 호출하지 않는다.
-      - 세입자: 본인이 고른 `users.lang`. 미선택이면 `en`으로 폴백한다.
-      - 임대인: `ko` 고정 — 임대인 온보딩에서 서버가 `lang='ko'`로 확정한다.
-      - 번역 대상은 `question`과 `choices[].text`뿐이다. 보기 키 `choices[].key`(`A`~`D`)는 언어와 무관하게 동일하다.
-      - 정답 키와 해설은 이 응답에 없다. 채점은 `POST /api/v1/quizzes/{quizId}/answer`가 담당한다.
-
-      **에러 코드**
-
-      - 401 `TOKEN_EXPIRED` — 만료된 access token으로 호출
-      - 404 `QUIZ_NOT_FOUND` — 활성 퀴즈 풀이 비어 사용 가능한 퀴즈가 없음
-      """;
-
-  private static final String[] QUIZ_RANDOM_401 = {"TOKEN_EXPIRED"};
-  private static final String[] QUIZ_RANDOM_404 = {"QUIZ_NOT_FOUND"};
-
-  // ===== POST /api/v1/quizzes/{quizId}/answer =====
-
-  private static final String QUIZ_ANSWER_SUMMARY = "퀴즈 정답 제출·채점";
-
-  private static final String QUIZ_ANSWER_DESCRIPTION =
-      """
-      제출한 보기 키를 저장된 정답과 대조해 즉시 채점한다. 제출 기록·포인트가 없는 무상태 채점이라 멱등하며 무제한 반복할 수 있다.
-
-      **인증**
-
-      - `Authorization` 헤더는 선택이다. 헤더가 없거나 서명이 깨진 토큰이면 게스트로 처리해 200을 반환한다.
-      - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
-      - 만료된 access token만 401 `TOKEN_EXPIRED`다. 게스트로 강등하지 않고 재발급을 유도한다.
-
-      **응답 분기와 표시 언어**
-
-      - `explanation`은 정답·오답 모두 내려간다.
-      - `correctChoice`는 오답(`correct=false`)일 때만 내려간다. 정답이면 `null`이 아니라 **필드 자체가 생략된다**.
-      - 표시 언어는 게스트 `en` 고정, 세입자 `users.lang`(미선택이면 `en`), 임대인 `ko` 고정이다.
-      - 번역 대상은 `explanation`뿐이다. 보기 키 `A`~`D`는 언어와 무관하다.
-
-      **에러 코드**
-
-      - 400 `INVALID_INPUT` — `selectedChoice`가 `A`~`D`가 아니거나 누락·빈 값
-      - 400 `MALFORMED_REQUEST` — 요청 본문 JSON을 해석할 수 없음
-      - 401 `TOKEN_EXPIRED` — 만료된 access token으로 호출
-      - 404 `QUIZ_NOT_FOUND` — 경로의 `quizId`에 해당하는 퀴즈가 없음
-      """;
-
-  private static final String[] QUIZ_ANSWER_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
-  private static final String[] QUIZ_ANSWER_401 = {"TOKEN_EXPIRED"};
-  private static final String[] QUIZ_ANSWER_404 = {"QUIZ_NOT_FOUND"};
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
@@ -462,53 +403,6 @@ class QuizDocsTest {
                 QUIZ_ANSWER_DESCRIPTION,
                 answerPathParameters(),
                 errorCodes));
-  }
-
-  /**
-   * {@code quizId}는 서버 계약상 정수(Long)지만 스키마에는 문자열로 나간다 — {@code com.epages}의 {@code
-   * parameterWithName(...).type(SimpleType.INTEGER)}는 {@link ParameterDescriptor}의 하위 타입이 아니라
-   * {@code RequestDocumentation.pathParameters}에 넘길 수 없다. description으로 보완한다.
-   */
-  private static ParameterDescriptor[] answerPathParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("quizId").description("채점 대상 퀴즈 ID(정수). 랜덤 조회 응답의 `data.quizId`를 그대로 쓴다")
-    };
-  }
-
-  private static List<FieldDescriptor> randomResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.quizId", JsonFieldType.NUMBER, "퀴즈 식별자(채점 경로의 `quizId`로 사용)"),
-        field("data.question", JsonFieldType.STRING, "표시 언어로 번역된 문항"),
-        enumField("data.choices[].key", ChoiceKey.class, "보기 키 — 언어와 무관하게 불변이며 채점은 이 키로 한다"),
-        field("data.choices[].text", JsonFieldType.STRING, "표시 언어로 번역된 보기 텍스트"),
-        errorNull());
-  }
-
-  private static List<FieldDescriptor> answerRequestFields() {
-    return List.of(
-        enumField("selectedChoice", ChoiceKey.class, "선택한 보기 키. 그 외 값·빈 값·누락은 INVALID_INPUT"));
-  }
-
-  /**
-   * 정답·오답 200 응답의 <b>공용</b> 기술자. 같은 {@code (path, method, status)}라 생성기가 {@code (path, type)} 기준
-   * dedup·last-wins로 접기 때문에 두 벌로 나누면 승자가 파일 순회 순서에 좌우된다(#151 규약 2).
-   *
-   * <p>{@code data.correctChoice}는 정답 응답에서 {@code @JsonInclude(NON_NULL)}로 키가 사라지므로 {@code
-   * optional}이다. 그 대가로 {@code quiz-answer-correct}가 {@code doesNotExist} 단정을 진다(규약 13).
-   */
-  private static List<FieldDescriptor> answerResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.quizId", JsonFieldType.NUMBER, "채점 대상 퀴즈 ID"),
-        enumField("data.selectedChoice", ChoiceKey.class, "제출한 보기 키(요청 값 반향)"),
-        field("data.correct", JsonFieldType.BOOLEAN, "정답 여부 — 서버가 저장된 정답과 대조해 판정한다"),
-        optEnumField(
-            "data.correctChoice",
-            ChoiceKey.class,
-            "정답 보기 키 — 오답일 때만 포함되고 정답이면 `null`이 아니라 필드 자체가 생략된다"),
-        field("data.explanation", JsonFieldType.STRING, "해설(정답·오답 모두, 표시 언어로 번역)"),
-        errorNull());
   }
 
   private void seedQuiz() {

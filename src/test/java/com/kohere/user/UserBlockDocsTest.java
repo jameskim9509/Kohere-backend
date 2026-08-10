@@ -2,8 +2,13 @@ package com.kohere.user;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
-import static com.kohere.docs.ApiDocsFields.errorNull;
-import static com.kohere.docs.ApiDocsFields.field;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_SUMMARY;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_SUMMARY;
+import static com.kohere.docs.UserDocsFields.blocksListQueryParameters;
+import static com.kohere.docs.UserDocsFields.blocksListResponseFields;
+import static com.kohere.docs.UserDocsFields.unblockPathParameters;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
@@ -11,7 +16,6 @@ import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuild
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -38,7 +42,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -65,22 +68,6 @@ class UserBlockDocsTest {
   private static final String LISTING_ID = "6858e2000000000000000001";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000abc";
   private static final Pattern BOOKING_ID = Pattern.compile("\"bookingId\"\\s*:\\s*(\\d+)");
-
-  private static final String BLOCKS_LIST_DESCRIPTION =
-      """
-      내가 차단한 상대 목록을 페이지로 조회한다.
-
-      인증: 정식(ACTIVE) 회원 본인.
-
-      차단은 예약 문맥(`POST /api/v1/bookings/{bookingId}/block`)에서만 생성된다.
-      """;
-
-  private static final String UNBLOCK_DESCRIPTION =
-      """
-      차단을 해제한다. 차단하지 않은 상대를 해제해도 204다(멱등).
-
-      인증: 정식(ACTIVE) 회원 본인. 본문·응답 본문이 없다.
-      """;
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
@@ -165,22 +152,10 @@ class UserBlockDocsTest {
                 "user-blocks-list",
                 resourceDetails()
                     .tag(ApiDocsTags.USERS)
-                    .summary("내 차단 목록 조회")
+                    .summary(BLOCKS_LIST_SUMMARY)
                     .description(BLOCKS_LIST_DESCRIPTION),
-                queryParameters(
-                    parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
-                    parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")),
-                responseFields(
-                    field("success", JsonFieldType.BOOLEAN, "성공 여부"),
-                    field("data.content[].userId", JsonFieldType.NUMBER, "차단한 상대 식별자"),
-                    field("data.content[].name", JsonFieldType.STRING, "차단한 상대 표시명(마스킹 수준 확인 필요)"),
-                    field("data.content[].blockedAt", JsonFieldType.STRING, "차단 시각(UTC)"),
-                    field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
-                    field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
-                    field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
-                    field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
-                    field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
-                    errorNull())));
+                queryParameters(blocksListQueryParameters()),
+                responseFields(blocksListResponseFields())));
   }
 
   @Test
@@ -197,9 +172,9 @@ class UserBlockDocsTest {
                 "user-blocks-unblock",
                 resourceDetails()
                     .tag(ApiDocsTags.USERS)
-                    .summary("차단 해제")
+                    .summary(UNBLOCK_SUMMARY)
                     .description(UNBLOCK_DESCRIPTION),
-                pathParameters(parameterWithName("userId").description("차단을 해제할 상대 식별자"))));
+                pathParameters(unblockPathParameters())));
 
     mockMvc
         .perform(get("/api/v1/users/me/blocks").header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)))
