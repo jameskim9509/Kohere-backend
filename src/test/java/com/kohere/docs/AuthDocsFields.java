@@ -63,7 +63,7 @@ public final class AuthDocsFields {
       | status | `error.code` | 발생 조건 |
       |---|---|---|
       | 400 | `INVALID_INPUT` | `provider` 누락·빈값이거나 `APPLE`·`GOOGLE` 밖의 값 |
-      | 400 | `AUTH_MISSING_CREDENTIAL` | provider별 필수 자격이 누락·빈값 — `GOOGLE`의 `idToken` 또는 `APPLE`의 `authorizationCode` 미전송 |
+      | 400 | `AUTH_MISSING_CREDENTIAL` | provider별 필수 자격이 누락·빈값 — `GOOGLE`의 `idToken` 또는 `APPLE`의 `authorizationCode`를 보내지 않음 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명·`aud`·`iss`·`exp` 검증 실패, Apple 인가코드 교환 실패(만료·재사용 코드), 교환 결과 검증 실패 |
       | 422 | `AUTH_EMAIL_MISMATCH` | 최초 로그인에서 요청 `email`이 토큰의 email 클레임과 불일치 |
@@ -280,8 +280,8 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 온보딩 중에도, 온보딩을 마친 뒤 프로필 연락처를 바꿀 때도 이 엔드포인트를 쓴다.
-      - 약관 동의(`TERMS_AGREED`)가 선행돼야 한다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `TERMS_AGREED`·`ACTIVE`인 회원의 토큰. 약관 동의 전(`PENDING`)에 호출하면 422다.
+      - 온보딩 중에도, 온보딩을 마친 뒤 프로필 연락처를 바꿀 때도 이 엔드포인트를 쓴다.
 
       **요청 주의사항**
 
@@ -312,11 +312,11 @@ public final class AuthDocsFields {
 
   public static final String PHONE_VERIFY_DESCRIPTION =
       """
-      발송된 인증번호를 확인해 연락처 인증을 완료한다. 임대인 온보딩(§5-2)·프로필 연락처 변경(§9)의 선행 단계다.
+      발송된 인증번호를 확인해 연락처 인증을 완료한다. 임대인 온보딩(`POST /api/v1/auth/landlord/onboarding`)과 프로필 연락처 변경(`PATCH /api/v1/users/me`)의 선행 단계다.
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`).
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 발송(`POST /api/v1/auth/phone/verification-code`)과 달리 약관 동의를 보지 않지만, 발송을 먼저 해야 확인할 인증번호가 있다.
 
       **에러 코드**
 
@@ -349,7 +349,7 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - 온보딩 제출(§5-2)에는 포함되지 않는다 — 온보딩을 마친 임대인이 매물 등록 시점에 따로 호출한다.
+      - 임대인 온보딩(`POST /api/v1/auth/landlord/onboarding`)에는 포함되지 않는다 — 온보딩을 마친 임대인이 매물 등록 시점에 따로 호출한다.
 
       **에러 코드**
 
@@ -387,8 +387,8 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - `phoneNumber`는 사전 SMS 인증(§4-1·§4-2)한 번호와 일치해야 한다(약관 검사가 연락처 검사보다 먼저다).
-      - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않고, 사업자등록번호도 받지 않는다(온보딩 후 별도 검증 §5-1).
+      - `phoneNumber`는 `POST /api/v1/auth/phone/verification-code`·`/verify`로 사전 인증한 번호와 일치해야 한다(약관 검사가 연락처 검사보다 먼저다).
+      - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않고, 사업자등록번호도 받지 않는다(온보딩 후 `POST /api/v1/auth/business/verify`로 따로 검증).
 
       **응답 주의사항**
 
@@ -466,7 +466,7 @@ public final class AuthDocsFields {
     return List.of(
         field("termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의(필수). false면 422"),
         field("privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의(필수). false면 422"),
-        optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택, 미전송이면 false)"));
+        optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택, 보내지 않으면 false)"));
   }
 
   public static List<FieldDescriptor> termsResponseFields() {
@@ -515,9 +515,9 @@ public final class AuthDocsFields {
             COUNTRY_CODES,
             "국적 ISO 3166-1 alpha-2 코드(필수). 값 목록을 내려주는 API가 없어 여기 나열한 15개가 지원 코드의 전부다"),
         optEnumField(
-            "occupation", Occupation.class, "직업(선택 — 미전송·null이면 저장하지 않고 프로필 응답에서 필드 자체가 생략된다)"),
+            "occupation", Occupation.class, "직업(선택 — 보내지 않거나 null이면 저장하지 않고 프로필 응답에서 필드 자체가 생략된다)"),
         enumField("visaType", VisaType.class, "비자정보(필수). 요청·응답 모두 상수명으로 주고받는다"),
-        optCodeField("lang", LANG_CODES, "표시 언어 ISO 639-1 소문자(선택 — 미전송이면 미설정으로 두고 표시 시 en으로 폴백)"));
+        optCodeField("lang", LANG_CODES, "표시 언어 ISO 639-1 소문자(선택 — 보내지 않으면 설정하지 않고 표시는 en으로 폴백)"));
   }
 
   public static List<FieldDescriptor> refreshTokenRequestField(String description) {

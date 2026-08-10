@@ -997,7 +997,7 @@ public final class DiagnosisDocsFields {
       **응답 주의사항**
 
       - `title`과 `label`은 사용자 표시 언어로 선택되어 온다(게스트는 `en` 고정).
-      - v1 §7과 달리 **조정 제안(`suggestions`) 필드가 없다** — 사유만 `resultCode`로 준다.
+      - v1 추천(`GET /api/v1/diagnoses/{diagnosisId}/recommendations`)과 달리 **조정 제안(`suggestions`) 필드가 없다** — 사유만 `resultCode`로 준다.
 
       **에러 코드**
 
@@ -1005,7 +1005,7 @@ public final class DiagnosisDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
-      | 403 | `FORBIDDEN` | 타인 소유 진단, 게스트↔회원 교차 조회(양방향), 신원 없는 요청(게스트 키 미전송) |
+      | 403 | `FORBIDDEN` | 타인 소유 진단, 게스트↔회원 교차 조회(양방향), 신원 없는 요청(토큰도 게스트 키도 보내지 않음) |
       | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
       """;
 

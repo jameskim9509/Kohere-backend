@@ -102,7 +102,7 @@ public final class UserDocsFields {
 
   public static final String PATCH_ME_DESCRIPTION =
       """
-      전송한 필드만 바꾸고 미전송 필드는 유지한다(미전송은 「값 비움」이 아니다). 응답은 수정된 프로필 전체이며 `GET /users/me`와 동일 스키마다.
+      보낸 필드만 바뀐다. 필드를 빼도 `null`을 보내도 기존 값이 남으므로 값을 지울 수는 없다. 응답은 수정된 프로필 전체이며 `GET /users/me`와 동일 스키마다.
 
       **헤더**
 
