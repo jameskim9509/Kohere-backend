@@ -61,35 +61,38 @@ public class UserService {
    */
   private User updateTenantProfile(User user, UpdateProfileRequest request) {
     if (request.country() != null && !countryRepository.existsByCode(request.country())) {
-      throw new InvalidInputException("country 값이 올바르지 않습니다: " + request.country());
+      throw new InvalidInputException("country", "지원하지 않는 국가 코드입니다: " + request.country());
     }
     Language lang =
         request.lang() == null
             ? null
             : Language.from(request.lang())
                 .orElseThrow(
-                    () -> new InvalidInputException("lang 값이 올바르지 않습니다: " + request.lang()));
+                    () -> new InvalidInputException("lang", "지원하지 않는 표시 언어입니다: " + request.lang()));
     return user.updateProfile(
         request.name(),
-        parseEnum(Gender.class, request.gender()),
+        parseEnum(Gender.class, "gender", request.gender()),
         request.birthDate(),
         request.country(),
-        parseEnum(Occupation.class, request.occupation()),
-        parseEnum(VisaType.class, request.visaType()),
+        parseEnum(Occupation.class, "occupation", request.occupation()),
+        parseEnum(VisaType.class, "visaType", request.visaType()),
         lang,
         request.marketingAgreed(),
         Instant.now());
   }
 
-  /** 미전송({@code null})은 미변경이라 그대로 통과시키고, 값이 있으면(빈 문자열 포함) enum 목록 밖은 {@code INVALID_INPUT}이다. */
-  private static <E extends Enum<E>> E parseEnum(Class<E> type, String value) {
+  /**
+   * 미전송({@code null})은 미변경이라 그대로 통과시키고, 값이 있으면(빈 문자열 포함) enum 목록 밖은 {@code INVALID_INPUT}이다. 어느
+   * 필드인지 응답 {@code errors[]}에 실어야 클라이언트가 고칠 수 있으므로 요청 필드명을 함께 넘긴다(#151).
+   */
+  private static <E extends Enum<E>> E parseEnum(Class<E> type, String field, String value) {
     if (value == null) {
       return null;
     }
     try {
       return Enum.valueOf(type, value);
     } catch (IllegalArgumentException e) {
-      throw new InvalidInputException(type.getSimpleName() + " 값이 올바르지 않습니다: " + value);
+      throw new InvalidInputException(field, "허용 목록 밖의 값입니다: " + value);
     }
   }
 

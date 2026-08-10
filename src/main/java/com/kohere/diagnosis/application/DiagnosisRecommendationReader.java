@@ -90,10 +90,10 @@ public class DiagnosisRecommendationReader {
 
   private static void validatePage(int page, int size) {
     if (page < 0) {
-      throw new InvalidInputException("page는 0 이상이어야 합니다: " + page);
+      throw new InvalidInputException("page", "0 이상이어야 합니다: " + page);
     }
     if (size < 1 || size > 100) {
-      throw new InvalidInputException("size는 1~100 사이여야 합니다: " + size);
+      throw new InvalidInputException("size", "1~100 사이여야 합니다: " + size);
     }
   }
 
@@ -104,12 +104,12 @@ public class DiagnosisRecommendationReader {
     String[] parts = sort.split(",");
     String key = parts[0].trim();
     if (!SORT_KEYS.contains(key)) {
-      throw new InvalidInputException("정렬 키가 올바르지 않습니다: " + key);
+      throw new InvalidInputException("sort", "정렬 키가 올바르지 않습니다: " + key);
     }
     if (parts.length > 1) {
       String direction = parts[1].trim().toLowerCase();
       if (!direction.equals("asc") && !direction.equals("desc")) {
-        throw new InvalidInputException("정렬 방향이 올바르지 않습니다: " + parts[1]);
+        throw new InvalidInputException("sort", "정렬 방향이 올바르지 않습니다: " + parts[1]);
       }
     }
   }

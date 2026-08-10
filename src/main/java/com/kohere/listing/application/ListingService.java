@@ -288,8 +288,9 @@ public class ListingService {
 
   /** 컨트롤러에서 받은 값을 검증하고 저장소가 이해하기 쉬운 검색 조건으로 묶는다. */
   private static ListingSearchCondition buildSearchCondition(ListingSearchRequest request) {
-    validateMoneyRange("monthlyRent", request.getMinBudget(), request.getMaxBudget());
-    validateMoneyRange("deposit", request.getMinDeposit(), request.getMaxDeposit());
+    validateMoneyRange("minBudget", "maxBudget", request.getMinBudget(), request.getMaxBudget());
+    validateMoneyRange(
+        "minDeposit", "maxDeposit", request.getMinDeposit(), request.getMaxDeposit());
     validatePage(request.getPage(), request.getSize());
 
     ListingSearchCondition.BoundingBox viewportBounds =
@@ -314,8 +315,9 @@ public class ListingService {
 
   /** 지도 마커 조회는 bbox가 필수이며, 목록과 같은 필터를 적용한다. */
   private static ListingSearchCondition buildMapSearchCondition(ListingMapRequest request) {
-    validateMoneyRange("monthlyRent", request.getMinBudget(), request.getMaxBudget());
-    validateMoneyRange("deposit", request.getMinDeposit(), request.getMaxDeposit());
+    validateMoneyRange("minBudget", "maxBudget", request.getMinBudget(), request.getMaxBudget());
+    validateMoneyRange(
+        "minDeposit", "maxDeposit", request.getMinDeposit(), request.getMaxDeposit());
 
     ListingSearchCondition.BoundingBox viewportBounds =
         buildBounds(request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
@@ -400,11 +402,12 @@ public class ListingService {
   /** keyword는 필수이며, 앞뒤 공백 제거 후 1~50자 안에 있어야 한다. */
   private static String validateAndNormalizeKeyword(String keyword) {
     if (keyword == null || keyword.trim().isEmpty()) {
-      throw new InvalidInputException("keyword는 필수입니다.");
+      throw new InvalidInputException("keyword", "필수입니다.");
     }
     String normalized = keyword.trim();
     if (normalized.length() > MAX_KEYWORD_LENGTH) {
-      throw new InvalidInputException("keyword는 1자 이상 50자 이하이어야 합니다.");
+      throw new InvalidInputException(
+          "keyword", "1자 이상 50자 이하이어야 합니다: " + normalized.length() + "자");
     }
     return normalized;
   }
@@ -465,26 +468,32 @@ public class ListingService {
     return bounds == null ? null : bounds.centerLng();
   }
 
-  /** 돈 필터는 음수가 아니어야 하고, 최소값이 최대값보다 클 수 없다. */
-  private static void validateMoneyRange(String field, Integer min, Integer max) {
+  /**
+   * 돈 필터는 음수가 아니어야 하고, 최소값이 최대값보다 클 수 없다.
+   *
+   * @param minField 최소값을 담아 보내는 쿼리 파라미터 이름(예: {@code minBudget})
+   * @param maxField 최대값을 담아 보내는 쿼리 파라미터 이름(예: {@code maxBudget})
+   */
+  private static void validateMoneyRange(
+      String minField, String maxField, Integer min, Integer max) {
     if (min != null && min < 0) {
-      throw new InvalidInputException(field + " 최소값은 0 이상이어야 합니다.");
+      throw new InvalidInputException(minField, "0 이상이어야 합니다: " + min);
     }
     if (max != null && max < 0) {
-      throw new InvalidInputException(field + " 최대값은 0 이상이어야 합니다.");
+      throw new InvalidInputException(maxField, "0 이상이어야 합니다: " + max);
     }
     if (min != null && max != null && min > max) {
-      throw new InvalidInputException(field + " 최소값은 최대값보다 클 수 없습니다.");
+      throw new InvalidInputException(minField, maxField + "보다 클 수 없습니다: " + min + " > " + max);
     }
   }
 
   /** 페이지 번호와 크기가 API 약속 범위 안에 있는지 확인한다. */
   private static void validatePage(int page, int size) {
     if (page < 0) {
-      throw new InvalidInputException("page는 0 이상이어야 합니다.");
+      throw new InvalidInputException("page", "0 이상이어야 합니다: " + page);
     }
     if (size < 1 || size > MAX_PAGE_SIZE) {
-      throw new InvalidInputException("size는 1 이상 100 이하이어야 합니다.");
+      throw new InvalidInputException("size", "1 이상 100 이하이어야 합니다: " + size);
     }
   }
 

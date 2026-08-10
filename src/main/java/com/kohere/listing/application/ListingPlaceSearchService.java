@@ -44,11 +44,12 @@ public class ListingPlaceSearchService {
    */
   private static String validateAndNormalizeKeyword(String keyword) {
     if (keyword == null || keyword.trim().isEmpty()) {
-      throw new InvalidInputException("keyword는 필수입니다.");
+      throw new InvalidInputException("keyword", "필수입니다.");
     }
     String normalized = keyword.trim();
     if (normalized.length() > MAX_KEYWORD_LENGTH) {
-      throw new InvalidInputException("keyword는 1자 이상 50자 이하이어야 합니다.");
+      throw new InvalidInputException(
+          "keyword", "1자 이상 50자 이하이어야 합니다: " + normalized.length() + "자");
     }
     return normalized;
   }
