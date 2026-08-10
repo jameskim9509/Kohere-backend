@@ -62,9 +62,9 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `provider` 누락(null) |
+      | 400 | `INVALID_INPUT` | `provider` 누락·빈값이거나 `APPLE`·`GOOGLE` 밖의 값 |
       | 400 | `AUTH_MISSING_CREDENTIAL` | provider별 필수 자격이 누락·빈값 — `GOOGLE`의 `idToken` 또는 `APPLE`의 `authorizationCode` 미전송 |
-      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없거나 `provider`가 `APPLE`·`GOOGLE` 밖의 문자열 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명·`aud`·`iss`·`exp` 검증 실패, Apple 인가코드 교환 실패(만료·재사용 코드), 교환 결과 검증 실패 |
       | 422 | `AUTH_EMAIL_MISMATCH` | 최초 로그인에서 요청 `email`이 토큰의 email 클레임과 불일치 |
       | 422 | `AUTH_EMAIL_REQUIRED` | 최초 로그인에서 토큰 클레임·요청 어느 쪽에도 `email`이 없어 provider 진본 이메일을 확정할 수 없음 |
@@ -113,7 +113,7 @@ public final class AuthDocsFields {
 
   public static final String EMAIL_CODE_DESCRIPTION =
       """
-      입력한 이메일로 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `email`은 마스킹된다(예 `mi***@example.com`).
+      입력한 이메일로 인증번호를 동기 발송한다. 응답 `email`은 마스킹된다(예 `mi***@example.com`).
 
       **헤더**
 
@@ -121,7 +121,7 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - 발송이 실패하면(메일 provider 장애·타임아웃) 챌린지를 저장하지 않는다.
+      - 발송이 실패하면(메일 provider 장애·타임아웃) 인증번호가 새로 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
 
       **에러 코드**
 
@@ -148,7 +148,7 @@ public final class AuthDocsFields {
 
   public static final String EMAIL_VERIFY_DESCRIPTION =
       """
-      발송된 인증번호를 확인해 이메일을 검증 완료(VERIFIED)로 마킹한다.
+      발송된 인증번호를 확인해 이메일 인증을 완료한다.
 
       **헤더**
 
@@ -163,7 +163,7 @@ public final class AuthDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 토큰으로 호출 |
-      | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 챌린지 부재·만료·코드 불일치 — 어느 쪽인지 구분해 주지 않는다 |
+      | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 인증번호를 받은 적이 없거나 만료됐거나 코드가 틀림 — 어느 쪽인지 구분해 주지 않는다 |
       | 429 | `TOO_MANY_REQUESTS` | 코드 불일치가 시도 상한까지 누적돼 잠김 |
       """;
 
@@ -187,9 +187,7 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - 이메일 인증 선행 게이트는 폐지됐다 — 약관만 동의하면 곧바로 제출할 수 있다.
       - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않는다.
-      - enum·날짜 값이 잘못되면 400 `INVALID_INPUT`이다 — 같은 위반이 `MALFORMED_REQUEST`가 되는 `PATCH /users/me`와 갈리는 지점이다.
 
       **응답 주의사항**
 
@@ -199,7 +197,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 필수 필드 누락·빈값, `birthDate`가 미래 날짜, `gender`·`visaType`·`occupation`·`lang` 값이 지원 목록 밖 |
+      | 400 | `INVALID_INPUT` | 필수 필드 누락·빈값, `birthDate`가 `YYYY-MM-DD` 형식이 아니거나 미래 날짜, `gender`·`visaType`·`occupation`·`lang` 값이 지원 목록 밖 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -223,11 +221,11 @@ public final class AuthDocsFields {
       **헤더**
 
       - 인증 불필요 — 토큰 없이 호출한다.
-      - 만료된 access 토큰이 헤더에 실려 와도 401로 막지 않는다(재발급 교착 방지) — 클라이언트가 모든 요청에 access 토큰을 붙이는 구조이기 때문이다.
+      - 만료된 access 토큰이 붙어 있어도 401로 막지 않는다 — 모든 요청에 토큰을 붙이는 클라이언트가 이 호출만 헤더를 벗길 필요가 없다.
 
       **응답 주의사항**
 
-      - 제출한 refresh 토큰은 `ROTATED`로 폐기되고 새 refresh 토큰이 함께 내려온다 — 응답의 새 토큰으로 교체해야 다음 재발급이 된다.
+      - 응답의 새 refresh 토큰으로 반드시 교체한다. 이전 토큰은 즉시 무효가 되고, 다시 쓰면 탈취로 간주해 그 사용자의 모든 세션이 끊긴다.
 
       **에러 코드**
 
@@ -255,7 +253,7 @@ public final class AuthDocsFields {
 
       **응답 주의사항**
 
-      - access 토큰은 stateless라 서버가 폐기하지 않는다 — 클라이언트가 버리고, 남은 만료 시간까지는 서명상 유효하다.
+      - 로그아웃해도 access 토큰은 무효화되지 않는다 — 남은 만료 시간까지 그대로 API가 호출되므로 클라이언트가 직접 지운다.
 
       **에러 코드**
 
@@ -278,16 +276,16 @@ public final class AuthDocsFields {
 
   public static final String PHONE_CODE_DESCRIPTION =
       """
-      입력한 휴대폰 번호로 SMS 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `phoneNumber`는 마스킹된다(예 `010-****-5678`).
+      입력한 휴대폰 번호로 SMS 인증번호를 동기 발송한다. 응답 `phoneNumber`는 마스킹된다(예 `010-****-5678`).
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 온보딩 중과 온보딩 후 프로필 연락처 변경이 같은 엔드포인트를 쓰기 때문이다.
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 온보딩 중에도, 온보딩을 마친 뒤 프로필 연락처를 바꿀 때도 이 엔드포인트를 쓴다.
       - 약관 동의(`TERMS_AGREED`)가 선행돼야 한다.
 
       **요청 주의사항**
 
-      - 발송이 실패하면(SMS provider 장애·타임아웃) 챌린지를 저장하지 않는다.
+      - 발송이 실패하면(SMS provider 장애·타임아웃) 인증번호가 새로 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
 
       **에러 코드**
 
@@ -314,7 +312,7 @@ public final class AuthDocsFields {
 
   public static final String PHONE_VERIFY_DESCRIPTION =
       """
-      발송된 인증번호를 확인해 연락처를 검증 완료(VERIFIED)로 마킹한다. 임대인 온보딩(§5-2)·프로필 연락처 변경(§9)의 선행 단계다.
+      발송된 인증번호를 확인해 연락처 인증을 완료한다. 임대인 온보딩(§5-2)·프로필 연락처 변경(§9)의 선행 단계다.
 
       **헤더**
 
@@ -328,7 +326,7 @@ public final class AuthDocsFields {
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
-      | 422 | `AUTH_PHONE_VERIFICATION_FAILED` | 챌린지 부재·만료·코드 불일치 — 어느 쪽인지 구분해 주지 않는다 |
+      | 422 | `AUTH_PHONE_VERIFICATION_FAILED` | 인증번호를 받은 적이 없거나 만료됐거나 코드가 틀림 — 어느 쪽인지 구분해 주지 않는다 |
       | 429 | `TOO_MANY_REQUESTS` | 코드 불일치가 시도 상한까지 누적돼 잠김 |
       """;
 
@@ -343,7 +341,7 @@ public final class AuthDocsFields {
 
   public static final String BUSINESS_DESCRIPTION =
       """
-      사업자등록번호를 외부 registry로 검증한다. 결과를 저장하지 않는 무상태 검증이라 응답 본문으로만 돌려주며, 번호는 마스킹된다(예 `****567890`).
+      사업자등록번호를 외부 registry로 검증한다. 검증 결과는 서버에 남지 않고 응답 본문으로만 돌아오므로 필요할 때마다 다시 호출한다. 번호는 마스킹된다(예 `****567890`).
 
       **헤더**
 
@@ -401,7 +399,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값, `birthDate` 누락이거나 미래 날짜 |
+      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값, `birthDate` 누락이거나 `YYYY-MM-DD` 형식이 아니거나 미래 날짜 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -421,10 +419,7 @@ public final class AuthDocsFields {
 
   public static List<FieldDescriptor> socialLoginRequestFields() {
     return List.of(
-        enumField(
-            "provider",
-            Provider.class,
-            "소셜 제공자(필수). 누락은 400 INVALID_INPUT, 허용 외 문자열은 400 MALFORMED_REQUEST"),
+        enumField("provider", Provider.class, "소셜 제공자(필수). 누락·빈값·허용 외 문자열 모두 400 INVALID_INPUT"),
         optField("idToken", JsonFieldType.STRING, "Google OIDC ID 토큰 — GOOGLE 필수, APPLE 미사용"),
         optField(
             "authorizationCode",
@@ -521,7 +516,7 @@ public final class AuthDocsFields {
             "국적 ISO 3166-1 alpha-2 코드(필수). 값 목록을 내려주는 API가 없어 여기 나열한 15개가 지원 코드의 전부다"),
         optEnumField(
             "occupation", Occupation.class, "직업(선택 — 미전송·null이면 저장하지 않고 프로필 응답에서 필드 자체가 생략된다)"),
-        enumField("visaType", VisaType.class, "비자정보(필수). API는 상수명, DB 저장은 표시 라벨"),
+        enumField("visaType", VisaType.class, "비자정보(필수). 요청·응답 모두 상수명으로 주고받는다"),
         optCodeField("lang", LANG_CODES, "표시 언어 ISO 639-1 소문자(선택 — 미전송이면 미설정으로 두고 표시 시 en으로 폴백)"));
   }
 
@@ -535,7 +530,9 @@ public final class AuthDocsFields {
         codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"),
         field("data.accessToken", JsonFieldType.STRING, "새 access 토큰(JWT)"),
         field(
-            "data.refreshToken", JsonFieldType.STRING, "새 refresh 토큰(회전 — 제출한 토큰은 ROTATED로 폐기된다)"),
+            "data.refreshToken",
+            JsonFieldType.STRING,
+            "새 refresh 토큰. 이 값으로 교체해야 하며 제출한 토큰은 즉시 무효가 된다"),
         field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
         errorNull());
   }
@@ -566,7 +563,10 @@ public final class AuthDocsFields {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
-        field("data.verified", JsonFieldType.BOOLEAN, "검증 완료 여부 — 성공 응답은 항상 true"),
+        field(
+            "data.verified",
+            JsonFieldType.BOOLEAN,
+            "검증 완료 여부 — 성공 응답은 항상 true. 인증된 상태는 30분만 유지되므로 그 안에 임대인 온보딩·프로필 연락처 변경을 제출해야 하고, 넘기면 422 AUTH_PHONE_NOT_VERIFIED라 다시 인증해야 한다"),
         errorNull());
   }
 
@@ -593,6 +593,6 @@ public final class AuthDocsFields {
             "phoneNumber",
             JsonFieldType.STRING,
             "사전 SMS 인증된 연락처와 일치(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다). 불일치·미인증은 422"),
-        field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(필수, 과거 날짜만 — 미래면 400)"));
+        field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(필수, 과거 날짜만 — 형식 위반·미래는 400)"));
   }
 }

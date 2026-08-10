@@ -62,8 +62,8 @@ public final class BookingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `roomOfferId` 누락·공백, `contractPeriod` 누락·0·음수 |
-      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON 파싱 불가 또는 `moveInDate` 날짜 형식 위반 |
+      | 400 | `INVALID_INPUT` | `roomOfferId` 누락·공백, `contractPeriod` 누락·0·음수, `moveInDate` 누락이거나 `YYYY-MM-DD` 형식이 아님 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `FORBIDDEN` | 임대인 등 비세입자(`userType≠TENANT`)가 호출 |
@@ -93,7 +93,7 @@ public final class BookingDocsFields {
         field(
             "moveInDate",
             JsonFieldType.STRING,
-            "타겟 입주일(`YYYY-MM-DD`). 형식 위반은 400 `MALFORMED_REQUEST`, 과거·입주 가능일 이전은 422"),
+            "타겟 입주일(`YYYY-MM-DD`). 형식 위반은 400 `INVALID_INPUT`, 과거·입주 가능일 이전은 422"),
         field(
             "contractPeriod",
             JsonFieldType.NUMBER,
@@ -184,7 +184,10 @@ public final class BookingDocsFields {
         field("data.content[].createdAt", JsonFieldType.STRING, "예약 접수 일시(ISO-8601 UTC)"),
         field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호(0-base)"),
         field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
-        field("data.page.totalElements", JsonFieldType.NUMBER, "필터 적용 후 전체 건수"),
+        field(
+            "data.page.totalElements",
+            JsonFieldType.NUMBER,
+            "요청자에게 보이는 전체 건수 — 요청자가 삭제했거나 상대를 차단해 목록에서 빠진 예약은 세지 않는다"),
         field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
         field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
         errorNull());
@@ -238,7 +241,7 @@ public final class BookingDocsFields {
         field("data.roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
         optField("data.title", JsonFieldType.STRING, TITLE_DESCRIPTION),
         optField("data.thumbnailUrl", JsonFieldType.STRING, THUMBNAIL_DESCRIPTION),
-        optField("data.address", JsonFieldType.STRING, "매물 주소 — 조회 시점 값. 매물이 삭제·비공개면 null"),
+        optField("data.address", JsonFieldType.STRING, "매물 주소 — 조회 시점 값. 매물·방 상품이 삭제·비공개면 null"),
         optField(
             "data.roomOfferName", JsonFieldType.STRING, "방 상품명 — 조회 시점 값. 매물·방 상품이 삭제·비공개면 null"),
         field("data.createdAt", JsonFieldType.STRING, "예약 접수 일시(ISO-8601 UTC)"),
@@ -253,7 +256,7 @@ public final class BookingDocsFields {
         optCodeField(
             "data.applicantGender",
             List.of("MALE", "FEMALE"),
-            "신청자 성별(임대인만) — 마스킹 없이 평문" + " 미수집이거나 탈퇴 익명화된 신청자는 null"),
+            "신청자 성별(임대인만) — 마스킹 없이 평문. 미수집이거나 탈퇴 익명화된 신청자는 null"),
         optField(
             "data.applicantCountry",
             JsonFieldType.STRING,
@@ -284,7 +287,7 @@ public final class BookingDocsFields {
 
   public static final String DELETE_DESCRIPTION =
       """
-      내 목록·상세에서 예약을 숨긴다. 예약 행 자체는 지우지 않는다.
+      내 목록·상세에서 예약을 영구히 숨긴다. 되돌리는 엔드포인트가 없어 요청자는 그 예약을 다시 볼 수 없고, 세입자는 같은 방 상품에 다시 신청해도 409 `BOOKING_ALREADY_EXISTS`가 돌아온다.
 
       **헤더**
 
@@ -295,7 +298,7 @@ public final class BookingDocsFields {
       - **취소가 아니다.** 요청자에게만 숨겨지므로 **상대 목록에는 그대로 보이고** 상대에게 알림도 가지 않는다. 두 참여자의 삭제는 서로 완전히 독립이다.
       - 멱등이다 — 이미 삭제한 예약을 다시 삭제해도 204다.
       - 차단(`POST .../block`)과 무관하다. 삭제해도 상대는 여전히 새 신청을 보낼 수 있다.
-      - 삭제해도 신고(`POST .../report`)는 계속 가능하다(증거 보존).
+      - 삭제해도 신고(`POST .../report`)는 계속 가능하다.
 
       **에러 코드**
 
@@ -340,7 +343,7 @@ public final class BookingDocsFields {
       **응답 주의사항**
 
       - 차단은 예약 단위가 아니라 **사용자 단위**다. 이후 요청자의 목록·상세에서 **그 상대와의 모든 예약**이 사라진다(이 예약 1건만이 아니다).
-      - 숨김은 **단방향**이다 — 상대의 목록은 그대로다. 다만 신규 신청 가드는 **양방향**이라 상대가 새 예약을 신청하면 403이 돌아온다.
+      - 숨김은 **단방향**이다 — 상대의 목록은 그대로다. 다만 신규 신청 차단은 **양방향**이라 상대가 새 예약을 신청해도 403이고, 요청자 본인도 차단을 풀기 전까지 그 상대의 매물에 새로 신청할 수 없다(403).
       - 삭제(`DELETE /api/v1/bookings/{bookingId}`)와 독립이다. 차단만 했다면 해제 시 그 예약들이 다시 보이고, 삭제까지 했다면 해제해도 계속 숨겨진다.
 
       **에러 코드**
@@ -382,11 +385,11 @@ public final class BookingDocsFields {
       - 신고자는 access 토큰으로 식별하며 본문에 넣지 않는다.
       - 본문 전체를 `{}`로 보내도 접수된다.
       - **다건 허용** — 동일 신고자가 동일 예약을 여러 번 신고할 수 있다(409가 없다).
-      - **삭제·차단 상태와 무관하다** — 이미 삭제했거나 상대를 차단한 예약도 신고할 수 있다(증거 보존). 그래서 같은 예약이 `GET /api/v1/bookings/{bookingId}`에서는 404인데 여기서는 201일 수 있다.
+      - **삭제·차단 상태와 무관하다** — 이미 삭제했거나 상대를 차단한 예약도 신고할 수 있다. 그래서 같은 예약이 `GET /api/v1/bookings/{bookingId}`에서는 404인데 여기서는 201일 수 있다.
 
       **응답 주의사항**
 
-      - 응답에 신고자 식별자와 `detail` 원문은 노출하지 않는다. 상태(`status`) 필드도 없다(전이할 상태가 없는 불변 기록).
+      - 응답에 신고자 식별자와 `detail` 원문은 노출하지 않는다. 상태(`status`) 필드도 없고, 접수한 신고를 취소·수정하는 엔드포인트도 없다 — 한 번 보내면 되돌릴 수 없다.
       - 단건 조회 엔드포인트가 없어 201이지만 `Location` 헤더를 주지 않는다.
 
       **에러 코드**
@@ -451,11 +454,11 @@ public final class BookingDocsFields {
 
       **요청 주의사항**
 
-      - `label`은 요청자의 표시 언어(`users.lang`, 미설정·미지원이면 `en` 폴백)로 서버가 번역하며, 파라미터로 언어를 고를 수 없다.
+      - `label`은 요청자의 표시 언어(프로필의 `lang`, 미설정·미지원이면 `en` 폴백)로 서버가 번역하며, 파라미터로 언어를 고를 수 없다.
 
       **응답 주의사항**
 
-      - 지원 언어는 `en`·`ko`·`ja` 3종이다(임대인은 `ko` 고정). 반환되는 **사유 집합과 순서는 `en` 행이 정본**이라 언어를 바꿔도 항목 수·순서는 같고, 요청 언어에 라벨이 없는 사유만 `en` 라벨로 폴백한다.
+      - 지원 언어는 `en`·`ko`·`ja` 3종이다(임대인은 `ko` 고정). 반환되는 **사유 집합과 순서는 언어와 무관하게 같고**, 요청 언어에 라벨이 없는 사유만 `en` 라벨로 내려온다.
       - **정렬은 서버가 정한 순서로 고정**이며 클라이언트는 받은 순서를 그대로 노출한다.
       - **사유는 배포 없이 늘어날 수 있다.** 아래 `code` 목록은 현재 시드값 스냅샷일 뿐이니 클라이언트에 하드코딩하지 말고 이 엔드포인트 응답으로 선택지를 구성한다.
 
@@ -501,9 +504,10 @@ public final class BookingDocsFields {
   private static final String BOOKING_STATUS_DESCRIPTION =
       "예약 상태 — 신청 직후 `REQUESTED` 고정. MVP에서는 `REQUESTED`만 반환된다(수락·거절·취소 엔드포인트 미구현이라 나머지 값으로 전이할 경로가 없다)";
 
-  private static final String TITLE_DESCRIPTION = "매물 제목 — 조회 시점 값. 매물이 삭제·비공개면 null";
+  private static final String TITLE_DESCRIPTION = "매물 제목 — 조회 시점 값. 매물·방 상품이 삭제·비공개면 null";
 
-  private static final String THUMBNAIL_DESCRIPTION = "매물 대표 이미지 URL — 조회 시점 값. 매물이 삭제·비공개면 null";
+  private static final String THUMBNAIL_DESCRIPTION =
+      "매물 대표 이미지 URL — 조회 시점 값. 매물·방 상품이 삭제·비공개거나 매물에 등록된 이미지가 한 장도 없으면 null";
 
   private static final String ROOM_OFFER_NAME_DESCRIPTION = "방 상품명(임대인만) — 매물·방 상품이 삭제·비공개면 null";
 

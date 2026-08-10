@@ -202,7 +202,7 @@ public final class DiagnosisDocsFields {
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 본인 소유 진단만 조회된다.
-      - 게스트가 v2로 만든 진단은 신원 종류가 달라 회원 토큰으로도 본인 소유가 아니다.
+      - 게스트가 v2로 만든 진단은 회원 토큰으로 조회할 수 없다 — `diagnosisId`를 알아도 403이다.
 
       **에러 코드**
 
@@ -515,7 +515,8 @@ public final class DiagnosisDocsFields {
         optCodeArrayField(
             "codes",
             SELECTABLE_CONDITION_CODES,
-            "다중 선택(`MULTI`) 답의 코드 집합 — ④ `conditions` 전용이며 최대 3개·중복 불가."
+            "다중 선택(`MULTI`) 답의 코드 집합 — ④ `conditions` 전용이며 서로 다른 코드 최대 3개."
+                + " 같은 코드를 여러 번 실어도 에러가 아니라 하나로 합쳐진 뒤 개수를 센다."
                 + " 파생 조건 `NO_ARC`는 ⑥에서 서버가 만들므로 여기서 고를 수 없다"),
         optField("min", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 하한(KRW 정수, 0 이상이고 `max` 이하)"),
         optField("max", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 상한(KRW 정수, `min` 이상)"));
@@ -695,7 +696,9 @@ public final class DiagnosisDocsFields {
         optField(
             "data.suggestions",
             JsonFieldType.OBJECT,
-            "조정 제안 — 추천이 0건일 때만 채워지고 결과가 있으면 `null`이다(키는 남는다). v2-3에는 이 필드 자체가 없다"));
+            "조정 제안 — 현재 페이지의 `content`가 비었을 때만 채워지고 결과가 있으면 `null`이다(키는 남는다)."
+                + " 마지막 페이지를 넘겨 요청해도 채워지므로, 진짜 0건인지는 `page.totalElements`로 가린다."
+                + " v2-3에는 이 필드 자체가 없다"));
     fields.add(
         optCodeField(
             "data.suggestions.reason",
@@ -793,8 +796,8 @@ public final class DiagnosisDocsFields {
       | --- | --- | --- |
       | `NEXT_QUESTION` | 다음 질문이 남음. ① 지역 0건 예외질문(`field=regionRetry`)도 이 코드다 | `question` |
       | `COMPLETED` | 마지막 슬롯(⑥ `arcStatus`)까지 답해 서버가 자동 확정 | `diagnosisId` |
-      | `RESTART` | 지역 예외질문에 "예"(`YES`) — 클라이언트가 `POST /start`로 재시도(세션 삭제) | 없음 |
-      | `TERMINATED` | 지역 예외질문에 "아니오"(`NO`) — 진단 종료(세션 삭제). 에러가 아니라 정상 결과다 | 없음 |
+      | `RESTART` | 지역 예외질문에 "예"(`YES`) — 이 진단은 확정되지 않고 끝난다. 이어서 답할 수 없고 `POST /start`로 ① 지역부터 다시 시작한다 | 없음 |
+      | `TERMINATED` | 지역 예외질문에 "아니오"(`NO`) — 진단 종료. 에러가 아니라 정상 결과이며, 확정되지 않아 `diagnosisId`가 없고 그때까지 답한 내용도 다시 조회할 수 없다 | 없음 |
 
       """
           + QUESTION_TABLE
@@ -811,9 +814,9 @@ public final class DiagnosisDocsFields {
 
       **응답 주의사항**
 
-      - `COMPLETED`에도 추천 매물은 실리지 않는다. 서버는 이 시점에 매칭 유무조차 확인하지 않으며, 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
+      - `COMPLETED`에도 추천 매물은 실리지 않는다. 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
       - 매칭 0건은 이 응답이 아니라 그 추천 응답의 `resultCode=NO_MATCH`로 드러난다.
-      - ① 지역 답 직후 그 지역 매물이 0건이면 서버가 `field=regionRetry` 예외질문(`YES`/`NO`)을 끼워 넣는다 — 서버가 미리 필터링하는 유일한 지점이다.
+      - ① 지역 답 직후 그 지역 매물이 0건이면 서버가 `field=regionRetry` 예외질문(`YES`/`NO`)을 끼워 넣는다 — 다른 단계에서는 예외질문이 끼어들지 않는다.
       - """
           + LANGUAGE_NOTE
           + """
@@ -871,7 +874,8 @@ public final class DiagnosisDocsFields {
         enumField(
             "data.resultCode",
             FlowResultCode.class,
-            "다음에 할 일을 알리는 결과코드. 값에 따라 아래 payload 중 하나만 실린다"));
+            "다음에 할 일을 알리는 결과코드. `NEXT_QUESTION`은 `question`을, `COMPLETED`는 `diagnosisId`를 함께 싣고"
+                + " `RESTART`·`TERMINATED`는 payload 없이 이 코드 하나만 온다"));
     fields.addAll(questionFields(true));
     fields.add(
         optField(
@@ -901,7 +905,11 @@ public final class DiagnosisDocsFields {
                 + " 값이 null이 아니라 **필드 자체가 생략**된다(`/start`는 언제나 이 필드가 있다)"));
     fields.add(
         describe(
-            optional, "data.question.step", JsonFieldType.NUMBER, "문항의 단계 번호(1~6). 정본 순서에서 파생된다"));
+            optional,
+            "data.question.step",
+            JsonFieldType.NUMBER,
+            "문항의 단계 번호(1~6). ① 지역 0건 예외질문(`regionRetry`)도 ① 지역과 같은 `1`로 내려오므로,"
+                + " 이 번호만으로 진행률을 세면 단계가 되돌아간 것처럼 보인다"));
     fields.add(
         codeFieldMaybeOptional(
             optional,
@@ -937,7 +945,8 @@ public final class DiagnosisDocsFields {
         optField(
             "data.question.options[].code",
             JsonFieldType.STRING,
-            "선택지 코드 — 언어와 무관하게 같고 확정 검증 enum과 1:1이다." + " `NUMBER_RANGE` 문항은 배열이 비어 원소가 없다"));
+            "선택지 코드 — 언어와 무관하게 같고 다음 `/next` 요청의 `code`/`codes`에 그대로 싣는다."
+                + " `NUMBER_RANGE` 문항은 배열이 비어 원소가 없다"));
     fields.add(optField("data.question.options[].label", JsonFieldType.STRING, "번역된 선택지 표시 라벨"));
     return fields;
   }
@@ -983,7 +992,7 @@ public final class DiagnosisDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다. 회원은 이 토큰으로 소유권을 증명한다.
       - `X-Guest-Session-Id` — 게스트는 이 헤더로 소유권을 증명한다.
-      - 소유는 신원 **종류와 값이 모두** 같을 때만 인정된다.
+      - 진단을 만든 쪽만 조회할 수 있다 — 게스트가 만든 진단은 회원 토큰으로, 회원이 만든 진단은 게스트 키로 열리지 않는다.
 
       **응답 주의사항**
 
@@ -1016,7 +1025,8 @@ public final class DiagnosisDocsFields {
         enumField(
             "data.resultCode",
             RecommendationResultCode.class,
-            "매칭 결과 — `MATCHED`는 매물 있음, `NO_MATCH`는 0건(에러가 아니며 v1과 달리 조정 제안이 없다)"));
+            "매칭 결과 — 현재 페이지의 `content`가 비었으면 `NO_MATCH`, 아니면 `MATCHED`다(에러가 아니며 v1과 달리 조정 제안이 없다)."
+                + " 마지막 페이지를 넘겨 요청해도 `NO_MATCH`이므로, 진짜 0건인지는 `page.totalElements`로 가린다"));
     fields.addAll(recommendationContentFields());
     fields.addAll(pageFields());
     fields.add(errorNull());

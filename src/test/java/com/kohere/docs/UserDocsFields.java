@@ -142,17 +142,17 @@ public final class UserDocsFields {
 
   public static final String WITHDRAW_DESCRIPTION =
       """
-      본인 계정을 `WITHDRAWN`으로 전이하고 PII를 즉시 익명화하며 refresh 토큰을 일괄 무효화한다.
+      본인 계정을 탈퇴 처리한다(`WITHDRAWN`). 되돌릴 수 없다 — 이름·닉네임·이메일·연락처·생년월일·국적·표시 언어·직업·비자정보가 즉시 삭제되고 복구할 수단이 없으며, 모든 기기의 세션이 그 자리에서 끊긴다. 같은 소셜 계정으로 다시 로그인해도 이전 계정으로 돌아오지 않고 데이터가 없는 새 계정으로 가입된다.
 
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`).
-      - 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 사용자도 탈퇴할 수 있다 — 온보딩 중단 정리 목적이라 403을 두지 않았다.
+      - 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 사용자도 탈퇴할 수 있다 — 온보딩을 끝내고 다시 호출할 필요가 없다.
 
       **응답 주의사항**
 
       - 성공 응답에는 본문이 없다(204).
-      - Apple 연동 계정은 매핑 삭제 전에 Apple `/auth/revoke`로 연동까지 폐기한다(best-effort — Apple 장애여도 탈퇴는 완료).
+      - Apple로 가입한 계정은 Apple 쪽 앱 연동까지 함께 해제된다 — Apple 장애로 해제가 실패해도 탈퇴는 그대로 완료되고 에러를 돌려주지 않는다.
 
       **에러 코드**
 
@@ -245,7 +245,7 @@ public final class UserDocsFields {
         optField(
             prefix + "countryName",
             JsonFieldType.STRING,
-            "국가 표시명(서버가 countries 참조로 resolve, 예 South Korea)"),
+            "국가 표시명 — country 코드로 서버가 채운다. 표시 언어와 무관하게 영문 한 가지다(예 South Korea)"),
         optField(prefix + "countryFlag", JsonFieldType.STRING, "국기 이미지 URL(flagcdn.com SVG)"),
         optCodeField(
             prefix + "lang",
@@ -256,7 +256,7 @@ public final class UserDocsFields {
             prefix + "email",
             JsonFieldType.STRING,
             "이메일(소셜 로그인 provider 진본 — 세입자·임대인 공통 보유, 본인 조회라 평문)"),
-        optEnumField(prefix + "visaType", VisaType.class, "비자정보(세입자만) — API는 상수명, DB 저장은 표시 라벨"),
+        optEnumField(prefix + "visaType", VisaType.class, "비자정보(세입자만) — 온보딩 필수라 세입자 응답에는 항상 있다"),
         optField(
             prefix + "phoneNumber",
             JsonFieldType.STRING,
@@ -287,7 +287,10 @@ public final class UserDocsFields {
    */
   public static List<FieldDescriptor> patchRequestFields() {
     return List.of(
-        optField("name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름, 선택 — 빈 문자열 불가)"),
+        optField(
+            "name",
+            JsonFieldType.STRING,
+            "이름(세입자·임대인 공통 단일 이름, 선택) — 보낸 문자열을 그대로 저장한다. 빈 문자열·공백도 거절하지 않으므로 클라이언트가 걸러야 한다"),
         optEnumField("gender", Gender.class, "성별(세입자만·선택)"),
         optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(세입자 전용·선택, 과거 날짜만)"),
         optCodeField(
@@ -301,7 +304,7 @@ public final class UserDocsFields {
         optField(
             "phoneNumber",
             JsonFieldType.STRING,
-            "연락처(임대인만·선택) — 새 번호는 SMS 재인증(§4-1·§4-2) 후에만 반영되고 미인증이면 422"),
+            "연락처(임대인만·선택) — 지금 번호와 다른 값이면 그 번호를 SMS로 재인증한 뒤에만 반영되고, 미인증·불일치면 422. 지금 번호와 같은 값은 재인증 없이 통과한다"),
         optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택)"));
   }
 
@@ -335,7 +338,10 @@ public final class UserDocsFields {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부"),
         field("data.content[].userId", JsonFieldType.NUMBER, "차단한 상대 식별자"),
-        field("data.content[].name", JsonFieldType.STRING, "차단한 상대 표시명(마스킹 수준 확인 필요)"),
+        field(
+            "data.content[].name",
+            JsonFieldType.STRING,
+            "차단한 상대 이름(마스킹 없는 평문). 상대가 탈퇴했거나 이름이 없으면 빈 문자열이며 항목은 그대로 남는다"),
         field("data.content[].blockedAt", JsonFieldType.STRING, "차단 시각(UTC)"),
         field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
         field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),

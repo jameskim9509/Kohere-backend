@@ -39,7 +39,7 @@ public final class QuizDocsFields {
 
       **응답 주의사항**
 
-      - 표시 언어가 호출자에 따라 갈린다 — 게스트는 `en` 고정, 세입자는 본인이 고른 `users.lang`(미선택이면 `en` 폴백), 임대인은 `ko` 고정.
+      - 표시 언어가 호출자에 따라 갈린다 — 게스트는 `en` 고정, 세입자는 본인이 고른 `lang`(미선택이면 `en` 폴백), 임대인은 `ko` 고정.
       - 채점은 이 응답이 아니라 `POST /api/v1/quizzes/{quizId}/answer`가 담당한다.
 
       **에러 코드**
@@ -57,9 +57,12 @@ public final class QuizDocsFields {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.quizId", JsonFieldType.NUMBER, "퀴즈 식별자(채점 경로의 `quizId`로 사용)"),
-        field("data.question", JsonFieldType.STRING, "표시 언어로 번역된 문항"),
+        field(
+            "data.question",
+            JsonFieldType.STRING,
+            "표시 언어로 번역된 문항 — 퀴즈 카탈로그에 그 언어 번역이 없으면 영어 폴백(현재 카탈로그는 `ko`·`en`뿐이라 `ja`는 항상 영어)"),
         enumField("data.choices[].key", ChoiceKey.class, "보기 키 — 언어와 무관하게 불변이며 채점은 이 키로 한다"),
-        field("data.choices[].text", JsonFieldType.STRING, "표시 언어로 번역된 보기 텍스트"),
+        field("data.choices[].text", JsonFieldType.STRING, "표시 언어로 번역된 보기 텍스트(문항과 같은 영어 폴백)"),
         errorNull());
   }
 
@@ -69,7 +72,7 @@ public final class QuizDocsFields {
 
   public static final String QUIZ_ANSWER_DESCRIPTION =
       """
-      제출한 보기 키를 저장된 정답과 대조해 즉시 채점한다. 제출 기록·포인트가 없는 무상태 채점이라 멱등하며 무제한 반복할 수 있다.
+      제출한 보기 키를 저장된 정답과 대조해 즉시 채점한다. 같은 퀴즈를 몇 번이든 다시 제출할 수 있고 결과도 매번 같다 — 제출 기록이 남지 않고 포인트도 지급되지 않는다.
 
       **헤더**
 
@@ -80,7 +83,7 @@ public final class QuizDocsFields {
       **응답 주의사항**
 
       - `correctChoice`는 오답(`correct=false`)일 때만 내려간다. 정답이면 값이 null이 아니라 **필드 자체가 생략**된다.
-      - 표시 언어가 호출자에 따라 갈린다 — 게스트는 `en` 고정, 세입자는 `users.lang`(미선택이면 `en`), 임대인은 `ko` 고정.
+      - 표시 언어가 호출자에 따라 갈린다 — 게스트는 `en` 고정, 세입자는 `lang`(미선택이면 `en`), 임대인은 `ko` 고정.
 
       **에러 코드**
 
@@ -129,7 +132,10 @@ public final class QuizDocsFields {
             "data.correctChoice",
             ChoiceKey.class,
             "정답 보기 키 — 오답일 때만 포함되고 정답이면 값이 null이 아니라 필드 자체가 생략된다"),
-        field("data.explanation", JsonFieldType.STRING, "해설(정답·오답 모두, 표시 언어로 번역)"),
+        field(
+            "data.explanation",
+            JsonFieldType.STRING,
+            "해설(정답·오답 모두, 표시 언어로 번역 — 번역이 없는 언어는 영어 폴백이라 `ja`는 항상 영어)"),
         errorNull());
   }
 }
