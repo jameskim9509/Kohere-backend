@@ -382,10 +382,6 @@ public final class DiagnosisDocsFields {
       """
       진단 6단계 중 지정한 단계의 질문 1개와 선택지를 조회한다.
 
-      """
-          + QUESTION_TABLE
-          + """
-
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 비회원은 서버가 순서를 정하는 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
@@ -395,6 +391,12 @@ public final class DiagnosisDocsFields {
       - 다음 `step` 번호는 클라이언트가 정하며 이 조회는 답을 저장하지 않는다.
 
       **응답 주의사항**
+
+      - 단계별로 내려오는 `field`·`select.type`과 선택지는 아래와 같다.
+
+      """
+          + QUESTION_TABLE
+          + """
 
       - `regionRetry`는 v2 흐름 전용 예외질문이라 이 엔드포인트로는 내려오지 않는다.
       - """
@@ -465,17 +467,19 @@ public final class DiagnosisDocsFields {
       """
       현재 단계의 답 1개를 진행 중인 진단에 저장한다.
 
-      | 단계 | `select.type` | 본문 |
-      | --- | --- | --- |
-      | ①②③⑥ 단일 선택 | `SINGLE` | `{ "field": "...", "code": "..." }` |
-      | ④ 주거 조건 | `MULTI` | `{ "field": "conditions", "codes": ["...", "..."] }`(최대 3개·중복 불가) |
-      | ⑤ 월세 범위 | `NUMBER_RANGE` | `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` |
-
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **요청 주의사항**
+
+      - 본문 모양이 단계의 `select.type`에 따라 갈린다.
+
+      | 단계 | `select.type` | 본문 |
+      | --- | --- | --- |
+      | ①②③⑥ 단일 선택 | `SINGLE` | `{ "field": "...", "code": "..." }` |
+      | ④ 주거 조건 | `MULTI` | `{ "field": "conditions", "codes": ["...", "..."] }`(최대 3개·중복 불가) |
+      | ⑤ 월세 범위 | `NUMBER_RANGE` | `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` |
 
       - 해당하는 쪽만 채우고 나머지 필드는 보내지 않는다. 누적 답을 묶어 재전송하지 않는다.
       - 진행 중 진단은 토큰의 사용자로 식별하며 사용자당 1건이다. 진행 중 진단이 없으면 첫 답을 저장할 때 서버가 만든다.
@@ -792,17 +796,6 @@ public final class DiagnosisDocsFields {
       """
       현재 문항의 답 1개를 적용하고 서버가 정한 다음 결과를 결과코드로 받는다.
 
-      | `resultCode` | 의미 | 실리는 필드 |
-      | --- | --- | --- |
-      | `NEXT_QUESTION` | 다음 질문이 남음. ① 지역 0건 예외질문(`field=regionRetry`)도 이 코드다 | `question` |
-      | `COMPLETED` | 마지막 슬롯(⑥ `arcStatus`)까지 답해 서버가 자동 확정 | `diagnosisId` |
-      | `RESTART` | 지역 예외질문에 "예"(`YES`) — 이 진단은 확정되지 않고 끝난다. 이어서 답할 수 없고 `POST /start`로 ① 지역부터 다시 시작한다 | 없음 |
-      | `TERMINATED` | 지역 예외질문에 "아니오"(`NO`) — 진단 종료. 에러가 아니라 정상 결과이며, 확정되지 않아 `diagnosisId`가 없고 그때까지 답한 내용도 다시 조회할 수 없다 | 없음 |
-
-      """
-          + QUESTION_TABLE
-          + """
-
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다. 회원은 이 토큰으로 진행 세션을 찾는다.
@@ -811,8 +804,22 @@ public final class DiagnosisDocsFields {
       **요청 주의사항**
 
       - `step`은 클라이언트가 지정하지 않는다. 서버가 낸 문항의 `field`를 그대로 요청 `field`에 싣는다.
+      - 단계별로 보낼 `field`와 선택지는 아래와 같다.
+
+      """
+          + QUESTION_TABLE
+          + """
 
       **응답 주의사항**
+
+      - `resultCode`가 다음 행동을 정한다.
+
+      | `resultCode` | 의미 | 실리는 필드 |
+      | --- | --- | --- |
+      | `NEXT_QUESTION` | 다음 질문이 남음. ① 지역 0건 예외질문(`field=regionRetry`)도 이 코드다 | `question` |
+      | `COMPLETED` | 마지막 슬롯(⑥ `arcStatus`)까지 답해 서버가 자동 확정 | `diagnosisId` |
+      | `RESTART` | 지역 예외질문에 "예"(`YES`) — 이 진단은 확정되지 않고 끝난다. 이어서 답할 수 없고 `POST /start`로 ① 지역부터 다시 시작한다 | 없음 |
+      | `TERMINATED` | 지역 예외질문에 "아니오"(`NO`) — 진단 종료. 에러가 아니라 정상 결과이며, 확정되지 않아 `diagnosisId`가 없고 그때까지 답한 내용도 다시 조회할 수 없다 | 없음 |
 
       - `COMPLETED`에도 추천 매물은 실리지 않는다. 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
       - 매칭 0건은 이 응답이 아니라 그 추천 응답의 `resultCode=NO_MATCH`로 드러난다.
