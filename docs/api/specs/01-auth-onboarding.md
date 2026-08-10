@@ -103,7 +103,7 @@ provider별로 **자격 필드 하나**를 채우고(Google은 `idToken`, Apple�
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `provider` | string(enum) | 필수 | `APPLE` \| `GOOGLE` 중 하나(누락은 `INVALID_INPUT`, 허용 외 값은 역직렬화 실패로 `MALFORMED_REQUEST`) |
+| `provider` | string(enum) | 필수 | `APPLE` \| `GOOGLE` 중 하나. 누락·빈값·허용 외 값 모두 `INVALID_INPUT`(#151에서 통일 — 요청 DTO가 String으로 받아 서버가 파싱한다) |
 | `idToken` | string | provider별 | **Google 필수**. Google 발급 OIDC ID 토큰. Apple은 사용하지 않음 |
 | `authorizationCode` | string | provider별 | **Apple 필수**. `ASAuthorizationAppleIDCredential.authorizationCode`(UTF-8 디코드한 문자열, 1회용·약 5분). Google은 사용하지 않음 |
 | `email` | string | 선택(최초 로그인 필수) | 이메일 형식. 앱이 네이티브 SDK에서 받은 이메일. **최초 로그인(신규 가입)에서만 필요** — 이때 토큰의 `email` 클레임과 일치해야 하고(불일치 `AUTH_EMAIL_MISMATCH` 422, 토큰·요청 모두 email이 없으면 `AUTH_EMAIL_REQUIRED` 422) provider 진본으로 확정해 `User.email`에 영구 저장한다. 재로그인 요청 값은 무시(저장값 사용, 덮어쓰지 않음) |
@@ -166,7 +166,7 @@ provider별로 **자격 필드 하나**를 채우고(Google은 `idToken`, Apple�
 | status | code | 시점 |
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `provider` 누락(null) (Bean Validation: `@NotNull`) |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치. **`provider`가 허용 외 enum 문자열(`APPLE`/`GOOGLE` 외)이면 역직렬화 단계에서 거부되어 이 코드로 처리**된다 |
+| 400 | `MALFORMED_REQUEST` | 요청 본문을 JSON으로 해석할 수 없는 경우뿐이다 |
 | 400 | `AUTH_MISSING_CREDENTIAL` | provider의 자격 필드 누락/빈값(Google `idToken` 또는 Apple `authorizationCode` 미전송) — application 계층 검증 |
 | 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명/`aud`/`iss`/`exp` 검증 실패, 또는 Apple 교환 실패(`invalid_grant`/`invalid_client` — 만료·재사용 코드, 잘못된 client_secret)와 교환으로 받은 `id_token` 검증 실패. **provider JWKS 조회 실패 등 OIDC 연동 오류도 현재 구현은 이 코드로 통합 처리**한다(아래 노트) |
 | 422 | `AUTH_EMAIL_REQUIRED` | **최초 로그인(신규 가입) 시** 토큰의 `email` 클레임·요청 `email` 어느 쪽에도 이메일이 없음(provider 진본 이메일을 확정할 수 없음). 재로그인은 email 없이도 통과(저장값 사용) |

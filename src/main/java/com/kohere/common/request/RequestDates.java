@@ -18,6 +18,24 @@ public final class RequestDates {
   private RequestDates() {}
 
   /**
+   * {@code YYYY-MM-DD} 문자열을 파싱한다. 값의 의미(과거·미래·다른 날짜와의 관계)는 보지 않는다 — 도메인 규칙이라 응용 계층이 판정한다.
+   *
+   * @param field 클라이언트가 보낸 요청 필드명 — {@code errors[].field}로 나간다
+   * @param value 미전송({@code null})이면 {@code null}을 돌려준다
+   * @throws InvalidInputException 형식이 {@code YYYY-MM-DD}가 아닌 경우
+   */
+  public static LocalDate parse(String field, String value) {
+    if (value == null) {
+      return null;
+    }
+    try {
+      return LocalDate.parse(value);
+    } catch (DateTimeParseException e) {
+      throw new InvalidInputException(field, "validation.dateFormat", value);
+    }
+  }
+
+  /**
    * {@code YYYY-MM-DD} 문자열을 과거 날짜로 파싱한다.
    *
    * @param field 클라이언트가 보낸 요청 필드명 — {@code errors[].field}로 나간다
@@ -28,12 +46,7 @@ public final class RequestDates {
     if (value == null) {
       return null;
     }
-    LocalDate parsed;
-    try {
-      parsed = LocalDate.parse(value);
-    } catch (DateTimeParseException e) {
-      throw new InvalidInputException(field, "validation.dateFormat", value);
-    }
+    LocalDate parsed = parse(field, value);
     if (!parsed.isBefore(LocalDate.now())) {
       throw new InvalidInputException(field, "validation.pastDate", value);
     }

@@ -22,6 +22,7 @@ import com.kohere.booking.domain.TenantOnlyException;
 import com.kohere.booking.presentation.dto.BookingReportRequest;
 import com.kohere.booking.presentation.dto.BookingRequest;
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.RequestDates;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.BookingListingQueryService;
@@ -70,7 +71,8 @@ public class BookingService {
         listingQueryService
             .findPublishedRoomOffer(listingId, request.roomOfferId())
             .orElseThrow(ListingUnavailableException::new);
-    validateMoveInDate(request.moveInDate(), offer.nextAvailableFrom());
+    LocalDate moveInDate = RequestDates.parse("moveInDate", request.moveInDate());
+    validateMoveInDate(moveInDate, offer.nextAvailableFrom());
     if (userBlockService.isBlockedBetween(tenantId, offer.landlordId())) {
       throw new CounterpartBlockedException();
     }
@@ -85,7 +87,7 @@ public class BookingService {
                 .listingId(listingId)
                 .roomOfferId(request.roomOfferId())
                 .landlordId(offer.landlordId())
-                .moveInDate(request.moveInDate())
+                .moveInDate(moveInDate)
                 .contractPeriod(request.contractPeriod())
                 .status(BookingStatus.REQUESTED)
                 .createdAt(Instant.now())

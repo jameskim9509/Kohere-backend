@@ -101,7 +101,7 @@
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
 | `roomOfferId` | string | 필수 | 예약 대상 방 상품 ID(ObjectId hex 문자열). 누락은 `INVALID_INPUT`(400) |
-| `moveInDate` | string(`YYYY-MM-DD`) | 필수 | 타겟 입주일. 날짜 형식(`YYYY-MM-DD`) 위반은 `MALFORMED_REQUEST`(400), 형식은 맞으나 과거/입주 가능일 이전이면 `BOOKING_INVALID_MOVE_IN_DATE`(422) |
+| `moveInDate` | string(`YYYY-MM-DD`) | 필수 | 타겟 입주일. 누락·형식 위반은 `INVALID_INPUT`(400, `errors[]`에 필드 반환), 형식은 맞으나 과거/입주 가능일 이전이면 `BOOKING_INVALID_MOVE_IN_DATE`(422) |
 | `contractPeriod` | integer | 필수 | 계약 개월수(양의 정수, 1 이상). 누락·0·음수는 `INVALID_INPUT`(400), 숫자 아닌 타입은 `MALFORMED_REQUEST`(400) |
 
 #### 성공 Response — 201 Created
@@ -130,8 +130,8 @@
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필수값 누락(`roomOfferId`/`contractPeriod`), `contractPeriod`가 양의 정수 아님(0·음수) |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가 또는 필드 타입 불일치(예: `moveInDate` 날짜 형식 위반) |
+| 400 | `INVALID_INPUT` | 필수값 누락(`roomOfferId`/`contractPeriod`/`moveInDate`), `contractPeriod`가 양의 정수 아님(0·음수), `moveInDate`가 `YYYY-MM-DD` 형식이 아님 |
+| 400 | `MALFORMED_REQUEST` | 요청 본문을 JSON으로 해석할 수 없거나 필드 타입이 맞지 않음 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 | 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아닌 사용자(임대인)의 예약 시도 |

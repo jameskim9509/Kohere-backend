@@ -118,7 +118,7 @@ class AuthServiceTest {
 
     SocialLoginResponse response =
         authService.socialLogin(
-            new SocialLoginRequest(Provider.GOOGLE, "idtok", null, "a@example.com", "Minh Nguyen"));
+            new SocialLoginRequest("GOOGLE", "idtok", null, "a@example.com", "Minh Nguyen"));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("PENDING");
@@ -149,7 +149,7 @@ class AuthServiceTest {
 
     SocialLoginResponse response =
         authService.socialLogin(
-            new SocialLoginRequest(Provider.GOOGLE, "idtok", null, "req@example.com", null));
+            new SocialLoginRequest("GOOGLE", "idtok", null, "req@example.com", null));
 
     assertThat(response.email()).isEqualTo("req@example.com");
     assertThat(response.name()).isNull();
@@ -166,8 +166,7 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.socialLogin(
-                    new SocialLoginRequest(
-                        Provider.GOOGLE, "idtok", null, "other@example.com", "Minh")))
+                    new SocialLoginRequest("GOOGLE", "idtok", null, "other@example.com", "Minh")))
         .isInstanceOf(EmailMismatchException.class);
 
     verify(userAccountService, never()).createPendingUser(any(), any());
@@ -184,7 +183,7 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.socialLogin(
-                    new SocialLoginRequest(Provider.GOOGLE, "idtok", null, null, "Minh")))
+                    new SocialLoginRequest("GOOGLE", "idtok", null, null, "Minh")))
         .isInstanceOf(EmailRequiredException.class);
 
     verify(userAccountService, never()).createPendingUser(any(), any());
@@ -204,7 +203,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null, null, null));
+        authService.socialLogin(new SocialLoginRequest("GOOGLE", "idtok", null, null, null));
 
     assertThat(response.onboardingRequired()).isFalse();
     assertThat(response.status()).isEqualTo("ACTIVE");
@@ -230,7 +229,7 @@ class AuthServiceTest {
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(new SocialLoginRequest(Provider.GOOGLE, "idtok", null, null, null));
+        authService.socialLogin(new SocialLoginRequest("GOOGLE", "idtok", null, null, null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("TERMS_AGREED");
@@ -254,8 +253,7 @@ class AuthServiceTest {
     when(jwtTokenService.onboardingTtlSeconds()).thenReturn(1800L);
 
     SocialLoginResponse response =
-        authService.socialLogin(
-            new SocialLoginRequest(Provider.APPLE, null, "apple-code", null, null));
+        authService.socialLogin(new SocialLoginRequest("APPLE", null, "apple-code", null, null));
 
     assertThat(response.onboardingRequired()).isTrue();
     assertThat(response.status()).isEqualTo("PENDING");
@@ -283,8 +281,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
     SocialLoginResponse response =
-        authService.socialLogin(
-            new SocialLoginRequest(Provider.APPLE, null, "apple-code", null, null));
+        authService.socialLogin(new SocialLoginRequest("APPLE", null, "apple-code", null, null));
 
     assertThat(response.status()).isEqualTo("ACTIVE");
     ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
@@ -308,8 +305,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash(any())).thenReturn("hash");
 
     SocialLoginResponse response =
-        authService.socialLogin(
-            new SocialLoginRequest(Provider.APPLE, null, "apple-code", null, null));
+        authService.socialLogin(new SocialLoginRequest("APPLE", null, "apple-code", null, null));
 
     // Apple 재로그인은 refresh token·name을 안 주므로, name은 기존 SocialAccount 값을 보존하고
     // appleRefreshToken도 기존 값을 유지한 채 스냅샷을 upsert한다(ADR-0031 #4, #192).
@@ -324,9 +320,7 @@ class AuthServiceTest {
   @Test
   void socialLogin_apple_missingAuthorizationCode_throwsMissingCredential() {
     assertThatThrownBy(
-            () ->
-                authService.socialLogin(
-                    new SocialLoginRequest(Provider.APPLE, null, null, null, null)))
+            () -> authService.socialLogin(new SocialLoginRequest("APPLE", null, null, null, null)))
         .isInstanceOf(MissingCredentialException.class);
 
     verify(appleAuthClient, never()).exchangeAuthorizationCode(any());
@@ -335,9 +329,7 @@ class AuthServiceTest {
   @Test
   void socialLogin_google_blankIdToken_throwsMissingCredential() {
     assertThatThrownBy(
-            () ->
-                authService.socialLogin(
-                    new SocialLoginRequest(Provider.GOOGLE, "  ", null, null, null)))
+            () -> authService.socialLogin(new SocialLoginRequest("GOOGLE", "  ", null, null, null)))
         .isInstanceOf(MissingCredentialException.class);
 
     verify(oidcTokenVerifier, never()).verify(any(), any());
