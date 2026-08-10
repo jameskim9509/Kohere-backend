@@ -288,7 +288,7 @@ public final class DiagnosisDocsFields {
             "매물 식별자(ObjectId hex 문자열) — `markers[]`와 이 값으로 연결한다"),
         optField("data.content[].title", JsonFieldType.STRING, "매물 제목(사용자 언어로 선택된 문자열)"),
         optCodeField(
-            "data.content[].type.code", LISTING_TYPE_CODES, "주거 유형의 언어 무관 서버 코드. 필터 재요청·내부 비교에 쓴다"),
+            "data.content[].type.code", LISTING_TYPE_CODES, "주거 유형의 언어 무관 서버 코드. 필터 재요청에 쓴다"),
         optField("data.content[].type.label", JsonFieldType.STRING, "주거 유형 표시명(사용자 언어). 화면에 쓴다"),
         optField("data.content[].monthlyRentMin", JsonFieldType.NUMBER, "매물 월세 범위 하한(KRW 정수)"),
         optField("data.content[].monthlyRentMax", JsonFieldType.NUMBER, "매물 월세 범위 상한(KRW 정수)"),

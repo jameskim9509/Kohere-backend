@@ -515,7 +515,7 @@ public final class AuthDocsFields {
         codeField(
             "country",
             COUNTRY_CODES,
-            "국적 ISO 3166-1 alpha-2 코드(필수). 값 목록을 내려주는 API가 없어 여기 나열한 15개가 지원 코드의 전부다(countries 참조 시드)"),
+            "국적 ISO 3166-1 alpha-2 코드(필수). 값 목록을 내려주는 API가 없어 여기 나열한 15개가 지원 코드의 전부다"),
         optEnumField(
             "occupation", Occupation.class, "직업(선택 — 미전송·null이면 저장하지 않고 프로필 응답에서 필드 자체가 생략된다)"),
         enumField("visaType", VisaType.class, "비자정보(필수). API는 상수명, DB 저장은 표시 라벨"),
@@ -572,7 +572,7 @@ public final class AuthDocsFields {
         field(
             "businessRegistrationNumber",
             JsonFieldType.STRING,
-            "사업자등록번호(필수) — 숫자 10자리 또는 하이픈 형식(123-45-67890) 둘 다 허용한다. 어댑터가 숫자만 정규화해 대조하므로 두 형식이 동일하게 처리된다"));
+            "사업자등록번호(필수) — 숫자 10자리 또는 하이픈 형식(123-45-67890) 둘 다 허용하며 동일하게 처리된다"));
   }
 
   public static List<FieldDescriptor> businessVerifyResponseFields() {

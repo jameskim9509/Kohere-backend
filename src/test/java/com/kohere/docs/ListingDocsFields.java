@@ -493,7 +493,7 @@ public final class ListingDocsFields {
         field(
             prefix + ".type.code",
             JsonFieldType.STRING,
-            "매물 유형의 서버 코드. 필터 요청과 내부 비교에는 이 값을 사용. 예: GOSHIWON"));
+            "매물 유형의 서버 코드. 필터 요청에 이 값을 사용. 예: GOSHIWON"));
     fields.add(
         field(
             prefix + ".type.label",
@@ -530,8 +530,7 @@ public final class ListingDocsFields {
             JsonFieldType.NUMBER,
             "계약기간 라벨의 최대 개월 수. 예: 최대 12개월"));
     fields.add(
-        field(
-            prefix + ".genderPolicy.code", JsonFieldType.STRING, "성별 제한의 서버 코드. 필터 요청과 내부 비교에 사용"));
+        field(prefix + ".genderPolicy.code", JsonFieldType.STRING, "성별 제한의 서버 코드. 필터 요청에 사용"));
     fields.add(
         field(prefix + ".genderPolicy.label", JsonFieldType.STRING, "성별 제한 배지에 표시할 현재 언어의 문구"));
     fields.add(field(prefix + ".location.lat", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 위도"));
@@ -728,10 +727,7 @@ public final class ListingDocsFields {
   private static void addCodeLabelArrayFields(
       List<FieldDescriptor> fields, String arrayPath, String subject) {
     fields.add(
-        field(
-            arrayPath + "[].code",
-            JsonFieldType.STRING,
-            subject + " 서버 코드. 필터 요청과 내부 비교에는 이 값을 사용"));
+        field(arrayPath + "[].code", JsonFieldType.STRING, subject + " 서버 코드. 필터 요청에 이 값을 사용"));
     fields.add(
         field(
             arrayPath + "[].label",

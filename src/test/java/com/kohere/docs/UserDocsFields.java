@@ -60,7 +60,7 @@ public final class UserDocsFields {
 
   /** 국적 코드 설명 — 요청·응답 양쪽에서 같은 문구를 쓴다. */
   private static final String COUNTRY_NOTE =
-      "국적 ISO 3166-1 alpha-2 코드. 값 목록을 내려주는 API가 없어 여기 나열한 15개가 지원 코드의 전부다(countries 참조 시드)";
+      "국적 ISO 3166-1 alpha-2 코드. 값 목록을 내려주는 API가 없어 여기 나열한 15개가 지원 코드의 전부다";
 
   // ---- GET /api/v1/users/me 오퍼레이션 문구(두 파일이 공유) ----
 
@@ -122,7 +122,7 @@ public final class UserDocsFields {
       | status | `error.code` | 발생 조건 |
       |---|---|---|
       | 400 | `INVALID_INPUT` | `birthDate`가 미래 날짜·`country` 미존재·`lang` 미지원 코드 |
-      | 400 | `MALFORMED_REQUEST` | `gender`·`occupation`·`visaType` 허용 외 문자열과 `birthDate` 형식 위반 — 역직렬화 단계에서 걸린다 |
+      | 400 | `MALFORMED_REQUEST` | `gender`·`occupation`·`visaType` 허용 외 문자열과 `birthDate` 형식 위반 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 토큰으로 접근 |
@@ -293,7 +293,7 @@ public final class UserDocsFields {
         optCodeField(
             "country",
             COUNTRY_CODES,
-            "국적 ISO 3166-1 alpha-2 코드(세입자만·선택). 값 목록을 내려주는 API가 없어 여기 나열한 15개가 전부다(countries 참조 시드)"),
+            "국적 ISO 3166-1 alpha-2 코드(세입자만·선택). 값 목록을 내려주는 API가 없어 여기 나열한 15개가 전부다"),
         optEnumField("occupation", Occupation.class, "직업(세입자만·선택)"),
         optEnumField("visaType", VisaType.class, "비자정보(세입자만·선택)"),
         optCodeField(
