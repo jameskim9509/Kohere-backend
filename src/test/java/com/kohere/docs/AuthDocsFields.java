@@ -56,7 +56,7 @@ public final class AuthDocsFields {
       **응답 주의사항**
 
       - 응답 `status`가 클라이언트 재개 지점을 정한다 — `PENDING`은 약관 동의, `TERMS_AGREED`는 온보딩, `ACTIVE`는 홈이다.
-      - 온보딩 미완료 응답은 `refreshToken`이 null이고 `accessToken`이 온보딩 전용 스코프(`expiresIn` 1800)다. `ACTIVE`는 정식 access+refresh(3600)를 받는다.
+      - 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 응답은 `refreshToken`이 null이고 `accessToken`으로 쓸 수 있는 API가 온보딩 단계로 제한된다(`expiresIn` 1800). `ACTIVE`는 access+refresh 둘 다 받는다(3600).
 
       **에러 코드**
 
@@ -88,7 +88,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 온보딩 토큰(소셜 로그인 직후 발급).
+      - `Authorization: Bearer <accessToken>` — 상태가 `PENDING`·`TERMS_AGREED`인 회원의 토큰(소셜 로그인 직후 발급).
 
       **에러 코드**
 
@@ -117,7 +117,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **요청 주의사항**
 
@@ -131,7 +131,7 @@ public final class AuthDocsFields {
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
-      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 토큰(`PENDING`·`TERMS_AGREED`)으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 토큰으로 호출 |
       | 429 | `TOO_MANY_REQUESTS` | 재발송 간격을 채우지 않은 재요청 |
       | 502 | `UPSTREAM_ERROR` | 메일 provider 장애·타임아웃으로 발송 실패 |
       """;
@@ -152,7 +152,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **에러 코드**
 
@@ -162,7 +162,7 @@ public final class AuthDocsFields {
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
-      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 토큰(`PENDING`·`TERMS_AGREED`)으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 토큰으로 호출 |
       | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 챌린지 부재·만료·코드 불일치 — 어느 쪽인지 구분해 주지 않는다 |
       | 429 | `TOO_MANY_REQUESTS` | 코드 불일치가 시도 상한까지 누적돼 잠김 |
       """;
@@ -179,11 +179,11 @@ public final class AuthDocsFields {
 
   public static final String ONBOARDING_DESCRIPTION =
       """
-      세입자 필수 프로필을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고, 닉네임 배정·정식 토큰 발급까지 한 번에 끝낸다.
+      세입자 필수 프로필을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고, 닉네임 배정·access·refresh 토큰 발급까지 한 번에 끝낸다.
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 온보딩 토큰(소셜 로그인 직후 발급). 상태가 `TERMS_AGREED`여야 한다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `TERMS_AGREED`인 회원의 토큰.
 
       **요청 주의사항**
 
@@ -251,7 +251,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **응답 주의사항**
 
@@ -282,7 +282,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 온보딩 토큰·정식 토큰 모두 허용(온보딩과 정식 회원의 프로필 연락처 변경이 같은 엔드포인트를 쓰기 때문이다).
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 온보딩 중과 온보딩 후 프로필 연락처 변경이 같은 엔드포인트를 쓰기 때문이다.
       - 약관 동의(`TERMS_AGREED`)가 선행돼야 한다.
 
       **요청 주의사항**
@@ -318,7 +318,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 온보딩 토큰·정식 토큰 모두 허용.
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`).
 
       **에러 코드**
 
@@ -347,7 +347,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 임대인 전용이다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 임대인 전용이다.
 
       **요청 주의사항**
 
@@ -361,7 +361,7 @@ public final class AuthDocsFields {
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
-      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 토큰(`PENDING`·`TERMS_AGREED`)으로 호출 — 보안 필터가 거른다 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 토큰으로 호출 — 보안 필터가 거른다 |
       | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 정식 사용자의 요청 |
       | 422 | `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED` | 외부 registry 조회 결과가 미등록·휴폐업·진위 실패 |
       | 502 | `UPSTREAM_ERROR` | 외부 검증 API 장애·타임아웃 |
@@ -381,11 +381,11 @@ public final class AuthDocsFields {
 
   public static final String LANDLORD_ONBOARDING_DESCRIPTION =
       """
-      연락처·생년월일을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고 `userType`을 `LANDLORD`로 확정한 뒤 정식 토큰을 발급한다.
+      연락처·생년월일을 제출해 `TERMS_AGREED`를 `ACTIVE`로 전이하고 `userType`을 `LANDLORD`로 확정한 뒤 access·refresh 토큰을 발급한다.
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 온보딩 토큰(소셜 로그인 직후 발급). 상태가 `TERMS_AGREED`여야 한다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `TERMS_AGREED`인 회원의 토큰.
 
       **요청 주의사항**
 
@@ -457,7 +457,10 @@ public final class AuthDocsFields {
             JsonFieldType.STRING,
             "사용자 이름(단일 name) — 모든 분기에서 프리필용 반환. 아직 캡처된 이름이 없으면 null이다"),
         codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"),
-        field("data.accessToken", JsonFieldType.STRING, "access 토큰(JWT). 온보딩 미완료면 온보딩 전용 스코프다"),
+        field(
+            "data.accessToken",
+            JsonFieldType.STRING,
+            "access 토큰(JWT). 온보딩 미완료면 온보딩 단계 전용이라 쓸 수 있는 API가 제한된다"),
         optField(
             "data.refreshToken", JsonFieldType.STRING, "refresh 토큰(불투명). 온보딩 미완료 응답에서는 null이다"),
         field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(온보딩 1800 / 정식 3600)"),

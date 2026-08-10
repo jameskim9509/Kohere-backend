@@ -167,7 +167,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **응답 주의사항**
 
@@ -193,7 +193,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **응답 주의사항**
 
@@ -219,7 +219,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **응답 주의사항**
 
@@ -245,7 +245,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **응답 주의사항**
 

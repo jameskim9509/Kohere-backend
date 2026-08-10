@@ -154,7 +154,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 비회원은 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 비회원은 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
 
       **요청 주의사항**
 
@@ -201,7 +201,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 본인 소유 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 본인 소유 진단만 조회된다.
       - 게스트가 v2로 만든 진단은 신원 종류가 달라 회원 토큰으로도 본인 소유가 아니다.
 
       **에러 코드**
@@ -388,7 +388,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 비회원은 서버가 순서를 정하는 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 비회원은 서버가 순서를 정하는 v2 흐름(`POST /api/v2/diagnoses/start`)을 쓴다.
 
       **요청 주의사항**
 
@@ -473,7 +473,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **요청 주의사항**
 
@@ -540,7 +540,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 토큰의 사용자 본인 이력만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 토큰의 사용자 본인 이력만 조회된다.
 
       **응답 주의사항**
 
@@ -584,7 +584,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 토큰의 사용자 본인 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 토큰의 사용자 본인 진단만 조회된다.
 
       **응답 주의사항**
 
@@ -659,7 +659,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 본인 소유 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 본인 소유 진단만 조회된다.
       - 게스트의 추천 조회는 v2-3(`GET /api/v2/diagnoses/{diagnosisId}/recommendations`)이 담당한다.
 
       **응답 주의사항**

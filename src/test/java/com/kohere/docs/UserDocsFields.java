@@ -72,7 +72,7 @@ public final class UserDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **응답 주의사항**
 
@@ -106,7 +106,7 @@ public final class UserDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **요청 주의사항**
 
@@ -146,7 +146,7 @@ public final class UserDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 온보딩 토큰·정식 토큰 모두 허용.
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`).
       - 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 사용자도 탈퇴할 수 있다 — 온보딩 중단 정리 목적이라 403을 두지 않았다.
 
       **응답 주의사항**
@@ -180,7 +180,7 @@ public final class UserDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **에러 코드**
 
@@ -207,7 +207,7 @@ public final class UserDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
       **에러 코드**
 
@@ -315,7 +315,7 @@ public final class UserDocsFields {
     descriptors.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     descriptors.addAll(profileFields("data.user."));
     descriptors.add(codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"));
-    descriptors.add(field("data.accessToken", JsonFieldType.STRING, "정식 access 토큰(JWT)"));
+    descriptors.add(field("data.accessToken", JsonFieldType.STRING, "access 토큰(JWT)"));
     descriptors.add(field("data.refreshToken", JsonFieldType.STRING, "정식 refresh 토큰(불투명)"));
     descriptors.add(field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"));
     descriptors.add(errorNull());

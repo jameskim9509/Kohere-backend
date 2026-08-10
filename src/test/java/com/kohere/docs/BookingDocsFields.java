@@ -52,7 +52,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). **세입자**(`userType=TENANT`) 전용이다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자**(`userType=TENANT`) 전용이다.
 
       **응답 주의사항**
 
@@ -132,7 +132,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 세입자·임대인 모두 유효한 요청이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 세입자·임대인 모두 유효한 요청이라 역할 403은 없다.
 
       **요청 주의사항**
 
@@ -200,7 +200,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 세입자·임대인 모두 유효한 요청이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 세입자·임대인 모두 유효한 요청이라 역할 403은 없다.
 
       **응답 주의사항**
 
@@ -288,7 +288,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 해당 예약의 참여자(세입자 또는 임대인)만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 해당 예약의 참여자(세입자 또는 임대인)만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
 
       **요청 주의사항**
 
@@ -329,7 +329,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
 
       **요청 주의사항**
 
@@ -375,7 +375,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
 
       **요청 주의사항**
 
@@ -447,7 +447,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 정식 토큰(온보딩을 마친 `ACTIVE` 회원). 역할 분기가 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 역할 분기가 없다.
 
       **요청 주의사항**
 
