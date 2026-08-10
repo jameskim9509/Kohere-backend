@@ -67,9 +67,7 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e) {
     List<FieldErrorDetail> details =
-        e.getBindingResult().getFieldErrors().stream()
-            .map(GlobalExceptionHandler::toFieldErrorDetail)
-            .toList();
+        e.getBindingResult().getFieldErrors().stream().map(this::toFieldErrorDetail).toList();
     ErrorCode ec = ErrorCode.INVALID_INPUT;
     AccessLogContext.errorCode(ec.getCode());
     return ResponseEntity.badRequest()
@@ -113,7 +111,16 @@ public class GlobalExceptionHandler {
     return messageSource.getMessage(ec.getCode(), null, fallback, LocaleContextHolder.getLocale());
   }
 
-  private static FieldErrorDetail toFieldErrorDetail(FieldError fe) {
-    return new FieldErrorDetail(fe.getField(), fe.getDefaultMessage());
+  /**
+   * {@code errors[].reason}도 {@code message}와 같이 요청 locale로 번역한다(ADR-0030). {@link FieldError}는
+   * {@code MessageSourceResolvable}이라 {@code NotBlank.<객체>.<필드>} → {@code NotBlank.<필드>} → {@code
+   * NotBlank} 순으로 번들 키를 찾고, 없으면 제약의 기본 메시지로 폴백한다.
+   *
+   * <p>번들 키를 두지 않으면 Bean Validation의 영문 기본 문구(<i>must not be blank</i>)나 바인딩 실패의 내부 문구(<i>Failed to
+   * convert property value of type…</i>)가 그대로 응답에 나간다 — 후자는 사용자에게 보여줄 수 없는 구현 세부다(#151).
+   */
+  private FieldErrorDetail toFieldErrorDetail(FieldError fe) {
+    return new FieldErrorDetail(
+        fe.getField(), messageSource.getMessage(fe, LocaleContextHolder.getLocale()));
   }
 }
