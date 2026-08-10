@@ -49,6 +49,21 @@ public class GlobalExceptionHandler {
         .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, e.getMessage())));
   }
 
+  /**
+   * 필드를 특정한 {@code InvalidInputException}은 Bean Validation 위반과 같은 모양으로 돌려준다 — {@code
+   * error.message}가 일반 문구로 덮이는 구조라, 어느 필드가 왜 거절됐는지 전달할 수 있는 자리는 {@code errors[]}뿐이다(#151). 필드를 특정하지
+   * 않았으면 빈 배열이라 {@link #handleBusiness}와 결과가 같다.
+   */
+  @ExceptionHandler(InvalidInputException.class)
+  public ResponseEntity<ApiResponse<Void>> handleInvalidInput(InvalidInputException e) {
+    ErrorCode ec = e.getErrorCode();
+    AccessLogContext.errorCode(ec.getCode());
+    return ResponseEntity.status(ec.getHttpStatus())
+        .body(
+            ApiResponse.error(
+                ec.getCode(), resolveMessage(ec, e.getMessage()), e.getFieldErrors()));
+  }
+
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e) {
     List<FieldErrorDetail> details =
