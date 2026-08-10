@@ -207,9 +207,24 @@ docker compose up -d mysql mongo redis mailhog
 ```
 
 - Swagger UI: <http://localhost:8080/swagger-ui/index.html>
-- REST Docs: <http://localhost:8080/docs/index.html>
 
 > 배포 이미지(`bootJar`)에는 자동 포함됩니다. `clean` 후에는 `prepareDevStatic`를 다시 실행하세요.
+
+Swagger UI는 **소유 모듈 기준 7개 그룹**으로 나뉩니다(표시 순서 = [swagger-ui-initializer.js](src/main/resources/swagger-ui-initializer.js)의 `TAG_ORDER`, 상단 검색창으로 필터 가능):
+
+| 태그 | 범위 | 스펙 |
+| --- | --- | --- |
+| `Auth` | 소셜 로그인 · 약관 · 온보딩 · 연락처/사업자 검증 · 토큰 재발급 | [01](docs/api/specs/01-auth-onboarding.md) |
+| `Users` | 내 프로필 조회·수정·탈퇴 · 차단 목록 | [01](docs/api/specs/01-auth-onboarding.md) |
+| `Diagnosis` | 5단계 맞춤 진단(v1 회원 · v2 게스트 허용)과 추천 | [02](docs/api/specs/02-diagnosis-recommendation.md) |
+| `Bookings` | 매물 신청 생성·조회·삭제·차단·신고 | [04](docs/api/specs/04-booking-inquiry-chat.md) |
+| `Quiz` | 학습 퀴즈 조회·채점 | [06](docs/api/specs/06-gamification.md) |
+| `LifeTips` | 주제별 생활 팁 | [08](docs/api/specs/08-life-tips.md) |
+| `Listings` | 매물 탐색·지도·검색·찜·최근 본 매물 | [03](docs/api/specs/03-listings-favorites.md) |
+
+> 귀속 기준은 경로가 아니라 **소유 모듈**입니다 — `/users/me/favorites`는 listing 모듈 소유라 `Listings`에 있습니다.
+
+문서 테스트 작성 규약과 생성기 한계는 [ADR-0017](docs/adr/0017-openapi-swagger-ui-from-restdocs.md) 「문서 작성 규약」을 따릅니다. `./gradlew build`가 `verifyOpenApiSpec`으로 태그·문구·operationId 규약을 검증합니다.
 
 ### 4. 인증·온보딩 수동 테스트 (`.http`)
 

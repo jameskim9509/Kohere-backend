@@ -43,6 +43,24 @@
 - **회귀 검증** — AC 단위 흐름을 **깊게** 단정한다(상태코드·공통 래퍼 `error.code`·`data` 값·교차 단계 상태).
 - **API 문서** — 같은 통합 테스트이되 단정은 **얕게** 두고 REST Docs로 요청/응답 스니펫을 생성한다([ADR-0007](../adr/0007-api-docs-spring-rest-docs.md)).
 
+#### 문서 테스트(`*DocsTest`) 작성 규약
+
+`com.kohere.docs`의 공용 헬퍼(`ApiDocsTags`·`ApiDocsFields`·`ApiDocsParams`·`ApiDocsErrors`·`DocsTokens`)를 쓴다. 로컬에 `field`/`errorFields` 같은 헬퍼를 다시 만들지 않는다 — 파일마다 문구가 갈리면 같은 공통 래퍼가 Swagger에서 여러 갈래로 보인다.
+
+생성기가 같은 `(path, method)` 스니펫을 오퍼레이션 하나로 병합하므로 아래를 지킨다(상세·근거는 [ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md) 「문서 작성 규약」):
+
+- 모든 `document()`에 **태그와 오퍼레이션 상수**(summary·description)를 지정한다. 성공·에러 스니펫이 같은 문자열을 쓴다.
+- 같은 `(path, method, status)`의 스니펫은 **같은 필드 헬퍼**를 호출한다. 파일이 달라도 마찬가지다.
+- 케이스 구분은 summary가 아니라 **identifier**로 한다. identifier가 Swagger Examples 드롭다운의 항목명이 된다.
+
+**리뷰 체크리스트** — `verifyOpenApiSpec`이 자동으로 잡지 못해 사람이 봐야 하는 것:
+
+- description에 「null」을 언급했는데 그 필드가 `optional()`이 아닌가?
+- description에 UPPER_SNAKE 값을 나열했는데 `enumField`/`codeField`를 안 썼는가?
+- 배열 필드에 스칼라 `codeField`를 썼는가? (테스트는 통과하고 문서만 틀린다)
+- 필드를 `optional`로 낮추면서 그 필드가 없어야 하는 케이스에 `doesNotExist()` 단정을 빠뜨렸는가?
+- 에러 스니펫이 불필요한 요청 본문을 보내는가? (필터 단계 401·403과 `MALFORMED_REQUEST`는 본문 없이)
+
 ### 3-5. 모듈 경계
 
 `ApplicationModules.verify()`로 순환 의존·내부 패키지 접근·허용 의존 위반을 빌드 시점에 잡는다. 새 모듈/의존을 추가하면 반드시 통과해야 한다.
