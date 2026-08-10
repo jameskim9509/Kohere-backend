@@ -144,9 +144,8 @@ openapi3 {
   description = '''\
 인증: `Authorization: Bearer <accessToken>`
 
-- 케이스별 응답은 각 status 의 **Examples 드롭다운**에서 스니펫 이름으로 고른다.
-- 역할별로 응답이 갈리는 엔드포인트의 Schema 탭은 **모든 역할의 합집합**이다 — 한 응답에 전부 나오지 않는다.
-- 발생 가능한 `error.code` 는 각 오퍼레이션 설명 마지막 줄에 있다.
+- 케이스별 응답은 각 status 의 **Examples 드롭다운**에서 확인한다.
+- 하나의 엔드포인트가 Schema를 공유하므로 역할별로 요청·응답이 갈릴경우 대상 필드는 schema description을 참고한다.
 '''
   // 태그 설명(tagDescriptionsPropertiesFile)은 쓰지 않는다 — 테스트가 태그 「이름」만 정할 수 있고
   // 설명은 빌드 시점 별도 파일로만 넣을 수 있어, 문서의 단일 소스가 테스트라는 원칙(ADR-0007)에서 벗어난다.

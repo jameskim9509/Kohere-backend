@@ -47,8 +47,10 @@ public final class QuizDocsFields {
 
       **에러 코드**
 
-      - 401 `TOKEN_EXPIRED` — 만료된 access token으로 호출
-      - 404 `QUIZ_NOT_FOUND` — 활성 퀴즈 풀이 비어 사용 가능한 퀴즈가 없음
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 404 | `QUIZ_NOT_FOUND` | 활성 퀴즈 풀이 비어 사용 가능한 퀴즈가 없음 |
       """;
 
   public static final String[] QUIZ_RANDOM_401 = {"TOKEN_EXPIRED"};
@@ -87,10 +89,12 @@ public final class QuizDocsFields {
 
       **에러 코드**
 
-      - 400 `INVALID_INPUT` — `selectedChoice`가 `A`~`D`가 아니거나 누락·빈 값
-      - 400 `MALFORMED_REQUEST` — 요청 본문 JSON을 해석할 수 없음
-      - 401 `TOKEN_EXPIRED` — 만료된 access token으로 호출
-      - 404 `QUIZ_NOT_FOUND` — 경로의 `quizId`에 해당하는 퀴즈가 없음
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `selectedChoice`가 `A`~`D`가 아니거나 누락·빈 값 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 404 | `QUIZ_NOT_FOUND` | 경로의 `quizId`에 해당하는 퀴즈가 없음 |
       """;
 
   public static final String[] QUIZ_ANSWER_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};

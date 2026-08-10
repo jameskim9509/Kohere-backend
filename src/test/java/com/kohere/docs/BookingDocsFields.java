@@ -50,15 +50,28 @@ public final class BookingDocsFields {
       """
       방 상품(roomOffer)에 타겟 입주일과 계약 개월수로 예약(신청)을 생성한다.
 
-      인증: 필수. 정식(`ACTIVE`) **세입자**(`userType=TENANT`) 전용이다. 임대인 등 비세입자가 호출하면 403 `FORBIDDEN`이며, 온보딩 미완료는 403 `AUTH_ONBOARDING_REQUIRED`다.
+      인증: 필수. 정식(`ACTIVE`) **세입자**(`userType=TENANT`) 전용이다.
 
       - 신청 직후 `status`는 `REQUESTED` 고정이다. MVP에서는 `REQUESTED`만 반환된다 — 수락·거절·취소 엔드포인트가 없어 `ACCEPTED`·`REJECTED`·`CANCELED`로 전이할 경로가 아직 없다.
-      - 동일 세입자·동일 방 상품(`roomOfferId`)에 예약은 1건만 허용된다(DB UNIQUE). 재신청은 409 `BOOKING_ALREADY_EXISTS`.
-      - 요청자와 매물 소유자 사이에 **어느 방향이든** 차단 관계가 있으면 403 `FORBIDDEN`이다(블랙홀 예약 방지 — 저장돼도 상대 목록에서 차단 필터에 걸려 영영 보이지 않기 때문).
-      - `moveInDate`는 오늘 이후이고 방 상품의 입주 가능일 이후여야 한다. 위반은 422 `BOOKING_INVALID_MOVE_IN_DATE`, 날짜 형식 위반은 400 `MALFORMED_REQUEST`다.
+      - 동일 세입자·동일 방 상품(`roomOfferId`)에 예약은 1건만 허용된다(DB UNIQUE).
+      - 요청자와 매물 소유자 사이에 **어느 방향이든** 차단 관계가 있으면 예약을 만들 수 없다(블랙홀 예약 방지 — 저장돼도 상대 목록에서 차단 필터에 걸려 영영 보이지 않기 때문).
+      - `moveInDate`는 오늘 이후이고 방 상품의 입주 가능일 이후여야 한다.
       - 성공 응답에는 `Location: /api/v1/bookings/{bookingId}` 헤더가 붙는다. 응답 본문은 예약 코어 내역만 담고 매물 요약·가격·성명은 상세 조회에서 조인해 내려준다.
 
-      에러 코드 — 400 `INVALID_INPUT`·`MALFORMED_REQUEST` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `FORBIDDEN`·`AUTH_ONBOARDING_REQUIRED` / 404 `LISTING_NOT_FOUND` / 409 `BOOKING_ALREADY_EXISTS` / 422 `BOOKING_INVALID_MOVE_IN_DATE`
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `roomOfferId` 누락·공백, `contractPeriod` 누락·0·음수 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON 파싱 불가 또는 `moveInDate` 날짜 형식 위반 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인 등 비세입자(`userType≠TENANT`)가 호출 |
+      | 403 | `FORBIDDEN` | 요청자와 매물 소유자 사이에 어느 방향이든 차단 관계가 있음 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 404 | `LISTING_NOT_FOUND` | 경로의 매물 또는 `roomOfferId` 방 상품이 없거나 비공개·삭제됨 |
+      | 409 | `BOOKING_ALREADY_EXISTS` | 동일 세입자가 동일 방 상품(`roomOfferId`)에 재신청 |
+      | 422 | `BOOKING_INVALID_MOVE_IN_DATE` | `moveInDate`가 오늘 이전이거나 방 상품의 입주 가능일 이전 |
       """;
 
   public static final String[] CREATE_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -126,7 +139,14 @@ public final class BookingDocsFields {
       - 매물·방 상품이 삭제·비공개면 조인 대상이 사라져 `title`·`thumbnailUrl`·`roomOfferName`이 null이 된다(예약 코어 내역은 그대로 유지된다).
       - 결과가 없으면 `content: []` + `page.totalElements: 0`이다(에러 아님).
 
-      에러 코드 — 400 `INVALID_INPUT` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED`
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | `page`·`size`가 정수가 아님. 값 범위는 에러가 아니다 — 음수 `page`는 0으로, 초과 `size`는 100으로 보정된다 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
 
   public static ParameterDescriptor[] listQueryParameters() {
@@ -174,9 +194,15 @@ public final class BookingDocsFields {
       - 총 금액 `totalAmount = deposit + monthlyRent × contractPeriod`(관리비 제외)이며 두 분기 모두 같은 정의다.
       - 매물·방 상품이 삭제·비공개면 조인 대상이 사라져 `title`·`thumbnailUrl`·`address`·`roomOfferName`이 null이 되고 `deposit`·`totalAmount`는 **0**이 된다(null이 아니다).
       - 신청자 PII(이메일·성별·국적)는 임대인에게 **마스킹 없이 평문**으로 내려간다. 신청자가 탈퇴하면 익명화로 값이 null이 될 수 있다.
-      - 예약이 없거나 조회 권한 밖(세입자: 타인 예약 / 임대인: 내 소유 매물 신청 아님)이거나, 요청자가 이미 삭제했거나 상대를 차단한 예약이면 전부 404 `BOOKING_NOT_FOUND`로 통일한다(존재 비노출).
 
-      에러 코드 — 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED` / 404 `BOOKING_NOT_FOUND`
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 404 | `BOOKING_NOT_FOUND` | 예약이 없거나 조회 권한 밖(세입자: 타인 예약 / 임대인: 내 소유 매물 신청 아님)이거나, 요청자가 이미 삭제했거나 상대를 차단한 예약 — 전부 404로 통일한다(존재 비노출) |
       """;
 
   public static final String[] DETAIL_404 = {"BOOKING_NOT_FOUND"};
@@ -252,9 +278,16 @@ public final class BookingDocsFields {
       - 차단(`POST .../block`)과 무관하다. 삭제해도 상대는 여전히 새 신청을 보낼 수 있다.
       - 삭제해도 신고(`POST .../report`)는 계속 가능하다(증거 보존).
       - 성공 응답은 본문이 없다(204). 공통 래퍼도 없다.
-      - 참여자가 아니거나 없는 예약이면 403이 아니라 404 `BOOKING_NOT_FOUND`다(존재 비노출).
 
-      에러 코드 — 400 `MALFORMED_REQUEST` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED` / 404 `BOOKING_NOT_FOUND`
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | `bookingId`가 숫자가 아님(경로 변수 타입 불일치) |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 403이 아니라 404로 통일한다(존재 비노출) |
       """;
 
   public static final String[] DELETE_404 = {"BOOKING_NOT_FOUND"};
@@ -281,9 +314,17 @@ public final class BookingDocsFields {
       - 멱등이다 — 이미 차단한 상대를 다시 차단해도 409가 아니라 204다.
       - 삭제(`DELETE /api/v1/bookings/{bookingId}`)와 독립이다. 차단만 했다면 해제 시 그 예약들이 다시 보이고, 삭제까지 했다면 해제해도 계속 숨겨진다.
       - 차단 목록 조회·해제는 예약과 무관해 `GET`·`DELETE /api/v1/users/me/blocks`(Users)에 있다.
-      - 성공 응답은 본문이 없다(204). 참여자가 아니거나 없는 예약이면 404 `BOOKING_NOT_FOUND`다(존재 비노출).
+      - 성공 응답은 본문이 없다(204).
 
-      에러 코드 — 400 `MALFORMED_REQUEST` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED` / 404 `BOOKING_NOT_FOUND`
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | `bookingId`가 숫자가 아님(경로 변수 타입 불일치) |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 404로 통일한다(존재 비노출) |
       """;
 
   public static ParameterDescriptor[] blockPathParameters() {
@@ -303,14 +344,22 @@ public final class BookingDocsFields {
       인증: 필수. 정식(`ACTIVE`) 회원 중 해당 예약의 참여자만 호출할 수 있다. 신고자는 access 토큰으로 식별하며 본문에 넣지 않는다. 세입자·임대인 공통이라 역할 403은 없다.
 
       - `reason`·`detail` 모두 **선택**이다. 본문 전체를 `{}`로 보내도 접수된다 — 사유를 고르기 전에 이탈해도 접수 사실은 남아야 하기 때문이다. 사유 없이 신고하면 응답 `data.reason`이 null이다.
-      - `reason`은 신고 사유 카탈로그(`booking_report_reasons`) 테이블의 **활성 `code`** 문자열이다. **행으로 늘어날 수 있으니 클라이언트에 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`로 받아 쓴다.** 미정의·비활성 코드는 400 `INVALID_INPUT`이다.
+      - `reason`은 신고 사유 카탈로그(`booking_report_reasons`) 테이블의 **활성 `code`** 문자열이다. **행으로 늘어날 수 있으니 클라이언트에 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`로 받아 쓴다.**
       - **다건 허용** — 동일 신고자가 동일 예약을 여러 번 신고할 수 있다(409가 없다). 도배 방지 레이트리밋(429)은 미구현이다.
       - 응답에 신고자 식별자와 `detail` 원문은 노출하지 않는다. 상태(`status`) 필드도 없다(전이할 상태가 없는 불변 기록).
       - 단건 조회 엔드포인트가 없어 201이지만 `Location` 헤더를 주지 않는다.
       - **삭제·차단 상태와 무관하다** — 이미 삭제했거나 상대를 차단한 예약도 신고할 수 있다(증거 보존). 그래서 같은 예약이 `GET /api/v1/bookings/{bookingId}`에서는 404인데 여기서는 201일 수 있다.
-      - 참여자가 아니거나 없는 예약이면 403이 아니라 404 `BOOKING_NOT_FOUND`다(존재 비노출).
 
-      에러 코드 — 400 `INVALID_INPUT`·`MALFORMED_REQUEST` / 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED` / 404 `BOOKING_NOT_FOUND`
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 미정의·비활성 `reason` 코드이거나 `detail`이 500자 초과 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON 파싱 불가 또는 필드 타입 불일치 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 403이 아니라 404로 통일한다(존재 비노출) |
       """;
 
   public static final String[] REPORT_404 = {"BOOKING_NOT_FOUND"};
@@ -362,7 +411,13 @@ public final class BookingDocsFields {
       - 페이지네이션이 없다 — 활성 사유 전체를 한 번에 반환한다.
       - **사유는 DB 카탈로그 행이라 배포 없이 늘어난다.** 아래 `code` 목록은 현재 시드값 스냅샷일 뿐이니 클라이언트에 하드코딩하지 말고 이 엔드포인트 응답으로 선택지를 구성한다.
 
-      에러 코드 — 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` / 403 `AUTH_ONBOARDING_REQUIRED`
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
       """;
 
   public static List<FieldDescriptor> reportReasonsResponseFields() {

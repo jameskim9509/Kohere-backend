@@ -62,7 +62,7 @@ Accepted
 
 ### 알려진 한계 (라이브러리 제약, 우회 불가)
 
-- **응답 status별 description을 쓸 수 없다** — 생성기가 `description = status.toString()`으로 하드코딩한다. Swagger의 Description 칸에 코드 숫자가 반복된다. 발생 가능한 `error.code`는 오퍼레이션 description 마지막 줄과 스키마 enum으로 대신 전달한다.
+- **응답 status별 description을 쓸 수 없다** — 생성기가 `description = status.toString()`으로 하드코딩한다. Swagger의 Description 칸에 코드 숫자가 반복된다. 그래서 오퍼레이션 description 끝에 **`| status | error.code | 발생 조건 |` 표**를 두고, 이것이 status별 설명을 대신하는 유일한 자리다. 스키마 enum은 코드 **목록**만 주므로 발생 조건은 표에만 있다 — 같은 내용을 본문 산문에 중복해 적지 않는다.
 - **역할별 응답 스키마 분기(`oneOf`/`discriminator`)를 만들 수 없다.** Schema 탭은 모든 역할의 **합집합** 하나뿐이다. 역할 전용 필드를 `optional`로 표시하고 실제 형태는 Examples로 보여준다.
 - **요청 본문 예시가 status로 분리되지 않는다** — `contentType`으로만 묶인다. 그래서 「에러 스니펫은 응답만 문서화한다」로 개수를 줄인다.
 

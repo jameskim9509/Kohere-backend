@@ -70,7 +70,7 @@ public final class UserDocsFields {
       """
       인증된 본인의 프로필 전체를 반환한다.
 
-      인증: 정식(ACTIVE) 회원 본인. 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 토큰으로 접근하면 403이다.
+      인증: 정식(ACTIVE) 회원 본인.
 
       응답 필드는 `userType`으로 갈린다. 스키마에 `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 역할의 응답에서 **키 자체가 없다**(값이 null인 것이 아니다 — 응답 DTO가 `@JsonInclude(NON_NULL)`이다).
       - `TENANT`: `gender`·`visaType`을 받고 `phoneNumber`는 생략된다.
@@ -80,7 +80,14 @@ public final class UserDocsFields {
       - `country`·`countryName`·`countryFlag`는 임대인도 받는다 — 서버가 `KR`을 고정 부여한다.
       - `email`은 세입자·임대인 모두 소셜 로그인 provider 값으로 보유한다.
 
-      에러: 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 403 `AUTH_ONBOARDING_REQUIRED`, 404 `USER_NOT_FOUND`.
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 토큰으로 접근 |
+      | 404 | `USER_NOT_FOUND` | 사용자가 `WITHDRAWN`이거나 삭제되어 없음 |
       """;
 
   public static final String[] ME_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
@@ -97,17 +104,26 @@ public final class UserDocsFields {
       """
       전송한 필드만 바꾸고 미전송 필드는 유지한다(미전송은 「값 비움」이 아니다). 응답은 수정된 프로필 전체이며 `GET /users/me`와 동일 스키마다.
 
-      인증: 필수(정식 토큰 — `ACTIVE` 본인). 온보딩 미완료 토큰 접근은 403이다.
+      인증: 필수(정식 토큰 — `ACTIVE` 본인).
 
       수정 가능 필드가 `userType`으로 갈린다.
       - `TENANT`: `name`·`gender`·`birthDate`·`country`·`occupation`·`visaType`·`lang`·`marketingAgreed`.
       - `LANDLORD`: `name`·`phoneNumber`·`marketingAgreed`. `lang`은 `ko` 고정이라 바꿀 수 없고 `birthDate`는 조회 전용이다.
       - `nickname`(서버 배정)·`email`(소셜 provider 값)은 역할과 무관하게 이 경로의 수정 대상이 아니다.
-      - 임대인 `phoneNumber` 변경은 새 번호를 SMS로 재인증한 뒤에만 반영된다 — 미인증·불일치는 422 `AUTH_PHONE_NOT_VERIFIED`다.
-      - 400이 둘로 갈린다 — `gender`·`occupation`·`visaType` 허용 외 문자열과 `birthDate` 형식 위반은 역직렬화 단계에서 걸려 `MALFORMED_REQUEST`, `birthDate` 미래(`@Past`)·`country` 미존재·`lang` 미지원 코드는 `INVALID_INPUT`이다.
+      - 임대인 `phoneNumber` 변경은 새 번호를 SMS로 재인증한 뒤에만 반영된다.
       - 응답의 역할 전용 필드(`(세입자만)`·`(임대인만)`)는 다른 역할의 응답에서 키 자체가 없다(값이 null인 것이 아니다).
 
-      에러: 400 `INVALID_INPUT`·`MALFORMED_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 403 `AUTH_ONBOARDING_REQUIRED`, 404 `USER_NOT_FOUND`, 422 `AUTH_PHONE_NOT_VERIFIED`.
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `birthDate` 미래(`@Past`)·`country` 미존재·`lang` 미지원 코드 |
+      | 400 | `MALFORMED_REQUEST` | `gender`·`occupation`·`visaType` 허용 외 문자열과 `birthDate` 형식 위반 — 역직렬화 단계에서 걸린다 |
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 토큰으로 접근 |
+      | 404 | `USER_NOT_FOUND` | 사용자가 `WITHDRAWN`이거나 삭제되어 없음 |
+      | 422 | `AUTH_PHONE_NOT_VERIFIED` | (임대인) 새 `phoneNumber`가 SMS 재인증되지 않았거나 검증한 번호와 불일치 |
       """;
 
   public static final String[] PATCH_ME_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -128,9 +144,15 @@ public final class UserDocsFields {
 
       - 성공 응답에는 본문이 없다(204).
       - Apple 연동 계정은 매핑 삭제 전에 Apple `/auth/revoke`로 연동까지 폐기한다(best-effort — Apple 장애여도 탈퇴는 완료).
-      - 탈퇴 후 같은 토큰으로 프로필을 조회하면 404, 탈퇴를 재요청하면 409다.
 
-      에러: 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 404 `USER_NOT_FOUND`, 409 `USER_ALREADY_WITHDRAWN`.
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 404 | `USER_NOT_FOUND` | 사용자가 삭제되어 없음 — 탈퇴 후 같은 토큰으로 프로필을 조회할 때도 같다 |
+      | 409 | `USER_ALREADY_WITHDRAWN` | 이미 `WITHDRAWN`된 사용자가 탈퇴를 재요청 |
       """;
 
   public static final String[] WITHDRAW_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};

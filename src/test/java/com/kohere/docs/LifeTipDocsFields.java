@@ -41,7 +41,6 @@ public final class LifeTipDocsFields {
 
       - `Authorization` 헤더는 선택이다. 헤더가 없거나 서명이 깨진 토큰이면 게스트로 처리해 200을 반환한다.
       - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
-      - 만료된 access token만 401 `TOKEN_EXPIRED`다. 게스트로 강등하지 않고 재발급을 유도한다.
 
       **표시 언어와 필드**
 
@@ -55,7 +54,9 @@ public final class LifeTipDocsFields {
 
       **에러 코드**
 
-      - 401 `TOKEN_EXPIRED` — 만료된 access token으로 호출
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 — 게스트로 강등하지 않으니 재발급 후 재시도 |
       """;
 
   public static final String[] LIFE_TIPS_TOPICS_401 = {"TOKEN_EXPIRED"};
@@ -87,7 +88,6 @@ public final class LifeTipDocsFields {
 
       - `Authorization` 헤더는 선택이다. 헤더가 없거나 서명이 깨진 토큰이면 게스트로 처리해 200을 반환한다.
       - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
-      - 만료된 access token만 401 `TOKEN_EXPIRED`다. 게스트로 강등하지 않고 재발급을 유도한다.
 
       **표시 언어와 필드**
 
@@ -100,8 +100,10 @@ public final class LifeTipDocsFields {
 
       **에러 코드**
 
-      - 401 `TOKEN_EXPIRED` — 만료된 access token으로 호출
-      - 404 `LIFE_TIP_TOPIC_NOT_FOUND` — 경로의 `topicCode`가 카탈로그에 없음
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 — 게스트로 강등하지 않으니 재발급 후 재시도 |
+      | 404 | `LIFE_TIP_TOPIC_NOT_FOUND` | 경로의 `topicCode`가 카탈로그에 없음 |
       """;
 
   public static final String[] LIFE_TIPS_TIPS_401 = {"TOKEN_EXPIRED"};

@@ -58,6 +58,15 @@ public final class ListingDocsFields {
       - 온보딩을 완료한 로그인 사용자는 계정 언어를 사용한다.
 
       카드를 선택하면 같은 `listingId`로 상세 API를 호출하고 지도 마커의 선택 상태도 맞추면 된다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과 |
+      | 400 | `LISTING_INVALID_BBOX` | bbox 네 좌표가 일부만 있거나 범위·방향이 올바르지 않음 |
+      | 400 | `LISTING_INVALID_SORT_PARAM` | `sort=DISTANCE`인데 bbox 네 좌표가 없음 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
       """;
 
   // ── §2 지도 마커 — GET /api/v1/listings/map ────────────────────────────────
@@ -76,6 +85,15 @@ public final class ListingDocsFields {
       - 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v1/listings`를 같은 필터로 함께 호출한다.
 
       인증 없이 사용할 수 있다. 지도 마커 응답에는 화면 표시용 번역 문구가 없으며 좌표와 식별자만 포함된다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
+      | 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
+      | 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
       """;
 
   // ── §3 키워드 장소 검색 — GET /api/v1/listings/search ──────────────────────
@@ -101,6 +119,13 @@ public final class ListingDocsFields {
 
       인증 없이 사용할 수 있다. 매물의 다국어 문자열과 `code/label` 사용 규칙은 매물 목록 API와 동일하며, 비로그인·온보딩 미완료 사용자는 영어가
       기본이다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 키워드 누락/공백/길이(1~50자) 위반, `size` 범위 초과 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
       """;
 
   // ── §4 네이버 장소 후보 — GET /api/v1/listings/places ──────────────────────
@@ -118,6 +143,14 @@ public final class ListingDocsFields {
       - 카메라 이동 후 지도 SDK에서 bounds를 계산해 매물 목록 API와 지도 마커 API를 호출한다.
 
       인증 없이 사용할 수 있다. 이 API는 장소 후보만 반환하며 MongoDB의 실제 매물은 조회하지 않는다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 키워드 누락·공백·길이(1~50자) 위반 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
+      | 502 | `UPSTREAM_ERROR` | 네이버 HTTP 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
       """;
 
   // ── §5 매물 상세 — GET /api/v1/listings/{listingId} ────────────────────────
@@ -153,6 +186,13 @@ public final class ListingDocsFields {
       - 화면에는 `label`을 표시하고 필터 요청·내부 비교에는 `code`를 사용한다.
       - `title`, 주소, 역명, 방 이름, 환불 설명, `descriptions.description`은 서버가 사용자 언어로 선택한 문자열 하나다.
       - 프론트는 `ko/en`을 직접 선택하거나 MongoDB 번역 구조를 알 필요가 없다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
+      | 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
       """;
 
   // ── §6 찜 등록 — POST /api/v1/listings/{listingId}/favorite ────────────────
@@ -170,6 +210,15 @@ public final class ListingDocsFields {
       - 두 응답 모두 `favorited=true`와 변경 후 `favoriteCount`를 반환한다.
 
       프론트는 상태코드와 관계없이 응답의 `favorited`, `favoriteCount`로 하트 상태와 숫자를 갱신하면 된다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
       """;
 
   // ── §7 찜 해제 — DELETE /api/v1/listings/{listingId}/favorite ──────────────
@@ -183,6 +232,15 @@ public final class ListingDocsFields {
       - 이미 찜하지 않은 상태에서 다시 호출해도 에러가 아니다.
       - 성공 응답은 `200 OK`, `favorited=false`와 변경 후 `favoriteCount`다.
       - 프론트는 응답값으로 카드와 상세 화면의 하트 상태·찜 수를 갱신하면 된다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
       """;
 
   // ── §8 내 찜 목록 — GET /api/v1/users/me/favorites ─────────────────────────
@@ -201,6 +259,15 @@ public final class ListingDocsFields {
       - 매물 표시 문구와 `{code,label}`은 현재 사용자 언어로 반환된다.
 
       찜 해제 후 목록을 다시 조회하거나, 클라이언트에서 같은 `listingId` 항목을 즉시 제거하면 된다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `page` 음수 또는 `size` 범위 초과 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
       """;
 
   // ── §9 최근 본 매물 — GET /api/v1/users/me/recent-listings ─────────────────
@@ -222,6 +289,14 @@ public final class ListingDocsFields {
       - 매물 표시 문구와 `{code,label}`은 현재 사용자 언어로 반환된다.
 
       오래되었거나 더 이상 공개 상태가 아닌 매물은 응답에 포함되지 않는다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
+      | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
       """;
 
   // ── 공통 실패 응답 문구 ────────────────────────────────────────────────────

@@ -167,9 +167,11 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `400 INVALID_INPUT` — 진행 중 진단 없음, 단계 미완료, 저장된 답 재검증 실패
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 진행 중 진단 없음, 단계 미완료, 저장된 답 재검증 실패 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       """;
 
   // 요청 본문이 없는 오퍼레이션이라 MALFORMED_REQUEST에 도달할 수 없다 — 400은 INVALID_INPUT 하나다.
@@ -198,22 +200,24 @@ public final class DiagnosisDocsFields {
 
       **인증**
 
-      - 회원 전용이며 본인 소유 진단만 조회된다. 타인 소유는 `403 FORBIDDEN`이다.
-      - 게스트가 v2로 만든 진단은 신원 종류가 달라 회원 토큰으로 조회해도 `403 FORBIDDEN`이다.
+      - 회원 전용이며 본인 소유 진단만 조회된다.
+      - 게스트가 v2로 만든 진단은 신원 종류가 달라 회원 토큰으로도 본인 소유가 아니다.
 
       **응답 규칙**
 
       - ② `purpose`에 따라 ③이 갈린다 — `STUDY`면 `university`가 채워지고 `district`는 `null`, `NON_STUDY`면 그 반대다.
       - `conditions[]`에는 ④에서 고른 조건(최대 3개)과 ⑥ `arcStatus=NO_ARC`에서 서버가 파생한 `NO_ARC`가 함께 들어간다.
       - 금액은 KRW 정수이고 시각은 ISO-8601 UTC다.
-      - v2가 남기는 폐기 기록(`DISCARDED`)은 없는 것처럼 `404 DIAGNOSIS_NOT_FOUND`로 거절한다.
+      - v2가 남기는 폐기 기록(`DISCARDED`)은 없는 것처럼 거절한다.
 
       **에러 코드**
 
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
-      - `403 FORBIDDEN` — 타인 소유 진단 접근
-      - `404 DIAGNOSIS_NOT_FOUND` — 진단이 존재하지 않거나 폐기 기록
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 타인 소유 진단 접근 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
       """;
 
   public static final String[] DETAIL_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
@@ -396,7 +400,7 @@ public final class DiagnosisDocsFields {
           + """
 
       - 다음 `step` 번호는 클라이언트가 정하며 이 조회는 답을 저장하지 않는다.
-      - ③(`step=3`)은 진행 중 진단에 저장된 ② `purpose`로 서버가 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 하나만 고른다. 클라이언트가 분기하지 않으며, `purpose`를 저장하기 전에 호출하면 400이다.
+      - ③(`step=3`)은 진행 중 진단에 저장된 ② `purpose`로 서버가 `university`(`STUDY`)와 `district`(`NON_STUDY`) 중 하나만 고른다. 클라이언트가 분기하지 않는다.
       - 응답의 `data.field`를 `POST /api/v1/diagnoses/answers` 요청의 `field`에 그대로 싣는다.
       - `regionRetry`는 v2 흐름 전용 예외질문이라 이 엔드포인트로는 내려오지 않는다.
       - """
@@ -410,9 +414,11 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `400 INVALID_INPUT` — `step`이 1~6 밖이거나, ③ 조회인데 ② `purpose`가 선행되지 않음
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `step`이 1~6 밖이거나, ③ 조회인데 ② `purpose`가 선행되지 않음 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       """;
 
   public static final String[] QUESTION_400 = {"INVALID_INPUT"};
@@ -486,10 +492,12 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `400 INVALID_INPUT` — 미정의 코드, 현재 단계와 맞지 않는 `field`, 목적과 대학/지역 불일치, `conditions` 4개 이상, 월세 범위 위반
-      - `400 MALFORMED_REQUEST` — 본문 JSON 해석 불가(검증 이전)
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 미정의 코드, 현재 단계와 맞지 않는 `field`, 목적과 대학/지역 불일치, `conditions` 4개 이상, 월세 범위 위반 |
+      | 400 | `MALFORMED_REQUEST` | 본문 JSON 해석 불가(검증 이전) |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       """;
 
   public static final String[] ANSWER_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -551,9 +559,11 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `400 INVALID_INPUT` — `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       """;
 
   public static final String[] HISTORY_400 = {"INVALID_INPUT"};
@@ -595,8 +605,10 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       """;
 
   public static final String[] LATEST_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
@@ -659,7 +671,7 @@ public final class DiagnosisDocsFields {
 
       **인증**
 
-      - 회원 전용이며 본인 소유 진단만 조회된다. 타인 소유는 `403 FORBIDDEN`이다.
+      - 회원 전용이며 본인 소유 진단만 조회된다.
       - 게스트의 추천 조회는 v2-3(`GET /api/v2/diagnoses/{diagnosisId}/recommendations`)이 담당한다.
 
       **화면 구성**
@@ -677,11 +689,13 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `400 INVALID_INPUT` — `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향
-      - `401 UNAUTHENTICATED` — 토큰 없음 또는 위조
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료
-      - `403 FORBIDDEN` — 타인 소유 진단 접근
-      - `404 DIAGNOSIS_NOT_FOUND` — 진단이 존재하지 않거나 폐기 기록
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 타인 소유 진단 접근 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
       """;
 
   public static final String[] RECOMMENDATIONS_400 = {"INVALID_INPUT"};
@@ -737,7 +751,7 @@ public final class DiagnosisDocsFields {
       - 게스트로 호출하면 응답 `data.guestSessionId`에 세션 키(`anonymous<uuid>`)가 실린다. **키가 내려오는 유일한 지점**이며 회원 응답에서는 이 필드가 통째로 생략된다.
       - 클라이언트는 그 키를 보관했다가 이후 `POST /next`와 추천 조회에 `X-Guest-Session-Id` 헤더로 되돌려보낸다.
       - 요청에 `X-Guest-Session-Id`를 실어도 무시하고 새 키를 발급한다.
-      - 위조·형식 오류 토큰은 게스트와 같은 취급이지만 **만료 토큰만은 401**이다(조용한 게스트 강등 금지).
+      - 위조·형식 오류 토큰은 게스트와 같은 취급이다.
 
       **동작 규칙**
 
@@ -755,7 +769,9 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료. 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 이 엔드포인트에서 발생하지 않는다
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 게스트로 조용히 강등하지 않는다. 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 이 엔드포인트에서 발생하지 않는다 |
       """;
 
   public static final String[] V2_START_401 = {"TOKEN_EXPIRED"};
@@ -797,8 +813,7 @@ public final class DiagnosisDocsFields {
       **인증**
 
       - 인증은 선택이다. 회원은 `Authorization` 토큰으로, 게스트는 `X-Guest-Session-Id` 헤더로 진행 세션을 찾는다.
-      - 게스트가 헤더를 빠뜨렸거나 남의 키를 보내면 세션을 못 찾아 `400 DIAGNOSIS_SESSION_NOT_FOUND`다 — 남의 세션에 닿지 않는다.
-      - 만료 토큰만 401이며 위조 토큰은 게스트로 처리된다.
+      - 게스트가 헤더를 빠뜨렸거나 남의 키를 보내면 세션을 못 찾는다 — 남의 세션에 닿지 않는다.
 
       **결과코드별 payload**
 
@@ -819,7 +834,7 @@ public final class DiagnosisDocsFields {
           + QUESTION_TABLE
           + """
 
-      - `step`은 클라이언트가 지정하지 않는다. 서버가 낸 문항의 `field`를 그대로 요청 `field`에 싣는다(다르면 `INVALID_INPUT`).
+      - `step`은 클라이언트가 지정하지 않는다. 서버가 낸 문항의 `field`를 그대로 요청 `field`에 싣는다.
       - ③ 대학/지역은 저장된 ② `purpose`로 서버가 택일한다.
       - ① 지역 답 직후 그 지역 매물이 0건이면 서버가 `field=regionRetry` 예외질문(`YES`/`NO`)을 끼워 넣는다 — 서버가 미리 필터링하는 유일한 지점이다.
       - """
@@ -833,10 +848,12 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `400 DIAGNOSIS_SESSION_NOT_FOUND` — 진행 중 세션 없이 호출(앱 재시작·터미널 이후 재전송·게스트 키 누락/불일치) → `POST /start`로 복구
-      - `400 INVALID_INPUT` — `field` 없음, 현재 문항과 다른 `field`, 미정의 코드, `regionRetry`가 `YES`/`NO` 아님
-      - `400 MALFORMED_REQUEST` — 본문 JSON 해석 불가(검증 이전)
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료. 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `DIAGNOSIS_SESSION_NOT_FOUND` | 진행 중 세션 없이 호출(앱 재시작·터미널 이후 재전송·게스트 키 누락/불일치) → `POST /start`로 복구 |
+      | 400 | `INVALID_INPUT` | `field` 없음, 현재 문항과 다른 `field`, 미정의 코드, `regionRetry`가 `YES`/`NO` 아님 |
+      | 400 | `MALFORMED_REQUEST` | 본문 JSON 해석 불가(검증 이전) |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
       """;
 
   public static final String[] V2_NEXT_400 = {
@@ -988,7 +1005,7 @@ public final class DiagnosisDocsFields {
       **인증**
 
       - 인증은 선택이다. 회원은 `Authorization` 토큰으로, 게스트는 `X-Guest-Session-Id` 헤더로 소유권을 증명한다.
-      - 소유는 신원 **종류와 값이 모두** 같을 때만 인정된다 — 게스트↔회원 교차 조회는 양방향 모두 `403 FORBIDDEN`이고, 신원 없는 요청도 403이다.
+      - 소유는 신원 **종류와 값이 모두** 같을 때만 인정된다.
       - 회원 요청에 게스트 키가 실려 와도 무시한다(키를 훔쳐도 통하지 않는다).
 
       **화면 구성**
@@ -1006,10 +1023,12 @@ public final class DiagnosisDocsFields {
 
       **에러 코드**
 
-      - `400 INVALID_INPUT` — `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향
-      - `401 TOKEN_EXPIRED` — 액세스 토큰 만료. 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다
-      - `403 FORBIDDEN` — 타인 소유 진단, 게스트↔회원 교차 조회, 게스트 키 미전송
-      - `404 DIAGNOSIS_NOT_FOUND` — 진단이 존재하지 않거나 폐기 기록
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
+      | 403 | `FORBIDDEN` | 타인 소유 진단, 게스트↔회원 교차 조회(양방향), 신원 없는 요청(게스트 키 미전송) |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
       """;
 
   public static final String[] V2_RECOMMENDATIONS_400 = {"INVALID_INPUT"};
