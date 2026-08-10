@@ -130,10 +130,15 @@ public final class ApiDocsFields {
     descriptors.add(
         field("error.message", JsonFieldType.STRING, "사람이 읽는 설명(민감정보 미포함, message로 분기 금지)"));
     descriptors.add(
-        field("error.errors", JsonFieldType.ARRAY, "입력 검증 실패 시 필드별 상세 목록. 그 외 에러는 빈 배열"));
+        field(
+            "error.errors",
+            JsonFieldType.ARRAY,
+            "입력 검증 실패 시 필드별 상세 목록. 필드를 특정할 수 없거나 그 외 에러는 빈 배열"));
     descriptors.add(
         optField(
-            "error.errors[].field", JsonFieldType.STRING, "검증에 실패한 요청 필드 경로(INVALID_INPUT에서만)"));
+            "error.errors[].field",
+            JsonFieldType.STRING,
+            "검증에 실패한 요청 필드·쿼리 파라미터·경로 변수 이름(INVALID_INPUT에서만) — 보낸 이름 그대로라 입력 폼에 매핑할 수 있다"));
     descriptors.add(
         optField("error.errors[].reason", JsonFieldType.STRING, "해당 필드의 실패 사유(INVALID_INPUT에서만)"));
     return List.copyOf(descriptors);
