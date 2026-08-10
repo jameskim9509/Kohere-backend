@@ -49,7 +49,7 @@ public final class AuthDocsFields {
       - provider별 자격이 다르다 — `GOOGLE`은 `idToken`, `APPLE`은 1회용 `authorizationCode`(약 5분 만료)다.
       - 응답 `status`가 클라이언트 재개 지점을 정한다 — `PENDING`은 약관 동의, `TERMS_AGREED`는 온보딩, `ACTIVE`는 홈이다.
       - 온보딩 미완료 응답은 `refreshToken`이 null이고 `accessToken`이 온보딩 전용 스코프(`expiresIn` 1800)다. `ACTIVE`는 정식 access+refresh(3600)를 받는다.
-      - `email`·`name`은 최초 로그인에서만 캡처하고 재로그인 요청 값은 무시한다. `email`은 토큰의 email 클레임과 교차 검증한다(#192).
+      - `email`·`name`은 최초 로그인에서만 캡처하고 재로그인 요청 값은 무시한다. `email`은 토큰의 email 클레임과 교차 검증한다.
 
       **에러 코드**
 
@@ -58,7 +58,7 @@ public final class AuthDocsFields {
       | 400 | `INVALID_INPUT` | `provider` 누락(null) |
       | 400 | `AUTH_MISSING_CREDENTIAL` | provider별 필수 자격이 누락·빈값 — `GOOGLE`의 `idToken` 또는 `APPLE`의 `authorizationCode` 미전송 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없거나 `provider`가 `APPLE`·`GOOGLE` 밖의 문자열 |
-      | 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명·`aud`·`iss`·`exp` 검증 실패, Apple 인가코드 교환 실패(만료·재사용 코드), 교환으로 받은 `id_token` 검증 실패 |
+      | 401 | `AUTH_INVALID_SOCIAL_TOKEN` | Google `idToken`의 서명·`aud`·`iss`·`exp` 검증 실패, Apple 인가코드 교환 실패(만료·재사용 코드), 교환 결과 검증 실패 |
       | 422 | `AUTH_EMAIL_MISMATCH` | 최초 로그인에서 요청 `email`이 토큰의 email 클레임과 불일치 |
       | 422 | `AUTH_EMAIL_REQUIRED` | 최초 로그인에서 토큰 클레임·요청 어느 쪽에도 `email`이 없어 provider 진본 이메일을 확정할 수 없음 |
       | 502 | `UPSTREAM_ERROR` | Apple `/auth/token` 인가코드 교환이 타임아웃·5xx·I/O 오류로 실패 — 자격 문제가 아니므로 401과 달리 그대로 재시도할 수 있다 |
@@ -79,7 +79,7 @@ public final class AuthDocsFields {
       """
       이용약관·개인정보처리방침·마케팅 동의를 기록하고 `PENDING`을 `TERMS_AGREED`로 전이한다.
 
-      인증: 필수(온보딩 토큰 `ROLE_ONBOARDING`).
+      인증: 필수(온보딩 토큰).
 
       - `marketingAgreed`는 선택이며 미전송이면 false로 기록한다.
       - 응답 `status`는 전이 후 값이라 항상 `TERMS_AGREED`다.
@@ -109,7 +109,7 @@ public final class AuthDocsFields {
       """
       입력한 이메일로 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `email`은 마스킹된다(예 `mi***@example.com`).
 
-      인증: 필수(정식 토큰 — `ACTIVE`·`ROLE_USER`, #192에서 온보딩 단계 전용 → 정식 전용으로 반전).
+      인증: 필수(정식 토큰 — `ACTIVE`).
 
       - 발송이 실패하면(메일 provider 장애·타임아웃) 챌린지를 저장하지 않는다.
       - `expiresIn`은 인증번호 만료까지의 초다.
@@ -141,7 +141,7 @@ public final class AuthDocsFields {
       """
       발송된 인증번호를 확인해 이메일을 검증 완료(VERIFIED)로 마킹한다.
 
-      인증: 필수(정식 토큰 — `ACTIVE`·`ROLE_USER`).
+      인증: 필수(정식 토큰 — `ACTIVE`).
 
       - `email`은 인증번호를 발송한 이메일과 일치해야 한다.
 
@@ -175,9 +175,9 @@ public final class AuthDocsFields {
       인증: 필수(온보딩 토큰, 상태 `TERMS_AGREED`).
 
       - 필수는 `gender`·`birthDate`(과거 날짜만)·`country`·`visaType`, 선택은 `occupation`·`lang`이다.
-      - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않는다(#192).
-      - enum·날짜를 String으로 받아 서버가 파싱한다 — 요청 DTO가 enum 타입이라 값 위반이 `MALFORMED_REQUEST`인 `PATCH /users/me`와 갈리는 지점이다.
-      - 이메일 인증 선행 게이트는 폐지됐다 — 약관만 동의하면 곧바로 제출할 수 있다(#192).
+      - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않는다.
+      - enum·날짜 값이 잘못되면 400 `INVALID_INPUT`이다 — 같은 위반이 `MALFORMED_REQUEST`가 되는 `PATCH /users/me`와 갈리는 지점이다.
+      - 이메일 인증 선행 게이트는 폐지됐다 — 약관만 동의하면 곧바로 제출할 수 있다.
       - 응답 `data.user`의 `phoneNumber`는 세입자 미수집이라 필드 자체가 생략된다.
 
       **에러 코드**
@@ -205,7 +205,7 @@ public final class AuthDocsFields {
       """
       본문의 refresh 토큰으로 access 토큰을 재발급한다. refresh 토큰은 항상 회전한다.
 
-      인증: 불필요(공개 티어). 클라이언트가 모든 요청에 access 토큰을 붙이는 구조라 만료된 access 토큰이 헤더에 실려 와도 401로 막지 않는다(재발급 교착 방지, #181).
+      인증: 불필요(공개 티어). 클라이언트가 모든 요청에 access 토큰을 붙이는 구조라 만료된 access 토큰이 헤더에 실려 와도 401로 막지 않는다(재발급 교착 방지).
 
       - 제출한 refresh 토큰은 `ROTATED`로 폐기되고 새 refresh 토큰이 함께 내려온다 — 응답의 새 토큰으로 교체해야 다음 재발급이 된다.
 
@@ -229,7 +229,7 @@ public final class AuthDocsFields {
       """
       제출한 refresh 토큰을 무효화한다. 이미 무효한 토큰이어도 204다(멱등).
 
-      인증: 필수(정식 토큰 — `ROLE_USER`).
+      인증: 필수(정식 토큰).
 
       - 성공 응답에는 본문이 없다(204).
       - access 토큰은 stateless라 서버가 폐기하지 않는다 — 클라이언트가 버리고, 남은 만료 시간까지는 서명상 유효하다.
@@ -257,7 +257,7 @@ public final class AuthDocsFields {
       """
       입력한 휴대폰 번호로 SMS 인증번호를 동기 발송하고 챌린지를 저장한다. 응답 `phoneNumber`는 마스킹된다(예 `010-****-5678`).
 
-      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 <b>둘 다</b> 허용한다 — 온보딩(US-1-10)과 정식 회원의 프로필 연락처 변경(US-1-5)이 같은 엔드포인트를 쓰기 때문이다(ADR-0034 §6·§8).
+      인증: 필수(임대인 트랙). 온보딩 토큰과 정식 토큰을 <b>둘 다</b> 허용한다 — 온보딩과 정식 회원의 프로필 연락처 변경이 같은 엔드포인트를 쓰기 때문이다.
 
       - 약관 동의(`TERMS_AGREED`)가 선행돼야 한다.
       - 발송이 실패하면(SMS provider 장애·타임아웃) 챌린지를 저장하지 않는다.
@@ -319,7 +319,7 @@ public final class AuthDocsFields {
       """
       사업자등록번호를 외부 registry로 검증한다. 결과를 저장하지 않는 무상태 검증이라 응답 본문으로만 돌려주며, 번호는 마스킹된다(예 `****567890`).
 
-      인증: 필수(정식 토큰 — `ACTIVE`·`ROLE_USER`, 임대인 전용). 온보딩 흐름이 아니다.
+      인증: 필수(정식 토큰 — `ACTIVE`, 임대인 전용). 온보딩 흐름이 아니다.
 
       - 온보딩 제출(§5-2)에는 포함되지 않는다 — 온보딩을 마친 임대인이 매물 등록 시점에 따로 호출한다.
       - 허용 형식은 숫자 10자리와 하이픈 형식(`123-45-67890`) <b>둘 다</b>다(어댑터가 숫자만 정규화해 대조한다).
@@ -397,11 +397,11 @@ public final class AuthDocsFields {
         optField(
             "email",
             JsonFieldType.STRING,
-            "앱이 네이티브 SDK에서 받은 이메일(선택 — 최초 로그인에서는 사실상 필수, 토큰 email 클레임과 교차 검증). 재로그인 값은 무시한다(#192)"),
+            "앱이 네이티브 SDK에서 받은 이메일(선택 — 최초 로그인에서는 사실상 필수, 토큰 email 클레임과 교차 검증). 재로그인 값은 무시한다"),
         optField(
             "name",
             JsonFieldType.STRING,
-            "앱이 네이티브 SDK에서 받은 표시 이름(선택 — 최초 로그인에서만 캡처, 검증 없이 신뢰). Apple은 최초 1회만 제공한다(#192)"));
+            "앱이 네이티브 SDK에서 받은 표시 이름(선택 — 최초 로그인에서만 캡처, 검증 없이 신뢰). Apple은 최초 1회만 제공한다"));
   }
 
   public static List<FieldDescriptor> socialLoginResponseFields() {
@@ -415,16 +415,13 @@ public final class AuthDocsFields {
             "data.status",
             UserStatus.class,
             "사용자 상태 — 클라이언트 재개 지점 분기. 이 응답에는 PENDING·TERMS_AGREED·ACTIVE만 나온다(WITHDRAWN 계정은 로그인되지 않는다)"),
-        field("data.email", JsonFieldType.STRING, "사용자 이메일(provider 진본) — 모든 분기에서 프리필용 반환(#192)"),
+        field("data.email", JsonFieldType.STRING, "사용자 이메일(provider 진본) — 모든 분기에서 프리필용 반환"),
         optField(
             "data.name",
             JsonFieldType.STRING,
-            "사용자 이름(단일 name) — 모든 분기에서 프리필용 반환. 아직 캡처된 이름이 없으면 null이다(#192)"),
+            "사용자 이름(단일 name) — 모든 분기에서 프리필용 반환. 아직 캡처된 이름이 없으면 null이다"),
         codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"),
-        field(
-            "data.accessToken",
-            JsonFieldType.STRING,
-            "access 토큰(JWT). 온보딩 미완료면 온보딩 전용 스코프(ROLE_ONBOARDING)다"),
+        field("data.accessToken", JsonFieldType.STRING, "access 토큰(JWT). 온보딩 미완료면 온보딩 전용 스코프다"),
         optField(
             "data.refreshToken", JsonFieldType.STRING, "refresh 토큰(불투명). 온보딩 미완료 응답에서는 null이다"),
         field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(온보딩 1800 / 정식 3600)"),
@@ -484,9 +481,7 @@ public final class AuthDocsFields {
             COUNTRY_CODES,
             "국적 ISO 3166-1 alpha-2 코드(필수). 값 목록을 내려주는 API가 없어 여기 나열한 15개가 지원 코드의 전부다(countries 참조 시드)"),
         optEnumField(
-            "occupation",
-            Occupation.class,
-            "직업(선택 — 미전송·null이면 저장하지 않고 프로필 응답에서 필드 자체가 생략된다, #187)"),
+            "occupation", Occupation.class, "직업(선택 — 미전송·null이면 저장하지 않고 프로필 응답에서 필드 자체가 생략된다)"),
         enumField("visaType", VisaType.class, "비자정보(필수). API는 상수명, DB 저장은 표시 라벨"),
         optCodeField("lang", LANG_CODES, "표시 언어 ISO 639-1 소문자(선택 — 미전송이면 미설정으로 두고 표시 시 en으로 폴백)"));
   }

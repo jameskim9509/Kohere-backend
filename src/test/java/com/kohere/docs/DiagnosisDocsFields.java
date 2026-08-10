@@ -160,7 +160,7 @@ public final class DiagnosisDocsFields {
       **동작 규칙**
 
       - 요청 본문이 없다. `POST /api/v1/diagnoses/answers`로 ①~⑥을 모두 저장한 뒤 호출한다.
-      - 확정되면 상태가 `IN_PROGRESS`에서 `COMPLETED`로 바뀌고 `diagnosisId`·`submittedAt`이 발급된다.
+      - 확정되면 `status`가 `COMPLETED`가 되고 `diagnosisId`·`submittedAt`이 발급된다.
       - 응답은 `201 Created`이며 `Location: /api/v1/diagnoses/{diagnosisId}` 헤더가 함께 실린다.
       - ⑥ `arcStatus`가 `NO_ARC`이면 서버가 파생 조건 `NO_ARC`를 `conditions`에 더한다(④ 최대 3개 제한과 무관).
       - 재진단은 확정 뒤 답을 다시 저장하면 서버가 새 진행 중 진단을 만든다.
@@ -469,7 +469,7 @@ public final class DiagnosisDocsFields {
 
   public static final String ANSWER_DESCRIPTION =
       """
-      현재 단계의 답 1개를 진행 중(IN_PROGRESS) 진단에 저장한다.
+      현재 단계의 답 1개를 진행 중인 진단에 저장한다.
 
       **인증**
 
@@ -824,7 +824,7 @@ public final class DiagnosisDocsFields {
       | `RESTART` | 지역 예외질문에 "예"(`YES`) — 클라이언트가 `POST /start`로 재시도(세션 삭제) | 없음 |
       | `TERMINATED` | 지역 예외질문에 "아니오"(`NO`) — 진단 종료(세션 삭제). 에러가 아니라 정상 결과다 | 없음 |
 
-      - 채워지지 않는 payload는 값이 `null`인 것이 아니라 **필드 자체가 생략된다**(`NON_NULL`).
+      - 채워지지 않는 payload는 값이 `null`인 것이 아니라 **필드 자체가 생략된다**.
       - `COMPLETED`에도 추천 매물은 실리지 않는다. 서버는 이 시점에 매칭 유무조차 확인하지 않으며, 클라이언트가 `diagnosisId`로 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 별도 호출한다.
       - 매칭 0건은 이 응답이 아니라 그 추천 응답의 `resultCode=NO_MATCH`로 드러난다.
 

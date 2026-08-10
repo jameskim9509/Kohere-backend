@@ -201,7 +201,7 @@ public final class ListingDocsFields {
 
   public static final String FAVORITE_ADD_DESCRIPTION =
       """
-      온보딩을 완료한 로그인 사용자(ROLE_USER)가 공개 매물을 찜할 때 호출한다.
+      온보딩을 완료한 로그인 사용자가 공개 매물을 찜할 때 호출한다.
 
       **응답 처리**
 
@@ -227,7 +227,7 @@ public final class ListingDocsFields {
 
   public static final String FAVORITE_REMOVE_DESCRIPTION =
       """
-      온보딩을 완료한 로그인 사용자(ROLE_USER)가 매물 찜을 해제할 때 호출한다.
+      온보딩을 완료한 로그인 사용자가 매물 찜을 해제할 때 호출한다.
 
       - 이미 찜하지 않은 상태에서 다시 호출해도 에러가 아니다.
       - 성공 응답은 `200 OK`, `favorited=false`와 변경 후 `favoriteCount`다.

@@ -72,7 +72,7 @@ public final class UserDocsFields {
 
       인증: 정식(ACTIVE) 회원 본인.
 
-      응답 필드는 `userType`으로 갈린다. 스키마에 `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 역할의 응답에서 **키 자체가 없다**(값이 null인 것이 아니다 — 응답 DTO가 `@JsonInclude(NON_NULL)`이다).
+      응답 필드는 `userType`으로 갈린다. 스키마에 `(세입자만)`·`(임대인만)`이 붙은 필드는 다른 역할의 응답에서 **키 자체가 없다**(값이 null인 것이 아니다).
       - `TENANT`: `gender`·`visaType`을 받고 `phoneNumber`는 생략된다.
       - `LANDLORD`: `phoneNumber`를 받고 `gender`·`occupation`·`visaType`은 생략된다. 본인 조회라 `phoneNumber`는 평문이다.
       - `occupation`은 세입자도 선택값이라 미설정이면 생략된다.
@@ -117,7 +117,7 @@ public final class UserDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `birthDate` 미래(`@Past`)·`country` 미존재·`lang` 미지원 코드 |
+      | 400 | `INVALID_INPUT` | `birthDate`가 미래 날짜·`country` 미존재·`lang` 미지원 코드 |
       | 400 | `MALFORMED_REQUEST` | `gender`·`occupation`·`visaType` 허용 외 문자열과 `birthDate` 형식 위반 — 역직렬화 단계에서 걸린다 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -224,7 +224,7 @@ public final class UserDocsFields {
         optField(
             prefix + "name",
             JsonFieldType.STRING,
-            "이름(성·이름을 합친 단일 이름). 소셜 로그인 시 provider 값으로 채우며 provider가 주지 않으면 생략된다(#192)"),
+            "이름(성·이름을 합친 단일 이름). 소셜 로그인 시 provider 값으로 채우며 provider가 주지 않으면 생략된다"),
         field(prefix + "nickname", JsonFieldType.STRING, "닉네임(서버가 형용사+사물로 배정, 전역 유니크·수정 불가)"),
         optEnumField(prefix + "gender", Gender.class, "성별(세입자만)"),
         field(prefix + "birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
@@ -238,11 +238,11 @@ public final class UserDocsFields {
             prefix + "lang",
             LANG_CODES,
             "표시 언어 ISO 639-1 소문자(UPPER_SNAKE 예외) — 세입자 선택값(미선택 시 표시는 en 폴백), 임대인은 ko 고정"),
-        optEnumField(prefix + "occupation", Occupation.class, "직업(세입자만, 온보딩 선택값 #187)"),
+        optEnumField(prefix + "occupation", Occupation.class, "직업(세입자만, 온보딩 선택값)"),
         field(
             prefix + "email",
             JsonFieldType.STRING,
-            "이메일(소셜 로그인 provider 진본 — 세입자·임대인 공통 보유, 본인 조회라 평문, #192)"),
+            "이메일(소셜 로그인 provider 진본 — 세입자·임대인 공통 보유, 본인 조회라 평문)"),
         optEnumField(prefix + "visaType", VisaType.class, "비자정보(세입자만) — API는 상수명, DB 저장은 표시 라벨"),
         optField(
             prefix + "phoneNumber",
@@ -274,7 +274,7 @@ public final class UserDocsFields {
    */
   public static List<FieldDescriptor> patchRequestFields() {
     return List.of(
-        optField("name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름, 선택 — 빈 문자열 불가, #192)"),
+        optField("name", JsonFieldType.STRING, "이름(세입자·임대인 공통 단일 이름, 선택 — 빈 문자열 불가)"),
         optEnumField("gender", Gender.class, "성별(세입자만·선택)"),
         optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(세입자 전용·선택, 과거 날짜만)"),
         optCodeField(
@@ -302,11 +302,7 @@ public final class UserDocsFields {
     descriptors.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     descriptors.addAll(profileFields("data.user."));
     descriptors.add(codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"));
-    descriptors.add(
-        field(
-            "data.accessToken",
-            JsonFieldType.STRING,
-            "정식 access 토큰(JWT, onboardingCompleted=true — ROLE_USER)"));
+    descriptors.add(field("data.accessToken", JsonFieldType.STRING, "정식 access 토큰(JWT)"));
     descriptors.add(field("data.refreshToken", JsonFieldType.STRING, "정식 refresh 토큰(불투명)"));
     descriptors.add(field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"));
     descriptors.add(errorNull());

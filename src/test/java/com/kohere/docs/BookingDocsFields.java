@@ -53,10 +53,10 @@ public final class BookingDocsFields {
       인증: 필수. 정식(`ACTIVE`) **세입자**(`userType=TENANT`) 전용이다.
 
       - 신청 직후 `status`는 `REQUESTED` 고정이다. MVP에서는 `REQUESTED`만 반환된다 — 수락·거절·취소 엔드포인트가 없어 `ACCEPTED`·`REJECTED`·`CANCELED`로 전이할 경로가 아직 없다.
-      - 동일 세입자·동일 방 상품(`roomOfferId`)에 예약은 1건만 허용된다(DB UNIQUE).
+      - 동일 세입자·동일 방 상품(`roomOfferId`)에 예약은 1건만 허용된다.
       - 요청자와 매물 소유자 사이에 **어느 방향이든** 차단 관계가 있으면 예약을 만들 수 없다(블랙홀 예약 방지 — 저장돼도 상대 목록에서 차단 필터에 걸려 영영 보이지 않기 때문).
       - `moveInDate`는 오늘 이후이고 방 상품의 입주 가능일 이후여야 한다.
-      - 성공 응답에는 `Location: /api/v1/bookings/{bookingId}` 헤더가 붙는다. 응답 본문은 예약 코어 내역만 담고 매물 요약·가격·성명은 상세 조회에서 조인해 내려준다.
+      - 성공 응답에는 `Location: /api/v1/bookings/{bookingId}` 헤더가 붙는다. 응답 본문은 예약 코어 내역만 담고 매물 요약·가격·성명은 상세 조회에서 내려준다.
 
       **에러 코드**
 
@@ -136,7 +136,7 @@ public final class BookingDocsFields {
       - `status`는 MVP에서 `REQUESTED`만 반환된다(수락·거절·취소 엔드포인트 미구현).
       - 정렬은 `createdAt,desc` 고정이며 쿼리로 바꿀 수 없다.
       - 요청자가 삭제한 예약과 요청자가 차단한 상대의 예약은 목록에서 빠진다. 삭제·차단 상태 자체는 응답 필드로 노출하지 않는다(사라지는 것으로만 관측된다).
-      - 매물·방 상품이 삭제·비공개면 조인 대상이 사라져 `title`·`thumbnailUrl`·`roomOfferName`이 null이 된다(예약 코어 내역은 그대로 유지된다).
+      - 매물·방 상품이 삭제·비공개면 `title`·`thumbnailUrl`·`roomOfferName`이 null이 된다(예약 코어 내역은 그대로 유지된다).
       - 결과가 없으면 `content: []` + `page.totalElements: 0`이다(에러 아님).
 
       **에러 코드**
@@ -190,14 +190,14 @@ public final class BookingDocsFields {
 
   public static final String DETAIL_DESCRIPTION =
       """
-      예약 1건의 상세를 조회한다. 매물 정보·가격·성명은 스냅샷이 아니라 조회 시점에 실시간 조인한다(가격이 바뀌면 현재가 기준).
+      예약 1건의 상세를 조회한다. 매물 정보·가격·성명은 신청 시점 스냅샷이 아니라 조회 시점의 현재 값이다(가격이 바뀌면 현재가 기준).
 
       인증: 필수. 정식(`ACTIVE`) 회원이면 세입자·임대인 모두 유효한 요청이라 역할 403은 없다. 요청자 `userType`으로 **응답 본문이 갈린다** — 세입자는 본인 예약 + 본인 성명(`tenantName`), 임대인은 본인 소유 매물에 신청된 예약 + 신청자 프로필(`applicant*`)이다.
 
       - **Schema 탭의 필드 목록은 세입자·임대인 두 분기의 합집합이며 실제 한 응답에 둘 다 나오지 않는다.** `tenantName`은 세입자 분기에만, `applicantId`·`applicantName`·`applicantGender`·`applicantCountry`·`applicantCountryName`·`applicantEmail`은 임대인 분기에만 있는 키로, 반대 분기에서는 null이 아니라 **필드 자체가 없다**.
       - `status`는 MVP에서 `REQUESTED`만 반환된다(수락·거절·취소 엔드포인트 미구현).
       - 총 금액 `totalAmount = deposit + monthlyRent × contractPeriod`(관리비 제외)이며 두 분기 모두 같은 정의다.
-      - 매물·방 상품이 삭제·비공개면 조인 대상이 사라져 `title`·`thumbnailUrl`·`address`·`roomOfferName`이 null이 되고 `deposit`·`totalAmount`는 **0**이 된다(null이 아니다).
+      - 매물·방 상품이 삭제·비공개면 `title`·`thumbnailUrl`·`address`·`roomOfferName`이 null이 되고 `deposit`·`totalAmount`는 **0**이 된다(null이 아니다).
       - 신청자 PII(이메일·성별·국적)는 임대인에게 **마스킹 없이 평문**으로 내려간다. 신청자가 탈퇴하면 익명화로 값이 null이 될 수 있다.
 
       **에러 코드**
@@ -230,9 +230,9 @@ public final class BookingDocsFields {
         field("data.roomOfferId", JsonFieldType.STRING, "방 상품 ID"),
         optField("data.title", JsonFieldType.STRING, TITLE_DESCRIPTION),
         optField("data.thumbnailUrl", JsonFieldType.STRING, THUMBNAIL_DESCRIPTION),
-        optField("data.address", JsonFieldType.STRING, "매물 주소 — 조회 시점 조인. 매물이 삭제·비공개면 null"),
+        optField("data.address", JsonFieldType.STRING, "매물 주소 — 조회 시점 값. 매물이 삭제·비공개면 null"),
         optField(
-            "data.roomOfferName", JsonFieldType.STRING, "방 상품명 — 조회 시점 조인. 매물·방 상품이 삭제·비공개면 null"),
+            "data.roomOfferName", JsonFieldType.STRING, "방 상품명 — 조회 시점 값. 매물·방 상품이 삭제·비공개면 null"),
         field("data.createdAt", JsonFieldType.STRING, "예약 접수 일시(ISO-8601 UTC)"),
         field("data.moveInDate", JsonFieldType.STRING, "타겟 입주일(`YYYY-MM-DD`)"),
         field("data.contractPeriod", JsonFieldType.NUMBER, "계약 개월수"),
@@ -253,7 +253,7 @@ public final class BookingDocsFields {
         optField(
             "data.applicantCountryName",
             JsonFieldType.STRING,
-            "신청자 국적 표시명(임대인만) — 서버가 참조 테이블로 resolve, 국적 미수집·미등록 코드면 null"),
+            "신청자 국적 표시명(임대인만) — 서버가 국적 코드로 변환, 국적 미수집·미등록 코드면 null"),
         optField(
             "data.applicantEmail",
             JsonFieldType.STRING,
@@ -280,7 +280,7 @@ public final class BookingDocsFields {
 
       인증: 필수. 정식(`ACTIVE`) 회원 중 해당 예약의 참여자(세입자 또는 임대인)만 호출할 수 있다. 세입자·임대인 공통이라 역할 403은 없다.
 
-      - **취소가 아니다.** 요청자 쪽 소프트삭제 컬럼만 세팅하므로 **상대 목록에는 그대로 보이고** 상대에게 알림도 가지 않는다. 두 참여자의 삭제는 서로 완전히 독립이다.
+      - **취소가 아니다.** 요청자에게만 숨겨지므로 **상대 목록에는 그대로 보이고** 상대에게 알림도 가지 않는다. 두 참여자의 삭제는 서로 완전히 독립이다.
       - 멱등이다 — 이미 삭제한 예약을 다시 삭제해도 204다(변이 경로는 삭제·차단 필터가 걸리지 않은 조회를 쓴다).
       - 차단(`POST .../block`)과 무관하다. 삭제해도 상대는 여전히 새 신청을 보낼 수 있다.
       - 삭제해도 신고(`POST .../report`)는 계속 가능하다(증거 보존).
@@ -359,7 +359,7 @@ public final class BookingDocsFields {
       인증: 필수. 정식(`ACTIVE`) 회원 중 해당 예약의 참여자만 호출할 수 있다. 신고자는 access 토큰으로 식별하며 본문에 넣지 않는다. 세입자·임대인 공통이라 역할 403은 없다.
 
       - `reason`·`detail` 모두 **선택**이다. 본문 전체를 `{}`로 보내도 접수된다 — 사유를 고르기 전에 이탈해도 접수 사실은 남아야 하기 때문이다. 사유 없이 신고하면 응답 `data.reason`이 null이다.
-      - `reason`은 신고 사유 카탈로그(`booking_report_reasons`) 테이블의 **활성 `code`** 문자열이다. **행으로 늘어날 수 있으니 클라이언트에 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`로 받아 쓴다.**
+      - `reason`은 신고 사유 목록의 **활성 `code`** 문자열이다. **늘어날 수 있으니 클라이언트에 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`로 받아 쓴다.**
       - **다건 허용** — 동일 신고자가 동일 예약을 여러 번 신고할 수 있다(409가 없다). 도배 방지 레이트리밋(429)은 미구현이다.
       - 응답에 신고자 식별자와 `detail` 원문은 노출하지 않는다. 상태(`status`) 필드도 없다(전이할 상태가 없는 불변 기록).
       - 단건 조회 엔드포인트가 없어 201이지만 `Location` 헤더를 주지 않는다.
@@ -425,9 +425,9 @@ public final class BookingDocsFields {
 
       - `code`는 언어와 무관한 불변 식별자이고 `label`만 요청자의 표시 언어(`users.lang`, 미설정·미지원이면 `en` 폴백)로 서버가 번역한다. 파라미터로 언어를 고를 수 없다.
       - 지원 언어는 `en`·`ko`·`ja` 3종이다(임대인은 `ko` 고정). 반환되는 **사유 집합과 순서는 `en` 행이 정본**이고, 요청 언어에 라벨이 없는 사유만 `en` 라벨로 폴백한다 — 언어를 바꿔도 항목 수·순서는 같다.
-      - **정렬은 카탈로그의 `display_order` 오름차순 고정**이며 클라이언트는 받은 순서를 그대로 노출한다.
+      - **정렬은 서버가 정한 순서로 고정**이며 클라이언트는 받은 순서를 그대로 노출한다.
       - 페이지네이션이 없다 — 활성 사유 전체를 한 번에 반환한다.
-      - **사유는 DB 카탈로그 행이라 배포 없이 늘어난다.** 아래 `code` 목록은 현재 시드값 스냅샷일 뿐이니 클라이언트에 하드코딩하지 말고 이 엔드포인트 응답으로 선택지를 구성한다.
+      - **사유는 배포 없이 늘어날 수 있다.** 아래 `code` 목록은 현재 시드값 스냅샷일 뿐이니 클라이언트에 하드코딩하지 말고 이 엔드포인트 응답으로 선택지를 구성한다.
 
       **에러 코드**
 
@@ -465,16 +465,15 @@ public final class BookingDocsFields {
       List.of("SPAM", "ABUSE", "SEXUAL_CONTENT", "EXTERNAL_CONTACT", "FALSE_INFO", "ETC");
 
   private static final String REASON_CODE_DESCRIPTION =
-      "신고 사유 코드 — 언어 무관 불변 식별자. `booking_report_reasons` 테이블의 활성 행이라"
+      "신고 사유 코드 — 언어 무관 불변 식별자. 서버가 관리하는 활성 사유라"
           + " **배포 없이 늘어날 수 있으니 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`의 응답을 쓴다**";
 
   private static final String BOOKING_STATUS_DESCRIPTION =
       "예약 상태 — 신청 직후 `REQUESTED` 고정. MVP에서는 `REQUESTED`만 반환된다(수락·거절·취소 엔드포인트 미구현이라 나머지 값으로 전이할 경로가 없다)";
 
-  private static final String TITLE_DESCRIPTION =
-      "매물 제목 — 조회 시점에 listing 모듈로 조인한다. 매물이 삭제·비공개면 null";
+  private static final String TITLE_DESCRIPTION = "매물 제목 — 조회 시점 값. 매물이 삭제·비공개면 null";
 
-  private static final String THUMBNAIL_DESCRIPTION = "매물 대표 이미지 URL — 조회 시점 조인. 매물이 삭제·비공개면 null";
+  private static final String THUMBNAIL_DESCRIPTION = "매물 대표 이미지 URL — 조회 시점 값. 매물이 삭제·비공개면 null";
 
   private static final String ROOM_OFFER_NAME_DESCRIPTION = "방 상품명(임대인만) — 매물·방 상품이 삭제·비공개면 null";
 
