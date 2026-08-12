@@ -1,4 +1,4 @@
-# ADR-0039. 매물 스키마를 등록 폼 기준 v4로 재정의하고 1회 재시드로 이행한다
+# ADR-0039. 매물 스키마를 등록 폼 기준 v4로 재정의하고 마이그레이션 체인을 baseline으로 리셋한다
 
 | 항목 | 값 |
 |---|---|
@@ -33,7 +33,7 @@ Proposed
 
 ## Decision
 
-**매물 스키마를 등록 폼 기준 v4로 재정의하고, 데이터는 1회 수동 재시드로 이행한다.**
+**매물 스키마를 등록 폼 기준 v4로 재정의하고, listing 마이그레이션 체인을 v4 baseline으로 리셋한다. 시드 데이터는 수동으로 주입한다.**
 
 ### 1. 스키마 v4 (루트 34필드)
 
@@ -64,23 +64,32 @@ Proposed
 
 `contact`는 **세입자 응답에 공개**한다. 매물별 담당 연락처는 임대인 개인 연락처(`users.phone_number`, 마스킹 대상 — [ADR-0034](./0034-landlord-phone-sms-verification.md))와 **별개 값**이므로 마스킹 대상이 아니다. `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에서 제외한다.
 
-### 4. 이행 — 1회 수동 재시드 + 선행 changeUnit 무력화
+### 4. 이행 — listing 마이그레이션 체인을 v4 baseline으로 리셋한다
 
-v4 데이터는 `mongoimport --drop`으로 1회 주입한다. Mongock은 **validator와 인덱스만** 담당한다.
+**`0099`~`0114` changeUnit을 삭제하고, `0115 listing-v4-baseline` 하나로 갈음한다.** v3 데이터가 폐기되는 이상 그 데이터를 v1→v2→v3로 옮기던 이력은 재현할 대상이 없다. [migration-policy §1](../database/migration-policy.md#1-기본-규칙)이 인정하는 **baseline** 채택(`V1__baseline.sql` 대응)을 MongoDB에 적용한 것이다.
 
-동시에 listing 모듈의 `0108`~`0114` changeUnit을 **본문 없는 no-op으로 바꾼다.** 그대로 두면 신규·CI 환경에서 `ListingCatalogSeedChangeUnit`(0108)이 옛 68건 카탈로그를 심고 `0111`~`0114`가 그 위에 덮어써, 수동으로 넣은 103건 정본을 오염시킨다. Mongock은 Flyway와 달리 **changeUnit 본문의 체크섬을 검증하지 않으므로**, 본문 수정이 기존 환경의 적용 이력을 깨지 않는다.
+**존치: `0100 SearchPlaceSeedChangeUnit`.** 유일하게 다른 컬렉션(`searchPlaces`)을 다루며 v4와 무관하다. 나머지 15건은 전부 `listings`·`listingCatalog`만 건드리는데, 두 컬렉션은 v4에서 통째로 재정의된다.
 
-인덱스는 부트스트랩(`ListingMongoIndexInitializer`)이 계속 소유한다. 다만 `listings_status_arc_required`는 키가 바뀌므로 **새 이름으로 만든다** — 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다. 옛 인덱스 2건의 삭제만 `0115`가 1회 수행한다.
+기존 환경의 Mongock changelog에는 `0099`~`0114` 항목이 남지만, 대응 클래스가 없으면 실행 대상에서 빠질 뿐이라 무해하다.
+
+**`0115`는 스키마만 다룬다** — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. **데이터는 건드리지 않는다.**
+
+**시드는 수동으로 주입한다**(`listings` 2건 · `listingCatalog` 103건). 운영 절차는 [migration-policy §8-1](../database/migration-policy.md)이 정본이며, 핵심은 **`--drop`을 쓰지 않는 것**이다 — 컬렉션을 지우면 validator가 함께 사라지는데 `0115`는 1회성이라 재기동해도 복구되지 않는다. `deleteMany({})` 후 import한다.
+
+인덱스는 부트스트랩(`ListingMongoIndexInitializer`)이 계속 소유한다. 다만 `listings_status_arc_required`는 키가 바뀌므로 **새 이름으로 만든다** — 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다.
+
+v4 `$jsonSchema`는 `0115` 안에 **동결**한다. `ListingMongoIndexInitializer`의 정적 메서드를 호출하지 않는다 — `0105`가 `listingJsonSchema()`를 정적 호출한 탓에 v3에서 메서드를 포크해 `listingV2JsonSchema()`라는 죽은 사본이 생긴 전례가 있다. 체인 삭제로 두 정적 메서드는 사용처가 사라지므로 함께 제거한다.
 
 ## Alternatives
 
 | 대안 | 장점 | 단점 | 채택 안 한 이유 |
 |---|---|---|---|
-| **A. v4 재정의 + 1회 재시드** | 스키마가 실제 수집 정보와 일치. 죽은 필드·파생 태그 소멸 | 운영 데이터 폐기. 정책 예외 필요 | **채택** |
+| **A. v4 재정의 + baseline 리셋 + 수동 시드** | 스키마가 실제 수집 정보와 일치. 죽은 필드·파생 태그 소멸. 체인이 1건으로 줄어 재생 위험(`0109`의 v4 다운그레이드 등)이 구조적으로 사라진다 | 운영 데이터 폐기. v3 이전 이력을 체인으로 재현 불가 | **채택** |
 | B. v3 유지 + 신규 필드만 추가 | 이행 불필요, 정책 위반 없음 | 채울 수 없는 필드 22개가 영구히 남고, 등록 API가 그 값을 날조해야 한다 | 미채택 — 문제의 원인을 그대로 둔다 |
 | C. expand-contract 점진 이행 | 무중단, [migration-policy §5](../database/migration-policy.md) 준수 | 신규 필수 필드(담당자 연락처·설문)에 **대응하는 원본 값이 없어** 백필이 불가능하다 | 미채택 — 기술적으로 성립하지 않는다 |
-| D. 재시드도 Mongock changeUnit으로 | 모든 환경이 동일, 예외 불필요 | 운영 매물 데이터를 애플리케이션 코드가 삭제하게 된다 | 미채택 — 레퍼런스 카탈로그와 운영 데이터의 성격 차이를 지운다 |
+| D. 시드도 changeUnit이 적재 | 신규 환경이 즉시 정상 동작 | 시드가 jar에 고정돼 운영자가 고치려면 재빌드·재배포가 필요하다. `listingCatalog`는 정책상 가능하지만 `listings`는 곧 임대인 데이터가 오갈 컬렉션이라 코드가 소유하면 안 된다 | 미채택 — 시드를 자유롭게 바꿀 수 있어야 한다는 요구와 어긋난다 |
 | E. `District`를 매물 9종에 맞춰 진단 확장 | 두 모듈의 값 집합 일치 | 진단 enum·문항 시드·사용자 데이터 3곳을 고쳐야 하고, `ETC`("그 외")의 의미를 잃는다 | 미채택 — 매핑 한 곳으로 풀리는 문제다 |
+| F. 기존 체인을 no-op으로 무력화 | 클래스가 남아 이력 추적이 쉽다 | 빈 껍데기 14개가 남아 "왜 비어 있지"를 영구 유발하고, 적용된 마이그레이션의 **동작을 사후 변경**해 6개월 뒤 이력만 보고 재현하려는 사람에게 거짓말을 한다 | 미채택 — 삭제가 더 정직하다 |
 
 ## Consequences
 
@@ -88,7 +97,7 @@ v4 데이터는 `mongoimport --drop`으로 1회 주입한다. Mongock은 **valid
 - **부정/트레이드오프**
   - 기존 매물 데이터를 폐기한다. 재시드 전에는 애플리케이션이 정상 동작하지 않으므로 **도메인 변경과 저장 변경이 한 배포에 묶인다.**
   - [migration-policy §8](../database/migration-policy.md)·[ADR-0032](./0032-mongodb-migration-runner.md)·[ADR-0008](./0008-mysql-migration-flyway.md) D3·[ADR-0005](./0005-polyglot-persistence.md) D7의 "파괴적 일괄 변경 금지"에 **1회 예외**를 만든다. 각 문서에 예외 범위를 명시한다.
-  - 적용된 changeUnit(`0108`~`0114`)의 본문을 수정한다. Mongock에는 체크섬이 없어 이력은 안전하지만, forward-only 관행에서 벗어나므로 **이 ADR이 근거다.**
+  - **적용된 changeUnit 15건(`0099`~`0114`, `0100` 제외)을 삭제한다.** 코드에서 사라지므로 v3 이전 환경을 체인으로 재구성할 수 없다 — 되돌리려면 git 이력을 봐야 한다. 기존 환경의 changelog에는 고아 항목이 남는다.
   - 매물 문서에 임대인 PII가 새로 생긴다. [ADR-0015](./0015-sensitive-column-encryption.md)의 민감정보 범위와 at-rest 대상에 MongoDB를 추가한다.
   - 응답 구조가 하위 호환을 깬다. 구버전 앱 대응은 별도 ADR(API 버전 분리)에서 다룬다.
 - **후속 작업**
@@ -98,7 +107,8 @@ v4 데이터는 `mongoimport --drop`으로 1회 주입한다. Mongock은 **valid
 
 ## Validation
 
-- `mongoimport` 후 기동 시 `0115`가 v4 validator를 적용하고, 옛 인덱스 2건이 사라지며 새 인덱스가 생성된다.
-- **신규 환경 시나리오**: 빈 DB에 전체 changeUnit을 적용한 뒤 수동 import한 결과가 103건 정본과 일치한다(`0108`~`0114` no-op 확인).
+- 기동 시 `0115`가 v4 validator를 적용하고, 옛 인덱스 2건이 사라지며 새 인덱스가 생성된다.
+- **신규 환경 시나리오**: 빈 DB 기동 후 `0100`·`0115`만 실행되고, 시드를 `deleteMany({})`+import로 주입한 뒤 validator가 유지된다(`--drop` 금지 확인).
+- **기존 환경 시나리오**: changelog에 `0099`~`0114` 고아 항목이 남은 채로 `0115`만 실행되고, 최종 상태가 신규 환경과 같다.
 - **매핑 회귀 테스트**: `District.ETC`로 추천을 조회하면 명시 5구를 제외한 매물이 반환된다(현재는 0건).
 - `ApplicationModules.verify()` 통과 — `listing`↔`diagnosis`가 여전히 직접 의존하지 않는다.

@@ -50,7 +50,7 @@ Accepted
 4. **찜·최근 본 매물은 `listing`과 같은 MongoDB에 둔다.**
 5. **cross-store 조인을 금지하고 애플리케이션 레벨로 합친다.** store를 넘는 조회는 공개 쿼리/이벤트로 데이터를 받아 코드에서 합친다(N+1·배치 조회 주의).
 6. **cross-store 분산 트랜잭션(XA)을 쓰지 않는다.** 쓰기 경로는 단일 store 안으로 한정한다. store를 넘는 정합이 필요하면 도메인 이벤트 기반 최종 일관성으로 설계한다.
-7. **MySQL 스키마 변경은 마이그레이션 도구로 관리한다**(**Flyway 채택 — [ADR-0008](./0008-mysql-migration-flyway.md)**, 세부는 [migration-policy](../database/migration-policy.md)). MongoDB는 애플리케이션 레벨 버전 필드로 관리하고 **파괴적 일괄 변경은 피한다** — `listings` 스키마 v4 이행만 **1회 예외**로 `mongoimport --drop` 재시드를 허용한다([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
+7. **MySQL 스키마 변경은 마이그레이션 도구로 관리한다**(**Flyway 채택 — [ADR-0008](./0008-mysql-migration-flyway.md)**, 세부는 [migration-policy](../database/migration-policy.md)). MongoDB는 애플리케이션 레벨 버전 필드로 관리하고 **파괴적 일괄 변경은 피한다** — `listings` 스키마 v4 이행만 **1회 예외**로 v3 문서 폐기와 수동 재시드를 허용한다([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
 
 ## Alternatives
 

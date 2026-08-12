@@ -62,7 +62,7 @@
 | [0036](./0036-diagnosis-v2-server-driven-flow.md) | 진단 질의응답을 서버 주도(start/next) 흐름으로 /api/v2에 신설하고 진행 상태를 별도 flow-session에 둔다 | Proposed | 2026-07-15 |
 | [0037](./0037-listing-localization-and-code-catalog.md) | 매물 고유 문구는 listings에 임베드하고 공통 코드는 listingCatalog에서 번역한다 | Accepted | 2026-07-17 |
 | [0038](./0038-application-logging-and-cloudwatch.md) | 로그는 다섯 가지 용도가 요구하는 것만 남긴다 | Proposed | 2026-07-21 |
-| [0039](./0039-listing-schema-v4-registration-form.md) | 매물 스키마를 등록 폼 기준 v4로 재정의하고 1회 재시드로 이행한다 | Proposed | 2026-08-12 |
+| [0039](./0039-listing-schema-v4-registration-form.md) | 매물 스키마를 등록 폼 기준 v4로 재정의하고 마이그레이션 체인을 baseline으로 리셋한다 | Proposed | 2026-08-12 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

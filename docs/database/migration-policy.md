@@ -94,8 +94,26 @@
 
 [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)가 정한 **명시적 예외**다. 범위는 `listings`·`listingCatalog` 두 컬렉션의 v4 이행 **1회**로 한정하며, 다른 컬렉션·다른 변경에 확장 적용하지 않는다.
 
-1. **v4 데이터는 `mongoimport --drop`으로 1회 수동 재시드**한다(changeUnit이 아니다). 신규 필드(담당자 연락처·설문 3종 등)에 **대응하는 원본 값이 없어** 백필이 성립하지 않고, 레퍼런스 카탈로그와 달리 운영 매물 데이터를 애플리케이션 코드가 지우게 두지 않기 위해서다 — 위 "파괴적 일괄 변경 금지"의 1회 예외다. Mongock은 validator와 인덱스만 담당한다.
-2. **선행 changeUnit `0108`~`0114`를 본문 없는 no-op으로 무력화**한다. 그대로 두면 신규·CI 환경에서 `0108`(`listing-catalog-seed`)이 옛 68건 카탈로그를 심고 `0111`~`0114`가 그 위에 덮어써 수동 적재한 103건 정본을 오염시킨다. **Mongock에는 Flyway 같은 체크섬이 없어** 본문 수정이 기존 환경의 적용 이력을 깨지 않는다 — 적용된 마이그레이션 파일을 고치지 않는다는 [§1](#1-기본-규칙)의 불변 조항은 체크섬을 근거로 한 MySQL/Flyway 조항이라 여기에 해당하지 않는다.
+1. **listing 마이그레이션 체인을 v4 baseline으로 리셋한다.** `0099`~`0114` changeUnit을 **삭제**하고 `0115 listing-v4-baseline` 하나로 갈음한다 — [§1](#1-기본-규칙)이 인정하는 baseline 채택(`V1__baseline.sql` 대응)의 MongoDB 적용이다. v3 데이터를 폐기하는 이상 그 데이터를 v1→v2→v3로 옮기던 이력은 재현할 대상이 없다.
+   - **존치: `0100`(`listing-search-place-seed`).** 유일하게 다른 컬렉션(`searchPlaces`)을 다루며 v4와 무관하다.
+   - 기존 환경의 changelog에는 `0099`~`0114` 항목이 고아로 남지만, 대응 클래스가 없으면 실행 대상에서 빠질 뿐이라 무해하다.
+   - `0115`는 **스키마만** 다룬다 — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. 데이터는 건드리지 않는다. v4 `$jsonSchema`는 `0115` 안에 **동결**하고 `ListingMongoIndexInitializer`의 정적 메서드를 호출하지 않는다(과거 `0105`가 그렇게 해서 `listingV2JsonSchema()` 죽은 사본이 생겼다).
+2. **시드(`listings` 2건 · `listingCatalog` 103건)는 운영자가 수동 주입한다.** 신규 필드(담당자 연락처·설문 3종 등)에 **대응하는 원본 값이 없어** 백필이 성립하지 않고, 시드를 코드가 소유하면 고칠 때마다 재빌드·재배포가 필요하다 — 위 "파괴적 일괄 변경 금지"의 1회 예외다.
+
+   > **`--drop`을 쓰지 않는다.** 컬렉션을 지우면 **validator가 함께 사라지는데** `0115`는 1회성이라 재기동해도 다시 걸리지 않는다(부트스트랩은 인덱스만 만든다). 반드시 아래 순서를 지킨다.
+
+   ```js
+   db.listingCatalog.deleteMany({})   // drop 금지 — 컬렉션과 validator를 유지한다
+   db.listings.deleteMany({})
+   ```
+
+   ```bash
+   mongoimport --db kohere --collection listingCatalog --jsonArray --file kohere.listingCatalog.seed.json
+   mongoimport --db kohere --collection listings       --jsonArray --file kohere.listings.seed.json
+   ```
+
+   - **신규 환경은 시드 전까지 `listingCatalog`가 비어 있다.** 그동안 매물 응답의 라벨 자리에 코드값(`SHARE_HOUSE` 등)이 그대로 나간다 — API는 실패하지 않으므로 조용히 나빠진다. 배포 절차에 시드 단계를 반드시 포함한다.
+   - 이미 v4 validator가 걸린 컬렉션에 v4 문서를 넣는 것이므로 `validationLevel: off` 완화가 필요 없다. 넣기 전에 기동해도 되고, 기동 전에 넣어도 결과가 같다.
 3. **인덱스 키를 바꿀 때는 새 이름으로 만든다.** 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다 — `listings_status_arc_required`(키 `status, propertyPolicies.arcRequired`)는 새 이름 `listings_status_arc_requirement`(키 `status, arcRequired`)로 만든다.
 4. **인덱스 소유는 부트스트랩이 유지**한다(`ListingMongoIndexInitializer`의 멱등 생성). changeUnit이 하는 일은 **옛 인덱스 2건**(`listings_status_arc_required`·`listings_status_room_available_count`)의 **삭제뿐**이며 `0115`가 1회 수행한다.
 
@@ -114,7 +132,7 @@
 - [ ] 대형 테이블 인덱스/타입 변경의 **락 영향**을 검토했다([§6](#6-인덱스-추가-시-락-주의))
 - [ ] 스키마가 [database-design](./database-design.md) 및 도메인 엔티티와 일치하고 JPA `validate`가 green이다
 - [ ] (MongoDB) 새 인덱스(`2dsphere`·UNIQUE·최신순 조회용 복합 인덱스 등)를 부트스트랩 스크립트에 **멱등** 추가했다. 기존 인덱스의 **키를 바꿀 때는 새 이름**으로 만들고(같은 이름·다른 키는 `IndexOptionsConflict`) 옛 인덱스 삭제만 changeUnit에 넣었다([§8-1](#8-1-매물-스키마-v4-이행-예외1회))
-- [ ] (MongoDB) 초기 시드(init changeUnit `0000`)·이미 적재된 컬렉션의 1회성 변경 모두 컬렉션 소유 모듈의 **Mongock `@ChangeUnit`**으로 처리했다(별도 `ApplicationRunner` 시더 금지 — [§8](#8-mongodb-변경-관리)). 수동 재시드로 예외 처리했다면 [§8-1](#8-1-매물-스키마-v4-이행-예외1회)의 범위에 해당하고, 옛 데이터를 되심는 선행 changeUnit을 no-op으로 무력화했다
+- [ ] (MongoDB) 초기 시드(init changeUnit `0000`)·이미 적재된 컬렉션의 1회성 변경 모두 컬렉션 소유 모듈의 **Mongock `@ChangeUnit`**으로 처리했다(별도 `ApplicationRunner` 시더 금지 — [§8](#8-mongodb-변경-관리)). 수동 시드로 예외 처리했다면 [§8-1](#8-1-매물-스키마-v4-이행-예외1회)의 범위에 해당하고, `--drop` 없이 `deleteMany({})` 후 import했다
 - [ ] (Redis) 키 구조 변경 시 네임스페이스 버전/만료 교체 전략을 적었다
 - [ ] CI에서 빈 DB 전체 적용이 통과한다
 

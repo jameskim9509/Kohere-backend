@@ -419,8 +419,9 @@
 
 - 주변 시설은 자유 텍스트가 아니라 `nearbyFacilities`의 `NearbyFacility` 코드 배열이다. API 응답에서도 `nearbyFacilities`로 내려주며 다른 공통 코드와 같이 카탈로그 label과 조합한다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
-- **v4 데이터(`listings`·`listingCatalog`)는 `mongoimport --drop`으로 1회 수동 재시드**한다. Mongock은 validator와 인덱스만 담당하며, 선행 changeUnit `0108`~`0114`는 **본문 없는 no-op으로 무력화**돼 있다 — 그대로 두면 신규·CI 환경에서 `0108`이 옛 68건 카탈로그를 심고 `0111`~`0114`가 그 위에 덮어써 수동 적재한 103건 정본을 오염시킨다. Mongock은 Flyway와 달리 changeUnit 본문의 **체크섬을 검증하지 않아** 본문 수정이 기존 환경의 적용 이력을 깨지 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) · [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)).
-- 로컬 개발용 seed는 `ListingSeedRunner`(`@Profile("local")` + `app.seed.listings-enabled=true`)가 `Listing` 도메인 객체를 만들고 `ListingRepository.save()` 흐름으로 적재한다. fixture는 v4 구조로 갱신한다. seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 fixture 값이며 운영 ID 생성 규칙이 아니다. 현재 fixture 입력과 같은 MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
+- **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. `0100`(`searchPlaces` 시드)만 존치한다. 절차와 근거는 [migration-policy §8-1](./migration-policy.md) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
+- **시드(`listings` 2건 · `listingCatalog` 103건)는 운영자가 수동 주입**한다. **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`는 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되므로, 배포 절차에 시드 단계를 포함한다.
+- seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
 
 `searchPlaces`
 
