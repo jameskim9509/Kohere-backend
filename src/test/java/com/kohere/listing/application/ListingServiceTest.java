@@ -15,12 +15,24 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.domain.ArcRequirement;
+import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.ContractDifficulty;
+import com.kohere.listing.domain.District;
+import com.kohere.listing.domain.KitchenFacility;
+import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.LivingAmenity;
 import com.kohere.listing.domain.LocalizedText;
+import com.kohere.listing.domain.Nationality;
+import com.kohere.listing.domain.NearbyFacility;
+import com.kohere.listing.domain.ProvidedSupply;
+import com.kohere.listing.domain.SecurityFeature;
+import com.kohere.listing.domain.SupportedLanguage;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
 import com.kohere.listing.domain.catalog.ListingCatalogEntry;
 import com.kohere.listing.domain.catalog.ListingCatalogRepository;
@@ -30,7 +42,6 @@ import com.kohere.listing.domain.recent.RecentListingRepository;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -143,24 +154,18 @@ class ListingServiceTest {
     assertThat(response.title()).isEqualTo("Test Goshiwon");
     assertThat(response.rentalType().code()).isEqualTo("MONTHLY_RENT");
     assertThat(response.rentalType().label()).isEqualTo("Monthly Rent");
-    assertThat(response.contract().minStayMonths()).isEqualTo(1);
-    assertThat(response.contract().maxStayMonths()).isEqualTo(12);
+    assertThat(response.refundPolicy()).isEqualTo("Full refund before seven days");
     assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
     assertThat(response.genderPolicy().label()).isEqualTo("Female Only");
     assertThat(response.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Station");
-    assertThat(response.propertyPolicies().arcRequired()).isFalse();
     assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
         .containsExactlyInAnyOrder(
-            "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC");
+            "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE");
     assertThat(response.conditions())
         .filteredOn(condition -> condition.code().equals("NO_MAINT_FEE"))
         .singleElement()
         .satisfies(condition -> assertThat(condition.label()).isEqualTo("No Maint. Fee"));
-    assertThat(response.conditions())
-        .filteredOn(condition -> condition.code().equals("NO_ARC"))
-        .singleElement()
-        .satisfies(condition -> assertThat(condition.label()).isEqualTo("No ARC"));
     assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
         .doesNotContain("MOVE_IN_NOW");
@@ -174,7 +179,7 @@ class ListingServiceTest {
         .extracting(laundry -> laundry.label())
         .contains("Clothes Dryer", "Iron");
     assertThat(response.facilities().commonSpaces())
-        .extracting(commonSpace -> commonSpace.type().label())
+        .extracting(commonSpace -> commonSpace.label())
         .contains("Meeting Room", "Rooftop");
     assertThat(response.facilities().providedSupplies())
         .extracting(supply -> supply.label())
@@ -186,11 +191,15 @@ class ListingServiceTest {
     assertThat(response.roomOffers())
         .allSatisfy(
             roomOffer -> assertThat(roomOffer.status()).isEqualTo(Listing.RoomOfferStatus.ACTIVE));
+    // v4에서 계약기간은 루트가 아니라 방 상품마다 달라진다.
+    assertThat(response.roomOffers())
+        .extracting(roomOffer -> roomOffer.contract())
+        .containsExactly(new Listing.Contract(1, 12), new Listing.Contract(3, 24));
   }
 
   /** 목록 카드의 conditions는 필터를 통과한 방만이 아니라 매물의 ACTIVE 방 전체 기준으로 계산한다. */
   @Test
-  void getListings_conditions는_ACTIVE방_전체_합집합과_NO_ARC를_반환한다() {
+  void getListings_conditions는_필터통과방이_아니라_ACTIVE방_전체_합집합을_반환한다() {
     Listing listing = sampleListing();
     when(listingRepository.search(any()))
         .thenReturn(
@@ -208,7 +217,7 @@ class ListingServiceTest {
     assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
         .containsExactlyInAnyOrder(
-            "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC");
+            "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE");
     assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
         .doesNotContain("MOVE_IN_NOW");
@@ -231,12 +240,14 @@ class ListingServiceTest {
     assertThat(response.genderPolicy().label()).isEqualTo("여성 전용");
     assertThat(response.nearestTransit().name()).isEqualTo("서울대입구역");
     assertThat(response.roomOffers().getFirst().name()).isEqualTo("스탠다드 1인실");
-    assertThat(response.descriptions().description()).isEqualTo("테스트 설명");
+    assertThat(response.description()).isEqualTo("테스트 설명");
+    assertThat(response.extraNotes()).isEqualTo("테스트 주의사항");
+    assertThat(response.refundPolicy()).isEqualTo("입주 7일 전 전액 환불");
   }
 
   /** 진단 추천 view도 목록/상세와 같은 매물 단위 conditions 계산 규칙을 사용한다. */
   @Test
-  void toRecommendedView_conditions는_ACTIVE방_전체_합집합과_NO_ARC를_반환한다() {
+  void toRecommendedView_conditions는_ACTIVE방_전체_합집합을_반환한다() {
     ListingLocalizationContext localization =
         new ListingLocalizationService(ListingServiceTest::catalogEntries).contextFor("en");
     RecommendedListingView response =
@@ -245,7 +256,7 @@ class ListingServiceTest {
     assertThat(response.conditions())
         .extracting(condition -> condition.code())
         .containsExactlyInAnyOrder(
-            "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC");
+            "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE");
     assertThat(response.conditions())
         .extracting(condition -> condition.code())
         .doesNotContain("MOVE_IN_NOW");
@@ -255,55 +266,62 @@ class ListingServiceTest {
   private static Listing sampleListing() {
     return Listing.builder()
         .id(LISTING_ID)
-        .schemaVersion(3)
+        .schemaVersion(4)
         .landlordId(1L)
+        .contact(new Listing.Contact("김담당", "+82) 10-1111-2222", "+82) 10-1111-2223"))
+        .businessRegistrationNumber("1112233344")
+        .blogUrl(null)
+        .ageMin(20)
+        .ageMax(35)
         .title(new LocalizedText("테스트 고시원", "Test Goshiwon"))
         .type(ListingType.GOSHIWON)
-        .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
-        .refundPolicy(
-            new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS,
-                new LocalizedText("입주 7일 전 전액 환불", "Full refund before seven days")))
-        .contract(new Listing.Contract(1, 12))
+        .status(Listing.ListingStatus.PUBLISHED)
+        .rejectionReason(null)
         .genderPolicy(Listing.GenderPolicy.FEMALE_ONLY)
-        .location(new Listing.GeoPoint(126.951422, 37.459471))
-        .address(
-            new Listing.Address(
-                "SEOUL",
-                "GWANAK_GU",
-                new LocalizedText("서울특별시 관악구 테스트로 1", "1 Test-ro, Gwanak-gu, Seoul"),
-                null))
-        .nearestTransit(
-            new Listing.NearestTransit(
-                Listing.TransitType.SUBWAY,
-                new LocalizedText("서울대입구역", "Seoul Nat'l Univ. Station"),
-                5,
-                new LocalizedText("편의점", "Convenience store")))
-        .nearbyUniversityCodes(Set.of("SNU"))
-        .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
-        .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
-        .facilities(
-            new Listing.Facilities(
-                Set.of(Listing.HeatingSystem.CENTRAL),
-                Set.of("SHARED_REFRIGERATOR", "ELECTRIC_KETTLE"),
-                Set.of("COIN_LAUNDRY", "DRYER", "IRON"),
-                Set.of("WIFI"),
-                Set.of("CCTV"),
-                List.of(
-                    new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 2),
-                    new Listing.CommonSpace(Listing.CommonSpaceType.MEETING_ROOM, null),
-                    new Listing.CommonSpace(Listing.CommonSpaceType.ROOFTOP, null)),
-                Set.of("BEDDING", "TISSUE")))
-        .roomOffers(List.of(sampleRoomOffer(), secondActiveRoomOffer(), inactiveRoomOffer()))
-        .descriptions(new Listing.Descriptions("테스트 설명", "Test description", "테스트"))
+        .languagesSupported(Set.of(SupportedLanguage.ENGLISH))
+        .favoriteCount(3)
         .imageUrls(
             List.of(
                 "https://cdn.kohere.app/listings/test/1.jpg",
                 "https://cdn.kohere.app/listings/test/2.jpg"))
-        .favoriteCount(3)
+        .nearbyUniversityCodes(Set.of("SNU"))
         .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
         .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
+        .address(
+            new Listing.Address(
+                City.SEOUL,
+                District.GWANAK_GU,
+                new LocalizedText("서울특별시 관악구 테스트로 1", "1 Test-ro, Gwanak-gu, Seoul"),
+                null))
+        .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
+        .description(new LocalizedText("테스트 설명", "Test description"))
+        .extraNotes(new LocalizedText("테스트 주의사항", "Test notes"))
+        .facilities(
+            new Listing.Facilities(
+                Set.of(Listing.HeatingSystem.CENTRAL),
+                Set.of(KitchenFacility.SHARED_REFRIGERATOR, KitchenFacility.ELECTRIC_KETTLE),
+                Set.of(LaundryFacility.WASHER, LaundryFacility.DRYER, LaundryFacility.IRON),
+                Set.of(LivingAmenity.WIFI),
+                Set.of(SecurityFeature.CCTV),
+                Set.of(
+                    Listing.CommonSpaceType.SHARED_TOILET,
+                    Listing.CommonSpaceType.MEETING_ROOM,
+                    Listing.CommonSpaceType.ROOFTOP),
+                Set.of(ProvidedSupply.BEDDING, ProvidedSupply.TISSUE)))
+        .location(new Listing.GeoPoint(126.951422, 37.459471))
+        .nearestTransit(
+            new Listing.NearestTransit(
+                Listing.TransitType.SUBWAY,
+                new LocalizedText("서울대입구역", "Seoul Nat'l Univ. Station"),
+                5))
+        .nearbyFacilities(Set.of(NearbyFacility.CONVENIENCE_STORE))
+        .arcRequired(ArcRequirement.NOT_REQUIRED)
+        .refundPolicy(new LocalizedText("입주 7일 전 전액 환불", "Full refund before seven days"))
+        .roomOffers(List.of(sampleRoomOffer(), secondActiveRoomOffer(), inactiveRoomOffer()))
+        .preferredNationalities(Set.of(Nationality.JAPAN))
+        .contractDifficulties(Set.of(ContractDifficulty.LANGUAGE))
+        .serviceFeedback(null)
         .build();
   }
 
@@ -313,8 +331,8 @@ class ListingServiceTest {
         ROOM_OFFER_ID,
         new LocalizedText("스탠다드 1인실", "Standard Single Room"),
         Listing.RoomOfferStatus.ACTIVE,
-        new Listing.Pricing(300000, 300000, 0, Listing.Currency.KRW),
-        new Listing.Inventory(1, 1, LocalDate.parse("2026-07-01")),
+        new Listing.Contract(1, 12),
+        new Listing.Pricing(300000, 90000, 300000, 0, Listing.Currency.KRW),
         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION),
         List.of());
   }
@@ -325,8 +343,8 @@ class ListingServiceTest {
         SECOND_ROOM_OFFER_ID,
         new LocalizedText("프리미엄 1인실", "Premium Single Room"),
         Listing.RoomOfferStatus.ACTIVE,
-        new Listing.Pricing(450000, 500000, 20000, Listing.Currency.KRW),
-        new Listing.Inventory(2, 2, LocalDate.parse("2026-07-01")),
+        new Listing.Contract(3, 24),
+        new Listing.Pricing(450000, 130000, 500000, 20000, Listing.Currency.KRW),
         Set.of(ConditionTag.PRIVATE_BATH, ConditionTag.NO_MAINT_FEE),
         List.of());
   }
@@ -337,8 +355,8 @@ class ListingServiceTest {
         INACTIVE_ROOM_OFFER_ID,
         new LocalizedText("비노출 방", "Hidden Room"),
         Listing.RoomOfferStatus.INACTIVE,
-        new Listing.Pricing(100000, 100000, 0, Listing.Currency.KRW),
-        new Listing.Inventory(1, 1, LocalDate.parse("2026-07-01")),
+        new Listing.Contract(1, 12),
+        new Listing.Pricing(100000, 30000, 100000, 0, Listing.Currency.KRW),
         Set.of(ConditionTag.MOVE_IN_NOW),
         List.of());
   }
@@ -363,8 +381,7 @@ class ListingServiceTest {
             "전입신고 가능",
             "Address Registration"),
         catalog(ListingCatalogCategory.CONDITION_TAG, "PRIVATE_BATH", "개인 욕실", "Private Bath"),
-        catalog(ListingCatalogCategory.CONDITION_TAG, "NO_MAINT_FEE", "관리비 없음", "No Maint. Fee"),
-        catalog(ListingCatalogCategory.CONDITION_TAG, "NO_ARC", "외국인등록증 없이 가능", "No ARC"));
+        catalog(ListingCatalogCategory.CONDITION_TAG, "NO_MAINT_FEE", "관리비 없음", "No Maint. Fee"));
   }
 
   /** 간결한 테스트 카탈로그 항목 생성 헬퍼다. */

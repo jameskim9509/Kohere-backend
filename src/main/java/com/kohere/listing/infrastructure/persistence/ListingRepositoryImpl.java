@@ -290,11 +290,9 @@ public class ListingRepositoryImpl implements ListingRepository {
 
     Set<ConditionTag> roomOfferConditions = condition.roomOfferConditions();
     if (!roomOfferConditions.isEmpty()) {
+      // v4에는 재고(inventory)가 없어 MOVE_IN_NOW도 다른 태그와 동일하게 filterTags 포함 여부로만 판정한다.
       criteria.add(
           Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
-      if (roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)) {
-        criteria.add(Criteria.where("inventory.availableCount").gt(0));
-      }
     }
     return new Criteria().andOperator(criteria.toArray(Criteria[]::new));
   }

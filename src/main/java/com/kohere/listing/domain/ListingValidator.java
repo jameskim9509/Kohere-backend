@@ -102,9 +102,14 @@ public final class ListingValidator {
     roomOffers.forEach(ListingValidator::validateRoomOffer);
   }
 
+  /**
+   * 방 상품 하나의 필수 구조를 검증한다.
+   *
+   * <p>{@code roomOfferId}는 매물 {@code id}와 마찬가지로 값이 없으면 저장 어댑터가 ObjectId를 발급하므로 필수로 보지 않는다. 저장 시점의
+   * 문서에는 항상 채워져 들어가므로 MongoDB validator의 {@code required}와도 어긋나지 않는다.
+   */
   private static void validateRoomOffer(Listing.RoomOffer roomOffer) {
     requireNonNull(roomOffer, "roomOffers 항목이 필요합니다.");
-    requireText(roomOffer.roomOfferId(), "roomOffers.roomOfferId가 필요합니다.");
     requireLocalizedText(roomOffer.name(), "roomOffers.name");
     requireNonNull(roomOffer.status(), "roomOffers.status가 필요합니다.");
     requireNonNull(roomOffer.contract(), "roomOffers.contract가 필요합니다.");

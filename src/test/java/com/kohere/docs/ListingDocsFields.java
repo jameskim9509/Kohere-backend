@@ -1,10 +1,23 @@
 package com.kohere.docs;
 
+import static com.kohere.docs.ApiDocsFields.codeArrayField;
+import static com.kohere.docs.ApiDocsFields.codeField;
+import static com.kohere.docs.ApiDocsFields.enumField;
 import static com.kohere.docs.ApiDocsFields.errorNull;
 import static com.kohere.docs.ApiDocsFields.field;
-import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
+import static com.kohere.docs.ApiDocsFields.optField;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
+import com.kohere.listing.domain.City;
+import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.District;
+import com.kohere.listing.domain.KitchenFacility;
+import com.kohere.listing.domain.LaundryFacility;
+import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.LivingAmenity;
+import com.kohere.listing.domain.ProvidedSupply;
+import com.kohere.listing.domain.SecurityFeature;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.restdocs.payload.FieldDescriptor;
@@ -26,6 +39,35 @@ import org.springframework.restdocs.request.ParameterDescriptor;
 public final class ListingDocsFields {
 
   private ListingDocsFields() {}
+
+  /**
+   * 주변 대학 코드 목록이다.
+   *
+   * <p>매물 문서는 이 값을 문자열로 들고 있고 정본은 DB 카탈로그({@code UNIVERSITY} 카테고리)라 enum 클래스가 없다. 그래서 {@code
+   * enumField}가 아니라 값을 직접 나열한다.
+   */
+  private static final List<String> UNIVERSITY_CODES =
+      List.of(
+          "SNU",
+          "CAU",
+          "SOONGSIL",
+          "KHU",
+          "HUFS",
+          "KOREA",
+          "SKKU",
+          "SUNGSHIN",
+          "KONKUK",
+          "SEJONG",
+          "HYU",
+          "YONSEI",
+          "EWHA",
+          "HONGIK");
+
+  /** 공개 조회 응답에 실제로 도달할 수 있는 매물 상태다. 심사·중단·삭제 상태는 조회 결과에서 제외되므로 나열하지 않는다. */
+  private static final List<String> PUBLIC_LISTING_STATUSES = List.of("PUBLISHED");
+
+  /** 공개 조회 응답에 실제로 도달할 수 있는 방 타입 상태다. */
+  private static final List<String> PUBLIC_ROOM_OFFER_STATUSES = List.of("ACTIVE");
 
   // ── §1 매물 목록 — GET /api/v1/listings ────────────────────────────────────
 
@@ -147,7 +189,8 @@ public final class ListingDocsFields {
 
       - 온보딩을 완료한 로그인 사용자는 실제 찜 상태와 계정 언어가 적용되고, 조회한 매물이 최근 본 목록에 기록된다.
       - 비로그인·온보딩 미완료 사용자는 `favorited=false`이며 최근 본 기록을 남기지 않는다. 로그인 전에 조회한 매물은 로그인 후 최근 본 목록으로 소급해 옮기지 않는다.
-      - `title`, 주소, 역명, 방 이름, 환불 설명, `descriptions.description`은 서버가 사용자 언어로 선택한 문자열 하나다.
+      - `title`, 주소, 역명, 방 이름, `refundPolicy`, `description`, `extraNotes`는 서버가 사용자 언어로 선택한 문자열 하나다.
+      - 역명은 이 API에서만 정식 이름으로 내려간다. 목록·검색·찜·최근 본 응답은 영어일 때 `Station`을 `Sta.`로 줄인다.
 
       **에러 코드**
 
@@ -299,12 +342,12 @@ public final class ListingDocsFields {
       parameterWithName("maxDeposit").optional().description("보증금 최대값(KRW). 보증금 필터 슬라이더/입력값의 상한"),
       parameterWithName("type")
           .optional()
-          .description("매물 유형 필터 칩. 예: GOSHIWON, CO_LIVING, SHARE_HOUSE, OTHER"),
+          .description("매물 유형 필터 칩. GOSHIWON, CO_LIVING, SHARE_HOUSE 중 하나"),
       parameterWithName("conditions")
           .optional()
           .description(
-              "옵션 필터 칩 코드. FEMALE_ONLY, PRIVATE_BATH, MOVE_IN_NOW, ADDRESS_REGISTRATION, NO_ARC 등을 반복 파라미터나 콤마로 보낼 수 있음. "
-                  + "MOVE_IN_NOW는 바로 계약 가능한 방 타입만, NO_ARC는 ARC 없이 가능한 매물만 보여줄 때 사용"),
+              "옵션 필터 칩 코드. MOVE_IN_NOW, FEMALE_ONLY, MEALS_INCLUDED, DOUBLE_ROOM, PRIVATE_BATH, ENGLISH_OK, ADDRESS_REGISTRATION, NO_MAINT_FEE를 "
+                  + "반복 파라미터나 콤마로 보낼 수 있음. 보낸 조건을 모두 가진 방 타입이 있는 매물만 남고, 응답 roomOffers[]도 그 방 타입만 포함"),
       parameterWithName("sort")
           .optional()
           .description(
@@ -332,7 +375,7 @@ public final class ListingDocsFields {
       parameterWithName("maxDeposit").optional().description("보증금 최대값(KRW)"),
       parameterWithName("type")
           .optional()
-          .description("매물 유형 필터 칩. 예: GOSHIWON, CO_LIVING, SHARE_HOUSE, OTHER"),
+          .description("매물 유형 필터 칩. GOSHIWON, CO_LIVING, SHARE_HOUSE 중 하나"),
       parameterWithName("conditions")
           .optional()
           .description("옵션 필터 칩 코드. 목록 API와 같은 필터를 보내면 지도 마커와 바텀시트 목록을 같은 조건으로 맞출 수 있음")
@@ -461,10 +504,10 @@ public final class ListingDocsFields {
   public static List<FieldDescriptor> searchEmptyPlaceResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field(
+        optField(
             "data.matchedPlace",
-            JsonFieldType.NULL,
-            "검색어와 일치하는 장소가 없다는 뜻. '검색된 장소가 없어요' 상태를 표시하면 됨"),
+            JsonFieldType.OBJECT,
+            "검색어와 일치하는 장소가 없으면 null. '검색된 장소가 없어요' 상태를 표시하면 됨"),
         field("data.content", JsonFieldType.ARRAY, "장소를 찾지 못했으므로 빈 배열"),
         field("data.page.number", JsonFieldType.NUMBER, "요청한 페이지 번호"),
         field("data.page.size", JsonFieldType.NUMBER, "요청한 페이지 크기"),
@@ -489,84 +532,77 @@ public final class ListingDocsFields {
     fields.add(
         field(prefix + ".listingId", JsonFieldType.STRING, "상세 이동, 하트 토글, 예약 진입에 사용할 매물 ID"));
     fields.add(field(prefix + ".title", JsonFieldType.STRING, "카드와 상세 상단에 표시할 매물 이름"));
-    fields.add(
-        field(
-            prefix + ".type.code",
-            JsonFieldType.STRING,
-            "매물 유형의 서버 코드. 필터 요청에 이 값을 사용. 예: GOSHIWON"));
+    fields.add(enumField(prefix + ".type.code", ListingType.class, "매물 유형의 서버 코드. 필터 요청에 이 값을 사용"));
     fields.add(
         field(
             prefix + ".type.label",
             JsonFieldType.STRING,
             "현재 사용자 언어의 매물 유형 표시명. 화면 배지에는 이 값을 그대로 표시"));
     fields.add(
-        field(
+        codeField(
             prefix + ".status",
-            JsonFieldType.STRING,
-            "공개 상태. 일반 화면에서는 PUBLISHED만 내려오므로 별도 필터링 없이 표시 가능"));
+            PUBLIC_LISTING_STATUSES,
+            "공개 상태. 공개 조회에는 PUBLISHED만 내려오므로 별도 필터링 없이 표시 가능"));
     fields.add(
-        field(
-            prefix + ".rentalType.code",
-            JsonFieldType.STRING,
-            "임대 방식 서버 코드. 요청/비교용이며 예시는 MONTHLY_RENT"));
+        enumField(prefix + ".rentalType.code", Listing.RentalType.class, "임대 방식 서버 코드. 요청/비교용"));
     fields.add(
         field(
             prefix + ".rentalType.label",
             JsonFieldType.STRING,
             "가격 영역에 표시할 현재 언어의 임대 방식. 예: Monthly Rent"));
     fields.add(
-        field(prefix + ".refundPolicy.code", JsonFieldType.STRING, "상세 화면 환불 정책 아이콘/분기용 코드"));
-    fields.add(
         field(
-            prefix + ".refundPolicy.description", JsonFieldType.STRING, "상세 화면에 그대로 보여줄 환불 정책 설명"));
+            prefix + ".refundPolicy",
+            JsonFieldType.STRING,
+            "상세 화면에 그대로 보여줄 환불 정책 문장. 현재 사용자 언어로 선택된 문자열 하나이며 별도 코드는 없음"));
     fields.add(
-        field(
-            prefix + ".contract.minStayMonths",
-            JsonFieldType.NUMBER,
-            "계약기간 라벨의 최소 개월 수. 예: 1개월부터"));
-    fields.add(
-        field(
-            prefix + ".contract.maxStayMonths",
-            JsonFieldType.NUMBER,
-            "계약기간 라벨의 최대 개월 수. 예: 최대 12개월"));
-    fields.add(
-        field(prefix + ".genderPolicy.code", JsonFieldType.STRING, "성별 제한의 서버 코드. 필터 요청에 사용"));
+        enumField(
+            prefix + ".genderPolicy.code", Listing.GenderPolicy.class, "성별 제한의 서버 코드. 필터 요청에 사용"));
     fields.add(
         field(prefix + ".genderPolicy.label", JsonFieldType.STRING, "성별 제한 배지에 표시할 현재 언어의 문구"));
     fields.add(field(prefix + ".location.lat", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 위도"));
     fields.add(field(prefix + ".location.lng", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 경도"));
-    fields.add(field(prefix + ".address.city", JsonFieldType.STRING, "지역 필터/주소 보조 표시용 도시 코드"));
-    fields.add(field(prefix + ".address.district", JsonFieldType.STRING, "지역 필터/주소 보조 표시용 구·군 코드"));
+    fields.add(enumField(prefix + ".address.city.code", City.class, "지역 필터에 사용할 시·도 서버 코드"));
     fields.add(
-        field(prefix + ".address.fullAddress", JsonFieldType.STRING, "카드와 상세 주소 영역에 표시할 주소"));
-    fields.add(field(prefix + ".address.detail", JsonFieldType.NULL, "상세주소. null이면 상세주소 줄을 숨김"));
+        field(prefix + ".address.city.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 시·도 이름"));
+    fields.add(
+        enumField(prefix + ".address.district.code", District.class, "지역 필터에 사용할 구·군 서버 코드"));
     fields.add(
         field(
+            prefix + ".address.district.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 구·군 이름"));
+    fields.add(
+        field(prefix + ".address.fullAddress", JsonFieldType.STRING, "카드와 상세 주소 영역에 표시할 주소"));
+    fields.add(
+        optField(
+            prefix + ".address.detail", JsonFieldType.STRING, "동·호수 같은 상세주소. null이면 상세주소 줄을 숨김"));
+    fields.add(
+        enumField(
             prefix + ".nearestTransit.type.code",
-            JsonFieldType.STRING,
-            "교통 배지 아이콘 분기용 서버 코드. 예: SUBWAY, BUS"));
+            Listing.TransitType.class,
+            "교통 배지 아이콘 분기용 서버 코드"));
     fields.add(
         field(
             prefix + ".nearestTransit.type.label",
             JsonFieldType.STRING,
             "교통수단 이름으로 표시할 현재 언어의 문구. 예: Subway"));
-    fields.add(field(prefix + ".nearestTransit.name", JsonFieldType.STRING, "교통 배지에 표시할 역/정류장 이름"));
+    fields.add(
+        field(
+            prefix + ".nearestTransit.name",
+            JsonFieldType.STRING,
+            "교통 배지에 표시할 역 이름. 카드 응답은 영어일 때 Station을 Sta.로 줄인 이름을 주고, 상세 응답은 정식 이름을 준다"));
     fields.add(
         field(
             prefix + ".nearestTransit.walkMinutes",
             JsonFieldType.NUMBER,
             "'도보 N분' 문구에 사용할 분 단위 값"));
     fields.add(
-        field(
-            prefix + ".nearestTransit.nearbyPlacesDescription",
-            JsonFieldType.STRING,
-            "주변 편의시설 안내 문구. 없으면 주변 안내 문단을 숨김"));
-    fields.add(
-        field(
+        codeArrayField(
             prefix + ".nearbyUniversityCodes",
-            JsonFieldType.ARRAY,
+            UNIVERSITY_CODES,
             "학교 주변 배지나 학교 필터 매칭에 사용할 학교 코드 목록"));
-    fields.add(field(prefix + ".building.type.code", JsonFieldType.STRING, "건물 유형 서버 코드. 요청/비교용"));
+    fields.add(
+        enumField(
+            prefix + ".building.type.code", Listing.BuildingType.class, "건물 유형 서버 코드. 요청/비교용"));
     fields.add(
         field(prefix + ".building.type.label", JsonFieldType.STRING, "건물 정보 섹션에 표시할 현재 언어의 건물 유형"));
     fields.add(field(prefix + ".building.usedFloorMin", JsonFieldType.NUMBER, "매물이 사용하는 시작 층"));
@@ -577,68 +613,55 @@ public final class ListingDocsFields {
     fields.add(
         field(
             prefix + ".building.elevatorAvailable", JsonFieldType.BOOLEAN, "엘리베이터 아이콘/텍스트 표시 여부"));
-    fields.add(
-        field(
-            prefix + ".propertyPolicies.arcRequired",
-            JsonFieldType.BOOLEAN,
-            "ARC 필요 여부. false면 No ARC 가능 배지로 표시 가능"));
-    fields.add(
-        field(
-            prefix + ".propertyPolicies.residentRegistrationAvailable",
-            JsonFieldType.BOOLEAN,
-            "전입신고 가능 배지 표시 여부"));
-    fields.add(
-        field(
-            prefix + ".propertyPolicies.studySuitable",
-            JsonFieldType.BOOLEAN,
-            "학업/조용한 거주 적합 배지 표시 여부"));
-    fields.add(
-        field(prefix + ".propertyPolicies.mealsProvided", JsonFieldType.BOOLEAN, "식사 제공 배지 표시 여부"));
-    fields.add(
-        field(
-            prefix + ".propertyPolicies.englishAvailable",
-            JsonFieldType.BOOLEAN,
-            "영어 소통 가능 배지 표시 여부"));
-    fields.add(
-        field(
-            prefix + ".facilities.heatingSystem",
-            JsonFieldType.ARRAY,
-            "난방 방식 code/label 목록. building이 아니라 여기서 읽고 label을 표시"));
-    addCodeLabelArrayFields(fields, prefix + ".facilities.heatingSystem", "난방 방식");
-    fields.add(
-        field(prefix + ".facilities.kitchen", JsonFieldType.ARRAY, "주방/조리 시설 code/label 목록"));
-    addCodeLabelArrayFields(fields, prefix + ".facilities.kitchen", "주방/조리 시설");
-    fields.add(field(prefix + ".facilities.laundry", JsonFieldType.ARRAY, "세탁 시설 code/label 목록"));
-    addCodeLabelArrayFields(fields, prefix + ".facilities.laundry", "세탁 시설");
-    fields.add(
-        field(
-            prefix + ".facilities.livingAmenities", JsonFieldType.ARRAY, "생활 편의시설 code/label 목록"));
-    addCodeLabelArrayFields(fields, prefix + ".facilities.livingAmenities", "생활 편의시설");
-    fields.add(
-        field(prefix + ".facilities.securityFeatures", JsonFieldType.ARRAY, "보안 시설 code/label 목록"));
-    addCodeLabelArrayFields(fields, prefix + ".facilities.securityFeatures", "보안 시설");
-    fields.add(
-        field(prefix + ".facilities.commonSpaces[].type.code", JsonFieldType.STRING, "공용공간 서버 코드"));
-    fields.add(
-        field(
-            prefix + ".facilities.commonSpaces[].type.label",
-            JsonFieldType.STRING,
-            "공용공간 칩에 표시할 현재 언어 문구"));
-    fields.add(
-        fieldWithPath(prefix + ".facilities.commonSpaces[].count")
-            .type(JsonFieldType.VARIES)
-            .optional()
-            .description("공용공간 수량. null이면 수량 없이 유형만 표시"));
-    fields.add(
-        field(prefix + ".facilities.providedSupplies", JsonFieldType.ARRAY, "제공 물품 code/label 목록"));
-    addCodeLabelArrayFields(fields, prefix + ".facilities.providedSupplies", "제공 물품");
-    fields.add(
-        field(
-            prefix + ".conditions",
-            JsonFieldType.ARRAY,
-            "매물 단위 조건 배지 목록. ACTIVE roomOffers[].filterTags의 합집합이며, propertyPolicies.arcRequired=false이면 NO_ARC가 추가됨. "
-                + "카드 조건 배지나 상세 Property Details의 features에 바로 사용하고, 방 타입별 조건은 roomOffers[].filterTags를 사용"));
-    addCodeLabelArrayFields(fields, prefix + ".conditions", "매물 조건");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".facilities.heatingSystem",
+        Listing.HeatingSystem.class,
+        "난방 방식",
+        "난방 방식 code/label 목록. building이 아니라 여기서 읽고 label을 표시");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".facilities.kitchen",
+        KitchenFacility.class,
+        "주방/조리 시설",
+        "주방/조리 시설 code/label 목록");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".facilities.laundry",
+        LaundryFacility.class,
+        "세탁 시설",
+        "세탁 시설 code/label 목록");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".facilities.livingAmenities",
+        LivingAmenity.class,
+        "생활 편의시설",
+        "생활 편의시설 code/label 목록");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".facilities.securityFeatures",
+        SecurityFeature.class,
+        "보안 시설",
+        "보안 시설 code/label 목록");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".facilities.commonSpaces",
+        Listing.CommonSpaceType.class,
+        "공용공간",
+        "공용공간 code/label 목록. 수량 없이 종류만 내려간다");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".facilities.providedSupplies",
+        ProvidedSupply.class,
+        "제공 물품",
+        "제공 물품 code/label 목록");
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".conditions",
+        ConditionTag.class,
+        "매물 조건",
+        "매물 단위 조건 배지 목록. 응답에 포함된 방 타입들의 filterTags 합집합이다. "
+            + "카드 조건 배지나 상세 Property Details의 features에 바로 사용하고, 방 타입별 조건은 roomOffers[].filterTags를 사용");
     fields.add(
         field(
             prefix + ".roomOffers[].roomOfferId",
@@ -647,15 +670,30 @@ public final class ListingDocsFields {
     fields.add(
         field(prefix + ".roomOffers[].name", JsonFieldType.STRING, "Room Types 영역에 표시할 방 타입 이름"));
     fields.add(
-        field(
+        codeField(
             prefix + ".roomOffers[].status",
-            JsonFieldType.STRING,
-            "방 타입 상태. 일반 화면에는 ACTIVE만 내려오므로 그대로 표시 가능"));
+            PUBLIC_ROOM_OFFER_STATUSES,
+            "방 타입 상태. 공개 조회에는 ACTIVE만 내려오므로 그대로 표시 가능"));
+    fields.add(
+        field(
+            prefix + ".roomOffers[].contract.minStayMonths",
+            JsonFieldType.NUMBER,
+            "계약기간 라벨의 최소 개월 수. 예: 1개월부터"));
+    fields.add(
+        field(
+            prefix + ".roomOffers[].contract.maxStayMonths",
+            JsonFieldType.NUMBER,
+            "계약기간 라벨의 최대 개월 수. 예: 최대 12개월"));
     fields.add(
         field(
             prefix + ".roomOffers[].pricing.monthlyRent",
             JsonFieldType.NUMBER,
             "월세 표시값(KRW). 카드 가격 범위 계산에도 사용"));
+    fields.add(
+        field(
+            prefix + ".roomOffers[].pricing.weeklyRent",
+            JsonFieldType.NUMBER,
+            "주 단위 요금 표시값(KRW). 단기 거주 화면에서 월세 대신 표시"));
     fields.add(
         field(prefix + ".roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금 표시값(KRW)"));
     fields.add(
@@ -664,28 +702,13 @@ public final class ListingDocsFields {
             JsonFieldType.NUMBER,
             "관리비 표시값(KRW). 0이면 관리비 없음 배지로 표시 가능"));
     fields.add(
-        field(prefix + ".roomOffers[].pricing.currency", JsonFieldType.STRING, "금액 통화. 현재 KRW"));
-    fields.add(
-        field(
-            prefix + ".roomOffers[].inventory.totalCount",
-            JsonFieldType.NUMBER,
-            "같은 가격/조건의 전체 방 수. 재고 상세 표시가 필요할 때 사용"));
-    fields.add(
-        field(
-            prefix + ".roomOffers[].inventory.availableCount",
-            JsonFieldType.NUMBER,
-            "현재 계약 가능한 방 수. 0이면 마감/대기 상태로 표시 가능"));
-    fields.add(
-        field(
-            prefix + ".roomOffers[].inventory.nextAvailableFrom",
-            JsonFieldType.NULL,
-            "다음 입주 가능일. null이면 별도 날짜 문구를 숨김"));
-    fields.add(
-        field(
-            prefix + ".roomOffers[].filterTags",
-            JsonFieldType.ARRAY,
-            "해당 방 타입에만 붙는 조건 배지 목록. 매물 전체 조건 배지는 상위 conditions를 사용"));
-    addCodeLabelArrayFields(fields, prefix + ".roomOffers[].filterTags", "방 조건");
+        enumField(prefix + ".roomOffers[].pricing.currency", Listing.Currency.class, "금액 통화"));
+    addCodeLabelArrayFields(
+        fields,
+        prefix + ".roomOffers[].filterTags",
+        ConditionTag.class,
+        "방 조건",
+        "해당 방 타입에만 붙는 조건 배지 목록. 매물 전체 조건 배지는 상위 conditions를 사용");
     fields.add(
         field(
             prefix + ".roomOffers[].roomImageUrls",
@@ -693,11 +716,10 @@ public final class ListingDocsFields {
             "방 타입별 이미지 목록. 비어 있으면 공용 imageUrls 사용 가능"));
     fields.add(
         field(
-            prefix + ".descriptions.description",
+            prefix + ".description",
             JsonFieldType.STRING,
             "현재 사용자 언어로 서버가 선택한 상세 설명. 프론트는 별도 ko/en 분기 없이 그대로 표시"));
-    fields.add(
-        field(prefix + ".descriptions.extraNotes", JsonFieldType.STRING, "상세 화면의 추가 안내/주의사항"));
+    fields.add(field(prefix + ".extraNotes", JsonFieldType.STRING, "상세 화면의 추가 안내/주의사항"));
     fields.add(
         field(
             prefix + ".imageUrls",
@@ -723,11 +745,20 @@ public final class ListingDocsFields {
         field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"));
   }
 
-  /** code/label 객체 배열의 공통 하위 필드 설명을 추가한다. */
+  /**
+   * {@code [{code,label}]} 배열 하나를 배열·code·label 세 기술자로 문서화한다.
+   *
+   * <p>배열 자체는 {@link JsonFieldType#ARRAY}이고 코드값은 원소의 {@code code} 프로퍼티라, 배열 경로가 아니라 {@code [].code}
+   * 스칼라 경로에 enum을 싣는다(ADR-0017 「배열 원소 코드값」 규약).
+   */
   private static void addCodeLabelArrayFields(
-      List<FieldDescriptor> fields, String arrayPath, String subject) {
-    fields.add(
-        field(arrayPath + "[].code", JsonFieldType.STRING, subject + " 서버 코드. 필터 요청에 이 값을 사용"));
+      List<FieldDescriptor> fields,
+      String arrayPath,
+      Class<? extends Enum<?>> codeType,
+      String subject,
+      String arrayDescription) {
+    fields.add(field(arrayPath, JsonFieldType.ARRAY, arrayDescription));
+    fields.add(enumField(arrayPath + "[].code", codeType, subject + " 서버 코드. 필터 요청에 이 값을 사용"));
     fields.add(
         field(
             arrayPath + "[].label",

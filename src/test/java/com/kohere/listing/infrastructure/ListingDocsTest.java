@@ -57,12 +57,9 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsTags;
-import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.place.PlaceSearchClient;
 import com.kohere.listing.domain.place.PlaceSearchResult;
 import com.kohere.listing.domain.place.PlaceSearchUpstreamException;
-import com.kohere.listing.infrastructure.migration.ListingCatalogLabelFieldChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingCatalogSeedChangeUnit;
 import com.kohere.listing.infrastructure.migration.SearchPlaceSeedChangeUnit;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
@@ -108,13 +105,22 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Import(TestcontainersConfiguration.class)
 class ListingDocsTest {
 
-  private static final String LISTING_ID = ListingSeedFixtures.GOSHIWON_001_ID;
+  /** 문서 예시로 쓰는 v4 시드 매물이다. 고시원(GOSHIWON)이고 ACTIVE 방 타입 2개를 가진다. */
+  private static final String LISTING_ID = ListingTestSeeds.LISTING_ID;
+
   private static final String MISSING_LISTING_ID = "6858e20000000000000000ff";
   private static final String LISTINGS_COLLECTION = "listings";
   private static final String FAVORITES_COLLECTION = "favorites";
   private static final String RECENT_LISTINGS_COLLECTION = "recentListings";
   private static final String SEARCH_PLACES_COLLECTION = "searchPlaces";
   private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
+
+  /** 시드 매물이 있는 신림 일대를 감싸는 지도 화면 bbox다. 두 번째 시드 매물(홍대)은 이 범위 밖이다. */
+  private static final String SW_LAT = "37.4550";
+
+  private static final String SW_LNG = "126.9450";
+  private static final String NE_LAT = "37.4650";
+  private static final String NE_LNG = "126.9600";
 
   // 공개 API가 잘못된 토큰을 받아도 익명 조회로 계속 동작하는지 검증할 때 사용하는 문서화용 위조 토큰.
   private static final String FORGED_TOKEN =
@@ -134,13 +140,12 @@ class ListingDocsTest {
   @Autowired private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
   @Autowired private JwtProperties jwtProperties;
   @Autowired private JwtTokenService jwtTokenService;
-  @Autowired private ListingRepository listingRepository;
   @MockitoBean private PlaceSearchClient placeSearchClient;
   @MockitoBean private UserAccountService userAccountService;
 
   private MockMvc mockMvc;
 
-  /** REST Docs용 MockMvc를 만들고, 문서 예시에 사용할 매물 seed 데이터를 매번 초기화한다. */
+  /** REST Docs용 MockMvc를 만들고, 문서 예시에 사용할 v4 정본 시드(매물 2건 + 번역 사전)를 매번 초기화한다. */
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) throws Exception {
     mockMvc =
@@ -153,46 +158,61 @@ class ListingDocsTest {
     mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(SEARCH_PLACES_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
-    new ListingSeedRunner(listingRepository).run(null);
-    new ListingCatalogSeedChangeUnit().execution(mongoTemplate);
-    new ListingCatalogLabelFieldChangeUnit().execution(mongoTemplate);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+    ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
     new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
     when(userAccountService.getLanguage(1L)).thenReturn("en");
   }
 
   /** 매물 목록/상세 API를 호출해 Swagger 생성에 필요한 REST Docs 스니펫을 만든다. */
   @Test
-  void generatesListingSnippets() throws Exception {
+  void 문서스니펫생성_매물탐색과찜API_v4응답계약과일치() throws Exception {
     String token = jwtTokenService.issueAccessToken(1L);
 
+    // 시드 매물 2건 중 신림 고시원만 bbox·유형·예산 조건을 통과하고, 그 안에서도 조건에 맞는 방 타입 1개만 카드에 실린다.
     mockMvc
         .perform(
             get("/api/v1/listings")
-                .param("swLat", "37.45920")
-                .param("swLng", "126.95120")
-                .param("neLat", "37.45946")
-                .param("neLng", "126.95141")
+                .param("swLat", SW_LAT)
+                .param("swLng", SW_LNG)
+                .param("neLat", NE_LAT)
+                .param("neLng", NE_LNG)
                 .param("maxBudget", "500000")
                 .param("maxDeposit", "500000")
                 .param("type", "GOSHIWON")
                 .param("conditions", "FEMALE_ONLY")
                 .param("conditions", "ADDRESS_REGISTRATION")
-                .param("conditions", "NO_ARC")
                 .param("sort", "PRICE_ASC")
                 .param("page", "0")
                 .param("size", "20"))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.page.totalElements").value(1))
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].title").value("Sillim Stay"))
         .andExpect(jsonPath("$.data.content[0].type.code").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.content[0].type.label").value("Goshiwon"))
         .andExpect(jsonPath("$.data.content[0].rentalType.code").value("MONTHLY_RENT"))
+        .andExpect(jsonPath("$.data.content[0].address.city.code").value("SEOUL"))
+        .andExpect(jsonPath("$.data.content[0].address.district.code").value("GWANAK_GU"))
+        .andExpect(jsonPath("$.data.content[0].address.district.label").value("Gwanak-gu"))
         .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0].code").value("CENTRAL"))
         .andExpect(
             jsonPath("$.data.content[0].facilities.heatingSystem[0].label")
                 .value("Central Heating"))
-        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(300000))
+        .andExpect(jsonPath("$.data.content[0].facilities.commonSpaces[0].code").isString())
+        .andExpect(jsonPath("$.data.content[0].facilities.commonSpaces[0].label").isString())
+        .andExpect(jsonPath("$.data.content[0].roomOffers.length()").value(1))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(380000))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.weeklyRent").value(110000))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.deposit").value(300000))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].contract.minStayMonths").value(1))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].contract.maxStayMonths").value(12))
         .andExpect(jsonPath("$.data.content[0].roomOffers[0].rentalType").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].inventory").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].propertyPolicies").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].descriptions").doesNotExist())
+        .andExpect(jsonPath("$.data.content[0].refundPolicy").isString())
         .andDo(
             document(
                 "listings-list",
@@ -212,11 +232,16 @@ class ListingDocsTest {
                 .param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.matchedPlace.name").value("서울대학교"))
+        // 홍대 시드 매물은 서울대에서 3km 밖이라 검색 반경에서 빠진다.
+        .andExpect(jsonPath("$.data.page.totalElements").value(1))
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.content[0].rentalType.code").value("MONTHLY_RENT"))
+        .andExpect(jsonPath("$.data.content[0].nearestTransit.type.code").value("SUBWAY"))
         .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0].code").value("CENTRAL"))
-        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(300000))
+        // 필터가 없으므로 ACTIVE 방 타입 2개가 모두 실린다.
+        .andExpect(jsonPath("$.data.content[0].roomOffers.length()").value(2))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(380000))
         .andExpect(jsonPath("$.data.content[0].roomOffers[0].rentalType").doesNotExist())
         .andDo(
             document(
@@ -250,16 +275,15 @@ class ListingDocsTest {
     mockMvc
         .perform(
             get("/api/v1/listings/map")
-                .param("swLat", "37.45920")
-                .param("swLng", "126.95120")
-                .param("neLat", "37.45946")
-                .param("neLng", "126.95141")
+                .param("swLat", SW_LAT)
+                .param("swLng", SW_LNG)
+                .param("neLat", NE_LAT)
+                .param("neLng", NE_LNG)
                 .param("maxBudget", "500000")
                 .param("maxDeposit", "500000")
                 .param("type", "GOSHIWON")
                 .param("conditions", "FEMALE_ONLY")
-                .param("conditions", "ADDRESS_REGISTRATION")
-                .param("conditions", "NO_ARC"))
+                .param("conditions", "ADDRESS_REGISTRATION"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.markers[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.total").value(1))
@@ -277,15 +301,32 @@ class ListingDocsTest {
         .perform(get("/api/v1/listings/{listingId}", LISTING_ID))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
-        .andExpect(jsonPath("$.data.title").value("Goshiwon 001"))
+        .andExpect(jsonPath("$.data.title").value("Sillim Stay"))
         .andExpect(jsonPath("$.data.type.code").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.type.label").value("Goshiwon"))
         .andExpect(jsonPath("$.data.rentalType.code").value("MONTHLY_RENT"))
+        .andExpect(jsonPath("$.data.status").value("PUBLISHED"))
+        // 역명은 사용자 언어로 선택된 문자열 하나이며, v4에서는 주변 안내 문구를 함께 내려주지 않는다.
+        .andExpect(jsonPath("$.data.nearestTransit.name").value("Seoul Nat'l Univ. Sta."))
+        .andExpect(jsonPath("$.data.nearestTransit.nearbyPlacesDescription").doesNotExist())
+        // 상세주소가 없는 매물은 키가 사라지는 것이 아니라 null로 내려간다.
+        .andExpect(jsonPath("$.data.address.detail").value(nullValue()))
+        .andExpect(jsonPath("$.data.refundPolicy").isString())
+        .andExpect(jsonPath("$.data.description").isString())
+        .andExpect(jsonPath("$.data.extraNotes").isString())
         .andExpect(jsonPath("$.data.building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.facilities.heatingSystem[0].code").value("CENTRAL"))
+        .andExpect(jsonPath("$.data.facilities.commonSpaces[0].code").isString())
         .andExpect(jsonPath("$.data.conditions[0].code").isString())
         .andExpect(jsonPath("$.data.conditions[0].label").isString())
-        .andExpect(jsonPath("$.data.roomOffers[0].pricing.monthlyRent").value(300000))
+        // 상세는 필터가 없으므로 ACTIVE 방 타입 2개를 모두 내려준다.
+        .andExpect(jsonPath("$.data.roomOffers.length()").value(2))
+        .andExpect(
+            jsonPath("$.data.roomOffers[0].roomOfferId").value(ListingTestSeeds.ROOM_OFFER_ID))
+        .andExpect(jsonPath("$.data.roomOffers[0].status").value("ACTIVE"))
+        .andExpect(jsonPath("$.data.roomOffers[0].pricing.monthlyRent").value(380000))
+        .andExpect(jsonPath("$.data.roomOffers[0].pricing.currency").value("KRW"))
+        .andExpect(jsonPath("$.data.roomOffers[0].contract.minStayMonths").value(1))
         .andExpect(jsonPath("$.data.roomOffers[0].rentalType").doesNotExist())
         .andExpect(jsonPath("$.data.favorited").value(false))
         .andDo(
@@ -341,12 +382,15 @@ class ListingDocsTest {
                 .param("page", "0")
                 .param("size", "20"))
         .andExpect(status().isOk())
+        // 찜한 매물은 한 건뿐이므로 두 번째 시드 매물은 목록에 없다.
+        .andExpect(jsonPath("$.data.page.totalElements").value(1))
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.content[0].type.code").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.content[0].favorited").value(true))
         .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0].code").value("CENTRAL"))
-        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(300000))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(380000))
+        .andExpect(jsonPath("$.data.content[0].descriptions").doesNotExist())
         .andDo(
             document(
                 "my-favorites-list",
@@ -371,12 +415,16 @@ class ListingDocsTest {
             get("/api/v1/users/me/recent-listings")
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
+        // 상세를 조회한 매물만 기록되므로 시드가 2건이어도 최근 본 목록은 1건이다.
+        .andExpect(jsonPath("$.data.content.length()").value(1))
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.content[0].type.code").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.content[0].favorited").value(true))
         .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0].code").value("CENTRAL"))
-        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(300000))
+        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(380000))
+        .andExpect(
+            jsonPath("$.data.content[0].nearestTransit.name").value("Seoul Nat'l Univ. Sta."))
         .andExpect(jsonPath("$.data.content[0].viewedAt").isString())
         .andDo(
             document(
@@ -407,7 +455,7 @@ class ListingDocsTest {
 
   /** 네이버 장소 후보의 정상·빈 응답을 검증하고 새 장소 검색 API의 Swagger 스니펫을 생성한다. */
   @Test
-  void generatesListingPlaceSnippets() throws Exception {
+  void 문서스니펫생성_네이버장소후보API_정상과빈응답을모두반환() throws Exception {
     PlaceSearchResult place =
         new PlaceSearchResult(
             "<b>경희대학교</b> 서울캠퍼스",
@@ -444,7 +492,7 @@ class ListingDocsTest {
 
   /** 정식 매물 유형 GOSHIWON으로 목록·지도 필터가 정상 동작하는지 검증한다. */
   @Test
-  void filtersListingsByCanonicalGoshiwonType() throws Exception {
+  void 유형필터_GOSHIWON_고시원시드만남고코리빙시드는제외() throws Exception {
     mockMvc
         .perform(
             get("/api/v1/listings")
@@ -452,16 +500,23 @@ class ListingDocsTest {
                 .param("page", "0")
                 .param("size", "20"))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.page.totalElements").value(1))
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.content[0].type.code").value("GOSHIWON"));
+
+    // 유형 필터가 없으면 시드 매물 2건이 모두 보인다.
+    mockMvc
+        .perform(get("/api/v1/listings").param("page", "0").param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.page.totalElements").value(2));
 
     mockMvc
         .perform(
             get("/api/v1/listings/map")
-                .param("swLat", "37.45920")
-                .param("swLng", "126.95120")
-                .param("neLat", "37.45946")
-                .param("neLng", "126.95141")
+                .param("swLat", SW_LAT)
+                .param("swLng", SW_LNG)
+                .param("neLat", NE_LAT)
+                .param("neLng", NE_LNG)
                 .param("type", "GOSHIWON"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.markers[0].listingId").value(LISTING_ID))
@@ -473,7 +528,7 @@ class ListingDocsTest {
    * 로그인 후 최근 본 목록으로 소급되지 않는다.
    */
   @Test
-  void publicListingReadsTreatNonUserAuthenticationAsAnonymous() throws Exception {
+  void 공개매물조회_온보딩토큰이나위조토큰_익명으로처리하고최근본기록없음() throws Exception {
     String onboardingToken = jwtTokenService.issueOnboardingToken(1L);
     String accessToken = jwtTokenService.issueAccessToken(1L);
 
@@ -512,7 +567,7 @@ class ListingDocsTest {
 
   /** 온보딩 토큰은 공개 탐색에는 쓸 수 있지만, 사용자별 찜·최근 본 API에는 정식 ROLE_USER 권한이 없어야 한다. */
   @Test
-  void personalListingFeaturesRequireCompletedOnboarding() throws Exception {
+  void 찜과최근본API_온보딩미완료토큰_403AUTH_ONBOARDING_REQUIRED() throws Exception {
     String onboardingToken = jwtTokenService.issueOnboardingToken(1L);
 
     mockMvc
@@ -556,7 +611,7 @@ class ListingDocsTest {
 
   /** 스펙의 "발생 가능한 에러"를 실제로 트리거해 status·error.code와 실패 응답 스니펫을 함께 만든다. */
   @Test
-  void generatesListingErrorSnippets() throws Exception {
+  void 문서스니펫생성_스펙에적힌실패조건_status와errorcode가일치() throws Exception {
     String token = jwtTokenService.issueAccessToken(1L);
     String onboardingToken = jwtTokenService.issueOnboardingToken(1L);
     String expiredToken = expiredAccessToken();
