@@ -5,7 +5,7 @@
 | 번호      | ADR-0010                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 작성자    | Kohere Backend 팀                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 작성일    | 2026-06-17                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 관련 문서 | [ADR-0003](./0003-jwt-auth-after-oauth-login.md), [ADR-0009](./0009-jwt-signing-algorithm-hs256.md), [ADR-0011](./0011-token-lifetime-and-secret-policy.md), [ADR-0004](./0004-api-response-envelope.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [system-overview §3-3](../architecture/system-overview.md), [error-response-guide](../api/error-response-guide.md), [01-auth-onboarding](../api/specs/01-auth-onboarding.md), [code-style §3](../convention/code-style.md) |
+| 관련 문서 | [ADR-0003](./0003-jwt-auth-after-oauth-login.md), [ADR-0009](./0009-jwt-signing-algorithm-hs256.md), [ADR-0011](./0011-token-lifetime-and-secret-policy.md), [ADR-0004](./0004-api-response-envelope.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [system-overview §3-3](../architecture/system-overview.md), [error-response-guide](../api/error-response-guide.md), [01-auth-onboarding](../api/specs/01-auth-onboarding.md), [code-style §3](../convention/code-style.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md) |
 
 ## Status
 
@@ -34,6 +34,7 @@ Accepted
    - **permitAll**(공개): `POST /api/v1/auth/social-login`, `POST /api/v1/auth/reissue`, `GET /actuator/health`, REST Docs 정적 문서.
    - **온보딩 스코프 이상 허용**(`ROLE_ONBOARDING`도 통과): `POST /api/v1/auth/onboarding`, `DELETE /api/v1/users/me`(PENDING도 탈퇴 허용).
    - **정식 인증 필요**(`ROLE_USER`): 그 외 보호 자원(`GET/PATCH /api/v1/users/me`, `POST /api/v1/auth/logout` 등).
+   - **매물 등록 `POST /api/v2/listings`는 `hasRole("USER")` 명시 매처**를 둔다. 명시하지 않고 `anyRequest().authenticated()`에 맡기면 **온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다** — `authenticated()`는 인증 여부만 보고 권한(authority)은 보지 않기 때문이다. 임대인 여부(`userType=LANDLORD`)는 토큰 클레임에 없어 필터가 판정할 수 없으므로 **서비스에서 재검사해 `403 FORBIDDEN`** 으로 거른다 — 필터 체인이 "온보딩을 마친 회원"까지 좁히고 서비스가 "임대인"까지 좁히는 **2단 구조**다([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
    - PENDING(`ROLE_ONBOARDING`) 토큰으로 `ROLE_USER` 자원 접근 시 **403 `AUTH_ONBOARDING_REQUIRED`**.
 5. **에러 변환**: `AuthenticationEntryPoint`(미인증·위조 → 401 `UNAUTHENTICATED`, 만료 → 401 `TOKEN_EXPIRED`)와 `AccessDeniedHandler`(권한 부족 → 403 `FORBIDDEN`, 온보딩 미완료 → 403 `AUTH_ONBOARDING_REQUIRED`)가 **공통 래퍼·`ErrorCode`**로 응답한다([error-response-guide](../api/error-response-guide.md) 카탈로그와 일치).
 6. **모듈 경계**: 검증 필터·`SecurityConfig`는 `common`(OPEN 공유 커널)에 둔다. `common`은 **검증 코드만** 공유하고 타 모듈을 의존하지 않는다(`ApplicationModules.verify()`로 보장). 발급·회전·재사용 탐지는 `auth` 소관.
@@ -63,4 +64,5 @@ Accepted
 
 - **경로별 통합 테스트**: 공개/온보딩 스코프/정식 인증 경로에서 200/401/403이 의도대로 나오는지.
 - PENDING 토큰으로 `GET /users/me` → 403 `AUTH_ONBOARDING_REQUIRED`, 만료 토큰 → 401 `TOKEN_EXPIRED` 확인.
+- 온보딩 토큰으로 `POST /api/v2/listings` → 403 `AUTH_ONBOARDING_REQUIRED`(필터 체인에서 차단), 세입자(`userType=TENANT`) 정식 토큰 → 403 `FORBIDDEN`(서비스에서 차단) — 2단 구조가 각각 어디서 끊는지 확인.
 - `ApplicationModules.verify()`로 `common` → 타 모듈 의존이 없는지 모듈 경계 검증.

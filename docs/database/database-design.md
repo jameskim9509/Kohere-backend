@@ -141,8 +141,9 @@
 
 #### (A-4) 사업자번호 검증(`POST /api/v1/auth/business/verify`) — 무상태, Redis 마커 없음
 
-임대인 사업자등록번호 유효 확인은 **온보딩과 분리된 무상태(stateless) 검증 API**다. 온보딩을 마친(`ACTIVE`) 임대인이 나중에(매물 등록 시점) 정식 access 토큰(`ROLE_USER`)으로 `POST /api/v1/auth/business/verify`를 호출한다. 외부 사업자등록정보 검증 API(국세청 사업자등록정보 진위·상태 기반)로 동기 검증해 정상(계속) 사업자면 `verified:true`를 응답한다. 아웃바운드 포트는 `BusinessRegistryVerifier`(인프라 어댑터=사업자등록정보 검증 API, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md)). 정책 골격은 ADR-0033(Proposed — 확인 필요).
+임대인 사업자등록번호 유효 확인은 **온보딩과 분리된 무상태(stateless) 검증 API**다. 온보딩을 마친(`ACTIVE`) 임대인이 정식 access 토큰(`ROLE_USER`)으로 `POST /api/v1/auth/business/verify`를 직접 호출한다. 외부 사업자등록정보 검증 API(국세청 사업자등록정보 진위·상태 기반)로 동기 검증해 정상(계속) 사업자면 `verified:true`를 응답한다. 아웃바운드 포트는 `BusinessRegistryVerifier`(인프라 어댑터=사업자등록정보 검증 API, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md)). 정책 골격은 ADR-0033(Proposed — 확인 필요).
 
+- **매물 등록은 이 API를 호출하지 않는다**: 매물 등록(`POST /api/v2/listings`, §4-3)은 요청 본문의 사업자등록번호를 **형식(숫자 10자리)만 검증하고 `listings.businessRegistrationNumber`에 원문으로 저장**한다 — 등록 시점에 외부 검증을 자동 수행하지 않으며, **진위·영업 상태는 관리자가 승인 심사(`PENDING` → `PUBLISHED`/`REJECTED`, 후속)에서 수동으로 확인**한다. 이 검증 API는 임대인이 필요할 때 스스로 호출하는 별도 경로로 남는다(엔드포인트 자체는 유지).
 - **무상태(저장 없음)**: 검증 결과를 서버에 저장하지 않는다 — **Redis 마커(`business-verify:verified:{userId}`)는 존재하지 않고**, `users.business_registration_number_hash` 컬럼에도 이 경로에서 쓰지 않는다. 검증 결과는 응답(HTTP body)에만 담긴다. 따라서 이 절엔 Redis 키스페이스가 없다.
 - **검증**: `POST /api/v1/auth/business/verify`가 `BusinessRegistryVerifier`로 동기 검증한다. 정상(계속) 사업자면 `verified:true`. 미등록·휴폐업·진위 실패는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애·타임아웃은 공통 `502 UPSTREAM_ERROR`(재시도 유도). 검증 서비스 회신 상호·대표자는 검증 응답 표시용으로만 쓰며 저장하지 않는다. 레이트리밋 임계값 미정(확인 필요).
 - **인가**: 정식 토큰(`ACTIVE`, `ROLE_USER`) 필수. 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출 시 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) `ACTIVE` 사용자면 `403 FORBIDDEN`. 온보딩 제출과는 무관하다(온보딩 게이트에 사업자번호 항목 없음 — §4-2·§4-1 A-3).

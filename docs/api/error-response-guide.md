@@ -120,6 +120,28 @@
 
 > **게스트가 가장 자주 만나는 코드다(#181)** — 게스트 진단 세션은 토큰이 아니라 **클라이언트가 에코하는 세션 키**로 이어진다: `POST /api/v2/diagnoses/start`가 게스트에게 세션 키를 발급하고, 클라이언트는 이후 `POST /api/v2/diagnoses/next`·추천 조회에 **`X-Guest-Session-Id` 헤더**로 되돌려보낸다. 따라서 헤더를 **빠뜨렸거나**, 값이 **다르거나**, 앱이 키를 **잃어버린** 요청은 서버가 세션을 찾지 못해 그대로 이 코드(400)가 된다 — 회원의 "앱 재시작·터미널 이후 재전송"과 원인만 다를 뿐 **코드도 복구법도 같다**(`POST /start`로 다시 시작). 값이 다르면 남의 세션에 닿는 것이 아니라 "세션 없음"이며(게스트 세션 키는 요청자마다 다르다), 퀴즈·생활 팁은 저장이 없어 세션 키를 요구하지 않으므로 이 코드가 나오지 않는다.
 
+#### listing 도메인 코드
+
+| code | status | 의미 |
+| --- | --- | --- |
+| `LISTING_NOT_FOUND` | 404 | 존재하지 않거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
+| `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 bbox 네 좌표가 누락됨 |
+| `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
+| `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
+| `LISTING_INVALID_ADDRESS` | 400 | 매물 등록 시 지점 주소에서 `City`·`District`를 파싱하지 못함 — 도로명 주소 형태가 아니거나 카탈로그에 없는 시·구 |
+| `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
+
+> 조회 계열 네 코드의 상세·발생 지점은 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이다. 등록 계열 두 코드는 매물 등록(`POST /api/v2/listings`)이 추가한다.
+>
+> - `LISTING_INVALID_ADDRESS`는 **좌표와 무관하다.** 등록은 `location`·`nearbyUniversityCodes`를 채우지 않고 저장하므로(지오코딩은 후속) 좌표 해석 실패라는 상황 자체가 없다. `address.fullAddress`는 입력값을 그대로 저장하고, 이 코드는 거기서 `City`·`District`를 뽑지 못했을 때만 나온다.
+> - `LISTING_UNKNOWN_CATALOG_CODE`는 사용자가 오타를 낸 것이 아니라 **앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다**는 신호라 `INVALID_INPUT`과 분리한다 — 사용자는 앱이 준 선택지에서 골랐을 뿐이라 입력 교정을 요구할 자리가 아니다(§7).
+
+> **매물 등록에서 의도적으로 신설하지 않은 코드** — 리뷰어가 누락으로 오해하지 않도록 근거를 남긴다.
+> - **임대인 아님(`userType≠LANDLORD`)**: 공통 `FORBIDDEN`(403)을 쓴다. auth의 임대인 전용 게이트(`LandlordOnlyException` — 사업자등록번호 검증)·booking의 세입자 전용 게이트와 같은 처리이며, `LISTING_LANDLORD_ONLY` 같은 코드를 두지 않는다.
+> - **온보딩 미완료 토큰**: SecurityConfig가 `POST /api/v2/listings`에 `hasRole("USER")` 매처를 명시하므로 `ROLE_ONBOARDING` 토큰은 컨트롤러에 닿기 전에 `AUTH_ONBOARDING_REQUIRED`(403)로 막힌다(매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프 토큰이 그대로 통과한다). 토큰이 없거나 만료면 종전대로 `UNAUTHENTICATED`·`TOKEN_EXPIRED`(401)다.
+> - **필수값 누락·형식 위반**: `INVALID_INPUT`(400) + `errors[]`로 충분하다. 지점 운영층 `1~2`·이용 연령대 `20~35`의 형식 위반, `min ≤ max`, `usedFloorMax ≤ totalFloors`, `roomOffers` 최소 1개, `roomImageUrls` 최소 2장이 모두 여기에 해당한다. 문자열 길이 제한은 두지 않으므로 그에 대한 코드도 없다.
+> - **사업자등록번호**: 등록 API는 **형식만 보고 저장**하며 진위는 관리자 승인 심사에서 사람이 확인한다. `POST /api/v1/auth/business/verify`를 호출하지 않으므로 `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`(422)는 이 경로에서 나오지 않고, 형식 위반은 `INVALID_INPUT`이다.
+
 #### booking 도메인 코드
 
 | code | status | 의미 |
@@ -203,6 +225,7 @@ public class GlobalExceptionHandler {
 - 먼저 **HTTP status**로 큰 분기(2xx/4xx/5xx), 다음 **`error.code`** 로 세부 분기한다. **`message` 문자열로 분기하지 않는다.**
 - `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로.
 - `400 INVALID_INPUT` → `errors[]`의 `field`를 입력 폼에 매핑해 표시.
+- 매물 등록(`POST /api/v2/listings`)의 두 코드는 사용자에게 요구할 행동이 서로 다르다: `400 LISTING_INVALID_ADDRESS`는 **도로명 주소 재입력**을 유도하고, `400 LISTING_UNKNOWN_CATALOG_CODE`는 입력 교정이 아니라 **코드 카탈로그 재조회(또는 앱 갱신)** 를 안내한다 — 사용자가 앱이 준 선택지에서 골랐는데도 거절됐다는 뜻이기 때문이다.
 - **게스트(비로그인)로 퀴즈·생활 팁·진단을 부를 땐 `Authorization` 헤더를 아예 보내지 않는다** — 만료된 토큰을 그대로 붙여 보내면 게스트로 처리되지 않고 `401 TOKEN_EXPIRED`다(재발급하거나 헤더를 떼고 재시도). 진단 v2는 `POST /api/v2/diagnoses/start` 응답의 게스트 세션 키를 보관했다가 이후 요청에 `X-Guest-Session-Id`로 에코해야 하며, 잃어버리면 `400 DIAGNOSIS_SESSION_NOT_FOUND`이므로 `/start`부터 다시 한다(#181).
 - `5xx` → 사용자에게 일반 메시지 + 재시도 버튼. 자동 재시도는 멱등 요청에만.
 - 다국어: `code`별 문구 테이블을 클라이언트가 보유한다(서버 `message`는 fallback).

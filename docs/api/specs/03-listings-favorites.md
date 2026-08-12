@@ -1,9 +1,9 @@
-# 매물 탐색 · 찜 API Spec
+# 매물 등록 · 탐색 · 찜 API Spec
 
 > [api-design-guide](../api-design-guide.md) · [error-response-guide](../error-response-guide.md)를 따른다. 모든 응답은 공통 래퍼.
 > 관련 유저 스토리: [user-stories](../../requirements/user-stories.md)
 
-매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다.
+임대인의 매물 등록, 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 등록은 `/api/v2`, 조회 계열은 `/api/v1`이다** — `POST /api/v2/listings`가 매물 도메인의 첫 `/api/v2` 엔드포인트이며 요청·응답 모두 처음부터 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). 목록·지도·검색·상세·찜은 현재 `/api/v1` 경로에 그대로 있다.
 
 > **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명·유의사항·환불 정책 문구는 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·`arcRequired`·행정구역(`address.city`·`address.district`)·`languagesSupported`·`nearbyFacilities`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다. 단 `status`(`ListingStatus`)는 임대인·관리자만 읽는 관리 상태라 번역 대상이 아니며 코드 문자열 그대로 내려간다.
 
@@ -23,6 +23,7 @@
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
+| POST | `/api/v2/listings` | 매물 등록(임대인) — 승인 대기(`PENDING`) 상태로 저장 | 필수(임대인) | 201 |
 | GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
 | GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) | 불필요 | 200 |
 | GET | `/api/v1/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
@@ -33,9 +34,303 @@
 | GET | `/api/v1/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
 | GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
 
+> 매물 등록만 임대인 전용이고 나머지는 세입자·비로그인 사용자를 위한 조회 API다. 등록은 `SecurityConfig`에 **`POST /api/v2/listings`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다([ADR-0010](../../adr/0010-jwt-authentication-filter.md)) — 명시하지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 임대인 여부(`userType=LANDLORD`)는 서비스가 다시 검사해 `403 FORBIDDEN`으로 거른다. 등록된 매물은 `PENDING`이라 아래 조회 API 어디에도 나오지 않는다 — 조회는 `PUBLISHED` 한정이다.
+>
 > 목록·지도·검색·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다. 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어를 적용하고, 상세에서는 실제 찜 상태와 최근 본 기록도 적용한다. 목록·기존 키워드 검색의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`다. 비로그인·온보딩 미완료·위조/형식 오류 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지 않는다. 단, 만료 토큰은 공개 매물 조회에서도 `401 TOKEN_EXPIRED`다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이며, 토큰 없음·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`다.
 
 ## 상세
+
+### POST /api/v2/listings — 매물 등록(임대인)
+
+- 설명: 임대인이 등록 폼에서 입력한 지점·건물·공용시설·주변 시설·방 타입 정보를 하나의 매물로 저장한다. 저장 직후 상태는 **`PENDING`(승인 대기)** 이라 세입자용 조회 API에는 노출되지 않으며, 공개 전환은 후속 관리자 승인 API가 담당한다.
+- 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). `landlordId`는 access 토큰에서 읽으며 요청 본문에 담지 않는다.
+- 경로: 매물 도메인의 첫 `/api/v2` 엔드포인트다. 요청·응답이 모두 스키마 v4 구조라 `/api/v1` 조회 응답과 섞이지 않는다.
+
+Path·Query 파라미터: 없음
+
+Request Body:
+
+```jsonc
+{
+  "title": { "ko": "신촌 도보 5분 1인실 고시원", "en": "Single-room goshiwon, 5 minutes from Sinchon" },
+  "type": "GOSHIWON",
+  "contact": {
+    "managerName": "Kim Woon-yeong",
+    "phone": "+82) 10-1234-5678",
+    "sms": "+82) 10-1234-5679"
+  },
+  "businessRegistrationNumber": "1234567890",
+  "blogUrl": "https://blog.naver.com/kohere-goshiwon",
+  "address": {
+    "fullAddress": { "ko": "서울특별시 서대문구 신촌로 12", "en": "12 Sinchon-ro, Seodaemun-gu, Seoul" },
+    "detail": { "ko": "3층 305호", "en": "Room 305, 3rd floor" }
+  },
+  "building": {
+    "type": "VILLA",
+    "totalFloors": 4,
+    "usedFloorRange": "1~2",
+    "parkingAvailable": true,
+    "elevatorAvailable": true
+  },
+  "genderPolicy": "FEMALE_ONLY",
+  "languagesSupported": ["ENGLISH", "CHINESE"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["CENTRAL"],
+    "kitchen": ["SHARED_REFRIGERATOR", "MICROWAVE"],
+    "laundry": ["WASHER", "DRYING_RACK"],
+    "livingAmenities": ["WIFI", "TV"],
+    "securityFeatures": ["CCTV", "ENTRANCE_DOOR_LOCK"],
+    "commonSpaces": ["SHARED_KITCHEN", "SHARED_TOILET"],
+    "providedSupplies": ["BEDDING", "TISSUE"]
+  },
+  "nearbyFacilities": ["CONVENIENCE_STORE", "HOSPITAL_PHARMACY"],
+  "nearestTransit": {
+    "type": "SUBWAY",
+    "name": { "ko": "신촌역", "en": "Sinchon Station" },
+    "walkMinutes": 5
+  },
+  "description": {
+    "ko": "지하철역에서 도보 5분 거리의 관리가 잘 된 고시원입니다.",
+    "en": "A well-maintained goshiwon within a five-minute walk of the subway station."
+  },
+  "extraNotes": {
+    "ko": "객실 내 취사 금지. 오후 11시 이후 정숙.",
+    "en": "No cooking inside rooms. Quiet hours after 11 PM."
+  },
+  "refundPolicy": {
+    "ko": "입주 7일 전까지 취소하면 전액 환불합니다.",
+    "en": "Full refund for cancellations made at least 7 days before move-in."
+  },
+  "imageUrls": [
+    "https://cdn.kohere.app/uploads/2026/08/branch-1.jpg",
+    "https://cdn.kohere.app/uploads/2026/08/branch-2.jpg"
+  ],
+  "roomOffers": [
+    {
+      "name": { "ko": "스탠다드 1인실", "en": "Standard Single Room" },
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": {
+        "monthlyRent": 380000,
+        "weeklyRent": 110000,
+        "deposit": 200000,
+        "maintenanceFee": 20000
+      },
+      "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
+      "roomImageUrls": [
+        "https://cdn.kohere.app/uploads/2026/08/room-101-1.jpg",
+        "https://cdn.kohere.app/uploads/2026/08/room-101-2.jpg"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN", "CHINA"],
+  "contractDifficulties": ["LANGUAGE", "PAYMENT"],
+  "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다."
+}
+```
+
+요청 필드:
+
+| 필드 | 타입 | 필수 | 검증 |
+| --- | --- | --- | --- |
+| `title` | `{ko,en}` | 필수 | 지점명. 두 언어 모두 공백 불가 |
+| `type` | `ListingType` | 필수 | 공간 유형. 카탈로그 `LISTING_TYPE` 대조 |
+| `contact.managerName` | string | 필수 | 지점 운영자명 |
+| `contact.phone` | string | 필수 | 전화문의 수신 연락처. `+82) 10-1234-5678` 형식 |
+| `contact.sms` | string | 필수 | 문자문의 수신 연락처. 형식은 `phone`과 동일 |
+| `businessRegistrationNumber` | string | 필수 | 숫자 10자리. **형식만 검증하고 그대로 저장**한다(아래 요청 주의사항) |
+| `blogUrl` | string | 선택 | 지점 블로그. 값이 있으면 URL 형식 |
+| `address.fullAddress` | `{ko,en}` | 필수 | 도로명 주소. **입력값을 그대로 저장**하며 정규화하지 않는다 |
+| `address.detail` | `{ko,en}` | 선택 | 동·호수 등 상세 주소. 미입력이면 `null` |
+| `building.type` | `BuildingType` | 필수 | 건물 형태. 카탈로그 `BUILDING_TYPE` 대조 |
+| `building.totalFloors` | integer | 필수 | 건물 총 층수. 1 이상 |
+| `building.usedFloorRange` | string | 필수 | 지점 운영층을 `min~max` 1칸으로 받는다(예 `1~2`). 서버가 `usedFloorMin`·`usedFloorMax`로 파싱 |
+| `building.parkingAvailable` | boolean | 필수 | 주차공간 유무 |
+| `building.elevatorAvailable` | boolean | 필수 | 엘리베이터 유무 |
+| `genderPolicy` | `GenderPolicy` | 필수 | 이용 성별구분. 카탈로그 `GENDER_POLICY` 대조 |
+| `languagesSupported` | `SupportedLanguage[]` | 필수 | 외국어 응대(복수 선택). 카탈로그 `SUPPORTED_LANGUAGE` 대조 |
+| `ageRange` | string | 필수 | 이용 연령대를 `min~max` 1칸으로 받는다(예 `20~35`). 서버가 `ageMin`·`ageMax`로 파싱 |
+| `arcRequired` | `ArcRequirement` | 필수 | 외국인등록증(ARC) 필수 요구 여부. 카탈로그 `ARC_REQUIREMENT` 대조 |
+| `facilities.heatingSystem` | `HeatingSystem[]` | 필수 | 난방시설. 카탈로그 `HEATING_SYSTEM` 대조 |
+| `facilities.kitchen` | `KitchenFacility[]` | 필수 | 주방시설(복수 선택). 카탈로그 `KITCHEN` 대조 |
+| `facilities.laundry` | `LaundryFacility[]` | 필수 | 세탁시설(복수 선택). 카탈로그 `LAUNDRY` 대조 |
+| `facilities.livingAmenities` | `LivingAmenity[]` | 필수 | 생활시설(복수 선택). 카탈로그 `LIVING_AMENITY` 대조 |
+| `facilities.securityFeatures` | `SecurityFeature[]` | 필수 | 안전시설(복수 선택). 카탈로그 `SECURITY_FEATURE` 대조 |
+| `facilities.commonSpaces` | `CommonSpaceType[]` | 필수 | 공용공간(복수 선택). 카탈로그 `COMMON_SPACE` 대조 |
+| `facilities.providedSupplies` | `ProvidedSupply[]` | 필수 | 제공비품(복수 선택). 카탈로그 `PROVIDED_SUPPLY` 대조 |
+| `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조 |
+| `nearestTransit.type` | `TransitType` | 필수 | 현재 허용값은 `SUBWAY` 하나다. 카탈로그 `TRANSIT_TYPE` 대조 |
+| `nearestTransit.name` | `{ko,en}` | 필수 | 근처 지하철역명 |
+| `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상 |
+| `description` | `{ko,en}` | 필수 | 지점 소개글 |
+| `extraNotes` | `{ko,en}` | 필수 | 이용 조건(생활 규칙)·유의사항 |
+| `refundPolicy` | `{ko,en}` | 필수 | 환불정책 문구 |
+| `imageUrls` | string[] | 필수 | 지점 대표사진 URL 목록. 카드·상세의 대표 이미지로 `imageUrls[0]`이 쓰인다 |
+| `roomOffers` | object[] | 필수 | 개별 객실(room) 타입. **최소 1개** |
+| `roomOffers[].name` | `{ko,en}` | 필수 | 객실 타입명 |
+| `roomOffers[].contract.minStayMonths` | integer | 필수 | 이용 기간(최소, 개월). 1 이상 |
+| `roomOffers[].contract.maxStayMonths` | integer | 필수 | 이용 기간(최대, 개월). `minStayMonths` 이상 |
+| `roomOffers[].pricing.monthlyRent` | integer(KRW) | 필수 | 객실 비용(월 기준). 0 이상 |
+| `roomOffers[].pricing.weeklyRent` | integer(KRW) | 필수 | 객실 비용(주 기준). 0 이상 |
+| `roomOffers[].pricing.deposit` | integer(KRW) | 필수 | 보증금. 0 이상 |
+| `roomOffers[].pricing.maintenanceFee` | integer(KRW) | 필수 | 관리비. 0 이상 |
+| `roomOffers[].filterTags` | `ConditionTag[]` | 필수 | 타입별 매물 옵션(복수 선택). 카탈로그 `CONDITION_TAG` 대조 |
+| `roomOffers[].roomImageUrls` | string[] | 필수 | 객실 사진 URL 목록. **최소 2장** |
+| `preferredNationalities` | `Nationality[]` | 필수 | 설문 — 선호하는 국적(복수 선택). 응답에 포함하지 않는다 |
+| `contractDifficulties` | `ContractDifficulty[]` | 필수 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 응답에 포함하지 않는다 |
+| `serviceFeedback` | string | 선택 | 설문 — Kohere에 전하고 싶은 말. 응답에 포함하지 않는다 |
+
+요청 주의사항:
+
+- **서버가 정하는 값은 요청 본문에 없다.** `listingId` · `roomOffers[].roomOfferId`(둘 다 ObjectId 발급) · `schemaVersion`(`4`) · `status`(`PENDING`) · `favoriteCount`(`0`) · `createdAt`/`updatedAt` · `rentalType`(`MONTHLY_RENT` 고정) · `roomOffers[].pricing.currency`(`KRW` 고정) · `roomOffers[].status`(`ACTIVE`)를 클라이언트가 정하지 않는다. `landlordId`도 요청이 아니라 access 토큰에서 읽는다.
+- **폼 1칸을 서버가 두 필드로 파싱한다.** `building.usedFloorRange`(`1~2`) → `usedFloorMin`·`usedFloorMax`, `ageRange`(`20~35`) → `ageMin`·`ageMax`. 형식 위반은 `400 INVALID_INPUT`이며, `min ≤ max`와 `usedFloorMax ≤ totalFloors`도 함께 검증한다. 원본 문자열은 저장하지 않는다.
+- **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 입력값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 파싱해 `City`·`District` enum으로 확정한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며, 프론트는 도로명 주소 재입력을 유도한다.
+- **좌표와 인근 대학은 이번 범위에서 채우지 않는다.** `location`은 값 없이 저장하고 `nearbyUniversityCodes`는 빈 배열이다. 지오코딩은 후속 작업이며, 후속 관리자 승인은 `location` 보유를 승인 조건으로 둬 좌표 없는 매물이 공개되지 않게 한다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
+- **코드 필드는 `listingCatalog` 대조를 통과해야 한다.** 위 표의 각 코드 배열·단일 코드는 `(category, code)`가 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다. 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리한다 — 프론트는 입력 교정 대신 코드 카탈로그 재조회(또는 앱 갱신)를 안내한다.
+- **문자열 길이 제한은 두지 않는다.** 서버·DB 어느 계층도 자유 입력 문구의 길이를 강제하지 않는다.
+- **사업자등록번호는 등록 시점에 자동 검증하지 않는다.** 숫자 10자리 형식만 확인하고 원문을 매물 문서에 저장하며, 진위·영업 상태는 **관리자가 승인 심사에서 수동으로** 확인한다. 이 엔드포인트는 `POST /api/v1/auth/business/verify`(무상태 검증 — [01-auth-onboarding](./01-auth-onboarding.md))를 호출하지 않는다.
+- **다국어 문구는 `{ko,en}` 두 언어를 모두 받는다.** 대상은 `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name`이며([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md) 결정 1), 한쪽이 비면 `400 INVALID_INPUT`이다.
+
+성공 Response (201):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "listingId": "68e0000000000000000000a1",
+    "title": "신촌 도보 5분 1인실 고시원",
+    "type": { "code": "GOSHIWON", "label": "고시원" },
+    "status": "PENDING",
+    "rentalType": { "code": "MONTHLY_RENT", "label": "월세" },
+    "refundPolicy": "입주 7일 전까지 취소하면 전액 환불합니다.",
+    "genderPolicy": { "code": "FEMALE_ONLY", "label": "여성 전용" },
+    "arcRequired": { "code": "NOT_REQUIRED", "label": "외국인 등록증 불필요" },
+    "ageMin": 20,
+    "ageMax": 35,
+    "languagesSupported": [
+      { "code": "ENGLISH", "label": "영어" },
+      { "code": "CHINESE", "label": "중국어" }
+    ],
+    "address": {
+      "city": { "code": "SEOUL", "label": "서울특별시" },
+      "district": { "code": "SEODAEMUN_GU", "label": "서대문구" },
+      "fullAddress": "서울특별시 서대문구 신촌로 12",
+      "detail": "3층 305호"
+    },
+    "nearestTransit": {
+      "type": { "code": "SUBWAY", "label": "지하철" },
+      "name": "신촌역",
+      "walkMinutes": 5
+    },
+    "nearbyFacilities": [
+      { "code": "CONVENIENCE_STORE", "label": "편의점" },
+      { "code": "HOSPITAL_PHARMACY", "label": "병원/약국" }
+    ],
+    "nearbyUniversityCodes": [],
+    "building": {
+      "type": { "code": "VILLA", "label": "빌라/연립" },
+      "usedFloorMin": 1,
+      "usedFloorMax": 2,
+      "totalFloors": 4,
+      "parkingAvailable": true,
+      "elevatorAvailable": true
+    },
+    "facilities": {
+      "heatingSystem": [{ "code": "CENTRAL", "label": "중앙난방" }],
+      "kitchen": [
+        { "code": "SHARED_REFRIGERATOR", "label": "공용 냉장고" },
+        { "code": "MICROWAVE", "label": "전자레인지" }
+      ],
+      "laundry": [
+        { "code": "WASHER", "label": "세탁기" },
+        { "code": "DRYING_RACK", "label": "건조대" }
+      ],
+      "livingAmenities": [
+        { "code": "WIFI", "label": "와이파이" },
+        { "code": "TV", "label": "TV" }
+      ],
+      "securityFeatures": [
+        { "code": "CCTV", "label": "CCTV" },
+        { "code": "ENTRANCE_DOOR_LOCK", "label": "공동현관 도어락" }
+      ],
+      "commonSpaces": [
+        { "code": "SHARED_KITCHEN", "label": "공용 주방" },
+        { "code": "SHARED_TOILET", "label": "공용 화장실" }
+      ],
+      "providedSupplies": [
+        { "code": "BEDDING", "label": "침구류" },
+        { "code": "TISSUE", "label": "휴지" }
+      ]
+    },
+    "conditions": [
+      { "code": "ENGLISH_OK", "label": "영어 안내 가능" },
+      { "code": "ADDRESS_REGISTRATION", "label": "전입신고 가능" }
+    ],
+    "roomOffers": [
+      {
+        "roomOfferId": "68e0000000000000000001a1",
+        "name": "스탠다드 1인실",
+        "status": "ACTIVE",
+        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+        "pricing": {
+          "monthlyRent": 380000,
+          "weeklyRent": 110000,
+          "deposit": 200000,
+          "maintenanceFee": 20000,
+          "currency": "KRW"
+        },
+        "filterTags": [
+          { "code": "ENGLISH_OK", "label": "영어 안내 가능" },
+          { "code": "ADDRESS_REGISTRATION", "label": "전입신고 가능" }
+        ],
+        "roomImageUrls": [
+          "https://cdn.kohere.app/uploads/2026/08/room-101-1.jpg",
+          "https://cdn.kohere.app/uploads/2026/08/room-101-2.jpg"
+        ]
+      }
+    ],
+    "description": "지하철역에서 도보 5분 거리의 관리가 잘 된 고시원입니다.",
+    "extraNotes": "객실 내 취사 금지. 오후 11시 이후 정숙.",
+    "contact": {
+      "managerName": "Kim Woon-yeong",
+      "phone": "+82) 10-1234-5678",
+      "sms": "+82) 10-1234-5679"
+    },
+    "blogUrl": "https://blog.naver.com/kohere-goshiwon",
+    "imageUrls": [
+      "https://cdn.kohere.app/uploads/2026/08/branch-1.jpg",
+      "https://cdn.kohere.app/uploads/2026/08/branch-2.jpg"
+    ],
+    "favorited": false,
+    "favoriteCount": 0,
+    "createdAt": "2026-08-12T02:11:00Z",
+    "updatedAt": "2026-08-12T02:11:00Z"
+  },
+  "error": null
+}
+```
+
+- 응답은 매물 상세(`GET /api/v1/listings/{listingId}`)와 같은 v4 구조다. 등록 직후라 `favorited=false`, `favoriteCount=0`이다.
+- `status`는 `PENDING`이며 **코드 문자열 그대로** 내려간다. 임대인·관리자만 읽는 관리 상태라 카탈로그 번역 대상이 아니다.
+- **`location` 키는 응답에 없고 `nearbyUniversityCodes`는 빈 배열이다.** 좌표 파생이 미구현이라 등록 시점에 채우지 않는다.
+- `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로다.
+- 상위 `conditions`는 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이다. 등록 요청에는 없고 서버가 계산한다.
+- `contact`(담당자명·전화문의·문자문의)는 **세입자에게 그대로 공개**하는 매물별 담당 연락처이므로 응답에 포함한다. 반면 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 **응답에 포함하지 않는다**([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
+- `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다. 임대인은 `lang="ko"`로 고정이라 위 예시처럼 한국어 라벨이 내려간다.
+- 등록된 매물은 `PENDING`이라 목록·지도·검색·상세·찜 어디에도 나오지 않는다. 공개 전환(`PENDING → PUBLISHED`/`REJECTED`), 임대인 수정, 지오코딩, 재고 관리는 모두 **후속 작업**이다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개, `roomImageUrls` 2장 미만. 위반 필드는 `errors[]`에 실린다 |
+| 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구) |
+| 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조·형식 오류 / 만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰(`ROLE_ONBOARDING`) — `hasRole("USER")` 매처에서 차단 |
+| 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자의 등록 요청 |
 
 ### GET /api/v1/listings — 매물 리스트
 
@@ -473,8 +768,9 @@ Request Body: 없음
 - Property Details의 features/조건 배지는 상위 `conditions`를 사용한다. 방 타입별 조건은 `roomOffers[].filterTags`를 사용한다.
 - 시설 섹션은 `building`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다. ARC 필요 여부는 `arcRequired`, 지원 언어는 `languagesSupported`, 주변 시설은 `nearbyFacilities`로 표시한다.
 - `roomOffers[]`는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.
-- 문의 영역은 `contact.managerName`·`contact.phone`·`contact.sms`를 그대로 표시한다. 매물별 담당 연락처라 임대인 개인 연락처와 별개 값이며 마스킹하지 않는다. `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에 포함하지 않는다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
+- 문의 영역은 `contact.managerName`·`contact.phone`·`contact.sms`를 그대로 표시한다. 임대인이 `POST /api/v2/listings`에서 입력한 매물별 담당 연락처라 임대인 개인 연락처와 별개 값이며 마스킹하지 않는다. 같은 등록 요청이 담은 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 응답에 포함하지 않는다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
 - `blogUrl`은 있을 때만 지점 블로그 링크로 노출하고 `null`이면 숨긴다. 이용 연령대는 `ageMin`~`ageMax`로 표시한다.
+- 상세는 `PUBLISHED` 매물만 반환한다. 등록 직후의 `PENDING`(승인 대기) 매물은 `listingId`를 알아도 `404 LISTING_NOT_FOUND`이며, 관리자 승인을 거쳐 `PUBLISHED`가 된 뒤에야 조회된다. 승인 조건에 `location` 보유가 들어가므로 상세에 오는 매물은 항상 좌표를 가진다.
 - 온보딩 완료 사용자의 상세 조회가 성공하면 최근 본 목록이 자동 갱신된다. 프론트에서 최근 본 저장 API를 따로 호출할 필요는 없다.
 - 비로그인·온보딩 미완료 사용자는 `favorited=false`와 영어 기본 문구를 받으며 최근 본 기록을 남기지 않는다.
 - 로그인 전에 본 매물은 온보딩 완료 후 최근 본 목록으로 소급 이전하지 않는다. 정식 로그인 시점 이후의 상세 조회부터 기록한다.
@@ -800,6 +1096,9 @@ Request Body: 없음
 | `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 bbox 네 좌표가 누락됨 |
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
+| `LISTING_INVALID_ADDRESS` | 400 | 매물 등록 시 `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구) |
+| `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다.
+> 뒤 두 코드는 매물 등록(`POST /api/v2/listings`) 전용이다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
 > 하트 토글은 이미 찜/미찜 상태여도 에러로 보지 않고 현재 하트 상태와 찜 수를 반환한다. 프론트는 응답 body의 `favorited`, `favoriteCount`만 보고 UI를 맞추면 된다.

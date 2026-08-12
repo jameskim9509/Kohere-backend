@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 1 | 소셜 로그인 · 온보딩 | [01-auth-onboarding](01-auth-onboarding.md) |
 | 2 | 맞춤 진단 & 매물 추천 | [02-diagnosis-recommendation](02-diagnosis-recommendation.md) |
-| 3 | 매물 탐색 · 찜 | [03-listings-favorites](03-listings-favorites.md) |
+| 3 | 매물 등록 · 탐색 · 찜 | [03-listings-favorites](03-listings-favorites.md) |
 | 4 | 매물 예약(신청) 독립 · (후속) 문의·인앱 채팅 | [04-booking-inquiry-chat](04-booking-inquiry-chat.md) |
 | 5 | 커뮤니티 (게시판 · 동네친구) | [05-community](05-community.md) |
 | 6 | 게이미피케이션 (퀴즈) | [06-gamification](06-gamification.md) |

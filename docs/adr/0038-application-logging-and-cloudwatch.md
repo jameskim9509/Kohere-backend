@@ -6,7 +6,7 @@
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-07-21 |
 | 기준 코드 | `develop` @ `4b64c92`. 본 ADR의 수치·파일 참조는 전부 이 시점 기준이며, 재검증 없이 인용하지 않는다 |
-| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0010](./0010-jwt-authentication-filter.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0019](./0019-infrastructure-as-code-terraform.md), [ADR-0026](./0026-dev-host-memory-budget.md), [ADR-0031](./0031-apple-sign-in-authorization-code-flow.md), [#152](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/152) |
+| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0010](./0010-jwt-authentication-filter.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0019](./0019-infrastructure-as-code-terraform.md), [ADR-0026](./0026-dev-host-memory-budget.md), [ADR-0031](./0031-apple-sign-in-authorization-code-flow.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [#152](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/152) |
 
 ## Status
 
@@ -34,7 +34,7 @@ Proposed
 
 | # | 용도 | 답하는 질문 | 신설 로그 라인 |
 |---|---|---|---|
-| 1 | 사용자 활동 추적 | 이 사용자가 무엇을 했나 | 접근 로그, 데이터 변경 6종 |
+| 1 | 사용자 활동 추적 | 이 사용자가 무엇을 했나 | 접근 로그, 데이터 변경 7종 |
 | 2 | 외부 의존성 관측 | 우리 잘못인가 외부 잘못인가 | 외부 호출 래퍼, 활성 어댑터 |
 | 3 | 보안 감사 | 누가 접근했고 누가 권한을 얻었나 | 인증·인가·감사 이벤트 |
 | 4 | 성능 지연 확인 | 어디서 느려졌나 | 없음 — `latencyMs` 필드로 충족 |
@@ -45,7 +45,7 @@ Proposed
 | 관측 대상 | 전용 라인 대신 | 얹히는 라인 |
 |---|---|---|
 | 용도 4 성능 지연 | `latencyMs` 필드 | 접근 로그, 외부 호출 래퍼 |
-| cross-store 부분 실패(용도 5) | `stores` 필드 | 데이터 변경 6종, 인증·감사 이벤트 |
+| cross-store 부분 실패(용도 5) | `stores` 필드 | 데이터 변경 7종, 인증·감사 이벤트 |
 | 스텁 폴백 활성(용도 5) | 기동 시 1회 라인 | 용도 2의 활성 어댑터 |
 
 ### 공통 기반
@@ -80,7 +80,7 @@ Proposed
 |---|---|
 | ERROR | 5xx 응답, `java.lang.Error`, 이니셜라이저의 삼킨 실패 |
 | WARN | 외부 호출 실패, 토큰 위조·서명 오류, refresh 재사용, 403, `TOKEN_EXPIRED` 외 401, 지연 임계 초과 |
-| INFO | 접근 로그, 데이터 변경 6종, 감사 이벤트, 외부 호출 성공, 활성 어댑터, `TOKEN_EXPIRED` 401 |
+| INFO | 접근 로그, 데이터 변경 7종, 감사 이벤트, 외부 호출 성공, 활성 어댑터, `TOKEN_EXPIRED` 401 |
 | DEBUG | local 전용. `dev`·`prod`는 `root=INFO`로 억제 |
 
 **PII는 원천 배제한다**([ADR-0014](./0014-withdrawal-pii-anonymization.md)).
@@ -91,11 +91,12 @@ Proposed
 | `pathVars` | 현 매핑의 경로 변수는 전부 id·코드(`bookingId`·`listingId`·`postId`·`commentId`·`userId`·`diagnosisId`·`quizId`·`roomId`·`step`·`topicCode`) — 마스킹 불필요. 비-id를 경로에 두는 엔드포인트가 생기면 `LogMasker` 경유가 전제다 |
 | 토큰·Apple private key | 어떤 레벨에서도 금지 |
 | 이메일·전화·실명·여권·사업자번호 | `common`의 `LogMasker`로 마스킹(`mask(phone)` 선례 승격) |
+| 매물 등록 본문의 `businessRegistrationNumber`·`contact.phone`·`contact.sms` | `LogMasker`로 마스킹. `POST /api/v2/listings` 요청 본문이 싣는 임대인 PII로, 매물 문서에는 원문·평문으로 저장되지만([ADR-0039](./0039-listing-schema-v4-registration-form.md)) **로그에는 어떤 레벨에서도 원문을 남기지 않는다** — `LISTING_REGISTERED` 이벤트·검증 실패 경로·`toString` 모두 해당한다 |
 | 인증번호 | `LoggingVerificationSmsSender`가 `code`를 평문 WARN으로 찍는다 — 제거. 고정 인증번호 발급자 2종은 `userId`만 남겨 이미 안전하다 |
 
 ### 용도 1 — 사용자 활동 추적
 
-**컨트롤러 매핑 65개 전 요청에 접근 로그 한 줄을 남긴다.** `HandlerInterceptor`·INFO. 동작 46개와 미구현 껍데기 19개(chat 5·community 12·report 2)를 모두 포함한다 — 껍데기 호출은 500이라 용도 5와 같은 `traceId`로 묶여야 한다. 프리픽스는 `/api/v1`과 `/api/v2`(v2 진단) 둘 다이며 인터셉터는 프리픽스로 거르지 않는다.
+**컨트롤러 매핑 65개 전 요청에 접근 로그 한 줄을 남긴다.** `HandlerInterceptor`·INFO. 동작 46개와 미구현 껍데기 19개(chat 5·community 12·report 2)를 모두 포함한다 — 껍데기 호출은 500이라 용도 5와 같은 `traceId`로 묶여야 한다. 프리픽스는 `/api/v1`과 `/api/v2`(v2 진단·매물 등록) 둘 다이며 인터셉터는 프리픽스로 거르지 않는다.
 
 | 항목 | 값 |
 |---|---|
@@ -105,7 +106,7 @@ Proposed
 | `pathVars` | 템플릿에 채워진 실제 값(`{bookingId:42}`). 인터셉터가 `HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE`로 취득 |
 | `onboarding` | `SecurityConfig` 정확 매처 구멍에 `ROLE_ONBOARDING` 토큰이 도달했는지가 로그로만 관측된다 |
 
-**경로만으로 재구성되지 않는 데이터 변경 6종만 별도 이벤트로 남긴다.** `userId`·`traceId`는 전 이벤트 공통이며 이 키로 접근 로그와 조인한다. 단 v2 진단은 게스트가 닿아 `userId`가 `anonymous`일 수 있다.
+**경로만으로 재구성되지 않는 데이터 변경 7종만 별도 이벤트로 남긴다.** `userId`·`traceId`는 전 이벤트 공통이며 이 키로 접근 로그와 조인한다. 단 v2 진단은 게스트가 닿아 `userId`가 `anonymous`일 수 있다.
 
 | 이벤트 | 추가로 남길 값 | 위치 |
 |---|---|---|
@@ -115,6 +116,9 @@ Proposed
 | `DIAGNOSIS_COMPLETED` | `diagnosisId`, 추천 결과 유형 | `POST /api/v1/diagnoses` |
 | `DIAGNOSIS_STEP_ADVANCED` | `sessionId`, `step`, 선택지·분기 | `DiagnosisFlowService.next` — 게스트도 닿아 `userId`가 `anonymous`일 수 있고 그때는 `guestSessionId`가 유일한 축이다 |
 | `PROFILE_UPDATED` | 바뀐 필드명 목록만(값은 PII), `lang`은 값까지(번역을 좌우) | `UserService.updateMyProfile` |
+| `LISTING_REGISTERED` | `listingId`, `roomOfferCount`, `status`(항상 `PENDING`) | 매물 등록 서비스(`POST /api/v2/listings`) — 발급된 `listingId`가 경로에 없어 접근 로그로 복원되지 않는다 |
+
+**`LISTING_REGISTERED`는 임대인 PII가 실린 유일한 데이터 변경 이벤트다.** 요청 본문의 `businessRegistrationNumber`·`contact.phone`·`contact.sms`는 이벤트에 담지 않고, 어쩔 수 없이 값이 필요한 경로에서는 `LogMasker`를 거친다(위 PII 표). 저장은 원문·평문이지만([ADR-0039](./0039-listing-schema-v4-registration-form.md)) 로그는 그 예외를 따라가지 않는다.
 
 **아래는 접근 로그로 충분해 이벤트를 만들지 않는다.**
 
@@ -271,8 +275,8 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 모든 예외를 빠짐없이 로깅(#152 원안) | 누락 없음 | 4xx·검증 실패·봇 404까지 전량 적재 | 용도를 먼저 한정하는 편이 관측 가치·비용 모두 낫다 |
 | 용도별 라인을 1:1로 신설 | 용도와 라인이 대응 | 같은 요청이 3~4줄로 흩어지고 수집량 배가 | 용도 4·cross-store를 필드로 흡수 |
 | cross-store 결정을 용도 1·3에 분산 | 라인 소유자와 결정 위치가 일치 | 용도 5를 읽는 사람이 찾지 못한다 | 결정은 용도 5, 구현만 기존 라인에 |
-| 활동 로깅을 `@Aspect`로 | 서비스 코드 무침습 | 어드바이스가 도메인 인자에서 값을 꺼내야 해 결합이 더 깊다 | 인터셉터 + 서비스 명시 호출 6종 |
-| 활동 추적을 도메인 이벤트 구독으로 | 이벤트명이 곧 비즈니스 의미 | 실제 발행은 `UserWithdrawnEvent` 1건뿐, `BookingCreatedEvent`는 구독만 있는 dead path | 접근 로그 + 명시적 6종 |
+| 활동 로깅을 `@Aspect`로 | 서비스 코드 무침습 | 어드바이스가 도메인 인자에서 값을 꺼내야 해 결합이 더 깊다 | 인터셉터 + 서비스 명시 호출 7종 |
+| 활동 추적을 도메인 이벤트 구독으로 | 이벤트명이 곧 비즈니스 의미 | 실제 발행은 `UserWithdrawnEvent` 1건뿐, `BookingCreatedEvent`는 구독만 있는 dead path | 접근 로그 + 명시적 7종 |
 | logback CloudWatch appender(AWS SDK) | 파일·Agent 불필요 | 앱↔AWS 결합, 힙·스레드 부담, 전송 실패가 앱에 전이 | 내용과 전송을 직교로 유지 |
 
 ## Consequences
@@ -282,7 +286,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 긍정 | 401/403이 처음 관측되고, 타임아웃 없는 외부 호출 3건이 `latencyMs`로 드러나며, 스텁 폴백 활성 여부가 기동 로그로 판별된다 |
 | 긍정 | `userId`가 숫자(게스트는 `anonymous`)라 원천 PII-안전이고 MDC 생명주기가 필터 하나로 닫힌다 |
 | 부정 | 신규 의존·필터·인터셉터로 표면적이 늘고 `JSON_FILE`이 볼륨 마운트·로테이션을 요구한다 |
-| 부정 | 데이터 변경 6종과 `stores`는 도메인 서비스에 로깅 호출이 들어가 침습적이다 |
+| 부정 | 데이터 변경 7종과 `stores`는 도메인 서비스에 로깅 호출이 들어가 침습적이다 |
 
 | 잔여 사각지대 | 이유 |
 |---|---|
@@ -298,7 +302,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | ① | MDC + `logback-spring.xml` + `JSON_FILE` + `logging.level` 명시 |
 | ② | 용도 3 + 기동 레벨 정정(ERROR 승격·시드 러너 강등) |
 | ③ | 용도 1 접근 로그(용도 4 `latencyMs` 포함) |
-| ④ | 용도 1 데이터 변경 6종 + `stores` 필드 |
+| ④ | 용도 1 데이터 변경 7종 + `stores` 필드 |
 | ⑤ | 용도 2 호출 래퍼 + 용도 5 `Throwable` 확대 |
 | ⑥ | CloudWatch Agent·Log Group·로테이션 |
 
@@ -317,7 +321,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 |---|---|---|
 | 1 | 매핑 65개와 제외 경로 호출, 연속 요청 | 65건 각 1줄·제외 0줄·익명은 `anonymous`, `traceId` 잔류 0건 |
 | 1 | 제외 4종(예약 삭제·차단 해제·찜 추가·해제) 유발 | `pathVars`로 대상 식별자가 복원돼 별도 이벤트 없이 "누가 무엇을"이 확정된다 |
-| 1 | 데이터 변경 6종 유발 | 접근 로그와 같은 `traceId`로 조인, `PROFILE_UPDATED`는 `lang`만 값 노출 |
+| 1 | 데이터 변경 7종 유발 | 접근 로그와 같은 `traceId`로 조인, `PROFILE_UPDATED`는 `lang`만 값 노출 |
 | 1 | 게스트로 퀴즈·생활 팁·v2 진단·매물 탐색 GET 호출 | `userId=anonymous`로 접근 로그 1줄, v2 진단 단계는 `guestSessionId`로 추적된다 |
 | 2 | 어댑터 6개를 성공·4xx·타임아웃으로 유발 | `outcome`·`latencyMs`가 기대값, 502 1건에 WARN 1줄만(ERROR 중복 0) |
 | 2 | 스텁·폴백 5개 활성으로 기동 | 활성 어댑터 5줄, 인증번호 출력 0건 |

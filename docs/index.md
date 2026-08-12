@@ -60,7 +60,7 @@
 | --- | --- |
 | [system-overview](architecture/system-overview.md) | 시스템 전체 구성도/컴포넌트 |
 | [domain-model](architecture/domain-model.md) | 모듈별 **애그리거트 카탈로그**(루트·식별자·불변식·저장소·협력) — 전술적 도메인 정본 |
-| [sequence-diagrams](architecture/sequence-diagrams/README.md) | 유저 스토리별 사용자→앱→백엔드 **모듈** 시퀀스 다이어그램(모듈 분해·이벤트/호출 구분, 43종) |
+| [sequence-diagrams](architecture/sequence-diagrams/README.md) | 유저 스토리별 사용자→앱→백엔드 **모듈** 시퀀스 다이어그램(모듈 분해·이벤트/호출 구분, 44종) — 매물 등록은 [us-3-6-listing-registration](architecture/sequence-diagrams/03-listings-favorites/us-3-6-listing-registration.md) |
 
 ### database — 데이터베이스
 

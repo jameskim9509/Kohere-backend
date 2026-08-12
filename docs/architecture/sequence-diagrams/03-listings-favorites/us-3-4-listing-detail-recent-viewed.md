@@ -1,6 +1,6 @@
 # US-3-4 — 매물 상세 조회 + 최근 본 매물 기록
 
-> 모듈: 매물 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
+> 모듈: 매물 등록 · 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 
 ```mermaid
 sequenceDiagram

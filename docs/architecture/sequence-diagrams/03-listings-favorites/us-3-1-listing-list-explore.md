@@ -1,6 +1,6 @@
 # US-3-1 — 매물 리스트 탐색(필터·정렬·페이지네이션)
 
-> 모듈: 매물 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
+> 모듈: 매물 등록 · 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 
 ```mermaid
 sequenceDiagram

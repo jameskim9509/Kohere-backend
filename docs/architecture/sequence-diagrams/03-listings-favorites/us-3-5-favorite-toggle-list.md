@@ -1,6 +1,6 @@
 # US-3-5 — 찜 토글·찜 목록(인증 필수)
 
-> 모듈: 매물 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
+> 모듈: 매물 등록 · 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 
 ```mermaid
 sequenceDiagram

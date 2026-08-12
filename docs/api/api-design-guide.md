@@ -28,7 +28,7 @@
 
 ## 2. 엔드포인트 규약
 
-- 모든 API는 **`/api/v1`** 프리픽스를 가진다. 하위 호환이 깨지는 변경은 `/api/v2`로 올린다.
+- 모든 API는 **`/api/v1`** 프리픽스를 가진다. 하위 호환이 깨지는 변경은 `/api/v2`로 올린다. 현재 `/api/v2`에는 **진단 서버 주도 흐름**(`/api/v2/diagnoses/*` — [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md))과 **매물 등록**(`POST /api/v2/listings` — v4 스키마 기준, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))이 있다. 매물 GET 계열의 v2 이관은 **후속**이라 아직 `/api/v1`에 남아 있다.
 - 리소스 식별자는 경로 변수로(`/listings/{listingId}`), 조회 조건은 쿼리 파라미터로 둔다.
 - 컬렉션과 단건을 구분한다: `GET /listings`(목록) ↔ `GET /listings/{id}`(단건).
 - 중첩은 **소유 관계가 분명할 때 1단계까지만** 허용한다. (`GET /posts/{postId}/comments`) 그 이상 깊어지면 쿼리 파라미터로 평탄화한다.
@@ -39,6 +39,7 @@
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 | 선택 | 200 |
 | POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록 | 필수 | 201 |
+| POST | `/api/v2/listings` | 매물 등록(임대인) | 필수(`ROLE_USER` · `userType=LANDLORD`) | 201 |
 
 상세 스펙은 [docs/api/specs/](./specs/)에 도메인별로 둔다.
 
@@ -137,9 +138,10 @@
 
 | 항목 | 규약 |
 | --- | --- |
-| 버전 | 경로 프리픽스 `/api/v1` |
+| 버전 | 경로 프리픽스 `/api/v1`. 하위 호환이 깨지는 신설만 `/api/v2`(진단 서버 주도 흐름 · 매물 등록) |
 | 인증 헤더 | `Authorization: Bearer <accessToken>` (JWT). 갱신은 `POST /api/v1/auth/reissue` |
 | 인증 필요 표기 | 각 엔드포인트에 인증 **필수 / 선택 / 불필요**를 명시 |
+| 인가 매처 | 인증이 필요한 신규 경로는 `SecurityConfig`에 **명시 매처**(예: `hasRole("USER")`)를 둔다. `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 역할 조건(예: `userType=LANDLORD`)은 서비스에서 재검사해 `403` |
 | 날짜·시각 | **ISO-8601 UTC** (`2026-06-15T08:30:00Z`). 서버 저장은 UTC, 표시 변환은 클라이언트 책임. 날짜만은 `YYYY-MM-DD` |
 | 식별자 | 리소스 ID는 서버 생성. 본문/경로에서 숫자(Long) 또는 문자열로 일관되게 노출 |
 | 금액 | 원(KRW) 정수, 소수점 없음 (`budget: 500000`) |
@@ -152,8 +154,9 @@
 
 ## 체크리스트
 
-- [ ] 경로가 `/api/v1` + 복수 명사 + kebab-case이고 동사를 쓰지 않는다
+- [ ] 경로가 `/api/v1`(하위 호환이 깨져 신설했다면 `/api/v2`) + 복수 명사 + kebab-case이고 동사를 쓰지 않는다
 - [ ] 메서드·성공 status가 §1 표를 따른다 (생성 201 + Location, 삭제 204)
+- [ ] 인증이 필요한 경로는 `SecurityConfig`에 명시 매처(`hasRole("USER")` 등)를 두고, 역할·소유권 조건은 서비스에서 재검사한다(§6)
 - [ ] 응답을 공통 래퍼(`success`/`data`/`error`)로 감쌌고 엔티티를 직접 노출하지 않는다
 - [ ] 목록은 오프셋/커서 중 하나를 명시하고 §4 구조를 따른다
 - [ ] 입력은 Bean Validation으로 검증하고, 실패 시 [error-response-guide](./error-response-guide.md)의 `INVALID_INPUT`을 반환한다

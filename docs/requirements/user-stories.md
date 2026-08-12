@@ -12,7 +12,7 @@
 
 - 1. 소셜 로그인 · 온보딩 — [API 스펙](../api/specs/01-auth-onboarding.md)
 - 2. 맞춤 진단 & 매물 추천 — [API 스펙](../api/specs/02-diagnosis-recommendation.md)
-- 3. 매물 탐색 · 찜 — [API 스펙](../api/specs/03-listings-favorites.md)
+- 3. 매물 등록 · 탐색 · 찜 — [API 스펙](../api/specs/03-listings-favorites.md)
 - 4. 매물 예약(신청) · (후속) 문의·인앱 채팅 — [API 스펙](../api/specs/04-booking-inquiry-chat.md)
 - 5. 커뮤니티 (게시판 · 동네친구) — [API 스펙](../api/specs/05-community.md)
 - 6. 게이미피케이션 (퀴즈) — [API 스펙](../api/specs/06-gamification.md)
@@ -322,11 +322,11 @@
 
 **As a** 온보딩을 완료한(ACTIVE) 임대인
 **I want** 정식 access 토큰으로 사업자등록번호를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반)로 진위·영업 상태까지 확인받기를
-**So that** (매물 등록 등) 실제 영업 중인 사업자임을 증명해야 하는 시점에 온보딩과 분리된 무상태 검증으로 즉시 확인받을 수 있다.
+**So that** 실제 영업 중인 사업자임을 확인해야 할 때 온보딩과 분리된 무상태 검증으로 즉시 확인받을 수 있다.
 
 - 우선순위: **High**
 - 관련 NFR: 보안(사업자등록번호 등 민감정보 저장·로그 마스킹), 보안·신뢰성(외부 연동 타임아웃·관측성·장애 시 degrade), 보안(검증 시도 레이트리밋)
-- 선행: 온보딩 완료(US-1-9, `ACTIVE`)와 정식 access 토큰(`ROLE_USER`)이 필요하다. 이 단계는 **임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용**으로, 온보딩(US-1-9)의 선행 게이트가 아니며 세입자 온보딩(US-1-2)에는 없다.
+- 선행: 온보딩 완료(US-1-9, `ACTIVE`)와 정식 access 토큰(`ROLE_USER`)이 필요하다. 이 단계는 **임대인 온보딩 후(ACTIVE) 임대인이 필요할 때 직접 호출하는 전용 API**로, 온보딩(US-1-9)의 선행 게이트가 아니며 세입자 온보딩(US-1-2)에는 없다. **매물 등록(US-3-6)도 이 API를 호출하지 않는다** — 등록은 사업자등록번호를 형식만 검증해 매물 문서에 저장하고 진위는 관리자가 승인 심사에서 수동으로 확인한다([ADR-0033](../adr/0033-business-registry-verification.md) 개정).
 - 백엔드 관점: 온보딩과 **분리된 무상태(stateless) 검증 API**다 — 검증 결과를 서버에 저장하지 않고(Redis 마커 없음·`user.businessRegistrationNumberHash`에도 쓰지 않음) **응답(HTTP body)에만** 담아 회신한다. `auth`가 사업자등록번호를 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터: 사업자등록정보 검증 API — 국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md))로 **동기 검증**해 정상(계속) 사업자면 `verified:true`를, 미등록·휴업·폐업·진위 실패면 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`를 응답한다. 검증 API 장애·타임아웃 등 연동 실패는 `502 UPSTREAM_ERROR`로 응답해 재시도를 유도한다(임대인 연락처 인증 US-1-10·세입자 이메일 인증 US-1-6의 동기 호출·실패 정책과 대칭). 인가는 정식 토큰(`ACTIVE`, `ROLE_USER`)이 필수이며, 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출하면 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) `ACTIVE` 사용자면 `403 FORBIDDEN`이다.
 
 **AC (Given / When / Then)**
@@ -374,8 +374,8 @@
 
 - 우선순위: **High**
 - 관련 NFR: 보안(연락처 등 민감정보 저장·로그 마스킹), 보안(휴대폰 소유 인증)
-- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)이 완료되어야 한다(약관 + 연락처만으로 온보딩 완료 — 사업자등록번호 검증(US-1-8)은 온보딩 선행이 아니라 온보딩 후 별도 단계다).
-- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ phoneNumber, birthDate }` 두 필드다. 임대인은 성별·국적·직업·비자정보를 **수집하지 않으며(생년월일 `birthDate`은 세입자와 동일하게 필수 수집), 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 **매물 등록 시점에도 채우지 않는다** — 사업자등록번호 원문은 매물 문서에 저장한다, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `name`은 세입자와 동일하게 소셜 로그인 때 `User.name`에 캡처·저장돼 온보딩에서 재입력하지 않으며(수정은 `PATCH /users/me`), `email`도 세입자와 동일하게 소셜 로그인 provider 값을 보유하므로 온보딩에서 수집하지 않는다(ADR-0034의 "임대인 이메일 미수집" 결정을 개정 — 수집 폼이 아니라 provider 값 보유, #192). 임대인 온보딩 본인 확인은 여전히 전화(SMS) 인증(US-1-10)이며 email은 인증 대상이 아니다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)이 완료되어야 한다(약관 + 연락처만으로 온보딩 완료 — 사업자등록번호 검증(US-1-8)은 온보딩 선행이 아니고, **매물 등록(US-3-6)의 선행 단계도 아닌** 독립 무상태 API다).
+- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ phoneNumber, birthDate }` 두 필드다. 임대인은 성별·국적·직업·비자정보를 **수집하지 않으며(생년월일 `birthDate`은 세입자와 동일하게 필수 수집), 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 **매물 등록 시점에도 채우지 않는다** — 사업자등록번호는 **매물 등록 요청(US-3-6)에서 받아 원문 그대로 매물 문서에 저장**한다, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 그때도 등록 API는 **형식(숫자 10자리)만 검증하고 진위는 자동 검증하지 않는다** — 무상태 검증 API(US-1-8)를 호출하지 않으며, 진위 확인은 관리자가 승인 심사에서 수동으로 한다. 따라서 임대인 계정에는 온보딩 이후에도 사업자등록번호가 남지 않는다. `name`은 세입자와 동일하게 소셜 로그인 때 `User.name`에 캡처·저장돼 온보딩에서 재입력하지 않으며(수정은 `PATCH /users/me`), `email`도 세입자와 동일하게 소셜 로그인 provider 값을 보유하므로 온보딩에서 수집하지 않는다(ADR-0034의 "임대인 이메일 미수집" 결정을 개정 — 수집 폼이 아니라 provider 값 보유, #192). 임대인 온보딩 본인 확인은 여전히 전화(SMS) 인증(US-1-10)이며 email은 인증 대상이 아니다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
 
 **AC (Given / When / Then)**
 
@@ -824,11 +824,11 @@
   - **Then** v1 동작·응답 계약이 바뀌지 않는다(예: `GET /api/v1/diagnoses/questions/1`은 `regionRetry` 문항이 같은 `step 1`에 있어도 ① 지역(`field=region`) 문항을 그대로 반환한다 — v2는 새 컨트롤러로만 추가되고 v1 로직을 건드리지 않는다)
   - **And** #181(비회원 접근)에서도 v1의 인가 계약은 그대로다 — `permitAll` 매처는 `/api/v2/diagnoses/**`에만 추가되고 v1은 계속 인증 필수이므로, v1 응답 DTO(`AnswerSavedResponse` 등)와 그 RestDocs 테스트도 바뀌지 않는다 — 게스트 세션 키를 발급하는 지점도 `POST /api/v2/diagnoses/start` 하나뿐이라 v1 응답에는 등장하지 않는다
 
-## 3. 매물 탐색 · 찜
+## 3. 매물 등록 · 탐색 · 찜
 
 > 관련 API 스펙: [03-listings-favorites](../api/specs/03-listings-favorites.md)
 
-외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 목록·지도·장소 후보·기존 키워드 검색·상세 조회는 가입 전에도 사용할 수 있는 공개 API이고, 찜 등록/해제·찜 목록·최근 본 목록만 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 요청 바인딩·필드 검증 실패는 가능한 경우 `error.errors[]`에 필드 상세를 담지만, 최소값>최대값 같은 서비스 계층의 교차 필드 검증은 `errors=[]`일 수 있다.
+외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름과, **임대인이 직접 매물을 등록해 관리자 승인 대기 상태로 올리는 흐름**(US-3-6)을 함께 다룬다. 목록·지도·장소 후보·기존 키워드 검색·상세 조회는 가입 전에도 사용할 수 있는 공개 API이고, 찜 등록/해제·찜 목록·최근 본 목록은 인증이 필수이며, 매물 등록은 온보딩을 마친(`ACTIVE`) **임대인 전용**이다. 세입자에게 노출되는 조회(목록·지도·상세·찜 목록·최근 본 목록)는 모두 **`PUBLISHED` 매물만** 대상으로 하므로, 등록 직후의 `PENDING` 매물은 어느 조회에도 나타나지 않는다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 요청 바인딩·필드 검증 실패는 가능한 경우 `error.errors[]`에 필드 상세를 담지만, 최소값>최대값 같은 서비스 계층의 교차 필드 검증은 `errors=[]`일 수 있다.
 
 > **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물 유형·임대 유형·ARC 요구·성별 정책·조건 태그·건물 형태·난방·교통·도시·자치구·주방·세탁·공용공간·생활 편의·보안·제공 물품·주변 시설·지원 언어·대학 19개 카테고리 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·상태·통화와 요청 code는 번역하지 않는다.
 
@@ -844,9 +844,9 @@
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 목록 조회
-  Given 활성 매물이 N건 존재하고
+  Given 관리자 승인을 받은 `PUBLISHED` 매물이 N건 존재하고(승인 대기 `PENDING`·반려 `REJECTED`·일시중지 `PAUSED`·삭제 `DELETED` 매물은 조회 대상이 아니다)
   When 비로그인 사용자가 `GET /api/v1/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_OK&sort=PRICE_ASC&page=0&size=20`을 호출하면
-  Then `200 OK`로 공통 래퍼의 `data.content[]`에 가격 오름차순으로 매물 요약이 담기고 `data.page`에 `number/size/totalElements/totalPages/hasNext`가 포함된다
+  Then `200 OK`로 공통 래퍼의 `data.content[]`에 가격 오름차순으로 **`PUBLISHED` 매물만** 담기고(임대인이 방금 등록해 `PENDING`인 매물은 `data.page.totalElements`에도 잡히지 않는다) `data.page`에 `number/size/totalElements/totalPages/hasNext`가 포함된다
 - 시나리오: 입력 검증 실패(필터 값 오류)
   Given 클라이언트가
   When `minBudget=700000&maxBudget=300000`(최소>최대) 또는 정의되지 않은 `conditions=UNKNOWN_TAG`, `sort=CHEAPEST`처럼 허용되지 않은 enum/범위를 보내면
@@ -954,9 +954,9 @@
   When 같은 매물 상세를 조회하면
   Then 영문 사용자와 동일한 `code`를 받되 고유 문구와 `{code,label}`의 label은 한국어로 반환된다. 프론트의 필터 요청 code는 언어에 따라 달라지지 않는다
 - 시나리오: 리소스 없음
-  Given 존재하지 않거나 비공개/삭제되었거나 ACTIVE 방 상품이 없는 매물 ID로
+  Given 존재하지 않거나 `PUBLISHED`가 아닌(승인 대기 `PENDING`·반려 `REJECTED`·일시중지 `PAUSED`·삭제 `DELETED`) 매물이거나 ACTIVE 방 상품이 없는 매물 ID로
   When 상세를 조회하면
-  Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
+  Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다. 임대인이 방금 등록한 자기 매물(`PENDING`)도 이 상세 API로는 조회되지 않는다 — 승인 전 매물을 임대인에게 보여 주는 경로는 후속 범위다
 - 시나리오: 공개 상세 조회
   Given 비로그인·온보딩 미완료 사용자 또는 위조 토큰을 보낸 사용자가
   When 상세를 조회하면
@@ -990,7 +990,7 @@
   When 찜 등록/해제 또는 찜 목록을 호출하면
   Then `401 Unauthorized`, `error.code=UNAUTHENTICATED`(또는 만료 시 `TOKEN_EXPIRED`)를 반환한다
 - 시나리오: 리소스 없음
-  Given 존재하지 않거나 비공개/삭제되었거나 ACTIVE 방 상품이 없는 매물 ID로
+  Given 존재하지 않거나 `PUBLISHED`가 아닌(승인 대기 `PENDING`·반려 `REJECTED`·일시중지 `PAUSED`·삭제 `DELETED`) 매물이거나 ACTIVE 방 상품이 없는 매물 ID로
   When 찜 등록을 호출하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
 - 시나리오: 경계·동시성(중복 찜·동시 요청 멱등)
@@ -1001,6 +1001,73 @@
   Given 인증된 사용자가 찜한 매물이 있고
   When `GET /api/v1/users/me/favorites?page=0&size=20`을 호출하면
   Then `200 OK`로 `data.content[]`(모두 `favorited=true`)와 `data.page`를 최근 찜한 순으로 반환하며, 찜이 없으면 빈 배열을 반환한다. 현재 찜 목록 조회는 `PUBLISHED`만 검사하므로 ACTIVE 방 상품이 없는 공개 매물이 빈 `roomOffers[]`로 포함될 수 있다
+
+### US-3-6 — 임대인 매물 등록
+
+**As a** 온보딩을 마친(`ACTIVE`) 임대인(`userType=LANDLORD`)
+**I want** 등록 폼이 받는 지점·건물·공용시설·주변시설·객실(방 상품) 정보를 한 번에 제출해 매물을 만들기
+**So that** 관리자 승인을 거쳐 내 매물이 세입자 탐색·검색에 노출되고 문의를 받을 수 있다
+
+- 메타: 우선순위 **High**, 관련 NFR — 보안(임대인 전용 인가·매물 문서에 저장되는 PII), 입력 검증(카탈로그 대조·교차 필드 검증)
+- 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(v2에는 현재 진단 `/api/v2/diagnoses`만 있고, 조회(GET) 계열의 v2 이관은 후속이다). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
+- 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `POST /api/v2/listings`를 **`hasRole("USER")` 명시 매처**로 둔다 — 매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰이 컨트롤러까지 도달한다(진단 v2가 `permitAll` 매처를 갖는 것과 달리 등록은 열지 않는다). 임대인 여부(`userType=LANDLORD`)는 매처로 표현할 수 없으므로 **서비스에서 재검사**해 세입자면 `403` + `FORBIDDEN`이다.
+- 파생·미구현 관점: 폼 한 칸이 스키마 두 필드로 갈라지는 값은 서버가 파싱한다 — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. `min ≤ max`와 `usedFloorMax ≤ totalFloors`를 함께 검증한다. 주소는 `address.fullAddress`에 **입력값 그대로**(정규화 없음) 저장하고, `address.city`·`district`는 도로명 주소를 파싱해 `City`·`District` enum으로 채운다 — 파싱에 실패하면 `400` + `LISTING_INVALID_ADDRESS`다. **`location`(좌표)과 `nearbyUniversityCodes`는 이번 범위에서 채우지 않는다** — 좌표 없이 저장하고 `nearbyUniversityCodes`는 빈 배열이다(지오코딩은 후속, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) 후속 작업).
+- 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개, `roomOffers[].roomImageUrls`는 최소 2장이다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관).
+- 사업자등록번호 관점: 등록 API는 사업자등록번호를 **형식(숫자 10자리)만 검증해 원문 저장**하고 **진위를 자동 검증하지 않는다** — 무상태 검증 API `POST /api/v1/auth/business/verify`(US-1-8)를 **호출하지 않으며**, 진위 확인은 **관리자가 승인 심사에서 수동으로** 한다(해당 엔드포인트 자체는 임대인이 직접 확인용으로 호출하도록 그대로 둔다). 원문은 매물 문서에만 저장하고 `user.businessRegistrationNumberHash`에는 쓰지 않는다(US-1-9와 일관, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) §3, [ADR-0033](../adr/0033-business-registry-verification.md)의 매물 문서 한정 개정).
+- 응답 관점: `201 Created` + 생성된 매물의 **상세 응답 구조(v4)** 를 반환한다. `contact`(담당자명·전화·문자)는 세입자에게도 공개하므로 포함하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 US-3-4와 동일하게 **응답에서 제외**한다. `status`는 카탈로그 번역 대상이 아니라 **코드 문자열 그대로**(`"PENDING"`) 내려간다.
+- 후속(이번 범위 아님): 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API · 임대인 매물 수정 · 지오코딩(`location`·`nearbyUniversityCodes`) · 재고.
+- 시퀀스: [US-3-6 다이어그램](../architecture/sequence-diagrams/03-listings-favorites/us-3-6-listing-registration.md), API: [03-listings-favorites](../api/specs/03-listings-favorites.md).
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 매물 등록
+  Given 온보딩을 마친(`ACTIVE`) 임대인(`userType=LANDLORD`)이 정식 access 토큰(`ROLE_USER`)을 보유하고
+  When 등록 폼 값(지점 정보·건물 정보·공용시설·주변시설·객실 1개 이상)을 담아 `POST /api/v2/listings`를 호출하면
+  Then `201 Created`로 생성된 매물의 상세 응답(v4)을 반환하고, 서버가 `_id`·`roomOffers[].roomOfferId`(ObjectId)·`schemaVersion=4`·`status="PENDING"`·`favoriteCount=0`·`createdAt`/`updatedAt`·`rentalType="MONTHLY_RENT"`·`pricing.currency="KRW"`·`roomOffers[].status="ACTIVE"`를 채운다. `landlordId`는 요청 본문이 아니라 토큰에서 얻은 값으로 저장된다
+- 시나리오: 등록 직후에는 세입자에게 보이지 않는다
+  Given 위에서 등록한 매물이 `PENDING` 상태로 저장되어 있고
+  When 세입자가 `GET /api/v1/listings`(목록)·`GET /api/v1/listings/map`(지도)·`GET /api/v1/listings/{listingId}`(상세)를 호출하면
+  Then 목록·지도에는 해당 매물이 포함되지 않고(`PUBLISHED`만 조회 — US-3-1·US-3-2), 상세는 `404 Not Found` + `error.code=LISTING_NOT_FOUND`다. 노출은 관리자 승인(`PENDING → PUBLISHED`, 후속)이 있어야 시작된다
+- 시나리오: 좌표·주변 대학은 비운 채 저장(미구현)
+  Given 임대인이 도로명 주소를 입력해 등록에 성공했고
+  When 저장된 매물 문서를 확인하면
+  Then `address.fullAddress`는 입력값 그대로이고 `address.city`·`district`는 파싱된 `City`·`District` 코드이며, **`location`은 채워지지 않고 `nearbyUniversityCodes`는 빈 배열**이다(지오코딩은 후속). 좌표가 없어도 등록 자체는 실패하지 않는다
+- 시나리오: 입력 검증 실패(주소에서 행정구역을 못 뽑음)
+  Given 지점 주소가 도로명 주소 형태가 아니거나 카탈로그에 없는 시·구여서 `City`·`District`를 판별할 수 없고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=LISTING_INVALID_ADDRESS`를 반환하고 매물을 생성하지 않는다. 이 실패는 **좌표와 무관하다** — 등록은 `location`을 채우지 않으므로 지오코딩 실패라는 상황 자체가 없고, `fullAddress`에서 행정구역을 뽑지 못했다는 뜻이다. 프론트는 도로명 주소 재입력을 유도한다
+- 시나리오: 입력 검증 실패(필수값 누락)
+  Given 임대인이 지점명·주소·연락처·건물 총 층수·객실 정보 같은 필수값을 빠뜨리고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 `error.errors[]`에 `field`/`reason`을 담으며 매물을 생성하지 않는다. 본문 자체를 해석할 수 없으면(타입 불일치 등) `400` + `MALFORMED_REQUEST`다
+- 시나리오: 입력 검증 실패(카탈로그에 없는 코드)
+  Given 요청의 코드 필드(예: `type`·`genderPolicy`·`facilities.*`·`nearbyFacilities`·`languagesSupported`·`roomOffers[].filterTags`)에 `listingCatalog`의 `(category, code)`로 존재하지 않는 값이 섞여 있고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=LISTING_UNKNOWN_CATALOG_CODE`를 반환하고 매물을 생성하지 않는다(코드 집합의 정본은 `listingCatalog`다 — [ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)). 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리하며, 프론트는 입력 교정 대신 코드 카탈로그 재조회를 안내한다
+- 시나리오: 입력 검증 실패(운영층·이용 연령대 `min~max` 형식)
+  Given 지점 운영층이나 이용 연령대를 `1~2`·`20~35` 형식이 아닌 값(`1-2`·`2~1`처럼 형식 위반이거나 최소>최대)으로 보내거나 `usedFloorMax`가 건물 총 층수(`totalFloors`)를 넘으면
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다. 형식 위반은 필드를 특정할 수 있으므로 `error.errors[]`에 담고, `min ≤ max`·`usedFloorMax ≤ totalFloors` 같은 교차 필드 검증은 `errors=[]`일 수 있다
+- 시나리오: 입력 검증 실패(객실·객실 사진 최소 개수)
+  Given `roomOffers`가 비어 있거나 어떤 객실의 `roomImageUrls`가 2장 미만이고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 매물을 생성하지 않는다(객실 최소 1개·객실 사진 최소 2장). 반면 지점 소개글·이용 조건 같은 자유 입력 문자열에는 **길이 상한을 두지 않아** 길다는 이유로 거절하지 않는다
+- 시나리오: 사업자등록번호는 형식만 보고 저장한다
+  Given 형식(숫자 10자리)은 맞지만 실제로는 폐업·미등록일 수도 있는 사업자등록번호를 담아
+  When `POST /api/v2/listings`를 호출하면
+  Then 서버는 외부 검증 API(`POST /api/v1/auth/business/verify`, US-1-8)를 **호출하지 않고** `201 Created`로 매물을 `PENDING`으로 저장하며, 원문을 매물 문서에 보관하되 응답에는 포함하지 않는다. 진위는 관리자가 승인 심사에서 수동으로 확인한다. 형식 자체가 어긋나면(자릿수·숫자 아님) `400` + `INVALID_INPUT`이다
+- 시나리오: 인증·권한(임대인이 아닌 사용자)
+  Given 온보딩을 마친(`ACTIVE`) 세입자(`userType=TENANT`)가 정식 토큰으로
+  When `POST /api/v2/listings`를 호출하면
+  Then `403 Forbidden`, `error.code=FORBIDDEN`을 반환하고 매물을 생성하지 않는다(역할 검사는 SecurityConfig 매처가 아니라 서비스에서 수행한다)
+- 시나리오: 인증·권한(온보딩 미완료·토큰 없음/만료)
+  Given 온보딩 스코프(`PENDING`·`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰이거나 `Authorization` 헤더가 없거나 토큰이 위조·만료되었고
+  When `POST /api/v2/listings`를 호출하면
+  Then 온보딩 토큰은 `403` + `AUTH_ONBOARDING_REQUIRED`(SecurityConfig의 `hasRole("USER")` 명시 매처에서 차단 — 매처가 없으면 `anyRequest().authenticated()`로 떨어져 컨트롤러까지 도달한다), 토큰 부재·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`다
+- 시나리오: 응답 노출 범위
+  Given 등록이 성공했고
+  When `201` 응답 본문을 보면
+  Then `contact`(담당자명·전화·문자)는 포함되고(세입자에게도 공개하는 값 — US-3-4), `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 제외되며, `status`는 `{code,label}`이 아니라 코드 문자열 `"PENDING"` 그대로다
 
 ## 4. 매물 예약(신청) · (후속) 문의·인앱 채팅
 

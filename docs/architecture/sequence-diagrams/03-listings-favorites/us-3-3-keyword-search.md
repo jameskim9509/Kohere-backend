@@ -1,6 +1,6 @@
 # US-3-3 — 네이버 장소 검색 및 주변 매물 조회
 
-> 모듈: 매물 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
+> 모듈: 매물 등록 · 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 
 ```mermaid
 sequenceDiagram
