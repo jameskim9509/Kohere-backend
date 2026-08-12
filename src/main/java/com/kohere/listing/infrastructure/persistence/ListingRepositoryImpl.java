@@ -148,17 +148,11 @@ public class ListingRepositoryImpl implements ListingRepository {
       roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").lte(monthlyRentMax));
     }
     Set<ConditionTag> requestedConditions = conditions == null ? Set.of() : conditions;
-    if (requestedConditions.contains(ConditionTag.NO_ARC)) {
-      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(false));
-    }
 
     Set<ConditionTag> roomOfferConditions = roomOfferConditions(requestedConditions);
     if (!roomOfferConditions.isEmpty()) {
       roomOfferCriteria.add(
           Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
-      if (roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)) {
-        roomOfferCriteria.add(Criteria.where("inventory.availableCount").gt(0));
-      }
     }
     rootCriteria.add(
         Criteria.where("roomOffers")
@@ -253,9 +247,6 @@ public class ListingRepositoryImpl implements ListingRepository {
     if (!condition.types().isEmpty()) {
       rootCriteria.add(
           Criteria.where("type").in(condition.types().stream().map(Enum::name).toList()));
-    }
-    if (condition.requiresNoArc()) {
-      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(false));
     }
 
     rootCriteria.add(Criteria.where("roomOffers").elemMatch(roomOfferCriteria(condition)));
@@ -386,19 +377,13 @@ public class ListingRepositoryImpl implements ListingRepository {
       return false;
     }
 
-    Set<ConditionTag> roomOfferConditions = condition.roomOfferConditions();
-    if (!roomOffer.filterTags().containsAll(roomOfferConditions)) {
-      return false;
-    }
-    return !roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)
-        || roomOffer.inventory().availableCount() > 0;
+    // v4에는 재고가 없어 MOVE_IN_NOW도 다른 태그와 동일하게 filterTags 포함 여부로만 판정한다.
+    return roomOffer.filterTags().containsAll(condition.roomOfferConditions());
   }
 
   /** 추천 조건에서 NO_ARC 같은 매물 정책 필터를 제외하고 roomOffer 태그 조건만 남긴다. */
   private static Set<ConditionTag> roomOfferConditions(Set<ConditionTag> conditions) {
-    return conditions.stream()
-        .filter(ConditionTag::storedInRoomOfferFilterTags)
-        .collect(Collectors.toUnmodifiableSet());
+    return conditions.stream().collect(Collectors.toUnmodifiableSet());
   }
 
   /** 가까운 순서 비교에만 쓰는 간단한 거리값이다. 실제 표시 거리는 application 계층에서 미터로 계산한다. */

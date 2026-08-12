@@ -4,6 +4,5 @@ package com.kohere.listing.domain;
 public enum ListingType {
   GOSHIWON,
   CO_LIVING,
-  SHARE_HOUSE,
-  OTHER
+  SHARE_HOUSE
 }

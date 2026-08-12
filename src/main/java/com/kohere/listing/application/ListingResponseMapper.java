@@ -43,20 +43,19 @@ final class ListingResponseMapper {
         listing.getStatus(),
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
-        listing.getContract(),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
-        listing.getPropertyPolicies(),
         toFacilities(listing, localization),
         conditionResponses(listing, localization),
         result.roomOffers().stream()
             .map(roomOffer -> toRoomOfferResponse(roomOffer, localization))
             .toList(),
-        toDescriptions(listing, localization),
+        localization.text(listing.getDescription()),
+        localization.text(listing.getExtraNotes()),
         listing.getImageUrls(),
         distanceMeters,
         false,
@@ -111,7 +110,6 @@ final class ListingResponseMapper {
         offer.name().resolve(LocalizedText.DEFAULT_LANGUAGE),
         offer.pricing().deposit(),
         offer.pricing().monthlyRent(),
-        offer.inventory().nextAvailableFrom(),
         listing.getLandlordId());
   }
 
@@ -132,18 +130,17 @@ final class ListingResponseMapper {
         listing.getStatus(),
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
-        listing.getContract(),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
-        listing.getPropertyPolicies(),
         toFacilities(listing, localization),
         conditionResponses(listing, localization),
         activeRoomOfferResponses(listing, localization),
-        toDescriptions(listing, localization),
+        localization.text(listing.getDescription()),
+        localization.text(listing.getExtraNotes()),
         listing.getImageUrls(),
         true,
         listing.getFavoriteCount(),
@@ -163,18 +160,17 @@ final class ListingResponseMapper {
         listing.getStatus(),
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
-        listing.getContract(),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
-        listing.getPropertyPolicies(),
         toFacilities(listing, localization),
         conditionResponses(listing, localization),
         activeRoomOfferResponses(listing, localization),
-        toDescriptions(listing, localization),
+        localization.text(listing.getDescription()),
+        localization.text(listing.getExtraNotes()),
         listing.getImageUrls(),
         favorited,
         listing.getFavoriteCount(),
@@ -193,18 +189,17 @@ final class ListingResponseMapper {
         listing.getStatus(),
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
-        listing.getContract(),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.FULL),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
-        listing.getPropertyPolicies(),
         toFacilities(listing, localization),
         conditionResponses(listing, localization),
         activeRoomOfferResponses(listing, localization),
-        toDescriptions(listing, localization),
+        localization.text(listing.getDescription()),
+        localization.text(listing.getExtraNotes()),
         listing.getImageUrls(),
         favorited,
         listing.getFavoriteCount(),
@@ -223,8 +218,8 @@ final class ListingResponseMapper {
       Listing listing, ListingLocalizationContext localization) {
     Listing.Address address = listing.getAddress();
     return new ListingDetailResponse.AddressResponse(
-        address.city(),
-        address.district(),
+        localization.codeLabel(ListingCatalogCategory.CITY, address.city()),
+        localization.codeLabel(ListingCatalogCategory.DISTRICT, address.district()),
         localization.text(address.fullAddress()),
         localization.text(address.detail()));
   }
@@ -236,8 +231,7 @@ final class ListingResponseMapper {
     return new ListingDetailResponse.NearestTransitResponse(
         localization.codeLabel(ListingCatalogCategory.TRANSIT_TYPE, transit.type()),
         toTransitDisplayName(transit, localization, transitNameStyle),
-        transit.walkMinutes(),
-        localization.text(transit.nearbyPlacesDescription()));
+        transit.walkMinutes());
   }
 
   /** 응답 종류에 따라 영문 지하철역 이름을 정식 명칭 또는 축약 명칭으로 반환한다. */
@@ -271,12 +265,9 @@ final class ListingResponseMapper {
         building.elevatorAvailable());
   }
 
-  /** 환불 정책의 안정적인 code와 현재 언어의 고유 설명 문장을 조합한다. */
-  private static ListingDetailResponse.RefundPolicyResponse toRefundPolicy(
-      Listing listing, ListingLocalizationContext localization) {
-    return new ListingDetailResponse.RefundPolicyResponse(
-        listing.getRefundPolicy().code().name(),
-        localization.text(listing.getRefundPolicy().description()));
+  /** 환불 정책을 현재 언어의 문장 하나로 바꾼다. */
+  private static String toRefundPolicy(Listing listing, ListingLocalizationContext localization) {
+    return localization.text(listing.getRefundPolicy());
   }
 
   /** facilities의 모든 화면 표시 코드를 해당 카테고리의 code/label 응답으로 바꾼다. */
@@ -286,29 +277,16 @@ final class ListingResponseMapper {
     return new ListingDetailResponse.FacilitiesResponse(
         enumCodeLabels(
             facilities.heatingSystem(), ListingCatalogCategory.HEATING_SYSTEM, localization),
-        stringCodeLabels(facilities.kitchen(), ListingCatalogCategory.KITCHEN, localization),
-        stringCodeLabels(facilities.laundry(), ListingCatalogCategory.LAUNDRY, localization),
-        stringCodeLabels(
+        enumCodeLabels(facilities.kitchen(), ListingCatalogCategory.KITCHEN, localization),
+        enumCodeLabels(facilities.laundry(), ListingCatalogCategory.LAUNDRY, localization),
+        enumCodeLabels(
             facilities.livingAmenities(), ListingCatalogCategory.LIVING_AMENITY, localization),
-        stringCodeLabels(
+        enumCodeLabels(
             facilities.securityFeatures(), ListingCatalogCategory.SECURITY_FEATURE, localization),
-        facilities.commonSpaces().stream()
-            .map(
-                space ->
-                    new ListingDetailResponse.CommonSpaceResponse(
-                        localization.codeLabel(ListingCatalogCategory.COMMON_SPACE, space.type()),
-                        space.count()))
-            .toList(),
-        stringCodeLabels(
+        enumCodeLabels(
+            facilities.commonSpaces(), ListingCatalogCategory.COMMON_SPACE, localization),
+        enumCodeLabels(
             facilities.providedSupplies(), ListingCatalogCategory.PROVIDED_SUPPLY, localization));
-  }
-
-  /** 상세 설명은 현재 언어 하나만 선택하고 extraNotes는 기존 요청 범위대로 그대로 둔다. */
-  private static ListingDetailResponse.DescriptionsResponse toDescriptions(
-      Listing listing, ListingLocalizationContext localization) {
-    return new ListingDetailResponse.DescriptionsResponse(
-        localization.text(listing.getDescriptions().text()),
-        listing.getDescriptions().extraNotes());
   }
 
   /** 공개 응답에 포함할 ACTIVE 방 상품을 현재 언어 응답으로 바꾼다. */
@@ -326,8 +304,8 @@ final class ListingResponseMapper {
         roomOffer.roomOfferId(),
         localization.text(roomOffer.name()),
         roomOffer.status(),
+        roomOffer.contract(),
         roomOffer.pricing(),
-        roomOffer.inventory(),
         enumCodeLabels(roomOffer.filterTags(), ListingCatalogCategory.CONDITION_TAG, localization),
         roomOffer.roomImageUrls());
   }
@@ -366,9 +344,6 @@ final class ListingResponseMapper {
     activeRoomOffers(listing).stream()
         .map(Listing.RoomOffer::filterTags)
         .forEach(conditions::addAll);
-    if (!listing.getPropertyPolicies().arcRequired()) {
-      conditions.add(ConditionTag.NO_ARC);
-    }
     return Collections.unmodifiableSet(conditions);
   }
 

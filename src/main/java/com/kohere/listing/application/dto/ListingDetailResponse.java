@@ -20,19 +20,18 @@ public record ListingDetailResponse(
     CodeLabelResponse type,
     Listing.ListingStatus status,
     CodeLabelResponse rentalType,
-    RefundPolicyResponse refundPolicy,
-    Listing.Contract contract,
+    String refundPolicy,
     CodeLabelResponse genderPolicy,
     GeoPoint location,
     AddressResponse address,
     NearestTransitResponse nearestTransit,
     Set<String> nearbyUniversityCodes,
     BuildingResponse building,
-    Listing.PropertyPolicies propertyPolicies,
     FacilitiesResponse facilities,
     List<CodeLabelResponse> conditions,
     List<RoomOfferResponse> roomOffers,
-    DescriptionsResponse descriptions,
+    String description,
+    String extraNotes,
     List<String> imageUrls,
     boolean favorited,
     int favoriteCount,
@@ -43,11 +42,11 @@ public record ListingDetailResponse(
   public record GeoPoint(double lat, double lng) {}
 
   /** 검색용 행정 코드는 유지하고, 화면 주소만 사용자 언어로 선택한 응답이다. */
-  public record AddressResponse(String city, String district, String fullAddress, String detail) {}
+  public record AddressResponse(
+      CodeLabelResponse city, CodeLabelResponse district, String fullAddress, String detail) {}
 
   /** 가까운 교통수단의 code/label과 사용자 언어의 역명·주변 안내를 담는다. */
-  public record NearestTransitResponse(
-      CodeLabelResponse type, String name, int walkMinutes, String nearbyPlacesDescription) {}
+  public record NearestTransitResponse(CodeLabelResponse type, String name, int walkMinutes) {}
 
   /** 건물 종류는 code/label로, 숫자와 boolean은 언어와 무관한 원래 값으로 내린다. */
   public record BuildingResponse(
@@ -59,8 +58,6 @@ public record ListingDetailResponse(
       boolean elevatorAvailable) {}
 
   /** 환불 정책 코드는 기존 의미를 유지하고 설명 문장만 사용자 언어로 선택한다. */
-  public record RefundPolicyResponse(String code, String description) {}
-
   /** 시설 그룹별 공통 코드를 모두 code/label 형태로 내려주는 상세 응답이다. */
   public record FacilitiesResponse(
       List<CodeLabelResponse> heatingSystem,
@@ -68,12 +65,10 @@ public record ListingDetailResponse(
       List<CodeLabelResponse> laundry,
       List<CodeLabelResponse> livingAmenities,
       List<CodeLabelResponse> securityFeatures,
-      List<CommonSpaceResponse> commonSpaces,
+      List<CodeLabelResponse> commonSpaces,
       List<CodeLabelResponse> providedSupplies) {}
 
   /** 공용공간 종류의 code/label과, 데이터가 있는 경우에만 사용하는 개수를 담는다. */
-  public record CommonSpaceResponse(CodeLabelResponse type, Integer count) {}
-
   /**
    * 동일 가격·조건을 공유하는 실제 방 묶음 하나다.
    *
@@ -83,11 +78,8 @@ public record ListingDetailResponse(
       String roomOfferId,
       String name,
       Listing.RoomOfferStatus status,
+      Listing.Contract contract,
       Listing.Pricing pricing,
-      Listing.Inventory inventory,
       List<CodeLabelResponse> filterTags,
       List<String> roomImageUrls) {}
-
-  /** 사용자 언어로 선택된 매물 설명과 번역 범위에서 제외된 기존 추가 안내다. */
-  public record DescriptionsResponse(String description, String extraNotes) {}
 }
