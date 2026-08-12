@@ -52,7 +52,7 @@ Request Body:
 
 ```jsonc
 {
-  "title": { "ko": "신촌 도보 5분 1인실 고시원", "en": "Single-room goshiwon, 5 minutes from Sinchon" },
+  "title": "신촌 도보 5분 1인실 고시원",
   "type": "GOSHIWON",
   "contact": {
     "managerName": "Kim Woon-yeong",
@@ -62,8 +62,8 @@ Request Body:
   "businessRegistrationNumber": "1234567890",
   "blogUrl": "https://blog.naver.com/kohere-goshiwon",
   "address": {
-    "fullAddress": { "ko": "서울특별시 서대문구 신촌로 12", "en": "12 Sinchon-ro, Seodaemun-gu, Seoul" },
-    "detail": { "ko": "3층 305호", "en": "Room 305, 3rd floor" }
+    "fullAddress": "서울특별시 서대문구 신촌로 12",
+    "detail": "3층 305호"
   },
   "building": {
     "type": "VILLA",
@@ -88,28 +88,19 @@ Request Body:
   "nearbyFacilities": ["CONVENIENCE_STORE", "HOSPITAL_PHARMACY"],
   "nearestTransit": {
     "type": "SUBWAY",
-    "name": { "ko": "신촌역", "en": "Sinchon Station" },
+    "name": "신촌역",
     "walkMinutes": 5
   },
-  "description": {
-    "ko": "지하철역에서 도보 5분 거리의 관리가 잘 된 고시원입니다.",
-    "en": "A well-maintained goshiwon within a five-minute walk of the subway station."
-  },
-  "extraNotes": {
-    "ko": "객실 내 취사 금지. 오후 11시 이후 정숙.",
-    "en": "No cooking inside rooms. Quiet hours after 11 PM."
-  },
-  "refundPolicy": {
-    "ko": "입주 7일 전까지 취소하면 전액 환불합니다.",
-    "en": "Full refund for cancellations made at least 7 days before move-in."
-  },
+  "description": "지하철역에서 도보 5분 거리의 관리가 잘 된 고시원입니다.",
+  "extraNotes": "객실 내 취사 금지. 오후 11시 이후 정숙.",
+  "refundPolicy": "입주 7일 전까지 취소하면 전액 환불합니다.",
   "imageUrls": [
     "https://cdn.kohere.app/uploads/2026/08/branch-1.jpg",
     "https://cdn.kohere.app/uploads/2026/08/branch-2.jpg"
   ],
   "roomOffers": [
     {
-      "name": { "ko": "스탠다드 1인실", "en": "Standard Single Room" },
+      "name": "스탠다드 1인실",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
       "pricing": {
         "monthlyRent": 380000,
@@ -134,15 +125,15 @@ Request Body:
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `title` | `{ko,en}` | 필수 | 지점명. 두 언어 모두 공백 불가 |
+| `title` | string | 필수 | 지점명(한국어). 공백 불가 |
 | `type` | `ListingType` | 필수 | 공간 유형. 카탈로그 `LISTING_TYPE` 대조 |
 | `contact.managerName` | string | 필수 | 지점 운영자명 |
 | `contact.phone` | string | 필수 | 전화문의 수신 연락처. `+82) 10-1234-5678` 형식 |
 | `contact.sms` | string | 필수 | 문자문의 수신 연락처. 형식은 `phone`과 동일 |
 | `businessRegistrationNumber` | string | 필수 | 숫자 10자리. **형식만 검증하고 그대로 저장**한다(아래 요청 주의사항) |
 | `blogUrl` | string | 선택 | 지점 블로그. 값이 있으면 URL 형식 |
-| `address.fullAddress` | `{ko,en}` | 필수 | 도로명 주소. **입력값을 그대로 저장**하며 정규화하지 않는다 |
-| `address.detail` | `{ko,en}` | 선택 | 동·호수 등 상세 주소. 미입력이면 `null` |
+| `address.fullAddress` | string | 필수 | 도로명 주소. **입력값을 그대로 저장**하며 정규화하지 않는다 |
+| `address.detail` | string | 선택 | 동·호수 등 상세 주소. 미입력이면 `null` |
 | `building.type` | `BuildingType` | 필수 | 건물 형태. 카탈로그 `BUILDING_TYPE` 대조 |
 | `building.totalFloors` | integer | 필수 | 건물 총 층수. 1 이상 |
 | `building.usedFloorRange` | string | 필수 | 지점 운영층을 `min~max` 1칸으로 받는다(예 `1~2`). 서버가 `usedFloorMin`·`usedFloorMax`로 파싱 |
@@ -161,14 +152,14 @@ Request Body:
 | `facilities.providedSupplies` | `ProvidedSupply[]` | 필수 | 제공비품(복수 선택). 카탈로그 `PROVIDED_SUPPLY` 대조 |
 | `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조 |
 | `nearestTransit.type` | `TransitType` | 필수 | 현재 허용값은 `SUBWAY` 하나다. 카탈로그 `TRANSIT_TYPE` 대조 |
-| `nearestTransit.name` | `{ko,en}` | 필수 | 근처 지하철역명 |
+| `nearestTransit.name` | string | 필수 | 근처 지하철역명 |
 | `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상 |
-| `description` | `{ko,en}` | 필수 | 지점 소개글 |
-| `extraNotes` | `{ko,en}` | 필수 | 이용 조건(생활 규칙)·유의사항 |
-| `refundPolicy` | `{ko,en}` | 필수 | 환불정책 문구 |
+| `description` | string | 필수 | 지점 소개글 |
+| `extraNotes` | string | 필수 | 이용 조건(생활 규칙)·유의사항 |
+| `refundPolicy` | string | 필수 | 환불정책 문구 |
 | `imageUrls` | string[] | 필수 | 지점 대표사진 URL 목록. 카드·상세의 대표 이미지로 `imageUrls[0]`이 쓰인다 |
 | `roomOffers` | object[] | 필수 | 개별 객실(room) 타입. **최소 1개** |
-| `roomOffers[].name` | `{ko,en}` | 필수 | 객실 타입명 |
+| `roomOffers[].name` | string | 필수 | 객실 타입명 |
 | `roomOffers[].contract.minStayMonths` | integer | 필수 | 이용 기간(최소, 개월). 1 이상 |
 | `roomOffers[].contract.maxStayMonths` | integer | 필수 | 이용 기간(최대, 개월). `minStayMonths` 이상 |
 | `roomOffers[].pricing.monthlyRent` | integer(KRW) | 필수 | 객실 비용(월 기준). 0 이상 |
@@ -190,7 +181,7 @@ Request Body:
 - **코드 필드는 `listingCatalog` 대조를 통과해야 한다.** 위 표의 각 코드 배열·단일 코드는 `(category, code)`가 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다. 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리한다 — 프론트는 입력 교정 대신 코드 카탈로그 재조회(또는 앱 갱신)를 안내한다.
 - **문자열 길이 제한은 두지 않는다.** 서버·DB 어느 계층도 자유 입력 문구의 길이를 강제하지 않는다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다.** 숫자 10자리 형식만 확인하고 원문을 매물 문서에 저장하며, 진위·영업 상태는 **관리자가 승인 심사에서 수동으로** 확인한다. 이 엔드포인트는 `POST /api/v1/auth/business/verify`(무상태 검증 — [01-auth-onboarding](./01-auth-onboarding.md))를 호출하지 않는다.
-- **다국어 문구는 `{ko,en}` 두 언어를 모두 받는다.** 대상은 `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name`이며([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md) 결정 1), 한쪽이 비면 `400 INVALID_INPUT`이다.
+- **다국어 문구는 한국어 한 값만 받는다.** 서버가 저장 시 `{ko, en}`의 **양쪽에 같은 값을 넣는다**(`en = ko`). 대상은 `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name` 8종이다. 저장 계약이 두 언어를 모두 요구하므로(`LocalizedText`) 영어 문구가 비어 있는 문서는 만들 수 없다. **영어 번역은 관리자가 승인 심사에서 채운다** — 등록 직후 매물은 `PENDING`이라 세입자 조회에 노출되지 않으므로, 번역 없이 승인하지 않는 한 외국인 화면에 한국어가 나가지 않는다.
 
 성공 Response (201):
 

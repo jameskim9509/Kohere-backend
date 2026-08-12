@@ -55,6 +55,7 @@ sequenceDiagram
                 Note over U,DB: ↑ 검증 실패 — listings 저장 없음
             else 검증 통과
                 Note over LIST: 서버가 채우는 값 (요청 본문에 없다)<br/>schemaVersion=4 · status=PENDING · favoriteCount=0<br/>rentalType=MONTHLY_RENT · pricing.currency=KRW<br/>roomOffers[].status=ACTIVE · createdAt/updatedAt
+                Note over LIST: 다국어 문구 8종은 한국어 한 값만 받아<br/>{ko, en} 양쪽에 같은 값을 넣는다 (en = ko)<br/>영어 번역은 관리자가 승인 심사에서 채운다
                 Note over LIST: location은 미구현 — 좌표 없이 저장<br/>nearbyUniversityCodes도 미구현 — 빈 배열<br/>(지오코딩은 후속 작업)
                 Note over LIST: ListingValidator.validateForSave로 v4 불변식 재검증<br/>roomOffers 최소 1개 · roomOffers[].roomImageUrls 최소 2장<br/>ageMin ≤ ageMax · usedFloorMin ≤ usedFloorMax ≤ totalFloors<br/>길이 제한은 두지 않는다
                 LIST->>DB: listings insert (status=PENDING)<br/>_id · roomOffers[].roomOfferId는 저장 어댑터가 ObjectId 발급
@@ -71,6 +72,7 @@ sequenceDiagram
 
 - 임대인이 `POST /api/v2/listings`로 등록 폼 한 벌을 보내면 `listing` 모듈이 v4 매물 문서 1건을 만들어 `201 Created` + 생성된 매물(상세 응답 구조)을 반환한다. **매물 도메인의 첫 `/api/v2` 엔드포인트**이며, GET 계열(`/api/v1/listings` 등)의 v2 이관은 이 문서의 범위가 아니다.
 - **인가는 두 겹이다.** SecurityConfig에 `POST /api/v2/listings` **명시 매처(`hasRole("USER")`)** 를 둔다 — 매처 없이 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러까지 도달한다(v2 진단과 달리 `permitAll`이 아니다). 스코프 부족 403은 SEC의 `AccessDeniedHandler` 책임이라 모듈에 닿지 않는다([ADR-0010](../../../adr/0010-jwt-authentication-filter.md)). 그 뒤 **서비스가 `user` 공개 query `getUserType(userId)`로 임대인 여부를 재검사**해 `userType=TENANT`면 `403 FORBIDDEN`으로 거절한다(모듈 간 동기 질의 — [ADR-0002](../../../adr/0002-inter-module-communication-via-events.md) Decision 5). `landlordId`는 요청 본문이 아니라 **토큰의 `userId`** 에서 가져오므로 남의 이름으로 등록할 수 없다.
+- **다국어 문구는 한국어 한 값만 받는다.** 서버가 `{ko, en}` 양쪽에 같은 값을 넣는다(`en = ko`). 대상 8종 — `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name`. 저장 계약(`LocalizedText`)이 두 언어를 모두 요구하므로 영어가 빈 문서는 만들 수 없고, 실제 번역은 관리자가 승인 심사에서 채운다. 등록 직후는 `PENDING`이라 세입자 조회에 노출되지 않는다.
 - **서버가 채우는 값은 요청 본문에 없다**: `_id`·`roomOffers[].roomOfferId`(저장 어댑터가 ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). 등록 직후 상태가 `PENDING`이므로 목록·지도·상세(`PUBLISHED`만 조회)에는 아직 나오지 않는다.
 - **폼 1칸이 스키마 2필드로 갈라지는 입력은 서버가 파싱한다** — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. 형식이 어긋나면 `400 INVALID_INPUT`이고, `min ≤ max`와 `usedFloorMax ≤ totalFloors`는 `ListingValidator.validateForSave`가 저장 직전에 다시 확인한다.
 - **주소는 입력값을 정규화하지 않는다** — `address.fullAddress`는 받은 그대로 저장하고, 도로명 주소를 파싱해 `address.city`(`City`)·`district`(`District`) enum만 파생한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며 이는 **좌표와 무관한 실패**다. **`location`(좌표)과 `nearbyUniversityCodes`는 이번 범위에서 미구현**이라 좌표 없이·빈 배열로 저장한다([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md) 후속 작업).
