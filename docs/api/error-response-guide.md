@@ -124,7 +124,7 @@
 
 | code | status | 의미 |
 | --- | --- | --- |
-| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거이거나 매물의 입주 가능일 이전 |
+| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거 |
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물 신청 아님), 요청자가 삭제·차단으로 숨긴 예약, 또는 삭제·차단·신고 요청자가 참여자가 아님(404로 통일) |
 | `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함 (UNIQUE `(tenant_id, room_offer_id)` 위반) |
 

@@ -5,13 +5,16 @@
 
 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다.
 
-> **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명은 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다.
+> **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명·유의사항·환불 정책 문구는 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·`arcRequired`·행정구역(`address.city`·`address.district`)·`languagesSupported`·`nearbyFacilities`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다. 단 `status`(`ListingStatus`)는 임대인·관리자만 읽는 관리 상태라 번역 대상이 아니며 코드 문자열 그대로 내려간다.
 
 공통 enum:
 
-- `ListingType`: `GOSHIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
+- `ListingType`: `GOSHIWON`, `CO_LIVING`, `SHARE_HOUSE`
+- `RentalType`: `MONTHLY_RENT`
+- `ListingStatus`(매물 상태): `PENDING`(승인 대기), `PUBLISHED`(공개), `REJECTED`(반려), `PAUSED`(일시중지), `DELETED`(삭제)
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
-- `ConditionTag`(매물 옵션 필터 9종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음), `NO_ARC`(ARC 없이 가능)
+- `ConditionTag`(매물 옵션 필터 8종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음)
+- `ArcRequirement`(매물 루트 `arcRequired` 값): `REQUIRED`, `NOT_REQUIRED`. ARC 없이 입주할 수 있는지는 조건 태그가 아니라 이 필드로 표현한다
 - `SearchPlaceType`(기존 키워드 검색 매칭 분류): `UNIVERSITY`, `REGION`, `SUBWAY_STATION`
 
 > `ListingSort`는 api-design-guide §6의 일반 `?sort=field,(asc|desc)` 형식이 아닌 **이름 기반 정렬 프리셋**이다(추천 정렬 등 단일 필드로 표현되지 않는 정렬이 있어 enum으로 둔다). 찜 목록은 별도 정렬 파라미터 없이 `favoritedAt desc`로 고정된다.
@@ -52,7 +55,7 @@ Query 파라미터:
 | `minDeposit` | integer(KRW) | 선택 | — | 보증금 최소값 |
 | `maxDeposit` | integer(KRW) | 선택 | — | 보증금 최대값 |
 | `type` | `ListingType` | 선택 | — | 매물 유형 필터 칩. 다중 값 콤마 구분(`GOSHIWON,CO_LIVING`) |
-| `conditions` | `ConditionTag[]` | 선택 | — | 옵션 필터 칩. `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ADDRESS_REGISTRATION`, `NO_ARC` 등을 반복 파라미터 또는 콤마로 전송 |
+| `conditions` | `ConditionTag[]` | 선택 | — | 옵션 필터 칩. `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ADDRESS_REGISTRATION` 등을 반복 파라미터 또는 콤마로 전송 |
 | `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 방식. `RECOMMENDED`는 현재 `favoriteCount desc`, 동률이면 `updatedAt desc`; `PRICE_ASC`는 낮은 월세순; `DISTANCE`는 현재 지도 중심에서 가까운 순 |
 | `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호. 무한스크롤의 다음 페이지 요청에 사용 |
 | `size` | integer | 선택 | 20 | 한 번에 가져올 매물 수(최대 100) |
@@ -72,25 +75,31 @@ Request Body: 없음
         "type": { "code": "GOSHIWON", "label": "Goshiwon" },
         "status": "PUBLISHED",
         "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
-        "refundPolicy": {
-          "code": "FULL_REFUND_BEFORE_7_DAYS",
-          "description": "Full refund for cancellations made at least 7 days before move-in."
-        },
-        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+        "refundPolicy": "Full refund for cancellations made at least 7 days before move-in.",
         "genderPolicy": { "code": "FEMALE_ONLY", "label": "Female Only" },
+        "arcRequired": { "code": "NOT_REQUIRED", "label": "ARC Not Required" },
+        "ageMin": 20,
+        "ageMax": 35,
+        "languagesSupported": [
+          { "code": "ENGLISH", "label": "English" },
+          { "code": "CHINESE", "label": "Chinese" }
+        ],
         "location": { "lat": 37.555134, "lng": 126.936893 },
         "address": {
-          "city": "SEOUL",
-          "district": "SEODAEMUN_GU",
+          "city": { "code": "SEOUL", "label": "Seoul" },
+          "district": { "code": "SEODAEMUN_GU", "label": "Seodaemun-gu" },
           "fullAddress": "Sinchon-ro, Seodaemun-gu, Seoul",
           "detail": null
         },
         "nearestTransit": {
           "type": { "code": "SUBWAY", "label": "Subway" },
           "name": "Sinchon Station",
-          "walkMinutes": 5,
-          "nearbyPlacesDescription": "Convenience Store, pharmacy"
+          "walkMinutes": 5
         },
+        "nearbyFacilities": [
+          { "code": "CONVENIENCE_STORE", "label": "Convenience Store" },
+          { "code": "HOSPITAL_PHARMACY", "label": "Hospital/Pharmacy" }
+        ],
         "nearbyUniversityCodes": ["YONSEI"],
         "building": {
           "type": { "code": "VILLA", "label": "Villa" },
@@ -100,42 +109,31 @@ Request Body: 없음
           "parkingAvailable": true,
           "elevatorAvailable": true
         },
-        "propertyPolicies": {
-          "arcRequired": false,
-          "residentRegistrationAvailable": true,
-          "studySuitable": true,
-          "mealsProvided": true,
-          "englishAvailable": false
-        },
         "facilities": {
           "heatingSystem": [{ "code": "CENTRAL", "label": "Central Heating" }],
           "kitchen": [{ "code": "MICROWAVE", "label": "Microwave" }],
-          "laundry": [{ "code": "COIN_LAUNDRY", "label": "Coin Laundry" }],
+          "laundry": [{ "code": "WASHER", "label": "Washer" }],
           "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
           "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
-          "commonSpaces": [{ "type": { "code": "SHARED_TOILET", "label": "Shared Toilet" }, "count": 6 }],
+          "commonSpaces": [{ "code": "SHARED_TOILET", "label": "Shared Toilet" }],
           "providedSupplies": [{ "code": "BEDDING", "label": "Bedding" }]
         },
         "conditions": [
           { "code": "ENGLISH_OK", "label": "English OK" },
-          { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
-          { "code": "NO_ARC", "label": "No ARC" }
+          { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" }
         ],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000101",
             "name": "Standard Single Room",
             "status": "ACTIVE",
+            "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
             "pricing": {
               "monthlyRent": 380000,
+              "weeklyRent": 110000,
               "deposit": 200000,
               "maintenanceFee": 20000,
               "currency": "KRW"
-            },
-            "inventory": {
-              "totalCount": 10,
-              "availableCount": 2,
-              "nextAvailableFrom": null
             },
             "filterTags": [
               { "code": "ENGLISH_OK", "label": "English OK" },
@@ -144,10 +142,14 @@ Request Body: 없음
             "roomImageUrls": []
           }
         ],
-        "descriptions": {
-          "description": "A well-maintained goshiwon within a five-minute walk of the subway station.",
-          "extraNotes": "외국인 환영"
+        "description": "A well-maintained goshiwon within a five-minute walk of the subway station.",
+        "extraNotes": "No cooking inside rooms. Quiet hours after 11 PM.",
+        "contact": {
+          "managerName": "Kim Woon-yeong",
+          "phone": "+82) 10-1234-5678",
+          "sms": "+82) 10-1234-5679"
         },
+        "blogUrl": "https://blog.naver.com/kohere-goshiwon",
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
         "distanceMeters": 320,
         "favorited": false,
@@ -170,11 +172,12 @@ Request Body: 없음
 
 - 카드 제목은 `title`, 대표 이미지는 `imageUrls[0]`, 주소는 `address.fullAddress`, 교통 배지는 `nearestTransit.name`과 `nearestTransit.walkMinutes`를 사용한다.
 - 가격/보증금/관리비는 `roomOffers[].pricing`에서 읽는다. 여러 방 타입이 있으면 프론트에서 최저~최고 범위를 계산해 카드에 표시한다.
-- 계약기간은 방 타입이 아니라 매물 공통 값인 `contract.minStayMonths/maxStayMonths`를 사용한다.
-- 조건 배지/Property Details features는 상위 `conditions`의 `label`을 표시한다. 이 값은 공개 가능한 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이며, `propertyPolicies.arcRequired=false`이면 `code=NO_ARC`가 함께 포함된다. 필터 요청에는 `code`를 보낸다.
+- 계약기간은 방 타입마다 다를 수 있으므로 `roomOffers[].contract.minStayMonths/maxStayMonths`를 사용한다.
+- 조건 배지/Property Details features는 상위 `conditions`의 `label`을 표시한다. 이 값은 공개 가능한 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이다. 필터 요청에는 `code`를 보낸다.
 - 필터가 있으면 `roomOffers[]`에는 조건을 통과한 방 타입만 들어온다. 필터가 없으면 노출 가능한 ACTIVE 방 타입 전체가 들어온다.
 - 방 타입별 세부 조건 배지가 필요하면 각 `roomOffers[].filterTags`를 사용한다.
 - 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
+- `contact`는 매물별 담당 연락처(담당자명·전화문의·문자문의)이며 세입자에게 그대로 공개한다. 임대인 개인 연락처와는 별개 값이다. `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에 포함하지 않는다.
 - `distanceMeters`가 있으면 거리 라벨로 표시하고, 없으면 숨긴다.
 - `favoriteCount`는 찜 수 표시값이다. 목록의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`이므로, 실제 하트 상태가 필요한 화면은 상세 또는 사용자 전용 목록의 값을 사용해야 한다.
 
@@ -370,28 +373,32 @@ Request Body: 없음
     "type": { "code": "GOSHIWON", "label": "Goshiwon" },
     "status": "PUBLISHED",
     "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
-    "refundPolicy": {
-      "code": "FULL_REFUND_BEFORE_7_DAYS",
-      "description": "Full refund for cancellations made at least 7 days before move-in."
-    },
-    "contract": {
-      "minStayMonths": 2,
-      "maxStayMonths": 6
-    },
+    "refundPolicy": "Full refund for cancellations made at least 7 days before move-in.",
     "genderPolicy": { "code": "FEMALE_ONLY", "label": "Female Only" },
+    "arcRequired": { "code": "NOT_REQUIRED", "label": "ARC Not Required" },
+    "ageMin": 20,
+    "ageMax": 35,
+    "languagesSupported": [
+      { "code": "ENGLISH", "label": "English" },
+      { "code": "CHINESE", "label": "Chinese" }
+    ],
     "location": { "lat": 37.555134, "lng": 126.936893 },
     "address": {
-      "city": "SEOUL",
-      "district": "SEODAEMUN_GU",
+      "city": { "code": "SEOUL", "label": "Seoul" },
+      "district": { "code": "SEODAEMUN_GU", "label": "Seodaemun-gu" },
       "fullAddress": "Sinchon-ro, Seodaemun-gu, Seoul",
       "detail": "Room 305, 3rd floor"
     },
     "nearestTransit": {
       "type": { "code": "SUBWAY", "label": "Subway" },
       "name": "Sinchon Station",
-      "walkMinutes": 5,
-      "nearbyPlacesDescription": "Convenience Store, Starbucks, pharmacy, gym"
+      "walkMinutes": 5
     },
+    "nearbyFacilities": [
+      { "code": "CONVENIENCE_STORE", "label": "Convenience Store" },
+      { "code": "HOSPITAL_PHARMACY", "label": "Hospital/Pharmacy" },
+      { "code": "PARK", "label": "Park" }
+    ],
     "nearbyUniversityCodes": ["YONSEI", "EWHA"],
     "building": {
       "type": { "code": "VILLA", "label": "Villa" },
@@ -401,43 +408,32 @@ Request Body: 없음
       "parkingAvailable": false,
       "elevatorAvailable": false
     },
-    "propertyPolicies": {
-      "arcRequired": false,
-      "residentRegistrationAvailable": true,
-      "studySuitable": true,
-      "mealsProvided": false,
-      "englishAvailable": true
-    },
     "facilities": {
       "heatingSystem": [{ "code": "CENTRAL", "label": "Central Heating" }],
       "kitchen": [{ "code": "SHARED_REFRIGERATOR", "label": "Shared Refrigerator" }],
-      "laundry": [{ "code": "SHARED_WASHER", "label": "Shared Washer" }],
+      "laundry": [{ "code": "WASHER", "label": "Washer" }],
       "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
       "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
-      "commonSpaces": [{ "type": { "code": "STUDY_ROOM", "label": "Study Room" }, "count": null }],
+      "commonSpaces": [{ "code": "STUDY_ROOM", "label": "Study Room" }],
       "providedSupplies": [{ "code": "SLIPPERS", "label": "Slippers" }]
     },
     "conditions": [
       { "code": "FEMALE_ONLY", "label": "Female Only" },
       { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
-      { "code": "NO_MAINT_FEE", "label": "No Maint. Fee" },
-      { "code": "NO_ARC", "label": "No ARC" }
+      { "code": "NO_MAINT_FEE", "label": "No Maint. Fee" }
     ],
     "roomOffers": [
       {
         "roomOfferId": "6858e2000000000000000101",
         "name": "Standard Single Room",
         "status": "ACTIVE",
+        "contract": { "minStayMonths": 2, "maxStayMonths": 6 },
         "pricing": {
           "monthlyRent": 300000,
+          "weeklyRent": 90000,
           "deposit": 300000,
           "maintenanceFee": 0,
           "currency": "KRW"
-        },
-        "inventory": {
-          "totalCount": 10,
-          "availableCount": 2,
-          "nextAvailableFrom": null
         },
         "filterTags": [
           { "code": "FEMALE_ONLY", "label": "Female Only" },
@@ -449,10 +445,14 @@ Request Body: 없음
         ]
       }
     ],
-    "descriptions": {
-      "description": "A quiet goshiwon within walking distance of Sinchon Station.",
-      "extraNotes": "직접 연락처는 노출하지 않으며 신청은 앱에서 진행합니다."
+    "description": "A quiet goshiwon within walking distance of Sinchon Station.",
+    "extraNotes": "No cooking inside rooms. Quiet hours after 11 PM.",
+    "contact": {
+      "managerName": "Kim Woon-yeong",
+      "phone": "+82) 10-1234-5678",
+      "sms": "+82) 10-1234-5679"
     },
+    "blogUrl": "https://blog.naver.com/kohere-goshiwon",
     "imageUrls": [
       "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
       "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
@@ -468,11 +468,13 @@ Request Body: 없음
 
 - 상단 제목/하트는 `title`, `favorited`, `favoriteCount`를 사용한다.
 - 사진 갤러리는 `imageUrls`와 `roomOffers[].roomImageUrls`를 사용한다. 카드 대표 이미지는 `imageUrls[0]`를 우선 사용한다.
-- 가격 영역은 `roomOffers[].pricing`, 계약기간은 `contract`, 주소/지도는 `address`와 `location`, 교통 정보는 `nearestTransit`으로 표시한다.
-- `{code,label}` 형태는 `label`을 화면에 표시하고 `code`를 필터 요청·아이콘/분기 비교에 사용한다. `title`·주소·역명·방 이름·`descriptions.description`은 이미 사용자 언어 문자열 하나로 선택되어 온다.
+- 가격 영역은 `roomOffers[].pricing`, 계약기간은 방 타입마다 다를 수 있으므로 `roomOffers[].contract`, 주소/지도는 `address`와 `location`, 교통 정보는 `nearestTransit`으로 표시한다.
+- `{code,label}` 형태는 `label`을 화면에 표시하고 `code`를 필터 요청·아이콘/분기 비교에 사용한다. `title`·주소·역명·방 이름·`refundPolicy`·`description`·`extraNotes`는 이미 사용자 언어 문자열 하나로 선택되어 온다.
 - Property Details의 features/조건 배지는 상위 `conditions`를 사용한다. 방 타입별 조건은 `roomOffers[].filterTags`를 사용한다.
-- 시설/정책 섹션은 `building`, `propertyPolicies`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
+- 시설 섹션은 `building`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다. ARC 필요 여부는 `arcRequired`, 지원 언어는 `languagesSupported`, 주변 시설은 `nearbyFacilities`로 표시한다.
 - `roomOffers[]`는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.
+- 문의 영역은 `contact.managerName`·`contact.phone`·`contact.sms`를 그대로 표시한다. 매물별 담당 연락처라 임대인 개인 연락처와 별개 값이며 마스킹하지 않는다. `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에 포함하지 않는다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
+- `blogUrl`은 있을 때만 지점 블로그 링크로 노출하고 `null`이면 숨긴다. 이용 연령대는 `ageMin`~`ageMax`로 표시한다.
 - 온보딩 완료 사용자의 상세 조회가 성공하면 최근 본 목록이 자동 갱신된다. 프론트에서 최근 본 저장 API를 따로 호출할 필요는 없다.
 - 비로그인·온보딩 미완료 사용자는 `favorited=false`와 영어 기본 문구를 받으며 최근 본 기록을 남기지 않는다.
 - 로그인 전에 본 매물은 온보딩 완료 후 최근 본 목록으로 소급 이전하지 않는다. 정식 로그인 시점 이후의 상세 조회부터 기록한다.
@@ -580,25 +582,25 @@ Request Body: 없음
         "type": { "code": "GOSHIWON", "label": "Goshiwon" },
         "status": "PUBLISHED",
         "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
-        "refundPolicy": {
-          "code": "FULL_REFUND_BEFORE_7_DAYS",
-          "description": "Full refund for cancellations made at least 7 days before move-in."
-        },
-        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+        "refundPolicy": "Full refund for cancellations made at least 7 days before move-in.",
         "genderPolicy": { "code": "FEMALE_ONLY", "label": "Female Only" },
+        "arcRequired": { "code": "NOT_REQUIRED", "label": "ARC Not Required" },
+        "ageMin": 20,
+        "ageMax": 35,
+        "languagesSupported": [{ "code": "ENGLISH", "label": "English" }],
         "location": { "lat": 37.555134, "lng": 126.936893 },
         "address": {
-          "city": "SEOUL",
-          "district": "SEODAEMUN_GU",
+          "city": { "code": "SEOUL", "label": "Seoul" },
+          "district": { "code": "SEODAEMUN_GU", "label": "Seodaemun-gu" },
           "fullAddress": "Sinchon-ro, Seodaemun-gu, Seoul",
           "detail": null
         },
         "nearestTransit": {
           "type": { "code": "SUBWAY", "label": "Subway" },
           "name": "Sinchon Station",
-          "walkMinutes": 5,
-          "nearbyPlacesDescription": "Convenience Store, pharmacy"
+          "walkMinutes": 5
         },
+        "nearbyFacilities": [{ "code": "CONVENIENCE_STORE", "label": "Convenience Store" }],
         "nearbyUniversityCodes": ["YONSEI"],
         "building": {
           "type": { "code": "VILLA", "label": "Villa" },
@@ -608,50 +610,41 @@ Request Body: 없음
           "parkingAvailable": true,
           "elevatorAvailable": true
         },
-        "propertyPolicies": {
-          "arcRequired": false,
-          "residentRegistrationAvailable": true,
-          "studySuitable": true,
-          "mealsProvided": true,
-          "englishAvailable": false
-        },
         "facilities": {
           "heatingSystem": [{ "code": "CENTRAL", "label": "Central Heating" }],
           "kitchen": [{ "code": "MICROWAVE", "label": "Microwave" }],
-          "laundry": [{ "code": "COIN_LAUNDRY", "label": "Coin Laundry" }],
+          "laundry": [{ "code": "WASHER", "label": "Washer" }],
           "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
           "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
-          "commonSpaces": [{ "type": { "code": "SHARED_TOILET", "label": "Shared Toilet" }, "count": 6 }],
+          "commonSpaces": [{ "code": "SHARED_TOILET", "label": "Shared Toilet" }],
           "providedSupplies": [{ "code": "BEDDING", "label": "Bedding" }]
         },
-        "conditions": [
-          { "code": "ENGLISH_OK", "label": "English OK" },
-          { "code": "NO_ARC", "label": "No ARC" }
-        ],
+        "conditions": [{ "code": "ENGLISH_OK", "label": "English OK" }],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000101",
             "name": "Standard Single Room",
             "status": "ACTIVE",
+            "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
             "pricing": {
               "monthlyRent": 450000,
+              "weeklyRent": 130000,
               "deposit": 0,
               "maintenanceFee": 0,
               "currency": "KRW"
-            },
-            "inventory": {
-              "totalCount": 10,
-              "availableCount": 2,
-              "nextAvailableFrom": null
             },
             "filterTags": [{ "code": "ENGLISH_OK", "label": "English OK" }],
             "roomImageUrls": []
           }
         ],
-        "descriptions": {
-          "description": "A well-maintained goshiwon within a five-minute walk of the subway station.",
-          "extraNotes": "외국인 환영"
+        "description": "A well-maintained goshiwon within a five-minute walk of the subway station.",
+        "extraNotes": "No cooking inside rooms. Quiet hours after 11 PM.",
+        "contact": {
+          "managerName": "Kim Woon-yeong",
+          "phone": "+82) 10-1234-5678",
+          "sms": "+82) 10-1234-5679"
         },
+        "blogUrl": "https://blog.naver.com/kohere-goshiwon",
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
         "favorited": true,
         "favoriteCount": 13,
@@ -667,7 +660,7 @@ Request Body: 없음
 ```
 
 - 항목 모두 `favorited=true`라 하트는 채운 상태로 표시한다.
-- 카드 렌더링은 일반 목록과 같은 방식으로 `title`, `imageUrls[0]`, `address.fullAddress`, `roomOffers[].pricing`, `contract`를 사용한다.
+- 카드 렌더링은 일반 목록과 같은 방식으로 `title`, `imageUrls[0]`, `address.fullAddress`, `roomOffers[].pricing`, `roomOffers[].contract`를 사용한다.
 - `favoritedAt`은 찜한 시각 표시나 최신순 정렬 확인에 사용할 수 있다.
 - 찜 해제 후에는 목록을 다시 조회하거나, 클라이언트에서 해당 `listingId` 항목을 제거하면 된다.
 - 정렬은 별도 쿼리 없이 `favoritedAt desc`로 고정된다.
@@ -703,25 +696,25 @@ Request Body: 없음
         "type": { "code": "CO_LIVING", "label": "Co-living" },
         "status": "PUBLISHED",
         "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
-        "refundPolicy": {
-          "code": "FULL_REFUND_BEFORE_7_DAYS",
-          "description": "Full refund for cancellations made at least 7 days before move-in."
-        },
-        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+        "refundPolicy": "Full refund for cancellations made at least 7 days before move-in.",
         "genderPolicy": { "code": "ANY", "label": "Any Gender" },
+        "arcRequired": { "code": "NOT_REQUIRED", "label": "ARC Not Required" },
+        "ageMin": 19,
+        "ageMax": 39,
+        "languagesSupported": [{ "code": "ENGLISH", "label": "English" }],
         "location": { "lat": 37.5571, "lng": 126.9245 },
         "address": {
-          "city": "SEOUL",
-          "district": "MAPO_GU",
+          "city": { "code": "SEOUL", "label": "Seoul" },
+          "district": { "code": "MAPO_GU", "label": "Mapo-gu" },
           "fullAddress": "Mapo-gu, Seoul",
           "detail": null
         },
         "nearestTransit": {
           "type": { "code": "SUBWAY", "label": "Subway" },
           "name": "Hongik Univ. Station",
-          "walkMinutes": 8,
-          "nearbyPlacesDescription": "Convenience Store, cafe"
+          "walkMinutes": 8
         },
+        "nearbyFacilities": [{ "code": "CONVENIENCE_STORE", "label": "Convenience Store" }],
         "nearbyUniversityCodes": ["HONGIK"],
         "building": {
           "type": { "code": "OFFICETEL", "label": "Officetel" },
@@ -731,42 +724,31 @@ Request Body: 없음
           "parkingAvailable": false,
           "elevatorAvailable": true
         },
-        "propertyPolicies": {
-          "arcRequired": false,
-          "residentRegistrationAvailable": true,
-          "studySuitable": true,
-          "mealsProvided": false,
-          "englishAvailable": true
-        },
         "facilities": {
           "heatingSystem": [{ "code": "INDIVIDUAL", "label": "Individual Heating" }],
           "kitchen": [{ "code": "SHARED_REFRIGERATOR", "label": "Shared Refrigerator" }],
-          "laundry": [{ "code": "SHARED_WASHER", "label": "Shared Washer" }],
+          "laundry": [{ "code": "WASHER", "label": "Washer" }],
           "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
           "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
-          "commonSpaces": [{ "type": { "code": "LOUNGE", "label": "Lounge" }, "count": 1 }],
+          "commonSpaces": [{ "code": "LOUNGE", "label": "Lounge" }],
           "providedSupplies": [{ "code": "TISSUE", "label": "Toilet Paper" }]
         },
         "conditions": [
           { "code": "ENGLISH_OK", "label": "English OK" },
-          { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
-          { "code": "NO_ARC", "label": "No ARC" }
+          { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" }
         ],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000201",
             "name": "Co-living Double Room",
             "status": "ACTIVE",
+            "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
             "pricing": {
               "monthlyRent": 580000,
+              "weeklyRent": 165000,
               "deposit": 1000000,
               "maintenanceFee": 30000,
               "currency": "KRW"
-            },
-            "inventory": {
-              "totalCount": 8,
-              "availableCount": 1,
-              "nextAvailableFrom": null
             },
             "filterTags": [
               { "code": "ENGLISH_OK", "label": "English OK" },
@@ -775,10 +757,14 @@ Request Body: 없음
             "roomImageUrls": []
           }
         ],
-        "descriptions": {
-          "description": "Co-living near Hongdae...",
-          "extraNotes": "공용 라운지 이용 가능"
+        "description": "Co-living near Hongdae...",
+        "extraNotes": "The shared lounge is open to all residents.",
+        "contact": {
+          "managerName": "Lee Ha-eun",
+          "phone": "+82) 10-2222-3333",
+          "sms": "+82) 10-2222-3333"
         },
+        "blogUrl": null,
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
         "favorited": false,
         "favoriteCount": 13,
@@ -792,7 +778,7 @@ Request Body: 없음
 }
 ```
 
-- 카드 렌더링은 일반 목록과 같은 방식으로 `title`, `imageUrls[0]`, `address.fullAddress`, `roomOffers[].pricing`, `contract`를 사용한다.
+- 카드 렌더링은 일반 목록과 같은 방식으로 `title`, `imageUrls[0]`, `address.fullAddress`, `roomOffers[].pricing`, `roomOffers[].contract`를 사용한다.
 - `viewedAt`은 마지막으로 상세 화면을 본 시각이다. 필요하면 "최근 본 시간" 보조 문구에 사용한다.
 - `favorited`로 현재 하트 상태를 바로 표시한다.
 - 오래되었거나 더 이상 공개되지 않거나 ACTIVE 방 상품이 없는 매물은 응답에 포함되지 않는다. 빈 배열이면 최근 본 매물 없음 상태를 표시한다.

@@ -101,7 +101,7 @@
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
 | `roomOfferId` | string | 필수 | 예약 대상 방 상품 ID(ObjectId hex 문자열). 누락은 `INVALID_INPUT`(400) |
-| `moveInDate` | string(`YYYY-MM-DD`) | 필수 | 타겟 입주일. 누락·형식 위반은 `INVALID_INPUT`(400, `errors[]`에 필드 반환), 형식은 맞으나 과거/입주 가능일 이전이면 `BOOKING_INVALID_MOVE_IN_DATE`(422) |
+| `moveInDate` | string(`YYYY-MM-DD`) | 필수 | 타겟 입주일. 누락·형식 위반은 `INVALID_INPUT`(400, `errors[]`에 필드 반환), 형식은 맞으나 과거면 `BOOKING_INVALID_MOVE_IN_DATE`(422) |
 | `contractPeriod` | integer | 필수 | 계약 개월수(양의 정수, 1 이상). 누락·0·음수는 `INVALID_INPUT`(400), 숫자 아닌 타입은 `MALFORMED_REQUEST`(400) |
 
 #### 성공 Response — 201 Created
@@ -138,7 +138,7 @@
 | 403 | `FORBIDDEN` | 요청자와 매물 소유자 사이에 차단 관계(양방향 중 어느 쪽이든)가 존재 |
 | 404 | `LISTING_NOT_FOUND` | 매물 또는 방 상품이 없거나 비공개/삭제됨 |
 | 409 | `BOOKING_ALREADY_EXISTS` | 동일 세입자가 동일 방 상품에 이미 신청함 |
-| 422 | `BOOKING_INVALID_MOVE_IN_DATE` | `moveInDate`가 과거이거나 매물의 입주 가능일 이전 |
+| 422 | `BOOKING_INVALID_MOVE_IN_DATE` | `moveInDate`가 과거 |
 
 > 온보딩 미완료(비`ACTIVE`) 사용자는 다른 보호 엔드포인트와 동일한 온보딩 상태 게이트 에러로 차단한다(코드 게이트와 1:1 일치, [error-response-guide](../error-response-guide.md)).
 >
@@ -913,7 +913,7 @@
 
 | code | status | 의미 | 스코프 |
 | --- | --- | --- | --- |
-| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | 타겟 입주일이 과거이거나 매물의 입주 가능일 이전 | 1차 MVP |
+| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거 | 1차 MVP |
 | `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함. DB 유니크 제약 `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)` 위반. ErrorCode·messages 번들에 이미 선언돼 있던 코드가 본 결정으로 실사용된다 | 1차 MVP |
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물의 신청 아님), 또는 삭제(§4)·차단(§5)으로 요청자에게 숨겨짐 — 존재 여부를 노출하지 않도록 404로 통일. 삭제·차단·신고(§4~§6)에서 요청자가 참여자가 아닌 경우도 이 코드다(`403`이 아니다) | 1차 MVP |
 | `CHAT_ROOM_NOT_FOUND` | 404 | 채팅방이 존재하지 않음 | 후속·이연 |

@@ -5,7 +5,7 @@
 | 번호 | ADR-0014 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-06-17 |
-| 관련 문서 | [01-auth-onboarding §7](../api/specs/01-auth-onboarding.md), [domain-model §2](../architecture/domain-model.md), [database-design §4-2](../database/database-design.md), [ADR-0015](./0015-sensitive-column-encryption.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [system-overview §3-2](../architecture/system-overview.md) |
+| 관련 문서 | [01-auth-onboarding §7](../api/specs/01-auth-onboarding.md), [domain-model §2](../architecture/domain-model.md), [database-design §4-2](../database/database-design.md), [ADR-0015](./0015-sensitive-column-encryption.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [system-overview §3-2](../architecture/system-overview.md) |
 
 ## Status
 
@@ -24,9 +24,9 @@ Accepted
 **탈퇴는 상태 전이 + PII 즉시 익명화로 처리하고, 식별자 행은 보존한다.**
 
 1. **상태·메타**: `users.status=WITHDRAWN` 전이 + **`withdrawn_at`(UTC) 기록** + refresh 토큰 일괄 무효화(REVOKED, [ADR-0006](./0006-refresh-token-store-redis.md)). **행 자체는 보존**(`userId` 식별자 유지 → 타 모듈 값 참조 무결성·재가입 분리).
-2. **PII 즉시 익명화**: 탈퇴 시 식별 PII(`first_name`/`last_name`, `country_code`/`phone_number`, `visa_type`, `birth_date`)를 **파기성 익명화**(NULL 또는 고정 placeholder로 덮어쓰기)한다. 복구 불가.
+2. **PII 즉시 익명화**: 탈퇴 시 식별 PII(`first_name`/`last_name`, `country_code`/`phone_number`, `visa_type`, `birth_date`)를 **파기성 익명화**(NULL 또는 고정 placeholder로 덮어쓰기)한다. 복구 불가. 대상은 MySQL `users` 컬럼이며, `listings` 문서의 임대인 PII(`contact`·`businessRegistrationNumber` — [ADR-0039](./0039-listing-schema-v4-registration-form.md))는 **임대인 탈퇴 기능 구현 시 함께 설계한다**(아래 후속 작업).
 3. **소셜 자격 정리**: `auth`는 `UserWithdrawnEvent`를 구독해 해당 `user`의 `social_accounts` 매핑을 삭제한다([ADR-0002](./0002-inter-module-communication-via-events.md)). `UNIQUE(provider, provider_user_id)`가 풀려 **재가입 시 새 자격으로 분리**된다.
-4. **보존 예외**: 법정 보존 의무 항목(전자상거래·통신 등)이 식별되면 **그 항목만** 별도 보존 컬럼/기간으로 예외 처리한다. 현재 MVP 보유 PII에는 해당 항목이 없어 **즉시 익명화**가 기본이다.
+4. **보존 예외**: 법정 보존 의무 항목(전자상거래·통신 등)이 식별되면 **그 항목만** 별도 보존 컬럼/기간으로 예외 처리한다. 현재 MVP의 `users` 보유 PII에는 해당 항목이 없어 **즉시 익명화**가 기본이다.
 5. **조회·재가입**: WITHDRAWN·부재 사용자는 `USER_NOT_FOUND(404)`. 재가입은 **신규 회원(PENDING)** 으로 시작하며 이전 데이터는 복원하지 않는다.
 6. **일관성**: 소프트삭제 컬럼(`deleted`/`deleted_at`)은 `community` 등 다른 컨텍스트에만 쓰고, `user`는 **상태(WITHDRAWN) + `withdrawn_at`** 으로 통일한다.
 
@@ -47,6 +47,7 @@ Accepted
   - [database-design §4-2](../database/database-design.md)에 `users.withdrawn_at` 컬럼 추가(Flyway), 탈퇴 서비스 익명화 로직.
   - `auth`에 `UserWithdrawnEvent` 리스너(소셜 자격 정리·토큰 무효화) 구현.
   - [01-auth-onboarding §7](../api/specs/01-auth-onboarding.md)·[domain-model §2](../architecture/domain-model.md)·[database-design §6](../database/database-design.md) 갱신.
+  - 임대인 탈퇴 시 `listings` 문서 PII(`contact`·`businessRegistrationNumber`) 처리 — **임대인 탈퇴 기능 구현 시 함께 설계한다**([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
 
 ## Validation
 

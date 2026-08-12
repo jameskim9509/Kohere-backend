@@ -5,7 +5,7 @@
 | 번호 | ADR-0005 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-06-15 |
-| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [project-brief §7](../project/project-brief.md), [database-design](../database/database-design.md), [listings spec](../api/specs/03-listings-favorites.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0018](./0018-documentdb-for-mongodb-on-aws.md) |
+| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [project-brief §7](../project/project-brief.md), [database-design](../database/database-design.md), [listings spec](../api/specs/03-listings-favorites.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0018](./0018-documentdb-for-mongodb-on-aws.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md) |
 
 ## Status
 
@@ -18,7 +18,7 @@ Accepted
 - 아키텍처는 모듈러 모놀리식이며 모듈 경계 = Bounded Context다([ADR-0001](./0001-bounded-context-module-decomposition.md)). 엔티티는 모듈 간 비공유, cross-BC 협력은 도메인 이벤트/공개 쿼리 API로 한다([ADR-0002](./0002-inter-module-communication-via-events.md)).
 - 모듈별 데이터 특성이 두 부류로 갈린다.
   - **문서·지오성 (MongoDB가 유리)**
-    - **매물(`listing` + `favorite` + `recent-listing`)**: 핵심 질의가 **위치 기반**이다 — 지도 bbox(`$geoWithin`), 거리순(`$near`), 반경([listings spec](../api/specs/03-listings-favorites.md)). 매물 유형(고시원/코리빙/셰어하우스/기타)마다 속성 집합이 다르고 외부 수급으로 채워 스키마가 변동될 수 있다. **읽기 위주, 대량.**
+    - **매물(`listing` + `favorite` + `recent-listing`)**: 핵심 질의가 **위치 기반**이다 — 지도 bbox(`$geoWithin`), 거리순(`$near`), 반경([listings spec](../api/specs/03-listings-favorites.md)). 매물 유형(고시원/코리빙/셰어하우스)마다 속성 집합이 다르고 임대인 등록·외부 수급으로 채워 스키마가 변동될 수 있다. **읽기 위주, 대량.**
     - **진단(`diagnosis`)**: 6단계 답(지역 `region` / 입국 목적(유학 여부) `purposes[]` / 대학 그룹·지역구 선택(`university`(그룹)/`district`) / 주거 환경 조건 `conditions[]` / 월세 범위 `monthlyRentMin`·`monthlyRentMax` / ARC `arcStatus` 같은 **배열·스칼라 혼합**) + 결과를 **통째로 읽고 쓰는 self-contained 애그리거트**다. 모듈 경계상 다른 모듈과 **조인이 없고**(추천은 값 객체 전달, 아래 Decision 2), 한 진단 = 한 도큐먼트라 **단일 도큐먼트 원자적 쓰기**로 충분하다. 유저당 소수 레코드로 규모 압력이 없다.
       - 핵심 질의도 `userId` 기준 **필터·정렬·소유권 검증**(이력 조회 / 최신 진단 / 본인 소유 확인)뿐이라 **JOIN·FK·다엔티티 트랜잭션 같은 관계형의 강점을 하나도 쓰지 않는다.** 관계형 DB는 "관계"가 있을 때 본전을 뽑는데 진단엔 관계가 없다 — 단순 질의 자체는 두 DB가 동등하므로 판별이 안 되고, 남는 기준인 **데이터 형태(배열·문서·원자적 쓰기)가 문서 모델을 가리킨다.** (반례로 `community`는 좋아요 유니크 제약·카운트 정합이라는 관계/정합이 실재해 MySQL에 둔다.)
   - **관계·트랜잭션성 (MySQL이 유리)**
@@ -50,7 +50,7 @@ Accepted
 4. **찜·최근 본 매물은 `listing`과 같은 MongoDB에 둔다.**
 5. **cross-store 조인을 금지하고 애플리케이션 레벨로 합친다.** store를 넘는 조회는 공개 쿼리/이벤트로 데이터를 받아 코드에서 합친다(N+1·배치 조회 주의).
 6. **cross-store 분산 트랜잭션(XA)을 쓰지 않는다.** 쓰기 경로는 단일 store 안으로 한정한다. store를 넘는 정합이 필요하면 도메인 이벤트 기반 최종 일관성으로 설계한다.
-7. **MySQL 스키마 변경은 마이그레이션 도구로 관리한다**(**Flyway 채택 — [ADR-0008](./0008-mysql-migration-flyway.md)**, 세부는 [migration-policy](../database/migration-policy.md)). MongoDB는 애플리케이션 레벨 버전 필드로 관리한다.
+7. **MySQL 스키마 변경은 마이그레이션 도구로 관리한다**(**Flyway 채택 — [ADR-0008](./0008-mysql-migration-flyway.md)**, 세부는 [migration-policy](../database/migration-policy.md)). MongoDB는 애플리케이션 레벨 버전 필드로 관리하고 **파괴적 일괄 변경은 피한다** — `listings` 스키마 v4 이행만 **1회 예외**로 `mongoimport --drop` 재시드를 허용한다([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
 
 ## Alternatives
 
@@ -66,7 +66,7 @@ Accepted
 - **긍정**
   - 매물 지도/거리/반경 질의를 `2dsphere`로 **저비용** 구현 — 1차 MVP의 지도 시각화(보호 핵심)를 무리 없이 포함.
   - 진단은 임베드 배열을 가진 **문서 애그리거트**로 자연스럽게 모델링되고, 한 진단을 **한 번의 원자적 쓰기**로 저장한다.
-  - 매물 유형별 가변 속성·외부 수급 데이터의 스키마 변동을 **문서 모델**로 흡수.
+  - 매물 유형별 가변 속성·임대인 등록·외부 수급 데이터의 스키마 변동을 **문서 모델**로 흡수.
   - 인증·커뮤니티는 **유니크·카운트 정합·트랜잭션**을 RDB로 보장.
 - **부정/트레이드오프**
   - 운영 DB가 **2종**이 되어 인프라·모니터링·백업·로컬 개발 환경 비용이 늘어난다.

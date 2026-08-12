@@ -192,7 +192,7 @@
 - 관련 NFR: 보안(본인 리소스만 접근), 보안(민감정보 응답 마스킹 정책 — 확인 필요)
 - 백엔드 관점: `GET`/`PATCH /api/v1/users/me`는 세입자·임대인 **공통 엔드포인트**이며, `userType`(`TENANT`/`LANDLORD`)에 따라 응답·수정 가능 필드가 갈린다.
   - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`)와 `birthDate`(임대인과 공통)·`lang`을 포함한다. `lang`(표시 언어, ISO 639-1 소문자, 지원 `en`·`ko`·`ja`)은 사용자가 앱 **지구본**에서 직접 고르는 **선택** 필드이며, 미설정이면(NULL) 표시 시 `en`으로 폴백한다. 다국어 화면(진단 문항·퀴즈·생활 팁) 번역이 이 값을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6·US-6-3·US-8-3). **임대인은 서버가 `'ko'` 고정이며 변경할 수 없다.**
-  - **임대인(`LANDLORD`)**: 단일 `name`(세입자·임대인 모두 단일 `name`으로 통일 — 내부도 세입자와 동일한 단일 `name` 컬럼에 저장하며 소셜 로그인 때 캡처돼 온보딩에서 재입력하지 않는다, #192. API 요청·응답 필드명은 `name`)·`email`·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`·`country`+`countryName`·`countryFlag`·`lang`을 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인도 세입자와 동일하게 소셜 로그인 provider(Google/Apple) `email`을 보유해 응답에 포함한다**(email 수집 폼이 아니라 소셜 로그인이 역할 미정 상태로 캡처·저장한 값 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192). email 수정은 세입자와 동일하게 후속 이슈). **임대인의 `lang`(`'ko'`)·`country`(`'KR'`)는 서버가 온보딩에서 고정으로 심는 값이라 응답에는 나오되 이 경로로 수정할 수 없다**(ADR-0034의 "임대인 country 미수집" 결정을 개정한다). 세입자 전용 필드(`gender`/`occupation`/`visaType`)는 **임대인 응답에 포함하지 않지만, `birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
+  - **임대인(`LANDLORD`)**: 단일 `name`(세입자·임대인 모두 단일 `name`으로 통일 — 내부도 세입자와 동일한 단일 `name` 컬럼에 저장하며 소셜 로그인 때 캡처돼 온보딩에서 재입력하지 않는다, #192. API 요청·응답 필드명은 `name`)·`email`·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`·`country`+`countryName`·`countryFlag`·`lang`을 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인도 세입자와 동일하게 소셜 로그인 provider(Google/Apple) `email`을 보유해 응답에 포함한다**(email 수집 폼이 아니라 소셜 로그인이 역할 미정 상태로 캡처·저장한 값 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192). email 수정은 세입자와 동일하게 후속 이슈). **임대인의 `lang`(`'ko'`)·`country`(`'KR'`)는 서버가 온보딩에서 고정으로 심는 값이라 응답에는 나오되 이 경로로 수정할 수 없다**(ADR-0034의 "임대인 country 미수집" 결정을 개정한다). 세입자 전용 필드(`gender`/`occupation`/`visaType`)는 **임대인 응답에 포함하지 않지만, `birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다**. `businessRegistrationNumber`는 `users`에는 해시 컬럼만 두고 원문을 매물 문서에만 저장하므로 프로필 응답·수정 대상이 아니다(변경 시 외부 사업자등록정보 재검증 필요 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
   - 두 역할 공통으로 `userType`·`nickname`은 불변이고, 세입자 `email`은 소셜 로그인 값으로 고정되어 이 경로로 수정하지 않는다(이메일 변경은 후속 이슈 — #192; 임대인도 소셜 로그인 provider 값으로 `email`을 보유하되 수정은 세입자와 동일하게 후속 이슈다).
 
 **AC (Given / When / Then)**
@@ -216,7 +216,7 @@
 - **정상 — 부분 수정(임대인)**
   Given 유효한 access 토큰을 보유한 임대인(`userType=LANDLORD`)이
   When `PATCH /api/v1/users/me`에 자유 수정 필드(`name`·`marketingAgreed`) 중 일부(예: `name`)만 담아 호출하면
-  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 세입자와 동일하게 단일 `name` 컬럼에 저장한다(#192). `birthDate`(온보딩에서 확정, 조회 전용)·`businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`·`lang`·`country`(서버 고정 `'ko'`/`'KR'` — 표시 언어 변경은 세입자만 가능, [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141))는 이 경로로 수정할 수 없다(`email`은 임대인도 provider 값을 보유하되 세입자와 동일하게 이 경로로 수정하지 않는다 — 후속 이슈). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
+  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 세입자와 동일하게 단일 `name` 컬럼에 저장한다(#192). `birthDate`(온보딩에서 확정, 조회 전용)·`businessRegistrationNumber`(원문은 매물 문서에만 저장돼 프로필 수정 대상이 아니며, 변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`·`lang`·`country`(서버 고정 `'ko'`/`'KR'` — 표시 언어 변경은 세입자만 가능, [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141))는 이 경로로 수정할 수 없다(`email`은 임대인도 provider 값을 보유하되 세입자와 동일하게 이 경로로 수정하지 않는다 — 후속 이슈). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
 - **비즈니스 규칙 — 임대인 연락처 변경 시 SMS 재인증(임대인)**
   Given 임대인이 새 `phoneNumber`로 변경하려 하나 그 번호를 SMS 재인증(US-1-10)하지 않았으면(VERIFIED 마커 없음·불일치)
   When `PATCH /api/v1/users/me`에 새 `phoneNumber`를 담아 호출하면
@@ -375,7 +375,7 @@
 - 우선순위: **High**
 - 관련 NFR: 보안(연락처 등 민감정보 저장·로그 마스킹), 보안(휴대폰 소유 인증)
 - 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)이 완료되어야 한다(약관 + 연락처만으로 온보딩 완료 — 사업자등록번호 검증(US-1-8)은 온보딩 선행이 아니라 온보딩 후 별도 단계다).
-- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ phoneNumber, birthDate }` 두 필드다. 임대인은 성별·국적·직업·비자정보를 **수집하지 않으며(생년월일 `birthDate`은 세입자와 동일하게 필수 수집), 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 추후 매물 등록 시점에 채운다). `name`은 세입자와 동일하게 소셜 로그인 때 `User.name`에 캡처·저장돼 온보딩에서 재입력하지 않으며(수정은 `PATCH /users/me`), `email`도 세입자와 동일하게 소셜 로그인 provider 값을 보유하므로 온보딩에서 수집하지 않는다(ADR-0034의 "임대인 이메일 미수집" 결정을 개정 — 수집 폼이 아니라 provider 값 보유, #192). 임대인 온보딩 본인 확인은 여전히 전화(SMS) 인증(US-1-10)이며 email은 인증 대상이 아니다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
+- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ phoneNumber, birthDate }` 두 필드다. 임대인은 성별·국적·직업·비자정보를 **수집하지 않으며(생년월일 `birthDate`은 세입자와 동일하게 필수 수집), 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 **매물 등록 시점에도 채우지 않는다** — 사업자등록번호 원문은 매물 문서에 저장한다, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `name`은 세입자와 동일하게 소셜 로그인 때 `User.name`에 캡처·저장돼 온보딩에서 재입력하지 않으며(수정은 `PATCH /users/me`), `email`도 세입자와 동일하게 소셜 로그인 provider 값을 보유하므로 온보딩에서 수집하지 않는다(ADR-0034의 "임대인 이메일 미수집" 결정을 개정 — 수집 폼이 아니라 provider 값 보유, #192). 임대인 온보딩 본인 확인은 여전히 전화(SMS) 인증(US-1-10)이며 email은 인증 대상이 아니다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
 
 **AC (Given / When / Then)**
 
@@ -460,8 +460,8 @@
 
 외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학 그룹·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소-최대) / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자 표시 언어로 번역되어 내려간다(US-2-5·US-2-6). 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
 
-- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(빈 집합, 대학 필터 미적용·지역 기반 매칭으로 폴백). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`가 `NO_ARC`(ARC 미발급)이면 서버가 추천용 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions`에 추가해 ARC 불요 매물만 매칭한다(사용자가 ④에서 직접 고르는 값 아님, 최대 3개 제한에서 제외).
-- MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 선택지로 허용하되, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
+- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(빈 집합, 대학 필터 미적용·지역 기반 매칭으로 폴백). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`는 파생 조건을 만들지 않고 매물 루트 `arcRequired`(`ArcRequirement`)로 직접 필터한다 — `NO_ARC`(ARC 미발급)이면 `arcRequired=NOT_REQUIRED`인 매물만 매칭하고, `ARC_ISSUED`면 이 필터를 적용하지 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `DiagnosisCondition`에 `NO_ARC`는 없으며, 최대 3개 제한은 사용자가 ④에서 고른 `conditions`에만 적용된다.
+- MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 매물 카탈로그 `CITY`에도 시드된 값이라 구조적으로 막혀 있지 않고 **해당 지역 매물이 아직 없을 뿐**이므로, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
 - 추천 결과의 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며, 일반 탐색의 `ListingSummaryResponse`와는 필드 구성이 다르다.
 - 진단·결과는 본인만 접근 가능하다(소유권 검증) — **회원은 `userId`가, 비회원(게스트)은 게스트 세션 키가 일치할 때만 통과하며, 신원 종류가 다르면(한쪽이 비어 있으면) 무조건 거절**한다(진단 id가 전역 순차 채번이라 소유권 검사가 유일한 방어선이다). **게스트 진단은 v2 경로에서만 만들어지고 조회되므로 게스트 쪽 판정도 v2 한정**이며, v1 진단 7개는 회원 전용이라 토큰 없는 요청이 애초에 닿지 못한다. 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
 - 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 음수 또는 `monthlyRentMin` > `monthlyRentMax`·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
@@ -830,7 +830,7 @@
 
 외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 목록·지도·장소 후보·기존 키워드 검색·상세 조회는 가입 전에도 사용할 수 있는 공개 API이고, 찜 등록/해제·찜 목록·최근 본 목록만 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 요청 바인딩·필드 검증 실패는 가능한 경우 `error.errors[]`에 필드 상세를 담지만, 최소값>최대값 같은 서비스 계층의 교차 필드 검증은 `errors=[]`일 수 있다.
 
-> **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물/임대/성별/교통/건물/시설/조건)는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·재고·상태·통화와 요청 code는 번역하지 않는다.
+> **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물 유형·임대 유형·ARC 요구·성별 정책·조건 태그·건물 형태·난방·교통·도시·자치구·주방·세탁·공용공간·생활 편의·보안·제공 물품·주변 시설·지원 언어·대학 19개 카테고리 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·상태·통화와 요청 code는 번역하지 않는다.
 
 ### US-3-1 — 매물 리스트 탐색(필터·정렬·페이지네이션)
 
@@ -937,18 +937,18 @@
 ### US-3-4 — 매물 상세 조회 + 최근 본 매물 기록
 
 **As a** 후보 매물을 자세히 보려는 외국인 사용자
-**I want** 사진 갤러리·유형·방 상품별 가격/보증금/재고·계약기간·위치·편의시설이 담긴 상세를 보고, 로그인 상태면 본 매물이 최근 본 목록에 기록되기
+**I want** 사진 갤러리·유형·방 상품별 가격/보증금/계약기간·위치·편의시설이 담긴 상세를 보고, 로그인 상태면 본 매물이 최근 본 목록에 기록되기
 **So that** 매물을 충분히 검토하고 다시 쉽게 찾아올 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 최근 본 매물 DB 보관 사용자별 최대 30개·조회 응답 최대 10개
-- 데이터 관점: 임대인 연락처는 노출하지 않고 채팅으로만 연결, 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 상세 조회 성공 후 30개 초과 오래된 기록 삭제
+- 데이터 관점: 매물 담당 연락처(`contact`: 담당자명·전화·문자)는 상세 응답에 공개하고, 임대인 개인 연락처(`users.phone_number`)는 노출하지 않고 채팅으로만 연결한다(둘은 별개 값 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 응답에서 제외하는 값은 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)이다. 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 상세 조회 성공 후 30개 초과 오래된 기록 삭제
 
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 상세 조회(로그인) 및 기록
   Given 인증된 사용자가 존재하는 매물을 조회하면
   When `GET /api/v1/listings/{listingId}` (Authorization 포함)
-  Then `200 OK`로 상세(사진 `imageUrls[]`·`roomOffers[].roomImageUrls`, `type`, `rentalType`, 방 상품별 `roomOffers[].pricing`·`inventory`, 공통 계약기간 `contract`, `location`, `conditions[]`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다. 임대인 정보·연락처는 상세 응답에 포함하지 않는다
+  Then `200 OK`로 상세(사진 `imageUrls[]`·`roomOffers[].roomImageUrls`, `type`, `rentalType`, `arcRequired`, 방 상품별 `roomOffers[].pricing`(`deposit`·`monthlyRent`·`weeklyRent`)·`roomOffers[].contract`(방 상품별 계약기간), `location`, `conditions[]`, `languagesSupported`, `nearbyFacilities`, `contact`, `ageMin`/`ageMax`, `blogUrl`, `refundPolicy`(문장 하나), `description`·`extraNotes`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다. 매물 담당 연락처(`contact`)는 포함하되 임대인 개인 정보·연락처와 `businessRegistrationNumber`·설문 3종은 상세 응답에 포함하지 않는다
 - 시나리오: 한국어 사용자 표시
   Given 계정의 표시 언어를 한국어(`ko`)로 선택한 사용자가
   When 같은 매물 상세를 조회하면
@@ -1032,7 +1032,7 @@
   - **When** `roomOfferId`나 `contractPeriod`를 누락하거나 `contractPeriod`가 양의 정수가 아니면(0·음수) → `400` + `INVALID_INPUT`(`errors[]`에 위반 필드). **When** `moveInDate`를 날짜 형식이 아닌 값/타입, 또는 `contractPeriod`를 숫자 아닌 타입으로 보내면 → `400` + `MALFORMED_REQUEST`.
   - **Then** 어느 경우에도 예약은 생성되지 않는다.
 - 비즈니스 규칙(입주일)
-  - **When** `moveInDate`가 (형식은 유효하나) 과거이거나 매물 입주 가능일 이전이면 → `422` + `BOOKING_INVALID_MOVE_IN_DATE`.
+  - **When** `moveInDate`가 (형식은 유효하나) 과거이면 → `422` + `BOOKING_INVALID_MOVE_IN_DATE`.
   - **Then** 이 경우 예약은 생성되지 않는다.
 - 인증·권한·상태 게이트
   - **Given** `Authorization` 헤더가 없거나 만료된 토큰이면 → `401` + `UNAUTHENTICATED`/`TOKEN_EXPIRED`. **Given** 인증은 됐으나 온보딩 미완료(비`ACTIVE`) 사용자면 → 다른 보호 엔드포인트와 동일한 **온보딩 상태 게이트 에러**로 차단한다(코드 게이트와 1:1 일치). **Given** `userType`이 세입자가 아니면(임대인) → `403` + `FORBIDDEN`(예약은 세입자 전용).
