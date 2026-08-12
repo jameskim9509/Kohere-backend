@@ -41,15 +41,19 @@ public class ListingRegisterService {
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
 
-  /** 등록 요청을 저장하고 생성된 매물을 상세 응답 구조로 돌려준다. */
-  public ListingDetailResponse register(
-      long landlordId, ListingRegisterRequest request, String language) {
+  /**
+   * 등록 요청을 저장하고 생성된 매물을 상세 응답 구조로 돌려준다.
+   *
+   * <p>응답 언어는 다른 조회와 같이 임대인 계정의 표시 언어를 따른다. 다만 등록 직후 문서는 두 언어에 같은 한국어가 들어 있어 어느 언어를 골라도 결과가 같다.
+   */
+  public ListingDetailResponse register(long landlordId, ListingRegisterRequest request) {
     requireLandlord(landlordId);
     ListingCatalogCodes catalog = ListingCatalogCodes.of(listingCatalogRepository.findAll());
-    Listing listing = toListing(landlordId, request, catalog);
-    Listing saved = listingRepository.save(listing);
+    Listing saved = listingRepository.save(toListing(landlordId, request, catalog));
     return ListingResponseMapper.toDetail(
-        saved, false, listingLocalizationService.contextFor(language));
+        saved,
+        false,
+        listingLocalizationService.contextFor(userAccountService.getLanguage(landlordId)));
   }
 
   private void requireLandlord(long landlordId) {
