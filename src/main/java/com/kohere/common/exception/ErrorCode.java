@@ -50,6 +50,8 @@ public enum ErrorCode {
   LISTING_INVALID_SORT_PARAM(HttpStatus.BAD_REQUEST, "정렬 파라미터가 올바르지 않습니다."),
   LISTING_INVALID_BBOX(HttpStatus.BAD_REQUEST, "지도 좌표 범위가 올바르지 않습니다."),
   LISTING_AREA_TOO_LARGE(HttpStatus.BAD_REQUEST, "검색 범위가 너무 넓습니다."),
+  LISTING_INVALID_ADDRESS(HttpStatus.BAD_REQUEST, "주소를 인식할 수 없습니다. 도로명 주소를 확인해 주세요."),
+  LISTING_UNKNOWN_CATALOG_CODE(HttpStatus.BAD_REQUEST, "지원하지 않는 코드가 포함되어 있습니다."),
 
   // --- 신청·채팅 (booking/chat) — docs/api/specs/04-booking-inquiry-chat.md ---
   BOOKING_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신청한 매물입니다."),
