@@ -43,6 +43,7 @@ public interface ListingRepository {
       Set<ConditionTag> conditions,
       Set<String> universityCodes,
       String district,
+      String arcStatus,
       int page,
       int size,
       String sort);
