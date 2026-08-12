@@ -207,10 +207,17 @@ final class ListingResponseMapper {
         listing.getUpdatedAt());
   }
 
-  /** 도메인 좌표를 프론트가 바로 쓰는 lat/lng 응답으로 바꾼다. */
+  /**
+   * 도메인 좌표를 프론트가 바로 쓰는 lat/lng 응답으로 바꾼다.
+   *
+   * <p>등록 직후 매물은 지오코딩이 없어 좌표가 비어 있다({@code POST /api/v2/listings}). 그때는 {@code null}을 반환하고 응답에서
+   * {@code location} 키 자체가 빠진다. 공개 조회 응답은 좌표를 가진 매물만 대상이라 이 분기를 타지 않는다.
+   */
   private static ListingDetailResponse.GeoPoint toGeoPoint(Listing listing) {
-    return new ListingDetailResponse.GeoPoint(
-        listing.getLocation().latitude(), listing.getLocation().longitude());
+    Listing.GeoPoint location = listing.getLocation();
+    return location == null
+        ? null
+        : new ListingDetailResponse.GeoPoint(location.latitude(), location.longitude());
   }
 
   /** 행정 코드는 보존하고 전체/상세 주소만 사용자 언어로 선택한다. */

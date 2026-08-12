@@ -2,22 +2,28 @@ package com.kohere.docs;
 
 import static com.kohere.docs.ApiDocsFields.codeArrayField;
 import static com.kohere.docs.ApiDocsFields.codeField;
+import static com.kohere.docs.ApiDocsFields.enumArrayField;
 import static com.kohere.docs.ApiDocsFields.enumField;
 import static com.kohere.docs.ApiDocsFields.errorNull;
 import static com.kohere.docs.ApiDocsFields.field;
 import static com.kohere.docs.ApiDocsFields.optField;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
+import com.kohere.listing.domain.ArcRequirement;
 import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.ContractDifficulty;
 import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingType;
 import com.kohere.listing.domain.LivingAmenity;
+import com.kohere.listing.domain.Nationality;
+import com.kohere.listing.domain.NearbyFacility;
 import com.kohere.listing.domain.ProvidedSupply;
 import com.kohere.listing.domain.SecurityFeature;
+import com.kohere.listing.domain.SupportedLanguage;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.restdocs.payload.FieldDescriptor;
@@ -31,7 +37,8 @@ import org.springframework.restdocs.request.ParameterDescriptor;
  * 것이다. 매물 목록({@code GET /listings})·지도 마커({@code GET /listings/map})·키워드 검색({@code GET
  * /listings/search})·장소 후보({@code GET /listings/places})·상세({@code GET /listings/{listingId}})·찜
  * 등록/해제({@code POST·DELETE /listings/{listingId}/favorite})·내 찜 목록({@code GET
- * /users/me/favorites})·최근 본 매물({@code GET /users/me/recent-listings}) 9개 오퍼레이션을 다룬다.
+ * /users/me/favorites})·최근 본 매물({@code GET /users/me/recent-listings})에 매물 등록({@code POST
+ * /api/v2/listings})을 더한 10개 오퍼레이션을 다룬다.
  *
  * <p>같은 {@code (path, method)} 오퍼레이션의 성공 스니펫과 에러 스니펫은 <b>같은 상수</b>를, 같은 {@code (path, method,
  * status)}의 스니펫은 <b>같은 기술자 헬퍼</b>를 써야 한다({@link ApiDocsFields} 클래스 주석 참조). 여기 한 벌만 두는 이유다.
@@ -66,8 +73,22 @@ public final class ListingDocsFields {
   /** 공개 조회 응답에 실제로 도달할 수 있는 매물 상태다. 심사·중단·삭제 상태는 조회 결과에서 제외되므로 나열하지 않는다. */
   private static final List<String> PUBLIC_LISTING_STATUSES = List.of("PUBLISHED");
 
+  /** 등록 응답에 도달할 수 있는 매물 상태다. 승인·반려 전이는 후속 관리자 API가 담당한다. */
+  private static final List<String> REGISTERED_LISTING_STATUSES = List.of("PENDING");
+
   /** 공개 조회 응답에 실제로 도달할 수 있는 방 타입 상태다. */
   private static final List<String> PUBLIC_ROOM_OFFER_STATUSES = List.of("ACTIVE");
+
+  /**
+   * 같은 매물 문서를 내려주는 두 갈래다. 두 값(상태·좌표)이 항상 함께 움직여 인자 하나로 묶었다.
+   *
+   * <p>공개 조회는 {@code PUBLISHED} 매물만 대상이라 좌표가 반드시 있고, 등록 응답은 {@code PENDING}이며 지오코딩이 아직 없어 좌표가 비어
+   * 있다.
+   */
+  private enum ListingDocumentVariant {
+    PUBLIC_QUERY,
+    REGISTERED
+  }
 
   // ── §1 매물 목록 — GET /api/v1/listings ────────────────────────────────────
 
@@ -304,6 +325,58 @@ public final class ListingDocsFields {
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
       """;
 
+  // ── §10 매물 등록 — POST /api/v2/listings ──────────────────────────────────
+
+  public static final String LISTING_REGISTER_SUMMARY = "매물 등록(임대인)";
+
+  public static final String LISTING_REGISTER_DESCRIPTION =
+      """
+      임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입을 매물 하나로 저장한다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
+
+      **요청 주의사항**
+
+      - **서버가 정하는 값은 본문에 없다** — `listingId`·`roomOffers[].roomOfferId`(서버 발급)·`status`(`PENDING`)·`schemaVersion`·`favoriteCount`(`0`)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT`)·`roomOffers[].pricing.currency`(`KRW`)·`roomOffers[].status`(`ACTIVE`). 매물 소유자도 토큰에서 읽는다. 함께 보내도 무시한다.
+      - **다국어 문구는 한국어 한 값만 보낸다.** `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name` 8종은 서버가 한국어·영어 양쪽에 같은 값을 넣어 저장한다. 영어 문구는 이후 승인 심사에서 채워지므로 클라이언트가 번역해 보내지 않는다.
+      - **`building.usedFloorRange`·`ageRange`는 `min~max` 문자열 한 칸**으로 보낸다(예 `1~2`·`20~35`). 서버가 두 값으로 나눠 응답의 `building.usedFloorMin`·`usedFloorMax`로 돌려주며, 보낸 원본 문자열은 보관하지 않는다.
+      - **주소는 도로명 주소 한 줄만 보낸다.** 서버가 그 문자열에서 시·도와 구·군을 뽑아 응답 `address.city`·`address.district`를 채운다. 뽑지 못하면 400 `LISTING_INVALID_ADDRESS`이므로 도로명 주소 재입력을 유도한다. `address.fullAddress`는 보낸 값 그대로 저장한다(정규화 없음).
+      - **사업자등록번호는 이 요청에서 진위를 확인하지 않는다.** 숫자 10자리 형식만 보고 저장하며, 실제 확인은 이후 승인 심사에서 한다. `POST /api/v1/auth/business/verify`를 미리 호출할 필요도 없다.
+      - 코드 값은 서버가 가진 코드표에 있는 것만 받는다. 400 `LISTING_UNKNOWN_CATALOG_CODE`는 입력 오타가 아니라 앱의 코드표가 서버와 어긋났다는 뜻이므로, 입력 교정 대신 코드표 재조회(앱 갱신)를 안내한다.
+      - 자유 입력 문구에는 길이 제한이 없다.
+
+      **응답 주의사항**
+
+      - 본문은 매물 상세(`GET /api/v1/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
+      - **`location`은 값이 null이 아니라 필드 자체가 생략되고, `nearbyUniversityCodes`는 빈 배열이다.** 좌표는 등록 시점에 채우지 않는다.
+      - `address.city`·`address.district`와 상위 `conditions`(방 타입 `filterTags`의 합집합)는 요청에 없던 값이라 응답에서 처음 나타난다.
+      - `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장하되 응답에 넣지 않는다.
+      - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다(임대인은 한국어).
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개, `roomImageUrls` 2장 미만. 위반 필드는 `error.errors[]`에 실린다 |
+      | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함 |
+      | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
+      | 400 | `MALFORMED_REQUEST` | 본문 JSON 파싱 불가 또는 타입 불일치 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자의 등록 요청 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      """;
+
+  public static final String[] LISTING_REGISTER_400 = {
+    "INVALID_INPUT", "LISTING_INVALID_ADDRESS", "LISTING_UNKNOWN_CATALOG_CODE", "MALFORMED_REQUEST"
+  };
+
+  public static final String[] LISTING_REGISTER_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+
+  public static final String[] LISTING_REGISTER_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
+
   // ── 공통 실패 응답 문구 ────────────────────────────────────────────────────
 
   public static String errorDescription() {
@@ -413,6 +486,100 @@ public final class ListingDocsFields {
     };
   }
 
+  // ── 요청 필드 기술자 ───────────────────────────────────────────────────────
+
+  /**
+   * 매물 등록 요청 본문 문서 정의다.
+   *
+   * <p>코드 값 배열은 전부 {@code enumArrayField}로 싣는다 — 배열에 스칼라 {@code codeField}를 쓰면 타입 검증이 건너뛰어 테스트는
+   * 통과하고 문서만 문자열로 틀린다(ADR-0017).
+   */
+  public static List<FieldDescriptor> registerRequestFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("title", JsonFieldType.STRING, "지점명. 한국어 한 값만 보낸다"));
+    fields.add(enumField("type", ListingType.class, "공간 유형"));
+    fields.add(field("contact.managerName", JsonFieldType.STRING, "지점 운영자명. 세입자에게 그대로 공개된다"));
+    fields.add(field("contact.phone", JsonFieldType.STRING, "전화문의 수신 연락처. 예: `+82) 10-1234-5678`"));
+    fields.add(field("contact.sms", JsonFieldType.STRING, "문자문의 수신 연락처. 형식은 phone과 같다"));
+    fields.add(
+        field(
+            "businessRegistrationNumber",
+            JsonFieldType.STRING,
+            "사업자등록번호 숫자 10자리. 형식만 확인하고 저장하며 응답에는 나오지 않는다"));
+    fields.add(optField("blogUrl", JsonFieldType.STRING, "지점 블로그·홈페이지 주소. 없으면 생략"));
+    fields.add(
+        field("address.fullAddress", JsonFieldType.STRING, "도로명 주소 한 줄. 서버가 여기서 시·도와 구·군을 뽑는다"));
+    fields.add(optField("address.detail", JsonFieldType.STRING, "동·호수 등 상세 주소. 없으면 생략"));
+    fields.add(enumField("building.type", Listing.BuildingType.class, "건물 형태"));
+    fields.add(field("building.totalFloors", JsonFieldType.NUMBER, "건물 총 층수. 1 이상"));
+    fields.add(
+        field(
+            "building.usedFloorRange",
+            JsonFieldType.STRING,
+            "지점이 사용하는 층을 `min~max` 한 칸으로. 예: `1~2`. 최대 층은 totalFloors를 넘을 수 없다"));
+    fields.add(field("building.parkingAvailable", JsonFieldType.BOOLEAN, "주차공간 유무"));
+    fields.add(field("building.elevatorAvailable", JsonFieldType.BOOLEAN, "엘리베이터 유무"));
+    fields.add(enumField("genderPolicy", Listing.GenderPolicy.class, "이용 성별구분"));
+    fields.add(
+        enumArrayField("languagesSupported", SupportedLanguage.class, "응대 가능한 외국어. 1개 이상 선택"));
+    fields.add(field("ageRange", JsonFieldType.STRING, "이용 연령대를 `min~max` 한 칸으로. 예: `20~35`"));
+    fields.add(enumField("arcRequired", ArcRequirement.class, "입주에 외국인등록증(ARC)이 필요한지 여부"));
+    fields.add(
+        enumArrayField("facilities.heatingSystem", Listing.HeatingSystem.class, "난방시설. 1개 이상"));
+    fields.add(enumArrayField("facilities.kitchen", KitchenFacility.class, "주방시설. 1개 이상"));
+    fields.add(enumArrayField("facilities.laundry", LaundryFacility.class, "세탁시설. 1개 이상"));
+    fields.add(enumArrayField("facilities.livingAmenities", LivingAmenity.class, "생활시설. 1개 이상"));
+    fields.add(enumArrayField("facilities.securityFeatures", SecurityFeature.class, "안전시설. 1개 이상"));
+    fields.add(
+        enumArrayField(
+            "facilities.commonSpaces",
+            Listing.CommonSpaceType.class,
+            "공용공간. 1개 이상. 수량 없이 종류만 보낸다"));
+    fields.add(enumArrayField("facilities.providedSupplies", ProvidedSupply.class, "제공비품. 1개 이상"));
+    fields.add(enumArrayField("nearbyFacilities", NearbyFacility.class, "주변 편의시설. 1개 이상"));
+    fields.add(enumField("nearestTransit.type", Listing.TransitType.class, "가까운 교통수단"));
+    fields.add(field("nearestTransit.name", JsonFieldType.STRING, "근처 지하철역명"));
+    fields.add(field("nearestTransit.walkMinutes", JsonFieldType.NUMBER, "역까지 도보 소요시간(분). 0 이상"));
+    fields.add(field("description", JsonFieldType.STRING, "지점 소개글"));
+    fields.add(field("extraNotes", JsonFieldType.STRING, "생활 규칙과 유의사항"));
+    fields.add(field("refundPolicy", JsonFieldType.STRING, "환불정책 문구"));
+    fields.add(
+        field("imageUrls", JsonFieldType.ARRAY, "지점 대표사진 URL 목록. 첫 번째 값이 카드·상세의 대표 이미지가 된다"));
+    fields.add(field("roomOffers", JsonFieldType.ARRAY, "객실 타입 목록. 1개 이상"));
+    fields.add(field("roomOffers[].name", JsonFieldType.STRING, "객실 타입명"));
+    fields.add(
+        field("roomOffers[].contract.minStayMonths", JsonFieldType.NUMBER, "최소 이용 개월. 1 이상"));
+    fields.add(
+        field(
+            "roomOffers[].contract.maxStayMonths",
+            JsonFieldType.NUMBER,
+            "최대 이용 개월. minStayMonths 이상"));
+    fields.add(
+        field("roomOffers[].pricing.monthlyRent", JsonFieldType.NUMBER, "월 기준 객실 비용(KRW). 0 이상"));
+    fields.add(
+        field("roomOffers[].pricing.weeklyRent", JsonFieldType.NUMBER, "주 기준 객실 비용(KRW). 0 이상"));
+    fields.add(field("roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW). 0 이상"));
+    fields.add(
+        field("roomOffers[].pricing.maintenanceFee", JsonFieldType.NUMBER, "관리비(KRW). 0 이상"));
+    fields.add(
+        enumArrayField(
+            "roomOffers[].filterTags",
+            ConditionTag.class,
+            "해당 객실 타입의 옵션. 1개 이상이며, 응답 상위 conditions는 이 값들의 합집합이다"));
+    fields.add(field("roomOffers[].roomImageUrls", JsonFieldType.ARRAY, "객실 사진 URL 목록. 2장 이상"));
+    fields.add(
+        enumArrayField(
+            "preferredNationalities", Nationality.class, "설문 — 선호하는 입주자 국적. 1개 이상이며 응답에는 나오지 않는다"));
+    fields.add(
+        enumArrayField(
+            "contractDifficulties",
+            ContractDifficulty.class,
+            "설문 — 계약 과정에서 겪은 어려움. 1개 이상이며 응답에는 나오지 않는다"));
+    fields.add(
+        optField("serviceFeedback", JsonFieldType.STRING, "설문 — 서비스에 전하고 싶은 말. 응답에는 나오지 않는다"));
+    return List.copyOf(fields);
+  }
+
   // ── 응답 필드 기술자 ───────────────────────────────────────────────────────
 
   /** 네이버 원본 메타데이터를 제외하고 프론트에 공개하는 장소 후보 필드만 문서화한다. */
@@ -517,6 +684,19 @@ public final class ListingDocsFields {
         errorNull());
   }
 
+  /**
+   * 매물 등록 201 응답 필드 문서 정의다.
+   *
+   * <p>상세 조회와 같은 매물 문서지만 상태가 {@code PENDING}이고 좌표가 아직 없어 두 필드만 다르다.
+   */
+  public static List<FieldDescriptor> registerResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(listingDocumentFields("data", null, ListingDocumentVariant.REGISTERED));
+    fields.add(errorNull());
+    return fields;
+  }
+
   /** 상세 API 응답 필드 문서 정의다. */
   public static List<FieldDescriptor> detailResponseFields() {
     List<FieldDescriptor> fields = new ArrayList<>();
@@ -528,6 +708,11 @@ public final class ListingDocsFields {
 
   private static List<FieldDescriptor> listingDocumentFields(
       String prefix, String distanceDescription) {
+    return listingDocumentFields(prefix, distanceDescription, ListingDocumentVariant.PUBLIC_QUERY);
+  }
+
+  private static List<FieldDescriptor> listingDocumentFields(
+      String prefix, String distanceDescription, ListingDocumentVariant variant) {
     List<FieldDescriptor> fields = new ArrayList<>();
     fields.add(
         field(prefix + ".listingId", JsonFieldType.STRING, "상세 이동, 하트 토글, 예약 진입에 사용할 매물 ID"));
@@ -538,11 +723,7 @@ public final class ListingDocsFields {
             prefix + ".type.label",
             JsonFieldType.STRING,
             "현재 사용자 언어의 매물 유형 표시명. 화면 배지에는 이 값을 그대로 표시"));
-    fields.add(
-        codeField(
-            prefix + ".status",
-            PUBLIC_LISTING_STATUSES,
-            "공개 상태. 공개 조회에는 PUBLISHED만 내려오므로 별도 필터링 없이 표시 가능"));
+    fields.add(statusField(prefix, variant));
     fields.add(
         enumField(prefix + ".rentalType.code", Listing.RentalType.class, "임대 방식 서버 코드. 요청/비교용"));
     fields.add(
@@ -560,8 +741,7 @@ public final class ListingDocsFields {
             prefix + ".genderPolicy.code", Listing.GenderPolicy.class, "성별 제한의 서버 코드. 필터 요청에 사용"));
     fields.add(
         field(prefix + ".genderPolicy.label", JsonFieldType.STRING, "성별 제한 배지에 표시할 현재 언어의 문구"));
-    fields.add(field(prefix + ".location.lat", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 위도"));
-    fields.add(field(prefix + ".location.lng", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 경도"));
+    fields.addAll(locationFields(prefix, variant));
     fields.add(enumField(prefix + ".address.city.code", City.class, "지역 필터에 사용할 시·도 서버 코드"));
     fields.add(
         field(prefix + ".address.city.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 시·도 이름"));
@@ -734,6 +914,34 @@ public final class ListingDocsFields {
     fields.add(field(prefix + ".createdAt", JsonFieldType.STRING, "매물 생성 시각. 일반 UI에서 필요 없으면 숨김"));
     fields.add(field(prefix + ".updatedAt", JsonFieldType.STRING, "매물 수정 시각. 최신 정보 표시가 필요할 때 사용"));
     return fields;
+  }
+
+  /** 매물 상태는 갈래마다 도달 가능한 값이 하나뿐이라 enum 전체가 아니라 그 값만 싣는다. */
+  private static FieldDescriptor statusField(String prefix, ListingDocumentVariant variant) {
+    return variant == ListingDocumentVariant.REGISTERED
+        ? codeField(
+            prefix + ".status",
+            REGISTERED_LISTING_STATUSES,
+            "심사 상태. 등록 직후에는 항상 PENDING이며, 이 상태의 매물은 조회·검색·상세 어디에도 나오지 않는다")
+        : codeField(
+            prefix + ".status",
+            PUBLIC_LISTING_STATUSES,
+            "공개 상태. 공개 조회에는 PUBLISHED만 내려오므로 별도 필터링 없이 표시 가능");
+  }
+
+  /** 좌표는 등록 응답에만 없다. 없을 때는 값이 null이 아니라 키 자체가 빠지므로 하위 lat/lng도 기술하지 않는다. */
+  private static List<FieldDescriptor> locationFields(
+      String prefix, ListingDocumentVariant variant) {
+    if (variant == ListingDocumentVariant.REGISTERED) {
+      return List.of(
+          optField(
+              prefix + ".location",
+              JsonFieldType.OBJECT,
+              "매물 좌표. 등록 응답에는 값이 null이 아니라 필드 자체가 생략된다 — 좌표는 공개 전에 채워지므로 조회 응답에는 항상 lat·lng가 있다"));
+    }
+    return List.of(
+        field(prefix + ".location.lat", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 위도"),
+        field(prefix + ".location.lng", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 경도"));
   }
 
   private static List<FieldDescriptor> pageFields(String totalElementsDescription) {
