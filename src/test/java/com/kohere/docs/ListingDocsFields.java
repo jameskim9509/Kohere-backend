@@ -392,6 +392,10 @@ public final class ListingDocsFields {
 
   public static final String[] LISTING_REGISTER_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
 
+  public static final String[] LISTING_REGISTER_413 = {"LISTING_IMAGE_TOO_LARGE"};
+
+  public static final String[] LISTING_REGISTER_415 = {"LISTING_IMAGE_UNSUPPORTED_TYPE"};
+
   // ── 공통 실패 응답 문구 ────────────────────────────────────────────────────
 
   public static String errorDescription() {

@@ -1,9 +1,9 @@
 # Kohere — 매물 조회·찜·등록 로컬 수동 테스트 (`/api/v2` 정본 + `/api/v1` 종료 확인)
 # 스펙: docs/api/specs/03-listings-favorites.md · 유저스토리 US-3-1~US-3-6
-# 결정: ADR-0039(v4 스키마·등록 폼) · ADR-0040(조회 v2 이관 · v1 빈 결과 종료)
+# 결정: ADR-0039(v4 스키마·등록 폼) · ADR-0040(조회 v2 이관 · v1 빈 결과 종료) · ADR-0041(사진 S3 업로드)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
-#   1) 인프라:  docker compose up -d mysql mongo redis
+#   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
 #   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
 #   3) **시드 주입** — 아래 "시드" 절을 먼저 읽는다. 앱은 매물을 하나도 넣지 않는다.
 #   4) 1·2번 로그인부터 위에서 순서대로 "Send Request" 클릭 — 토큰은 이름붙은 응답으로 자동 전달된다.
@@ -34,6 +34,15 @@
 #   - 응답 봉투는 `{ success, data, error }`라서 값 경로는 `response.body.$.data.*`다.
 #   - 장소 후보 검색(6)만 `/api/v1`이다. 네이버 지역 검색이라 매물 스키마와 무관해 v1에 남겼다.
 #   - 등록한 매물은 `status=PENDING`이라 **조회·검색·상세 어디에도 나오지 않는다**(14·15에서 확인).
+#
+# ─────────────────────────────── 사진 업로드 (13번 이후) ───────────────────────────────
+# 등록은 `multipart/form-data`다 — 등록 정보 JSON은 `request` part, 사진은 파일 part로 보낸다(ADR-0041).
+# `minio-init`이 만든 로컬 버킷(`kohere-local-images`)에 올라가고, 응답의 `imageUrls`·`roomOffers[].roomImageUrls`가
+# `http://localhost:9000/kohere-local-images/listings/...` 형태로 내려온다 — 브라우저에서 바로 열린다.
+#   · MinIO 콘솔: http://localhost:9001 (minioadmin / minioadmin) — 올라간 객체를 눈으로 확인한다.
+#   · 사진 파일은 `http/images/`의 1x1 JPEG 4장을 쓴다(내용은 검사하지 않는다 — 형식과 크기만 본다).
+#   · MinIO를 띄우지 않으려면 `APP_IMAGES_ENABLED=false`로 앱을 기동한다. 업로드 없이 URL만 만드는 스텁이 붙어
+#     등록은 성공하지만 그 URL은 열리지 않는다.
 
 @baseUrl = http://localhost:8080
 @secret = local-dev-test-login-secret
@@ -121,11 +130,17 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 #   rentalType(MONTHLY_RENT) · pricing.currency(KRW) · roomOffers[].status(ACTIVE) · favoriteCount(0) · 생성/수정 시각.
 #   좌표(location)와 주변 대학(nearbyUniversityCodes)은 지오코딩 미구현이라 비어 있는 상태로 저장된다.
 #   코드값은 전부 listingCatalog와 대조한다 — 카탈로그에 없는 코드는 400이다(29-b번).
+#   사진 URL도 요청에 없다 — 파일을 올리면 서버가 저장 위치를 정해 응답에 담아 준다.
+#   방과 파일은 **part 이름의 인덱스**로 짝짓는다: roomImages0 → roomOffers[0]. 파일명은 쓰지 않는다.
 
 ### 13. 매물 등록 → 201 Created. 응답 status는 PENDING이다
 # @name register
 POST {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
 Content-Type: application/json
 
 {
@@ -171,10 +186,6 @@ Content-Type: application/json
   "description": "신촌역 도보 7분 거리의 외국인 전용 셰어하우스입니다.",
   "extraNotes": "취사 가능, 반려동물 불가.",
   "refundPolicy": "입주 7일 전 취소 시 전액 환불, 이후에는 50%를 환불합니다.",
-  "imageUrls": [
-    "https://cdn.example.com/sinchon/1.jpg",
-    "https://cdn.example.com/sinchon/2.jpg"
-  ],
   "roomOffers": [
     {
       "name": "1인실 A타입",
@@ -184,17 +195,34 @@ Content-Type: application/json
         "deposit": 500000,
         "maintenanceFee": 50000
       },
-      "filterTags": ["MOVE_IN_NOW", "PRIVATE_BATH", "ENGLISH_OK"],
-      "roomImageUrls": [
-        "https://cdn.example.com/sinchon/room-a-1.jpg",
-        "https://cdn.example.com/sinchon/room-a-2.jpg"
-      ]
+      "filterTags": ["MOVE_IN_NOW", "PRIVATE_BATH", "ENGLISH_OK"]
     }
   ],
   "preferredNationalities": ["CHINA", "SOUTHEAST_ASIA"],
   "contractDifficulties": ["LANGUAGE", "PAYMENT"],
   "serviceFeedback": "등록 절차가 더 간단해지면 좋겠습니다."
 }
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-2.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
 
 ### 14. 등록 직후 상세 조회 → **404 LISTING_NOT_FOUND**. PENDING이라 승인 전에는 어디에도 노출되지 않는다
 GET {{baseUrl}}/api/v2/listings/{{register.response.body.$.data.listingId}}
@@ -257,6 +285,10 @@ POST {{baseUrl}}/api/v2/listings/{{listingId}}/favorite
 #     보안 필터는 정식 회원인지까지만 보고, 임대인 여부는 서비스가 user::api로 다시 확인한다.
 POST {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
 Content-Type: application/json
 
 {
@@ -284,34 +316,82 @@ Content-Type: application/json
   "description": "설명",
   "extraNotes": "비고",
   "refundPolicy": "환불 규정",
-  "imageUrls": ["https://cdn.example.com/1.jpg"],
   "roomOffers": [
     {
       "name": "1인실",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
       "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
-      "filterTags": ["MOVE_IN_NOW"],
-      "roomImageUrls": ["https://cdn.example.com/r1.jpg", "https://cdn.example.com/r2.jpg"]
+      "filterTags": ["MOVE_IN_NOW"]
     }
   ],
   "preferredNationalities": ["CHINA"],
   "contractDifficulties": ["LANGUAGE"]
 }
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-2.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
 
 ### 28. 400 INVALID_INPUT — 필수 필드 누락(title·roomOffers 등). error.errors[]에 필드별 사유가 담긴다
 POST {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
 Content-Type: application/json
 
 {
   "type": "SHARE_HOUSE",
   "businessRegistrationNumber": "1234567890"
 }
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-2.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
 
 ### 29. 400 INVALID_INPUT — usedFloorRange 형식 위반(`min~max`가 아님)
 #     ageRange도 같은 규칙이다. min > max여도 400이다.
 POST {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
 Content-Type: application/json
 
 {
@@ -339,25 +419,48 @@ Content-Type: application/json
   "description": "설명",
   "extraNotes": "비고",
   "refundPolicy": "환불 규정",
-  "imageUrls": ["https://cdn.example.com/1.jpg"],
   "roomOffers": [
     {
       "name": "1인실",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
       "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
-      "filterTags": ["MOVE_IN_NOW"],
-      "roomImageUrls": ["https://cdn.example.com/r1.jpg", "https://cdn.example.com/r2.jpg"]
+      "filterTags": ["MOVE_IN_NOW"]
     }
   ],
   "preferredNationalities": ["CHINA"],
   "contractDifficulties": ["LANGUAGE"]
 }
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-2.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
 
 ### 29-b. 400 INVALID_INPUT — listingCatalog에 없는 코드
 #     enum에는 있지만 카탈로그에 시드되지 않은 코드는 거절한다. 아래는 CITY 카탈로그에 없는 주소를 보낸다
 #     (시드 CITY는 서울특별시·부산광역시·경기도 3종뿐이라 "대전광역시"는 행정구역 파싱에 실패한다).
 POST {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
 Content-Type: application/json
 
 {
@@ -385,19 +488,237 @@ Content-Type: application/json
   "description": "설명",
   "extraNotes": "비고",
   "refundPolicy": "환불 규정",
-  "imageUrls": ["https://cdn.example.com/1.jpg"],
   "roomOffers": [
     {
       "name": "1인실",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
       "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
-      "filterTags": ["MOVE_IN_NOW"],
-      "roomImageUrls": ["https://cdn.example.com/r1.jpg", "https://cdn.example.com/r2.jpg"]
+      "filterTags": ["MOVE_IN_NOW"]
     }
   ],
   "preferredNationalities": ["CHINA"],
   "contractDifficulties": ["LANGUAGE"]
 }
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-2.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
+
+### 29-c. 400 LISTING_IMAGE_REQUIRED — 방 사진이 2장 미만
+#     지점 사진은 1~10장, 방 사진은 방마다 2~10장이다. 사진은 JSON 필드가 아니라 part라
+#     error.errors[]에 실을 필드 경로가 없어 전용 코드를 쓴다.
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
+Content-Type: application/json
+
+{
+  "title": "사진 규칙 확인용",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary--
+
+### 29-d. 400 LISTING_IMAGE_PART_MISMATCH — 방은 1개인데 roomImages1이 왔다
+#     그냥 무시하면 임대인이 올린 사진이 조용히 사라진 채 등록이 성공한다. 앱이 part 이름을 고쳐야 한다.
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
+Content-Type: application/json
+
+{
+  "title": "사진 규칙 확인용",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages1"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary--
+
+### 29-e. 415 LISTING_IMAGE_UNSUPPORTED_TYPE — 허용 목록 밖 형식
+#     JPEG · PNG · WebP · HEIC만 받는다. 파일 내용이 아니라 part의 Content-Type을 본다.
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="request"
+Content-Type: application/json
+
+{
+  "title": "사진 규칙 확인용",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="roomImages0"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary
+Content-Disposition: form-data; name="listingImages"; filename="animation.gif"
+Content-Type: image/gif
+
+< ./images/branch-2.jpg
+--KohereBoundary--
+
+### 29-f. 413 LISTING_IMAGE_TOO_LARGE — 장당 10MB 초과
+#     10MB가 넘는 이미지를 http/images/ 에 넣고 아래 경로를 그 파일로 바꿔 확인한다.
+#     (저장소는 실제로 그 크기를 받지 않는다 — 검증이 업로드보다 앞선다.)
 
 ### 30. 404 LISTING_NOT_FOUND — 없는 매물 상세(v2)
 GET {{baseUrl}}/api/v2/listings/6858e20000000000000000ff

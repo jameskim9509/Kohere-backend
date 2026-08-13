@@ -110,6 +110,8 @@ dependencies {
   testImplementation 'org.testcontainers:junit-jupiter'
   testImplementation 'org.testcontainers:mysql'
   testImplementation 'org.testcontainers:mongodb'
+  // 매물 사진 업로드 어댑터는 실제 S3 프로토콜로 검증한다 — 목으로는 키·URL 조립만 보고 SDK 호출은 못 본다(ADR-0041)
+  testImplementation 'org.testcontainers:minio'
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

@@ -7,6 +7,8 @@ import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_400;
 import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_401;
 import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_403;
+import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_413;
+import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_415;
 import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_DESCRIPTION;
 import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_SUMMARY;
 import static com.kohere.docs.ListingDocsFields.registerRequestFields;
@@ -31,6 +33,7 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsTags;
+import com.kohere.listing.domain.image.PendingListingImage;
 import com.kohere.listing.presentation.dto.ListingImagePartReader;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
@@ -369,6 +372,67 @@ class ListingRegisterDocsTest {
         "MALFORMED_REQUEST",
         "listing-register-malformed",
         LISTING_REGISTER_400);
+  }
+
+  /**
+   * 사진 규칙 위반 4종을 실제로 트리거한다.
+   *
+   * <p>사진은 JSON 필드가 아니라 part라 {@code errors[]}에 실을 경로가 없다 — 코드 자체가 사용자에게 무엇을 고치라고 말하는 유일한 수단이므로
+   * status·code가 규칙마다 다르게 나오는지 못 박는다.
+   */
+  @Test
+  void 문서스니펫생성_사진규칙위반_status와errorcode가일치() throws Exception {
+    // 방 사진 하한(2장)에서 한 장을 뺀다.
+    performError(
+        multipart("/api/v2/listings")
+            .file(jsonPart(REGISTER_BODY))
+            .file(imagePart(ListingImagePartReader.COVER_PART, "branch-1.jpg"))
+            .file(imagePart(ListingImagePartReader.ROOM_PART_PREFIX + 0, "room-101-1.jpg"))
+            .header(HttpHeaders.AUTHORIZATION, landlordToken()),
+        status().isBadRequest(),
+        "LISTING_IMAGE_REQUIRED",
+        "listing-register-image-required",
+        LISTING_REGISTER_400);
+
+    // 방은 1개인데 roomImages1이 왔다 — 무시하면 임대인이 올린 사진이 조용히 사라진다.
+    performError(
+        registerWithExtraFile(imagePart(ListingImagePartReader.ROOM_PART_PREFIX + 1, "x.jpg")),
+        status().isBadRequest(),
+        "LISTING_IMAGE_PART_MISMATCH",
+        "listing-register-image-part-mismatch",
+        LISTING_REGISTER_400);
+
+    performError(
+        registerWithExtraFile(
+            new MockMultipartFile(
+                ListingImagePartReader.COVER_PART,
+                "huge.jpg",
+                IMAGE_CONTENT_TYPE,
+                new byte[(int) PendingListingImage.MAX_SIZE_BYTES + 1])),
+        status().isPayloadTooLarge(),
+        "LISTING_IMAGE_TOO_LARGE",
+        "listing-register-image-too-large",
+        LISTING_REGISTER_413);
+
+    performError(
+        registerWithExtraFile(
+            new MockMultipartFile(
+                ListingImagePartReader.COVER_PART, "animation.gif", "image/gif", IMAGE_BYTES)),
+        status().isUnsupportedMediaType(),
+        "LISTING_IMAGE_UNSUPPORTED_TYPE",
+        "listing-register-image-unsupported-type",
+        LISTING_REGISTER_415);
+  }
+
+  /** 정상 요청에 파일 하나를 더 얹는다. 규칙을 어기는 파일만 바꿔 끼우려는 변형이다. */
+  private MockHttpServletRequestBuilder registerWithExtraFile(MockMultipartFile extra) {
+    return multipart("/api/v2/listings")
+        .file(jsonPart(REGISTER_BODY))
+        .file(imagePart(ListingImagePartReader.COVER_PART, "branch-1.jpg"))
+        .file(imagePart(ListingImagePartReader.ROOM_PART_PREFIX + 0, "room-101-1.jpg"))
+        .file(imagePart(ListingImagePartReader.ROOM_PART_PREFIX + 0, "room-101-2.jpg"))
+        .file(extra)
+        .header(HttpHeaders.AUTHORIZATION, landlordToken());
   }
 
   /** 등록에 성공하고 발급된 listingId를 돌려준다. 스니펫은 만들지 않는다(성공 오퍼레이션 예시는 한 벌이면 된다). */
