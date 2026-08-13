@@ -54,7 +54,7 @@ public final class LifeTipDocsFields {
         field(
             "data.topics[].code",
             JsonFieldType.STRING,
-            "언어 무관 주제 식별 코드(주제별 팁 조회의 경로 값). 서버 카탈로그라 배포 없이 늘어나므로 값을 고정 목록으로 다루지 않는다"),
+            "언어 무관 주제 식별 코드. 주제별 팁 조회(`GET /api/v1/life-tips/topics/{topicCode}/tips`)의 경로 값으로 그대로 쓴다"),
         field("data.topics[].name", JsonFieldType.STRING, "표시 언어로 번역된 주제 표시명"),
         field("data.topics[].shortDescription", JsonFieldType.STRING, "번역된 짧은 설명(홈 카드용)"),
         field("data.topics[].longDescription", JsonFieldType.STRING, "번역된 긴 설명(주제 상세 상단용)"),
