@@ -228,7 +228,6 @@ class ListingDocsTest {
         .andExpect(jsonPath("$.data.content[0].facilities.commonSpaces[0].label").isString())
         .andExpect(jsonPath("$.data.content[0].roomOffers.length()").value(1))
         .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(380000))
-        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.weeklyRent").value(110000))
         .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.deposit").value(300000))
         .andExpect(jsonPath("$.data.content[0].roomOffers[0].contract.minStayMonths").value(1))
         .andExpect(jsonPath("$.data.content[0].roomOffers[0].contract.maxStayMonths").value(12))

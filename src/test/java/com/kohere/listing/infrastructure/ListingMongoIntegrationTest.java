@@ -1602,8 +1602,7 @@ class ListingMongoIntegrationTest {
         localized(name),
         status,
         new Listing.Contract(minStayMonths, maxStayMonths),
-        new Listing.Pricing(
-            monthlyRent, monthlyRent / 4, deposit, maintenanceFee, Listing.Currency.KRW),
+        new Listing.Pricing(monthlyRent, deposit, maintenanceFee, Listing.Currency.KRW),
         filterTags,
         List.of());
   }

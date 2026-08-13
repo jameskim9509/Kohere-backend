@@ -332,7 +332,7 @@ class ListingServiceTest {
         new LocalizedText("스탠다드 1인실", "Standard Single Room"),
         Listing.RoomOfferStatus.ACTIVE,
         new Listing.Contract(1, 12),
-        new Listing.Pricing(300000, 90000, 300000, 0, Listing.Currency.KRW),
+        new Listing.Pricing(300000, 300000, 0, Listing.Currency.KRW),
         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION),
         List.of());
   }
@@ -344,7 +344,7 @@ class ListingServiceTest {
         new LocalizedText("프리미엄 1인실", "Premium Single Room"),
         Listing.RoomOfferStatus.ACTIVE,
         new Listing.Contract(3, 24),
-        new Listing.Pricing(450000, 130000, 500000, 20000, Listing.Currency.KRW),
+        new Listing.Pricing(450000, 500000, 20000, Listing.Currency.KRW),
         Set.of(ConditionTag.PRIVATE_BATH, ConditionTag.NO_MAINT_FEE),
         List.of());
   }
@@ -356,7 +356,7 @@ class ListingServiceTest {
         new LocalizedText("비노출 방", "Hidden Room"),
         Listing.RoomOfferStatus.INACTIVE,
         new Listing.Contract(1, 12),
-        new Listing.Pricing(100000, 30000, 100000, 0, Listing.Currency.KRW),
+        new Listing.Pricing(100000, 100000, 0, Listing.Currency.KRW),
         Set.of(ConditionTag.MOVE_IN_NOW),
         List.of());
   }

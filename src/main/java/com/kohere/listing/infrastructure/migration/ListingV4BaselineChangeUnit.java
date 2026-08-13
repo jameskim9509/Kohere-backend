@@ -238,13 +238,10 @@ public class ListingV4BaselineChangeUnit {
                     .append("maxStayMonths", bsonType("int")));
     Document pricing =
         new Document("bsonType", "object")
-            .append(
-                "required",
-                List.of("monthlyRent", "weeklyRent", "deposit", "maintenanceFee", "currency"))
+            .append("required", List.of("monthlyRent", "deposit", "maintenanceFee", "currency"))
             .append(
                 "properties",
                 new Document("monthlyRent", bsonType("int"))
-                    .append("weeklyRent", bsonType("int"))
                     .append("deposit", bsonType("int"))
                     .append("maintenanceFee", bsonType("int"))
                     .append("currency", bsonType("string")));

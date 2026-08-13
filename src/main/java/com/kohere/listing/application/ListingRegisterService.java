@@ -162,7 +162,6 @@ public class ListingRegisterService {
             request.contract().minStayMonths(), request.contract().maxStayMonths()),
         new Listing.Pricing(
             request.pricing().monthlyRent(),
-            request.pricing().weeklyRent(),
             request.pricing().deposit(),
             request.pricing().maintenanceFee(),
             Listing.Currency.KRW),

@@ -297,11 +297,15 @@ public class Listing {
     }
   }
 
-  /** 방 상품 단위의 월세·주세·보증금·관리비 정보다. */
-  public record Pricing(
-      int monthlyRent, int weeklyRent, int deposit, int maintenanceFee, Currency currency) {
+  /**
+   * 방 상품 단위의 월세·보증금·관리비 정보다.
+   *
+   * <p>주 단위 임대는 다루지 않는다. 주세를 받으려면 {@link RentalType}에 주간 계약이 생기고 월세·주세 중 하나만 받는 구조가 돼야 하는데, 예산
+   * 필터·정렬·예약 총액이 모두 월세 전제라 그 확장은 MVP 범위 밖이다(ADR-0039).
+   */
+  public record Pricing(int monthlyRent, int deposit, int maintenanceFee, Currency currency) {
     public Pricing {
-      if (monthlyRent < 0 || weeklyRent < 0 || deposit < 0 || maintenanceFee < 0) {
+      if (monthlyRent < 0 || deposit < 0 || maintenanceFee < 0) {
         throw new InvalidInputException("가격은 0 이상이어야 합니다.");
       }
     }

@@ -112,11 +112,7 @@ class ListingDocument {
 
   /** MongoDB에 저장되는 방 상품 가격 하위 문서다. */
   record PricingDocument(
-      int monthlyRent,
-      int weeklyRent,
-      int deposit,
-      int maintenanceFee,
-      Listing.Currency currency) {}
+      int monthlyRent, int deposit, int maintenanceFee, Listing.Currency currency) {}
 
   /** MongoDB에 저장되는 계약 조건 하위 문서다. */
   record ContractDocument(int minStayMonths, int maxStayMonths) {}

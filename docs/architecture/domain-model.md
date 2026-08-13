@@ -314,7 +314,7 @@
 | `filterTags` | `Set<ConditionTag>` | 방 상품별 검색 필터 태그(등록 폼의 방 옵션 선택값). 응답 태그는 이 저장값과 1:1 — 파생 태그를 더하지 않는다 |
 | `roomImageUrls` | `List<String>` | 방 상품 전용 이미지 |
 
-**불변식:** `pricing.monthlyRent`·`pricing.weeklyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; `contract.minStayMonths <= contract.maxStayMonths`(계약기간은 매물 공통이 아니라 **방 상품마다** 다를 수 있다); 가격·계약기간·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
+**불변식:** `pricing.monthlyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; `contract.minStayMonths <= contract.maxStayMonths`(계약기간은 매물 공통이 아니라 **방 상품마다** 다를 수 있다); 가격·계약기간·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
 
 **다국어 표시:** 매물마다 달라지는 제목·주소·역명·방 이름·환불 정책 문구·소개 문구(`description`)·유의사항(`extraNotes`)은 `LocalizedText(ko,en)`로 Listing에 저장한다. 검색·검증용 enum/시설/조건 code는 번역하지 않고, 별도 `listingCatalog`의 `{category,code,label:{ko,en}}`와 응답 시 결합한다 — 행정구역(`City`·`District`)·`ArcRequirement`·`SupportedLanguage`·`NearbyFacility`·개별 대학 코드도 같은 방식으로 라벨을 얻는다. 반면 `status`(`ListingStatus`)와 `rejectionReason`은 임대인·관리자만 읽는 값이라 카탈로그·번역 대상이 아니다(카탈로그에 상태 카테고리가 없다). 프론트 응답은 `{code,label}`이며 label은 표시, code는 필터 요청에 사용한다. 로그인 사용자의 언어는 `listing → user::api getLanguage` 동기 조회로 결정하고 비로그인·미지원 언어는 영어로 폴백한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)).
 
@@ -374,7 +374,6 @@
 | | `commonSpaces` | `Set<CommonSpaceType>` | 공용 공간(원소가 곧 코드 — 수량은 받지 않는다) |
 | | `providedSupplies` | `Set<ProvidedSupply>` | 제공 물품 |
 | `Pricing` | `monthlyRent` | int | 월세(KRW 정수) |
-| | `weeklyRent` | int | 주세(KRW 정수) |
 | | `deposit` | int | 보증금(KRW 정수) — booking의 `totalAmount = deposit + monthlyRent × 계약 개월수` 계산 근거 |
 | | `maintenanceFee` | int | 관리비(KRW 정수) |
 | | `currency` | enum `Currency` | 통화(현재 `KRW`) |

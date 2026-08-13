@@ -101,7 +101,6 @@
         },
         "pricing": {
           "monthlyRent": 380000,
-          "weeklyRent": 110000,
           "deposit": 300000,
           "maintenanceFee": 0,
           "currency": "KRW"
@@ -127,7 +126,6 @@
         },
         "pricing": {
           "monthlyRent": 520000,
-          "weeklyRent": 150000,
           "deposit": 500000,
           "maintenanceFee": 20000,
           "currency": "KRW"

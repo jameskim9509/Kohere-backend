@@ -164,7 +164,6 @@ class ListingRegisterDocsTest {
             "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
             "pricing": {
               "monthlyRent": 380000,
-              "weeklyRent": 110000,
               "deposit": 200000,
               "maintenanceFee": 20000
             },

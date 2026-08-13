@@ -181,7 +181,6 @@ Content-Type: application/json
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
       "pricing": {
         "monthlyRent": 550000,
-        "weeklyRent": 160000,
         "deposit": 500000,
         "maintenanceFee": 50000
       },
@@ -290,7 +289,7 @@ Content-Type: application/json
     {
       "name": "1인실",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-      "pricing": { "monthlyRent": 550000, "weeklyRent": 160000, "deposit": 500000, "maintenanceFee": 50000 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
       "filterTags": ["MOVE_IN_NOW"],
       "roomImageUrls": ["https://cdn.example.com/r1.jpg", "https://cdn.example.com/r2.jpg"]
     }
@@ -345,7 +344,7 @@ Content-Type: application/json
     {
       "name": "1인실",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-      "pricing": { "monthlyRent": 550000, "weeklyRent": 160000, "deposit": 500000, "maintenanceFee": 50000 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
       "filterTags": ["MOVE_IN_NOW"],
       "roomImageUrls": ["https://cdn.example.com/r1.jpg", "https://cdn.example.com/r2.jpg"]
     }
@@ -391,7 +390,7 @@ Content-Type: application/json
     {
       "name": "1인실",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-      "pricing": { "monthlyRent": 550000, "weeklyRent": 160000, "deposit": 500000, "maintenanceFee": 50000 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
       "filterTags": ["MOVE_IN_NOW"],
       "roomImageUrls": ["https://cdn.example.com/r1.jpg", "https://cdn.example.com/r2.jpg"]
     }

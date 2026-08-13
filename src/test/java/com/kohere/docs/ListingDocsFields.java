@@ -556,8 +556,6 @@ public final class ListingDocsFields {
             "최대 이용 개월. minStayMonths 이상"));
     fields.add(
         field("roomOffers[].pricing.monthlyRent", JsonFieldType.NUMBER, "월 기준 객실 비용(KRW). 0 이상"));
-    fields.add(
-        field("roomOffers[].pricing.weeklyRent", JsonFieldType.NUMBER, "주 기준 객실 비용(KRW). 0 이상"));
     fields.add(field("roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW). 0 이상"));
     fields.add(
         field("roomOffers[].pricing.maintenanceFee", JsonFieldType.NUMBER, "관리비(KRW). 0 이상"));
@@ -909,11 +907,6 @@ public final class ListingDocsFields {
             prefix + ".roomOffers[].pricing.monthlyRent",
             JsonFieldType.NUMBER,
             "월세 표시값(KRW). 카드 가격 범위 계산에도 사용"));
-    fields.add(
-        field(
-            prefix + ".roomOffers[].pricing.weeklyRent",
-            JsonFieldType.NUMBER,
-            "주 단위 요금 표시값(KRW). 단기 거주 화면에서 월세 대신 표시"));
     fields.add(
         field(prefix + ".roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금 표시값(KRW)"));
     fields.add(

@@ -208,7 +208,7 @@ class BookingListingQueryIntegrationTest {
         LocalizedText.same(name),
         status,
         new Listing.Contract(2, 6),
-        new Listing.Pricing(monthlyRent, monthlyRent / 4, deposit, 0, Listing.Currency.KRW),
+        new Listing.Pricing(monthlyRent, deposit, 0, Listing.Currency.KRW),
         Set.of(ConditionTag.FEMALE_ONLY),
         List.of());
   }

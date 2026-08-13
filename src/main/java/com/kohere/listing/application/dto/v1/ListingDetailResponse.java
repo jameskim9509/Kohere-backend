@@ -70,7 +70,7 @@ public record ListingDetailResponse(
       boolean mealsProvided,
       boolean englishAvailable) {}
 
-  /** 개정 전 가격이다. v4에는 {@code weeklyRent}가 더 있다. */
+  /** 개정 전 가격이다. v4와 필드 구성이 같지만 v1 계약을 고정하려고 사본으로 둔다. */
   public record Pricing(int monthlyRent, int deposit, int maintenanceFee, String currency) {}
 
   /** 개정 전 방 재고다. v4에서 삭제됐다. */

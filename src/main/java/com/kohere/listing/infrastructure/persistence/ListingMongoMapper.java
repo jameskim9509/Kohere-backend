@@ -218,7 +218,6 @@ final class ListingMongoMapper {
         toDomain(roomOffer.contract()),
         new Listing.Pricing(
             roomOffer.pricing().monthlyRent(),
-            roomOffer.pricing().weeklyRent(),
             roomOffer.pricing().deposit(),
             roomOffer.pricing().maintenanceFee(),
             roomOffer.pricing().currency()),
@@ -235,7 +234,6 @@ final class ListingMongoMapper {
         toDocument(roomOffer.contract()),
         new ListingDocument.PricingDocument(
             roomOffer.pricing().monthlyRent(),
-            roomOffer.pricing().weeklyRent(),
             roomOffer.pricing().deposit(),
             roomOffer.pricing().maintenanceFee(),
             roomOffer.pricing().currency()),

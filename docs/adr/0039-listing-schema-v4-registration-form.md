@@ -38,9 +38,10 @@ Proposed
 ### 1. 스키마 v4 (루트 34필드)
 
 - **삭제** — `propertyPolicies`(VO 전체) · `roomOffers[].inventory` · `descriptions`(VO) · `RefundPolicy`(VO) · `CommonSpace.count` · 매물 공통 `contract`
-- **추가** — `contact{managerName, phone, sms}` · `businessRegistrationNumber` · `blogUrl` · `ageMin` · `ageMax` · `rejectionReason` · `languagesSupported` · `nearbyFacilities` · `preferredNationalities` · `contractDifficulties` · `serviceFeedback` · `roomOffers[].pricing.weeklyRent` · `roomOffers[].contract`
+- **추가** — `contact{managerName, phone, sms}` · `businessRegistrationNumber` · `blogUrl` · `ageMin` · `ageMax` · `rejectionReason` · `languagesSupported` · `nearbyFacilities` · `preferredNationalities` · `contractDifficulties` · `serviceFeedback` · `roomOffers[].contract`
 - **이동·변형** — `arcRequired`를 루트로 승격(boolean → `ArcRequirement` enum) · `contract`를 `roomOffers[]` 하위로 · `description`/`extraNotes` 분리 · `refundPolicy`를 `LocalizedText` 문장 하나로 · `facilities.commonSpaces`를 `Set<CommonSpaceType>`으로
 - `roomOffers[].pricing.deposit`은 **유지한다.** booking의 `totalAmount = deposit + monthlyRent × 계약 개월수` 계약이 이 값을 전제하므로, 등록 폼에 보증금 입력을 추가하는 쪽으로 맞춘다.
+- `roomOffers[].pricing.weeklyRent`는 **받지 않는다.** 등록 폼에 주 단위 가격 칸이 있어 한때 필드로 두었으나, 이 값을 받으면 임대 유형에 주간 계약(`RentalType.WEEKLY_RENT`)이 생기고 월세·주세 중 **하나만** 받는 구조로 가야 한다. 그런데 예산 필터(`minBudget`·`maxBudget`)·정렬(`PRICE_ASC`)·예약 총액이 전부 `monthlyRent` 전제로 짜여 있어, 필드만 받으면 **저장·표시만 되고 아무것도 결정하지 못하는 값**이 된다(주 단위 전용 매물은 `monthlyRent=0`이 되어 예산 필터에 0원 매물로 걸린다). 주 단위 임대는 `RentalType` 확장과 함께 별도로 다룬다.
 
 `ConditionTag.NO_ARC`를 없애고 `arcRequired`(`REQUIRED`/`NOT_REQUIRED`) 필드 하나로 통일한다. 응답 파생·진단 파생 주입을 모두 제거해 `filterTags` 저장값과 응답 태그가 1:1이 된다.
 

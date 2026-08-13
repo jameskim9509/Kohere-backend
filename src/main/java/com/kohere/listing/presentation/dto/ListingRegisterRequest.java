@@ -106,8 +106,5 @@ public record ListingRegisterRequest(
 
   /** 통화는 서버가 {@code KRW}로 고정하므로 요청에 없다. */
   public record PricingRequest(
-      @Min(0) int monthlyRent,
-      @Min(0) int weeklyRent,
-      @Min(0) int deposit,
-      @Min(0) int maintenanceFee) {}
+      @Min(0) int monthlyRent, @Min(0) int deposit, @Min(0) int maintenanceFee) {}
 }

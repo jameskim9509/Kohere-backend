@@ -144,7 +144,6 @@ Request Body:
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
       "pricing": {
         "monthlyRent": 380000,
-        "weeklyRent": 110000,
         "deposit": 200000,
         "maintenanceFee": 20000
       },
@@ -202,8 +201,7 @@ Request Body:
 | `roomOffers[].name` | string | 필수 | 객실 타입명 |
 | `roomOffers[].contract.minStayMonths` | integer | 필수 | 이용 기간(최소, 개월). 1 이상 |
 | `roomOffers[].contract.maxStayMonths` | integer | 필수 | 이용 기간(최대, 개월). `minStayMonths` 이상 |
-| `roomOffers[].pricing.monthlyRent` | integer(KRW) | 필수 | 객실 비용(월 기준). 0 이상 |
-| `roomOffers[].pricing.weeklyRent` | integer(KRW) | 필수 | 객실 비용(주 기준). 0 이상 |
+| `roomOffers[].pricing.monthlyRent` | integer(KRW) | 필수 | 객실 비용(월 기준). 0 이상. **주 단위 가격은 받지 않는다** — 임대 유형이 월세 하나뿐이고 예산 필터·정렬·예약 총액이 모두 이 값을 기준으로 한다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)) |
 | `roomOffers[].pricing.deposit` | integer(KRW) | 필수 | 보증금. 0 이상 |
 | `roomOffers[].pricing.maintenanceFee` | integer(KRW) | 필수 | 관리비. 0 이상 |
 | `roomOffers[].filterTags` | `ConditionTag[]` | 필수 | 타입별 매물 옵션(복수 선택). 카탈로그 `CONDITION_TAG` 대조 |
@@ -306,7 +304,6 @@ Request Body:
         "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
         "pricing": {
           "monthlyRent": 380000,
-          "weeklyRent": 110000,
           "deposit": 200000,
           "maintenanceFee": 20000,
           "currency": "KRW"
@@ -456,7 +453,6 @@ Request Body: 없음
             "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
             "pricing": {
               "monthlyRent": 380000,
-              "weeklyRent": 110000,
               "deposit": 200000,
               "maintenanceFee": 20000,
               "currency": "KRW"
@@ -757,7 +753,6 @@ Request Body: 없음
         "contract": { "minStayMonths": 2, "maxStayMonths": 6 },
         "pricing": {
           "monthlyRent": 300000,
-          "weeklyRent": 90000,
           "deposit": 300000,
           "maintenanceFee": 0,
           "currency": "KRW"
@@ -956,7 +951,6 @@ Request Body: 없음
             "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
             "pricing": {
               "monthlyRent": 450000,
-              "weeklyRent": 130000,
               "deposit": 0,
               "maintenanceFee": 0,
               "currency": "KRW"
@@ -1073,7 +1067,6 @@ Request Body: 없음
             "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
             "pricing": {
               "monthlyRent": 580000,
-              "weeklyRent": 165000,
               "deposit": 1000000,
               "maintenanceFee": 30000,
               "currency": "KRW"
