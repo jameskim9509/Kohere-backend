@@ -46,7 +46,7 @@ public final class ListingV1DocsFields {
 
   // ── §1 매물 목록 — GET /api/v1/listings ────────────────────────────────────
 
-  public static final String V1_LISTINGS_LIST_SUMMARY = "매물 목록 조회 (v1)";
+  public static final String V1_LISTINGS_LIST_SUMMARY = "매물 목록 조회";
 
   public static final String V1_LISTINGS_LIST_DESCRIPTION =
       MOVED_NOTICE
@@ -69,7 +69,7 @@ public final class ListingV1DocsFields {
 
   // ── §2 지도 마커 — GET /api/v1/listings/map ────────────────────────────────
 
-  public static final String V1_LISTINGS_MAP_SUMMARY = "지도 마커 조회 (v1)";
+  public static final String V1_LISTINGS_MAP_SUMMARY = "지도 마커 조회";
 
   public static final String V1_LISTINGS_MAP_DESCRIPTION =
       MOVED_NOTICE
@@ -89,7 +89,7 @@ public final class ListingV1DocsFields {
 
   // ── §3 키워드 검색 — GET /api/v1/listings/search ───────────────────────────
 
-  public static final String V1_LISTINGS_SEARCH_SUMMARY = "키워드 매물 검색 (v1)";
+  public static final String V1_LISTINGS_SEARCH_SUMMARY = "키워드 매물 검색";
 
   public static final String V1_LISTINGS_SEARCH_DESCRIPTION =
       MOVED_NOTICE
@@ -111,7 +111,7 @@ public final class ListingV1DocsFields {
 
   // ── §4 매물 상세 — GET /api/v1/listings/{listingId} ────────────────────────
 
-  public static final String V1_LISTING_DETAIL_SUMMARY = "매물 상세 조회 (v1)";
+  public static final String V1_LISTING_DETAIL_SUMMARY = "매물 상세 조회";
 
   public static final String V1_LISTING_DETAIL_DESCRIPTION =
       MOVED_NOTICE
@@ -132,7 +132,7 @@ public final class ListingV1DocsFields {
 
   // ── §5 찜 등록 — POST /api/v1/listings/{listingId}/favorite ────────────────
 
-  public static final String V1_FAVORITE_ADD_SUMMARY = "매물 찜 등록 (v1)";
+  public static final String V1_FAVORITE_ADD_SUMMARY = "매물 찜 등록";
 
   public static final String V1_FAVORITE_ADD_DESCRIPTION =
       MOVED_NOTICE
@@ -156,7 +156,7 @@ public final class ListingV1DocsFields {
 
   // ── §6 찜 해제 — DELETE /api/v1/listings/{listingId}/favorite ──────────────
 
-  public static final String V1_FAVORITE_REMOVE_SUMMARY = "매물 찜 해제 (v1)";
+  public static final String V1_FAVORITE_REMOVE_SUMMARY = "매물 찜 해제";
 
   public static final String V1_FAVORITE_REMOVE_DESCRIPTION =
       MOVED_NOTICE
@@ -180,7 +180,7 @@ public final class ListingV1DocsFields {
 
   // ── §7 내 찜 목록 — GET /api/v1/users/me/favorites ─────────────────────────
 
-  public static final String V1_FAVORITES_LIST_SUMMARY = "내 찜 목록 조회 (v1)";
+  public static final String V1_FAVORITES_LIST_SUMMARY = "내 찜 목록 조회";
 
   public static final String V1_FAVORITES_LIST_DESCRIPTION =
       MOVED_NOTICE
@@ -203,7 +203,7 @@ public final class ListingV1DocsFields {
 
   // ── §8 최근 본 매물 — GET /api/v1/users/me/recent-listings ─────────────────
 
-  public static final String V1_RECENT_LISTINGS_SUMMARY = "최근 본 매물 조회 (v1)";
+  public static final String V1_RECENT_LISTINGS_SUMMARY = "최근 본 매물 조회";
 
   public static final String V1_RECENT_LISTINGS_DESCRIPTION =
       MOVED_NOTICE

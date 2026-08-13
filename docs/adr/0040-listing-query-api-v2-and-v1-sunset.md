@@ -88,7 +88,7 @@ v1 DTO는 개정 전 구조로 되돌려 유지한다. 실제로 직렬화되는
   - **구버전 앱 사용자는 업데이트 전까지 매물을 볼 수 없다.** 이 결정은 그것을 장애가 아니라 **의도된 종료 상태**로 받아들인다.
   - **v1 DTO를 개정 전(v3) 구조로 복원해 유지해야 한다.** 값을 채우지 않는 DTO 한 벌(항목 타입 6종 + 동결한 도메인 사본)이 코드에만 남는다. 스펙·Swagger에는 나타나지 않으므로 **읽는 사람 없이 유지 비용만 드는 자산**이고, v1을 제거할 때 함께 지운다.
   - **Swagger에 v1·v2가 공존한다** — REST Docs 기반 OpenAPI([ADR-0017](./0017-openapi-swagger-ui-from-restdocs.md))에서 `operationId`는 스니펫 identifier들의 공통 접두사로 만들어진다. v1·v2가 같은 접두사를 쓰면 `verifyOpenApiSpec`이 **중복으로 빌드를 깬다**(조용히 덮이지 않는다). 스니펫 식별자를 버전별로 분리해야 한다.
-  - **Swagger에 `deprecated` 배지를 띄울 수 없다.** `resourceDetails().deprecated(true)`가 API에는 있고 `resource.json`에도 실리지만, `restdocs-api-spec` 0.19.4의 **openapi3 생성기가 그 값을 읽지 않아** `openapi3.yaml`에 `deprecated: true`가 나오지 않는다(생성기 클래스에 해당 문자열이 없음). 빌드 시점에 YAML을 덧칠하는 방법은 「문서의 단일 소스는 테스트」([ADR-0017](./0017-openapi-swagger-ui-from-restdocs.md))에 어긋나므로 쓰지 않는다. 대신 **summary에 `(v1)`, description 첫 문장에 "이 경로는 매물 데이터를 반환하지 않는다"** 를 적어 사람이 읽는 자리에서 알린다. 코드의 `@Deprecated(forRemoval = true)`는 그대로 붙인다.
+  - **Swagger에 `deprecated` 배지가 뜬다.** 스니펫에 `resourceDetails().deprecated(true)`를 주면 `openapi3.yaml`의 오퍼레이션에 `deprecated: true`가 실리고 Swagger UI가 취소선과 배지를 붙인다. 성공 응답이 없는 오퍼레이션(v1 상세·찜 토글은 항상 404)은 에러 스니펫이 유일한 모델이므로 거기에 플래그를 세운다. summary에는 버전 표기를 넣지 않는다 — 경로가 이미 `/api/v1`을 보여주고 배지가 상태를 말한다. 코드의 `@Deprecated(forRemoval = true)`도 그대로 붙인다.
   - **제거 시점이 미정이라 v1이 방치될 수 있다.** `deprecated` 표기만으로는 아무것도 사라지지 않는다.
   - 조회 계열 컨트롤러가 두 벌이 된다(v2 정본 + v1 스텁). 스텁은 서비스에 위임하지 않으므로 로직 중복은 아니지만 표면적은 늘어난다.
 - **후속 작업**

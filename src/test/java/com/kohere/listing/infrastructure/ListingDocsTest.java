@@ -517,7 +517,8 @@ class ListingDocsTest {
                 resourceDetails()
                     .tag(ApiDocsTags.LISTINGS)
                     .summary(V1_LISTINGS_LIST_SUMMARY)
-                    .description(V1_LISTINGS_LIST_DESCRIPTION),
+                    .description(V1_LISTINGS_LIST_DESCRIPTION)
+                    .deprecated(true),
                 queryParameters(ListingV1DocsFields.pageQueryParameters()),
                 responseFields(emptyPageResponseFields())));
 
@@ -543,7 +544,8 @@ class ListingDocsTest {
                 resourceDetails()
                     .tag(ApiDocsTags.LISTINGS)
                     .summary(V1_LISTINGS_MAP_SUMMARY)
-                    .description(V1_LISTINGS_MAP_DESCRIPTION),
+                    .description(V1_LISTINGS_MAP_DESCRIPTION)
+                    .deprecated(true),
                 responseFields(emptyMapResponseFields())));
 
     // v2에서는 매칭되는 장소 키워드인데도 matchedPlace가 null이다.
@@ -559,7 +561,8 @@ class ListingDocsTest {
                 resourceDetails()
                     .tag(ApiDocsTags.LISTINGS)
                     .summary(V1_LISTINGS_SEARCH_SUMMARY)
-                    .description(V1_LISTINGS_SEARCH_DESCRIPTION),
+                    .description(V1_LISTINGS_SEARCH_DESCRIPTION)
+                    .deprecated(true),
                 queryParameters(ListingV1DocsFields.searchQueryParameters()),
                 responseFields(emptySearchResponseFields())));
 
@@ -573,6 +576,7 @@ class ListingDocsTest {
             ApiDocsTags.LISTINGS,
             V1_LISTING_DETAIL_SUMMARY,
             V1_LISTING_DETAIL_DESCRIPTION,
+            true,
             favoritePathParameters(),
             "LISTING_NOT_FOUND"));
 
@@ -586,6 +590,7 @@ class ListingDocsTest {
             ApiDocsTags.LISTINGS,
             V1_FAVORITE_ADD_SUMMARY,
             V1_FAVORITE_ADD_DESCRIPTION,
+            true,
             favoritePathParameters(),
             "LISTING_NOT_FOUND"));
 
@@ -599,6 +604,7 @@ class ListingDocsTest {
             ApiDocsTags.LISTINGS,
             V1_FAVORITE_REMOVE_SUMMARY,
             V1_FAVORITE_REMOVE_DESCRIPTION,
+            true,
             favoritePathParameters(),
             "LISTING_NOT_FOUND"));
 
@@ -618,7 +624,8 @@ class ListingDocsTest {
                 resourceDetails()
                     .tag(ApiDocsTags.LISTINGS)
                     .summary(V1_FAVORITES_LIST_SUMMARY)
-                    .description(V1_FAVORITES_LIST_DESCRIPTION),
+                    .description(V1_FAVORITES_LIST_DESCRIPTION)
+                    .deprecated(true),
                 queryParameters(ListingV1DocsFields.pageQueryParameters()),
                 responseFields(emptyPageResponseFields())));
 
@@ -634,7 +641,8 @@ class ListingDocsTest {
                 resourceDetails()
                     .tag(ApiDocsTags.LISTINGS)
                     .summary(V1_RECENT_LISTINGS_SUMMARY)
-                    .description(V1_RECENT_LISTINGS_DESCRIPTION),
+                    .description(V1_RECENT_LISTINGS_DESCRIPTION)
+                    .deprecated(true),
                 responseFields(emptyRecentListingsResponseFields())));
 
     // 인가 판정이 스텁보다 먼저다 — 토큰이 없으면 404가 아니라 401이어야 구버전 앱의 로그인 만료 처리가 그대로 동작한다.

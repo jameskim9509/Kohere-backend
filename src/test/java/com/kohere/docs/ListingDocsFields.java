@@ -104,7 +104,6 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - 필터 요청 후 `content[].roomOffers[]`에는 실제 조건을 통과한 ACTIVE 방 타입만 포함된다.
       - 제목·주소·역명·방 이름·설명은 서버가 사용자 언어 문자열 하나로 선택해서 전달한다. 비로그인·온보딩 미완료 사용자는 영어가 기본이고, 온보딩을 완료한 로그인 사용자는 계정 언어를 사용한다.
 
       **에러 코드**
@@ -131,7 +130,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - 지도 마커 응답에는 화면 표시용 번역 문구가 없으며 좌표와 식별자만 포함된다. 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v2/listings`를 같은 필터로 함께 호출한다.
+      - 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v2/listings`를 **같은 필터로 함께 호출**한다.
 
       **에러 코드**
 
@@ -183,7 +182,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - 이 API는 장소 후보만 반환하며 MongoDB의 실제 매물은 조회하지 않는다.
+      - 매물은 이 응답에 없다. 고른 장소의 좌표로 `GET /api/v2/listings`·`/map`을 이어서 호출한다.
 
       **에러 코드**
 
@@ -218,7 +217,7 @@ public final class ListingDocsFields {
       | status | `error.code` | 발생 조건 |
       |---|---|---|
       | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
-      | 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
+      | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
   // ── §6 찜 등록 — POST /api/v2/listings/{listingId}/favorite ────────────────
@@ -244,7 +243,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
-      | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
+      | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
   // ── §7 찜 해제 — DELETE /api/v2/listings/{listingId}/favorite ──────────────
@@ -270,7 +269,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
-      | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
+      | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
   // ── §8 내 찜 목록 — GET /api/v2/users/me/favorites ─────────────────────────
@@ -339,20 +338,16 @@ public final class ListingDocsFields {
 
       **요청 주의사항**
 
-      - **서버가 정하는 값은 본문에 없다** — `listingId`·`roomOffers[].roomOfferId`(서버 발급)·`status`(`PENDING`)·`schemaVersion`·`favoriteCount`(`0`)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT`)·`roomOffers[].pricing.currency`(`KRW`)·`roomOffers[].status`(`ACTIVE`). 매물 소유자도 토큰에서 읽는다. 함께 보내도 무시한다.
-      - **다국어 문구는 한국어 한 값만 보낸다.** `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name` 8종은 서버가 한국어·영어 양쪽에 같은 값을 넣어 저장한다. 영어 문구는 이후 승인 심사에서 채워지므로 클라이언트가 번역해 보내지 않는다.
-      - **`building.usedFloorRange`·`ageRange`는 `min~max` 문자열 한 칸**으로 보낸다(예 `1~2`·`20~35`). 서버가 두 값으로 나눠 응답의 `building.usedFloorMin`·`usedFloorMax`로 돌려주며, 보낸 원본 문자열은 보관하지 않는다.
-      - **주소는 도로명 주소 한 줄만 보낸다.** 서버가 그 문자열에서 시·도와 구·군을 뽑아 응답 `address.city`·`address.district`를 채운다. 뽑지 못하면 400 `LISTING_INVALID_ADDRESS`이므로 도로명 주소 재입력을 유도한다. `address.fullAddress`는 보낸 값 그대로 저장한다(정규화 없음).
-      - **사업자등록번호는 이 요청에서 진위를 확인하지 않는다.** 숫자 10자리 형식만 보고 저장하며, 실제 확인은 이후 승인 심사에서 한다. `POST /api/v1/auth/business/verify`를 미리 호출할 필요도 없다.
+      - **서버가 정하는 값은 본문에 없다** — `listingId`·`roomOffers[].roomOfferId`(서버 발급)·`status`(`PENDING`)·`favoriteCount`(`0`)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT`)·`roomOffers[].pricing.currency`(`KRW`)·`roomOffers[].status`(`ACTIVE`). 매물 소유자도 토큰에서 읽는다. 함께 보내도 무시한다.
+      - **다국어 문구는 한국어 한 값만 보낸다.** `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name` 8종이 해당한다. 영어 문구는 이후 승인 심사에서 채우므로 클라이언트가 번역해 보내지 않는다.
+      - `building.usedFloorRange`·`ageRange`는 **요청과 응답의 모양이 다르다.** 보낼 때는 `min~max` 문자열 한 칸이지만 응답은 `building.usedFloorMin`/`usedFloorMax`, `ageMin`/`ageMax`로 갈라져 돌아온다.
+      - 사업자등록번호 진위는 이후 승인 심사에서 확인한다. `POST /api/v1/auth/business/verify`를 **미리 호출할 필요 없다.**
       - 코드 값은 서버가 가진 코드표에 있는 것만 받는다. 400 `LISTING_UNKNOWN_CATALOG_CODE`는 입력 오타가 아니라 앱의 코드표가 서버와 어긋났다는 뜻이므로, 입력 교정 대신 코드표 재조회(앱 갱신)를 안내한다.
       - 자유 입력 문구에는 길이 제한이 없다.
 
       **응답 주의사항**
 
       - 본문은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
-      - **`location`은 값이 null이 아니라 필드 자체가 생략되고, `nearbyUniversityCodes`는 빈 배열이다.** 좌표는 등록 시점에 채우지 않는다.
-      - `address.city`·`address.district`와 상위 `conditions`(방 타입 `filterTags`의 합집합)는 요청에 없던 값이라 응답에서 처음 나타난다.
-      - `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장하되 응답에 넣지 않는다.
       - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다(임대인은 한국어).
 
       **에러 코드**
@@ -360,7 +355,7 @@ public final class ListingDocsFields {
       | status | `error.code` | 발생 조건 |
       |---|---|---|
       | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개, `roomImageUrls` 2장 미만. 위반 필드는 `error.errors[]`에 실린다 |
-      | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함 |
+      | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함. 도로명 주소 재입력을 유도한다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `MALFORMED_REQUEST` | 본문 JSON 파싱 불가 또는 타입 불일치 |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
@@ -410,9 +405,14 @@ public final class ListingDocsFields {
           .description("월세 최소값(KRW). 이 범위에 맞는 방 타입이 있는 매물만 보이고, 응답 roomOffers[]도 조건에 맞는 방 타입만 포함"),
       parameterWithName("maxBudget")
           .optional()
-          .description("월세 최대값(KRW). 예산 필터의 상한값으로 사용하며, 카드 가격은 응답 roomOffers[].pricing으로 계산"),
-      parameterWithName("minDeposit").optional().description("보증금 최소값(KRW). 보증금 필터 슬라이더/입력값의 하한"),
-      parameterWithName("maxDeposit").optional().description("보증금 최대값(KRW). 보증금 필터 슬라이더/입력값의 상한"),
+          .description(
+              "월세 최대값(KRW). 예산 필터의 상한값이며 minBudget과 같은 방식으로 roomOffers[]를 좁힌다. 카드 가격은 응답 roomOffers[].pricing으로 계산"),
+      parameterWithName("minDeposit")
+          .optional()
+          .description("보증금 최소값(KRW). 이 범위에 맞는 방 타입이 있는 매물만 보이고, 응답 roomOffers[]도 조건에 맞는 방 타입만 포함"),
+      parameterWithName("maxDeposit")
+          .optional()
+          .description("보증금 최대값(KRW). 보증금 필터의 상한값. minDeposit과 같은 방식으로 roomOffers[]를 좁힌다"),
       parameterWithName("type")
           .optional()
           .description("매물 유형 필터 칩. GOSHIWON, CO_LIVING, SHARE_HOUSE 중 하나"),
@@ -496,7 +496,7 @@ public final class ListingDocsFields {
    */
   public static List<FieldDescriptor> registerRequestFields() {
     List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("title", JsonFieldType.STRING, "지점명. 한국어 한 값만 보낸다"));
+    fields.add(field("title", JsonFieldType.STRING, "지점명"));
     fields.add(enumField("type", ListingType.class, "공간 유형"));
     fields.add(field("contact.managerName", JsonFieldType.STRING, "지점 운영자명. 세입자에게 그대로 공개된다"));
     fields.add(field("contact.phone", JsonFieldType.STRING, "전화문의 수신 연락처. 예: `+82) 10-1234-5678`"));
