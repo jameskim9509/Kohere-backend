@@ -14,13 +14,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 내 스코프(me)의 매물 관련 조회 — 찜 목록, 최근 본 매물. {@code /users/me} 경로를 쓰지만 매물 도메인의 책임이므로 listing 모듈에 둔다. 스펙:
- * docs/api/specs/03-listings-favorites.md.
+ * 내 스코프(me)의 매물 관련 조회 — 찜 목록, 최근 본 매물. {@code /users/me} 경로를 쓰지만 매물 도메인의 책임이므로 listing 모듈에 둔다.
+ *
+ * <p>v1({@link com.kohere.listing.presentation.v1.MyListingV1Controller})은 빈 목록만 준다 — 응답에 매물 카드가
+ * 들어가 v4 스키마 개편의 영향을 그대로 받았다(ADR-0040). 저장된 찜·조회 이력 자체는 그대로라 이 경로에서 온전히 보인다.
+ *
+ * <p>스펙: docs/api/specs/03-listings-favorites.md.
  */
 @RestController
-@RequestMapping("/api/v1/users/me")
+@RequestMapping("/api/v2/users/me")
 @RequiredArgsConstructor
-public class MyListingController {
+public class MyListingV2Controller {
 
   private final ListingService listingService;
 

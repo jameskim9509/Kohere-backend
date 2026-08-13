@@ -90,7 +90,7 @@ public final class ListingDocsFields {
     REGISTERED
   }
 
-  // ── §1 매물 목록 — GET /api/v1/listings ────────────────────────────────────
+  // ── §1 매물 목록 — GET /api/v2/listings ────────────────────────────────────
 
   public static final String LISTINGS_LIST_SUMMARY = "지도 바텀시트 매물 리스트 조회";
 
@@ -117,7 +117,7 @@ public final class ListingDocsFields {
       | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
       """;
 
-  // ── §2 지도 마커 — GET /api/v1/listings/map ────────────────────────────────
+  // ── §2 지도 마커 — GET /api/v2/listings/map ────────────────────────────────
 
   public static final String LISTINGS_MAP_SUMMARY = "지도 마커 조회";
 
@@ -131,7 +131,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - 지도 마커 응답에는 화면 표시용 번역 문구가 없으며 좌표와 식별자만 포함된다. 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v1/listings`를 같은 필터로 함께 호출한다.
+      - 지도 마커 응답에는 화면 표시용 번역 문구가 없으며 좌표와 식별자만 포함된다. 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v2/listings`를 같은 필터로 함께 호출한다.
 
       **에러 코드**
 
@@ -143,7 +143,7 @@ public final class ListingDocsFields {
       | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
       """;
 
-  // ── §3 키워드 장소 검색 — GET /api/v1/listings/search ──────────────────────
+  // ── §3 키워드 장소 검색 — GET /api/v2/listings/search ──────────────────────
 
   public static final String LISTINGS_SEARCH_SUMMARY = "키워드 장소 검색과 주변 매물 조회";
 
@@ -194,7 +194,7 @@ public final class ListingDocsFields {
       | 502 | `UPSTREAM_ERROR` | 네이버 HTTP 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
       """;
 
-  // ── §5 매물 상세 — GET /api/v1/listings/{listingId} ────────────────────────
+  // ── §5 매물 상세 — GET /api/v2/listings/{listingId} ────────────────────────
 
   public static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
 
@@ -221,7 +221,7 @@ public final class ListingDocsFields {
       | 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
       """;
 
-  // ── §6 찜 등록 — POST /api/v1/listings/{listingId}/favorite ────────────────
+  // ── §6 찜 등록 — POST /api/v2/listings/{listingId}/favorite ────────────────
 
   public static final String FAVORITE_ADD_SUMMARY = "매물 찜 등록";
 
@@ -247,7 +247,7 @@ public final class ListingDocsFields {
       | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
       """;
 
-  // ── §7 찜 해제 — DELETE /api/v1/listings/{listingId}/favorite ──────────────
+  // ── §7 찜 해제 — DELETE /api/v2/listings/{listingId}/favorite ──────────────
 
   public static final String FAVORITE_REMOVE_SUMMARY = "매물 찜 해제";
 
@@ -273,7 +273,7 @@ public final class ListingDocsFields {
       | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
       """;
 
-  // ── §8 내 찜 목록 — GET /api/v1/users/me/favorites ─────────────────────────
+  // ── §8 내 찜 목록 — GET /api/v2/users/me/favorites ─────────────────────────
 
   public static final String FAVORITES_LIST_SUMMARY = "내 찜한 매물 목록";
 
@@ -299,7 +299,7 @@ public final class ListingDocsFields {
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
       """;
 
-  // ── §9 최근 본 매물 — GET /api/v1/users/me/recent-listings ─────────────────
+  // ── §9 최근 본 매물 — GET /api/v2/users/me/recent-listings ─────────────────
 
   public static final String RECENT_LISTINGS_SUMMARY = "최근 본 매물 목록";
 
@@ -349,7 +349,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - 본문은 매물 상세(`GET /api/v1/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
+      - 본문은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
       - **`location`은 값이 null이 아니라 필드 자체가 생략되고, `nearbyUniversityCodes`는 빈 배열이다.** 좌표는 등록 시점에 채우지 않는다.
       - `address.city`·`address.district`와 상위 `conditions`(방 타입 `filterTags`의 합집합)는 요청에 없던 값이라 응답에서 처음 나타난다.
       - `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장하되 응답에 넣지 않는다.

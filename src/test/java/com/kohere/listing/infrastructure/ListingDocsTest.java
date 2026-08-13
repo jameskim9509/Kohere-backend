@@ -172,7 +172,7 @@ class ListingDocsTest {
     // 시드 매물 2건 중 신림 고시원만 bbox·유형·예산 조건을 통과하고, 그 안에서도 조건에 맞는 방 타입 1개만 카드에 실린다.
     mockMvc
         .perform(
-            get("/api/v1/listings")
+            get("/api/v2/listings")
                 .param("swLat", SW_LAT)
                 .param("swLng", SW_LNG)
                 .param("neLat", NE_LAT)
@@ -225,7 +225,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            get("/api/v1/listings/search")
+            get("/api/v2/listings/search")
                 .param("keyword", "서울대")
                 .param("sort", "DISTANCE")
                 .param("page", "0")
@@ -255,7 +255,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            get("/api/v1/listings/search")
+            get("/api/v2/listings/search")
                 .param("keyword", "없는장소")
                 .param("page", "0")
                 .param("size", "20"))
@@ -274,7 +274,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            get("/api/v1/listings/map")
+            get("/api/v2/listings/map")
                 .param("swLat", SW_LAT)
                 .param("swLng", SW_LNG)
                 .param("neLat", NE_LAT)
@@ -298,7 +298,7 @@ class ListingDocsTest {
                 responseFields(mapResponseFields())));
 
     mockMvc
-        .perform(get("/api/v1/listings/{listingId}", LISTING_ID))
+        .perform(get("/api/v2/listings/{listingId}", LISTING_ID))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.title").value("Sillim Stay"))
@@ -342,7 +342,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            post("/api/v2/listings/{listingId}/favorite", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.favorited").value(true))
@@ -359,7 +359,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            post("/api/v2/listings/{listingId}/favorite", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.favorited").value(true))
@@ -377,7 +377,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            get("/api/v1/users/me/favorites")
+            get("/api/v2/users/me/favorites")
                 .header(HttpHeaders.AUTHORIZATION, bearer(token))
                 .param("page", "0")
                 .param("size", "20"))
@@ -405,14 +405,14 @@ class ListingDocsTest {
     // 상세를 조회하며, 이 호출은 중복 Swagger operation을 만들지 않도록 스니펫을 생성하지 않는다.
     mockMvc
         .perform(
-            get("/api/v1/listings/{listingId}", LISTING_ID)
+            get("/api/v2/listings/{listingId}", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.favorited").value(true));
 
     mockMvc
         .perform(
-            get("/api/v1/users/me/recent-listings")
+            get("/api/v2/users/me/recent-listings")
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
         // 상세를 조회한 매물만 기록되므로 시드가 2건이어도 최근 본 목록은 1건이다.
@@ -437,7 +437,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            delete("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            delete("/api/v2/listings/{listingId}/favorite", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.favorited").value(false))
@@ -495,7 +495,7 @@ class ListingDocsTest {
   void 유형필터_GOSHIWON_고시원시드만남고코리빙시드는제외() throws Exception {
     mockMvc
         .perform(
-            get("/api/v1/listings")
+            get("/api/v2/listings")
                 .param("type", "GOSHIWON")
                 .param("page", "0")
                 .param("size", "20"))
@@ -506,13 +506,13 @@ class ListingDocsTest {
 
     // 유형 필터가 없으면 시드 매물 2건이 모두 보인다.
     mockMvc
-        .perform(get("/api/v1/listings").param("page", "0").param("size", "20"))
+        .perform(get("/api/v2/listings").param("page", "0").param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.page.totalElements").value(2));
 
     mockMvc
         .perform(
-            get("/api/v1/listings/map")
+            get("/api/v2/listings/map")
                 .param("swLat", SW_LAT)
                 .param("swLng", SW_LNG)
                 .param("neLat", NE_LAT)
@@ -534,7 +534,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            get("/api/v1/listings/{listingId}", LISTING_ID)
+            get("/api/v2/listings/{listingId}", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
@@ -542,7 +542,7 @@ class ListingDocsTest {
 
     mockMvc
         .perform(
-            get("/api/v1/listings/{listingId}", LISTING_ID)
+            get("/api/v2/listings/{listingId}", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
@@ -552,14 +552,14 @@ class ListingDocsTest {
     // 토큰 미전송·위조·온보딩 토큰은 위처럼 익명(200)이지만, 만료는 "재발급이 필요한 회원"이라 조용히 강등하지 않는다.
     mockMvc
         .perform(
-            get("/api/v1/listings").header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken())))
+            get("/api/v2/listings").header(HttpHeaders.AUTHORIZATION, bearer(expiredAccessToken())))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"));
 
     // 위의 상세 조회들은 정식 ROLE_USER 요청이 아니므로, 같은 사용자가 온보딩을 완료한 뒤 조회해도 최근 본 목록은 비어 있어야 한다.
     mockMvc
         .perform(
-            get("/api/v1/users/me/recent-listings")
+            get("/api/v2/users/me/recent-listings")
                 .header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content").isEmpty());
@@ -571,40 +571,40 @@ class ListingDocsTest {
     String onboardingToken = jwtTokenService.issueOnboardingToken(1L);
 
     mockMvc
-        .perform(post("/api/v1/listings/{listingId}/favorite", LISTING_ID))
+        .perform(post("/api/v2/listings/{listingId}/favorite", LISTING_ID))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
 
     mockMvc
         .perform(
-            post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            post("/api/v2/listings/{listingId}/favorite", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"));
 
     mockMvc
         .perform(
-            delete("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            delete("/api/v2/listings/{listingId}/favorite", LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"));
 
     mockMvc
         .perform(
-            get("/api/v1/users/me/favorites")
+            get("/api/v2/users/me/favorites")
                 .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"));
 
     mockMvc
         .perform(
-            get("/api/v1/users/me/recent-listings")
+            get("/api/v2/users/me/recent-listings")
                 .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"));
 
     mockMvc
-        .perform(get("/api/v1/users/me/recent-listings"))
+        .perform(get("/api/v2/users/me/recent-listings"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
   }
@@ -639,7 +639,7 @@ class ListingDocsTest {
 
     // ===== GET /listings =====
     perform(
-        get("/api/v1/listings").param("sort", "UNKNOWN"),
+        get("/api/v2/listings").param("sort", "UNKNOWN"),
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-list-invalid-sort",
@@ -647,7 +647,7 @@ class ListingDocsTest {
         LISTINGS_LIST_DESCRIPTION);
 
     perform(
-        get("/api/v1/listings").param("minBudget", "700000").param("maxBudget", "300000"),
+        get("/api/v2/listings").param("minBudget", "700000").param("maxBudget", "300000"),
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-list-invalid-budget-range",
@@ -655,7 +655,7 @@ class ListingDocsTest {
         LISTINGS_LIST_DESCRIPTION);
 
     perform(
-        get("/api/v1/listings").param("size", "101"),
+        get("/api/v2/listings").param("size", "101"),
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-list-invalid-page-size",
@@ -663,7 +663,7 @@ class ListingDocsTest {
         LISTINGS_LIST_DESCRIPTION);
 
     perform(
-        get("/api/v1/listings").param("swLat", "37.45"),
+        get("/api/v2/listings").param("swLat", "37.45"),
         status().isBadRequest(),
         "LISTING_INVALID_BBOX",
         "listings-list-invalid-bbox",
@@ -671,7 +671,7 @@ class ListingDocsTest {
         LISTINGS_LIST_DESCRIPTION);
 
     perform(
-        get("/api/v1/listings").param("sort", "DISTANCE"),
+        get("/api/v2/listings").param("sort", "DISTANCE"),
         status().isBadRequest(),
         "LISTING_INVALID_SORT_PARAM",
         "listings-list-invalid-distance-sort",
@@ -680,7 +680,7 @@ class ListingDocsTest {
 
     // ===== GET /listings/search =====
     perform(
-        get("/api/v1/listings/search"),
+        get("/api/v2/listings/search"),
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-search-invalid-keyword-missing",
@@ -688,7 +688,7 @@ class ListingDocsTest {
         LISTINGS_SEARCH_DESCRIPTION);
 
     perform(
-        get("/api/v1/listings/search").param("keyword", "   "),
+        get("/api/v2/listings/search").param("keyword", "   "),
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-search-invalid-keyword-blank",
@@ -696,7 +696,7 @@ class ListingDocsTest {
         LISTINGS_SEARCH_DESCRIPTION);
 
     perform(
-        get("/api/v1/listings/search").param("keyword", "가".repeat(51)),
+        get("/api/v2/listings/search").param("keyword", "가".repeat(51)),
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-search-invalid-keyword-too-long",
@@ -704,7 +704,7 @@ class ListingDocsTest {
         LISTINGS_SEARCH_DESCRIPTION);
 
     perform(
-        get("/api/v1/listings/search").param("keyword", "서울대").param("size", "101"),
+        get("/api/v2/listings/search").param("keyword", "서울대").param("size", "101"),
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-search-invalid-page-size",
@@ -713,7 +713,7 @@ class ListingDocsTest {
 
     // ===== GET /listings/map =====
     perform(
-        get("/api/v1/listings/map").param("swLat", "37.45"),
+        get("/api/v2/listings/map").param("swLat", "37.45"),
         status().isBadRequest(),
         "LISTING_INVALID_BBOX",
         "listings-map-invalid-bbox",
@@ -722,7 +722,7 @@ class ListingDocsTest {
 
     // ===== GET /listings/{listingId} =====
     perform(
-        get("/api/v1/listings/{listingId}", MISSING_LISTING_ID),
+        get("/api/v2/listings/{listingId}", MISSING_LISTING_ID),
         status().isNotFound(),
         "LISTING_NOT_FOUND",
         "listing-detail-not-found",
@@ -731,7 +731,7 @@ class ListingDocsTest {
 
     // ===== POST/DELETE /listings/{listingId}/favorite =====
     perform(
-        post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+        post("/api/v2/listings/{listingId}/favorite", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
@@ -740,7 +740,7 @@ class ListingDocsTest {
         FAVORITE_ADD_DESCRIPTION);
 
     perform(
-        post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+        post("/api/v2/listings/{listingId}/favorite", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
@@ -749,7 +749,7 @@ class ListingDocsTest {
         FAVORITE_ADD_DESCRIPTION);
 
     perform(
-        post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+        post("/api/v2/listings/{listingId}/favorite", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
@@ -758,7 +758,7 @@ class ListingDocsTest {
         FAVORITE_ADD_DESCRIPTION);
 
     perform(
-        post("/api/v1/listings/{listingId}/favorite", MISSING_LISTING_ID)
+        post("/api/v2/listings/{listingId}/favorite", MISSING_LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, bearer(token)),
         status().isNotFound(),
         "LISTING_NOT_FOUND",
@@ -767,7 +767,7 @@ class ListingDocsTest {
         FAVORITE_ADD_DESCRIPTION);
 
     perform(
-        delete("/api/v1/listings/{listingId}/favorite", MISSING_LISTING_ID)
+        delete("/api/v2/listings/{listingId}/favorite", MISSING_LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, bearer(token)),
         status().isNotFound(),
         "LISTING_NOT_FOUND",
@@ -776,7 +776,7 @@ class ListingDocsTest {
         FAVORITE_REMOVE_DESCRIPTION);
 
     perform(
-        delete("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+        delete("/api/v2/listings/{listingId}/favorite", LISTING_ID)
             .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
@@ -786,7 +786,7 @@ class ListingDocsTest {
 
     // ===== GET /users/me/favorites =====
     perform(
-        get("/api/v1/users/me/favorites").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
+        get("/api/v2/users/me/favorites").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "my-favorites-list-unauthenticated",
@@ -794,7 +794,7 @@ class ListingDocsTest {
         FAVORITES_LIST_DESCRIPTION);
 
     perform(
-        get("/api/v1/users/me/favorites")
+        get("/api/v2/users/me/favorites")
             .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
@@ -803,7 +803,7 @@ class ListingDocsTest {
         FAVORITES_LIST_DESCRIPTION);
 
     perform(
-        get("/api/v1/users/me/favorites")
+        get("/api/v2/users/me/favorites")
             .header(HttpHeaders.AUTHORIZATION, bearer(token))
             .param("size", "101"),
         status().isBadRequest(),
@@ -814,7 +814,7 @@ class ListingDocsTest {
 
     // ===== GET /users/me/recent-listings =====
     perform(
-        get("/api/v1/users/me/recent-listings")
+        get("/api/v2/users/me/recent-listings")
             .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
         status().isUnauthorized(),
         "UNAUTHENTICATED",
@@ -823,7 +823,7 @@ class ListingDocsTest {
         RECENT_LISTINGS_DESCRIPTION);
 
     perform(
-        get("/api/v1/users/me/recent-listings")
+        get("/api/v2/users/me/recent-listings")
             .header(HttpHeaders.AUTHORIZATION, bearer(onboardingToken)),
         status().isForbidden(),
         "AUTH_ONBOARDING_REQUIRED",
@@ -832,7 +832,7 @@ class ListingDocsTest {
         RECENT_LISTINGS_DESCRIPTION);
 
     perform(
-        get("/api/v1/users/me/recent-listings")
+        get("/api/v2/users/me/recent-listings")
             .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
