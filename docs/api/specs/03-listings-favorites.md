@@ -72,6 +72,7 @@
 - 응답 래퍼(`{ success, data, error }`)와 페이지 구조(`page.number`·`size`·`totalElements`·`totalPages`·`hasNext`)는 v3 계약 그대로다 — 구버전 앱의 파싱이 깨지지 않아야 "매물 없음" 화면에 도달한다.
 - 인증 규칙도 v3 그대로다. 공개 조회는 비로그인도 `200`(빈 결과)이고, 찜 토글·내 스코프는 여전히 `ROLE_USER` 전용이라 토큰이 없으면 `404`가 아니라 `401 UNAUTHENTICATED`다. 즉 **인가 판정이 먼저**고 스텁 응답은 그 뒤다.
 - **`GET /api/v1/listings/places`만 예외**로 살아 있다. 네이버 지역 검색 API만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
+- **Swagger에서는 `deprecated` 배지가 아니라 문구로 구분된다.** 현재 OpenAPI 생성기가 `deprecated` 플래그를 내보내지 못해([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Consequences), v1 오퍼레이션은 **summary 끝의 `(v1)`** 과 **description 첫 문장("이 경로는 매물 데이터를 반환하지 않는다")** 으로 알아본다.
 - **제거 시점은 정하지 않았다.** 구버전 앱 사용 비중을 보고 별도로 결정하며, 그때까지 v1 스텁은 위 표대로 유지된다.
 - 진단 추천(`GET /api/v1/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 v4 개편 전후로 바뀌지 않았으므로 v1·v2 양쪽 모두 실데이터를 그대로 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
 

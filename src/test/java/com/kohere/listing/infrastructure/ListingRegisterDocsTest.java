@@ -58,8 +58,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 매물 등록({@code POST /api/v2/listings})의 REST Docs 스니펫 생성 테스트다. 매물 도메인의 첫 {@code /api/v2} 엔드포인트이고 조회
- * 계열({@code /api/v1})과 요청·응답 계약이 겹치지 않아 {@link ListingDocsTest}와 파일을 나눴다(진단의 {@code
- * DiagnosisDocsTest}·{@code DiagnosisV2DocsTest}와 같은 갈래).
+ * 계열과 요청·응답 계약이 겹치지 않아 {@link ListingDocsTest}와 파일을 나눴다(진단의 {@code DiagnosisDocsTest}·{@code
+ * DiagnosisV2DocsTest}와 같은 갈래).
  *
  * <p>문구·필드 기술자는 {@code ListingDocsFields}에 한 벌만 두고 여기서는 흐름만 만든다 — 성공·에러 스니펫이 같은 오퍼레이션으로 병합되므로
  * summary·description은 상수 하나를, 같은 status의 에러 스니펫은 같은 코드 배열을 써야 한다(ADR-0017).
@@ -271,19 +271,24 @@ class ListingRegisterDocsTest {
         .andExpect(jsonPath("$.data.serviceFeedback").doesNotExist());
   }
 
-  /** 등록 직후 매물은 PENDING이라 공개 조회 어디에도 나오지 않는다 — description이 약속하는 계약이다. */
+  /**
+   * 등록 직후 매물은 PENDING이라 공개 조회 어디에도 나오지 않는다 — description이 약속하는 계약이다.
+   *
+   * <p>반드시 {@code /api/v2}로 확인한다. {@code /api/v1} 조회는 저장소를 보지 않고 빈 결과·404를 주는 스텁이라(ADR-0040) 상태 필터가
+   * 깨져도 그대로 통과해 버린다.
+   */
   @Test
   void 등록직후매물_PENDING이라_목록에도상세에도나오지않는다() throws Exception {
     String listingId = registerListing();
 
     mockMvc
-        .perform(get("/api/v1/listings").param("page", "0").param("size", "20"))
+        .perform(get("/api/v2/listings").param("page", "0").param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.page.totalElements").value(0))
         .andExpect(jsonPath("$.data.content").isEmpty());
 
     mockMvc
-        .perform(get("/api/v1/listings/{listingId}", listingId))
+        .perform(get("/api/v2/listings/{listingId}", listingId))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error.code").value("LISTING_NOT_FOUND"));
   }

@@ -182,6 +182,15 @@ tasks.register('verifyOpenApiSpec') {
     // 엄격한 케밥 정규식을 쓰면 정상값을 거부한다. 형식은 느슨하게 두고 유일성·붕괴를 직접 본다.
     def ID_PATTERN = ~/^[a-z][a-z0-9]*(-[a-z0-9]*)*$/
 
+    // 성공 응답이 존재하지 않는 오퍼레이션 — 항상 4xx 다. 허용 목록으로 둬서 "성공 스니펫을 깜빡한 것"과
+    // "원래 성공이 없는 것"을 구분한다. 새로 넣을 땐 왜 2xx 가 없는지 근거를 함께 적는다.
+    def NO_SUCCESS_RESPONSE = [
+        // 종료된 v1 매물 조회 — 상세·찜 토글은 항상 404 LISTING_NOT_FOUND 다(ADR-0040).
+        'v1-listing-detail',
+        'v1-listing-favorite-add',
+        'v1-listing-favorite-remove',
+    ] as Set
+
     spec.paths.each { path, methods ->
       methods.each { method, op ->
         def id = op.operationId
@@ -221,7 +230,8 @@ tasks.register('verifyOpenApiSpec') {
           seenOperationIds[id] = where
         }
 
-        if (!op.responses.keySet().any { it.toString().startsWith('2') }) {
+        if (!NO_SUCCESS_RESPONSE.contains(id)
+            && !op.responses.keySet().any { it.toString().startsWith('2') }) {
           violations << "${where}: 2xx 응답 없음"
         }
       }

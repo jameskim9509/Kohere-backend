@@ -2,7 +2,7 @@
 
 > 모듈: 매물 등록 · 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 >
-> 경로는 **`/api/v2`가 정본**이다 — 같은 경로의 `/api/v1` 상세는 구버전 앱 호환용 `deprecated` 스텁이라 MongoDB에 접근하지 않고 항상 `404 LISTING_NOT_FOUND`를, `/api/v1/users/me/recent-listings`는 빈 페이지(`content: []`, `totalElements: 0`)를 반환하므로 아래 흐름에 관여하지 않는다.
+> 경로는 **`/api/v2`가 정본**이다 — 같은 경로의 `/api/v1` 상세는 구버전 앱 호환용 `deprecated` 스텁이라 MongoDB에 접근하지 않고 항상 `404 LISTING_NOT_FOUND`를, `/api/v1/users/me/recent-listings`는 빈 결과(`content: []` — 이 응답에는 페이지 객체가 없다)를 반환하므로 아래 흐름에 관여하지 않는다.
 
 ```mermaid
 sequenceDiagram

@@ -38,6 +38,27 @@ import static com.kohere.docs.ListingDocsFields.recentListingsResponseFields;
 import static com.kohere.docs.ListingDocsFields.searchEmptyPlaceResponseFields;
 import static com.kohere.docs.ListingDocsFields.searchQueryParameters;
 import static com.kohere.docs.ListingDocsFields.searchResponseFields;
+import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITES_LIST_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITES_LIST_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITE_ADD_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITE_ADD_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITE_REMOVE_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITE_REMOVE_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_LIST_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_LIST_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_MAP_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_MAP_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_SEARCH_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_SEARCH_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTING_DETAIL_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_LISTING_DETAIL_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.V1_RECENT_LISTINGS_DESCRIPTION;
+import static com.kohere.docs.ListingV1DocsFields.V1_RECENT_LISTINGS_SUMMARY;
+import static com.kohere.docs.ListingV1DocsFields.emptyMapResponseFields;
+import static com.kohere.docs.ListingV1DocsFields.emptyPageResponseFields;
+import static com.kohere.docs.ListingV1DocsFields.emptyRecentListingsResponseFields;
+import static com.kohere.docs.ListingV1DocsFields.emptySearchResponseFields;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
@@ -56,7 +77,9 @@ import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsErrors;
 import com.kohere.docs.ApiDocsTags;
+import com.kohere.docs.ListingV1DocsFields;
 import com.kohere.listing.domain.place.PlaceSearchClient;
 import com.kohere.listing.domain.place.PlaceSearchResult;
 import com.kohere.listing.domain.place.PlaceSearchUpstreamException;
@@ -66,6 +89,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import javax.crypto.SecretKey;
@@ -451,6 +475,187 @@ class ListingDocsTest {
                     .description(FAVORITE_REMOVE_DESCRIPTION),
                 pathParameters(favoritePathParameters()),
                 responseFields(favoriteToggleResponseFields())));
+  }
+
+  /**
+   * v1 매물 조회가 저장소를 전혀 읽지 않는지 검증하고, 종료된 v1 계약의 Swagger 스니펫을 만든다.
+   *
+   * <p>시드 매물 2건이 있고 찜 1건·최근 본 1건까지 v2로 만들어 둔 상태에서 호출한다 — 데이터가 없어서 비는 게 아니라 v1이 저장소를 보지 않아서 빈다는 것을 이
+   * 대조가 증명한다. 찜 토글 뒤 두 컬렉션 건수를 다시 세어 읽기뿐 아니라 쓰기도 없었음을 확인한다.
+   */
+  @Test
+  void v1매물조회_시드와찜이있어도_빈결과와404이고저장소를건드리지않음() throws Exception {
+    String token = jwtTokenService.issueAccessToken(1L);
+
+    // v1이 못 보는지 확인할 실제 데이터를 v2로 만든다. 찜 1건 + (상세 조회로) 최근 본 1건.
+    mockMvc
+        .perform(
+            post("/api/v2/listings/{listingId}/favorite", LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isCreated());
+    mockMvc
+        .perform(
+            get("/api/v2/listings/{listingId}", LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk());
+    List<Document> favoritesBefore = allDocuments(FAVORITES_COLLECTION);
+    List<Document> recentBefore = allDocuments(RECENT_LISTINGS_COLLECTION);
+    assertThat(favoritesBefore).hasSize(1);
+    assertThat(recentBefore).hasSize(1);
+
+    // 요청한 page·size를 그대로 돌려주는지 보려고 기본값(0·20)이 아닌 값을 보낸다.
+    mockMvc
+        .perform(get("/api/v1/listings").param("page", "1").param("size", "5"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content").isEmpty())
+        .andExpect(jsonPath("$.data.page.number").value(1))
+        .andExpect(jsonPath("$.data.page.size").value(5))
+        .andExpect(jsonPath("$.data.page.totalElements").value(0))
+        .andExpect(jsonPath("$.data.page.hasNext").value(false))
+        .andDo(
+            document(
+                "v1-listings-list",
+                resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
+                    .summary(V1_LISTINGS_LIST_SUMMARY)
+                    .description(V1_LISTINGS_LIST_DESCRIPTION),
+                queryParameters(ListingV1DocsFields.pageQueryParameters()),
+                responseFields(emptyPageResponseFields())));
+
+    // 시드 매물이 들어 있는 bbox인데도 마커가 없다. bbox를 아예 빼도 400이 아니라 같은 빈 결과다.
+    mockMvc
+        .perform(
+            get("/api/v1/listings/map")
+                .param("swLat", SW_LAT)
+                .param("swLng", SW_LNG)
+                .param("neLat", NE_LAT)
+                .param("neLng", NE_LNG))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.markers").isEmpty())
+        .andExpect(jsonPath("$.data.total").value(0));
+    mockMvc
+        .perform(get("/api/v1/listings/map"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.markers").isEmpty())
+        .andExpect(jsonPath("$.data.total").value(0))
+        .andDo(
+            document(
+                "v1-listings-map",
+                resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
+                    .summary(V1_LISTINGS_MAP_SUMMARY)
+                    .description(V1_LISTINGS_MAP_DESCRIPTION),
+                responseFields(emptyMapResponseFields())));
+
+    // v2에서는 매칭되는 장소 키워드인데도 matchedPlace가 null이다.
+    mockMvc
+        .perform(get("/api/v1/listings/search").param("keyword", "서울대"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.matchedPlace").value(nullValue()))
+        .andExpect(jsonPath("$.data.content").isEmpty())
+        .andExpect(jsonPath("$.data.page.totalElements").value(0))
+        .andDo(
+            document(
+                "v1-listings-search",
+                resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
+                    .summary(V1_LISTINGS_SEARCH_SUMMARY)
+                    .description(V1_LISTINGS_SEARCH_DESCRIPTION),
+                queryParameters(ListingV1DocsFields.searchQueryParameters()),
+                responseFields(emptySearchResponseFields())));
+
+    // 실제로 존재하는 시드 매물 ID인데도 404다.
+    perform(
+        get("/api/v1/listings/{listingId}", LISTING_ID),
+        status().isNotFound(),
+        "LISTING_NOT_FOUND",
+        ApiDocsErrors.errorSnippet(
+            "v1-listing-detail",
+            ApiDocsTags.LISTINGS,
+            V1_LISTING_DETAIL_SUMMARY,
+            V1_LISTING_DETAIL_DESCRIPTION,
+            favoritePathParameters(),
+            "LISTING_NOT_FOUND"));
+
+    perform(
+        post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(token)),
+        status().isNotFound(),
+        "LISTING_NOT_FOUND",
+        ApiDocsErrors.errorSnippet(
+            "v1-listing-favorite-add",
+            ApiDocsTags.LISTINGS,
+            V1_FAVORITE_ADD_SUMMARY,
+            V1_FAVORITE_ADD_DESCRIPTION,
+            favoritePathParameters(),
+            "LISTING_NOT_FOUND"));
+
+    perform(
+        delete("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(token)),
+        status().isNotFound(),
+        "LISTING_NOT_FOUND",
+        ApiDocsErrors.errorSnippet(
+            "v1-listing-favorite-remove",
+            ApiDocsTags.LISTINGS,
+            V1_FAVORITE_REMOVE_SUMMARY,
+            V1_FAVORITE_REMOVE_DESCRIPTION,
+            favoritePathParameters(),
+            "LISTING_NOT_FOUND"));
+
+    // 찜해 둔 매물이 있는 사용자인데도 빈 목록이다.
+    mockMvc
+        .perform(
+            get("/api/v1/users/me/favorites")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content").isEmpty())
+        .andExpect(jsonPath("$.data.page.totalElements").value(0))
+        .andDo(
+            document(
+                "v1-my-favorites-list",
+                resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
+                    .summary(V1_FAVORITES_LIST_SUMMARY)
+                    .description(V1_FAVORITES_LIST_DESCRIPTION),
+                queryParameters(ListingV1DocsFields.pageQueryParameters()),
+                responseFields(emptyPageResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/users/me/recent-listings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content").isEmpty())
+        .andDo(
+            document(
+                "v1-my-recent-listings",
+                resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
+                    .summary(V1_RECENT_LISTINGS_SUMMARY)
+                    .description(V1_RECENT_LISTINGS_DESCRIPTION),
+                responseFields(emptyRecentListingsResponseFields())));
+
+    // 인가 판정이 스텁보다 먼저다 — 토큰이 없으면 404가 아니라 401이어야 구버전 앱의 로그인 만료 처리가 그대로 동작한다.
+    mockMvc
+        .perform(post("/api/v1/listings/{listingId}/favorite", LISTING_ID))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+    mockMvc
+        .perform(get("/api/v1/users/me/favorites"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+    mockMvc
+        .perform(get("/api/v1/users/me/recent-listings"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+
+    // 저장된 찜·조회 이력이 그대로여야 한다. 건수가 아니라 **문서 전체**를 비교한다 — 건수만 보면 나중에
+    // 누군가 v1에 "기록만 하고 404" 형태를 되살렸을 때(viewedAt 갱신·favoriteCount 증가) 통과해 버린다.
+    assertThat(allDocuments(FAVORITES_COLLECTION)).isEqualTo(favoritesBefore);
+    assertThat(allDocuments(RECENT_LISTINGS_COLLECTION)).isEqualTo(recentBefore);
   }
 
   /** 네이버 장소 후보의 정상·빈 응답을 검증하고 새 장소 검색 API의 Swagger 스니펫을 생성한다. */
@@ -841,6 +1046,21 @@ class ListingDocsTest {
         RECENT_LISTINGS_DESCRIPTION);
   }
 
+  /** 스니펫 핸들러를 직접 넘기는 형태다. path 파라미터·에러 코드 배열을 함께 실어야 하는 v1 스니펫이 쓴다. */
+  private void perform(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      RestDocumentationResultHandler snippet)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(snippet);
+  }
+
   private void perform(
       MockHttpServletRequestBuilder request,
       ResultMatcher expectedStatus,
@@ -891,6 +1111,15 @@ class ListingDocsTest {
         .expiration(Date.from(now.minusSeconds(3600)))
         .signWith(key)
         .compact();
+  }
+
+  /** 컬렉션의 모든 문서를 _id 순으로 읽는다. v1 스텁이 읽기·쓰기 어느 쪽도 하지 않았음을 문서 단위로 비교할 때 쓴다. */
+  private List<Document> allDocuments(String collection) {
+    return mongoTemplate
+        .getCollection(collection)
+        .find()
+        .sort(new Document("_id", 1))
+        .into(new ArrayList<>());
   }
 
   /** 테스트용 JWT를 Authorization 헤더 값으로 바꾼다. */

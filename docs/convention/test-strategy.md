@@ -55,12 +55,12 @@
 
 **같은 리소스가 `/api/v1`·`/api/v2`에 병존할 때**([api-design-guide §2-1](../api/api-design-guide.md)) 두 가지를 더 지킨다.
 
-- **identifier에 버전별 고유 접두사를 붙인다.** `operationId`는 그 오퍼레이션 스니펫 identifier들의 **공통 접두사**이고 전역 유일이어야 하므로, 두 버전이 같은 이름 계열을 쓰면 `verifyOpenApiSpec`이 중복으로 빌드를 깬다. 예: `listing-detail-*`(v1) ↔ `v2-listing-detail-*`(v2).
+- **identifier를 버전별로 가른다.** `operationId`는 그 오퍼레이션 스니펫 identifier들의 **공통 접두사**이고 전역 유일이어야 하므로, 두 버전이 같은 이름 계열을 쓰면 `verifyOpenApiSpec`이 중복으로 빌드를 깬다. **정본이 무접두사, 종료되는 쪽에 접두사**를 붙인다 — 매물 예: `listings-list`(정본 v2) ↔ `v1-listings-list`(종료된 v1).
 - **오퍼레이션 상수(summary·description)를 버전별로 따로 둔다.** path가 달라 두 버전은 애초에 병합되지 않으므로, 상수를 공유하면 한쪽 설명이 반대쪽에 그대로 붙는다 — 데이터를 주지 않는 v1이 v2의 설명을 달게 된다. v1 description은 「폐지됐다」 같은 변경 이력이 아니라 **현재 동작**으로 쓴다([ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md) description 작성 규약).
 
 **리뷰 체크리스트** — `verifyOpenApiSpec`이 자동으로 잡지 못해 사람이 봐야 하는 것:
 
-- v2 스니펫이 v1 상수(summary·description)나 identifier 접두사를 재사용하는가?
+- 두 버전이 서로의 상수(summary·description)나 파라미터·필드 기술자를 재사용하는가? 특히 **종료된 버전이 정본의 기술자를 빌려 쓰면** 동작하지 않는 필터를 살아 있는 것처럼 문서화한다.
 - description에 「null」을 언급했는데 그 필드가 `optional()`이 아닌가?
 - description에 UPPER_SNAKE 값을 나열했는데 `enumField`/`codeField`를 안 썼는가?
 - 배열 필드에 스칼라 `codeField`를 썼는가? (테스트는 통과하고 문서만 틀린다)
