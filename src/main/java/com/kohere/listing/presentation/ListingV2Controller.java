@@ -48,7 +48,12 @@ public class ListingV2Controller {
   private final ListingService listingService;
   private final ListingRegisterService listingRegisterService;
 
-  /** 조건·정렬로 매물 목록을 조회한다. 비회원도 볼 수 있고, 로그인 상태면 각 항목에 {@code favorited}가 채워진다. */
+  /**
+   * 조건·정렬로 매물 목록을 조회한다. 비회원도 볼 수 있다.
+   *
+   * <p>로그인 상태면 계정 언어가 적용된다. 다만 목록 응답의 {@code favorited}는 MVP 현재 <b>로그인 여부와 무관하게 항상 {@code
+   * false}</b>다 — 찜 상태는 상세 조회에서만 채운다. 목록 화면의 하트는 이 값으로 그리면 안 된다.
+   */
   @GetMapping
   public PageResponse<ListingSummaryResponse> getListings(
       @AuthenticationPrincipal AuthPrincipal principal,

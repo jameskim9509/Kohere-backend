@@ -54,7 +54,9 @@ public class SecurityConfig {
                     .permitAll()
                     // 매물 탐색은 가입 전에도 사용할 수 있는 공개 기능이다. HTTP method를 GET으로 한정하고 한 단계
                     // 하위 경로만 열어 /{listingId}/favorite·/{listingId}/bookings 같은 사용자 액션은 공개하지 않는다.
-                    // /listings/*는 현재 map·search·places·{listingId} 상세 조회를 포함한다.
+                    // /listings/*는 v1이 map·search·places·{listingId}를, v2가 map·search·{listingId}를
+                    // 덮는다
+                    // (places는 v2에 없다 — 매물 데이터를 쓰지 않아 v1에 남겼다).
                     // v1은 빈 결과만 주지만(ADR-0040) 매처는 남긴다 — 401로 바뀌면 구버전 앱이 빈 화면 대신
                     // 로그인 만료로 오인한다. 장소 후보 검색(/listings/places)은 v1에서 계속 동작한다.
                     .requestMatchers(HttpMethod.GET, "/api/v1/listings", "/api/v1/listings/*")
