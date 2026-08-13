@@ -20,10 +20,19 @@ variable "price_class" {
   default     = "PriceClass_200"
 }
 
+# 기본값 false — 앱이 업로드 실패 시 보상 삭제로 객체를 되돌리는데(ADR-0041), 버전 관리가 켜져 있으면
+# DeleteObject가 삭제 마커만 남기고 이전 버전이 그대로 과금돼 "지웠다"가 성립하지 않는다.
+# 이미지는 덮어쓰지 않고 되돌릴 일도 없어 버전을 보관할 이유가 없다.
 variable "enable_versioning" {
-  description = "S3 버전 관리 활성화"
+  description = "S3 버전 관리 활성화 — 켜면 앱의 보상 삭제가 객체를 실제로 지우지 못한다"
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "abort_incomplete_multipart_days" {
+  description = "완료되지 않은 멀티파트 업로드 조각을 정리하기까지의 일수"
+  type        = number
+  default     = 7
 }
 
 # ----- 커스텀 도메인(별칭 + ACM) — 필수. HTTPS·커스텀 도메인 강제 -----

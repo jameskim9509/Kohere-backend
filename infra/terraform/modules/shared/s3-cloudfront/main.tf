@@ -38,6 +38,24 @@ resource "aws_s3_bucket_versioning" "images" {
   }
 }
 
+# 위생 규칙 하나만 둔다 — 중단된 멀티파트 업로드가 남긴 조각은 ListObjects에 보이지 않아
+# 아무도 눈치채지 못한 채 과금된다. 객체 만료 규칙은 두지 않는다: 고아 정리는 앱의 보상 삭제가
+# 맡고, 태그 기반 만료는 태그 제거가 실패하면 살아 있는 매물의 사진을 지운다(ADR-0041).
+resource "aws_s3_bucket_lifecycle_configuration" "images" {
+  bucket = aws_s3_bucket.images.id
+
+  rule {
+    id     = "abort-incomplete-multipart-upload"
+    status = "Enabled"
+
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = var.abort_incomplete_multipart_days
+    }
+  }
+}
+
 resource "aws_cloudfront_origin_access_control" "images" {
   name                              = "${var.name_prefix}-images-oac"
   description                       = "OAC for content images bucket"
