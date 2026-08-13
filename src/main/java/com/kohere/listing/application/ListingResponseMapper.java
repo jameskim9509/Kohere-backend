@@ -44,9 +44,20 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
+        localization.codeLabel(ListingCatalogCategory.ARC_REQUIREMENT, listing.getArcRequired()),
+        listing.getAgeMin(),
+        listing.getAgeMax(),
+        enumCodeLabels(
+            listing.getLanguagesSupported(),
+            ListingCatalogCategory.SUPPORTED_LANGUAGE,
+            localization),
+        toContact(listing),
+        listing.getBlogUrl(),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
+        enumCodeLabels(
+            listing.getNearbyFacilities(), ListingCatalogCategory.NEARBY_FACILITY, localization),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         toFacilities(listing, localization),
@@ -131,9 +142,20 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
+        localization.codeLabel(ListingCatalogCategory.ARC_REQUIREMENT, listing.getArcRequired()),
+        listing.getAgeMin(),
+        listing.getAgeMax(),
+        enumCodeLabels(
+            listing.getLanguagesSupported(),
+            ListingCatalogCategory.SUPPORTED_LANGUAGE,
+            localization),
+        toContact(listing),
+        listing.getBlogUrl(),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
+        enumCodeLabels(
+            listing.getNearbyFacilities(), ListingCatalogCategory.NEARBY_FACILITY, localization),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         toFacilities(listing, localization),
@@ -161,9 +183,20 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
+        localization.codeLabel(ListingCatalogCategory.ARC_REQUIREMENT, listing.getArcRequired()),
+        listing.getAgeMin(),
+        listing.getAgeMax(),
+        enumCodeLabels(
+            listing.getLanguagesSupported(),
+            ListingCatalogCategory.SUPPORTED_LANGUAGE,
+            localization),
+        toContact(listing),
+        listing.getBlogUrl(),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
+        enumCodeLabels(
+            listing.getNearbyFacilities(), ListingCatalogCategory.NEARBY_FACILITY, localization),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         toFacilities(listing, localization),
@@ -190,9 +223,20 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
         toRefundPolicy(listing, localization),
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
+        localization.codeLabel(ListingCatalogCategory.ARC_REQUIREMENT, listing.getArcRequired()),
+        listing.getAgeMin(),
+        listing.getAgeMax(),
+        enumCodeLabels(
+            listing.getLanguagesSupported(),
+            ListingCatalogCategory.SUPPORTED_LANGUAGE,
+            localization),
+        toContact(listing),
+        listing.getBlogUrl(),
         toGeoPoint(listing),
         toAddress(listing, localization),
         toNearestTransit(listing, localization, TransitNameStyle.FULL),
+        enumCodeLabels(
+            listing.getNearbyFacilities(), ListingCatalogCategory.NEARBY_FACILITY, localization),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         toFacilities(listing, localization),
@@ -205,6 +249,13 @@ final class ListingResponseMapper {
         listing.getFavoriteCount(),
         listing.getCreatedAt(),
         listing.getUpdatedAt());
+  }
+
+  /** 담당자 연락처를 그대로 응답에 싣는다. 임대인 계정 연락처(마스킹 대상)와는 별개 값이다. */
+  private static ListingDetailResponse.ContactResponse toContact(Listing listing) {
+    Listing.Contact contact = listing.getContact();
+    return new ListingDetailResponse.ContactResponse(
+        contact.managerName(), contact.phone(), contact.sms());
   }
 
   /**

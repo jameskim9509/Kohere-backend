@@ -741,6 +741,38 @@ public final class ListingDocsFields {
             prefix + ".genderPolicy.code", Listing.GenderPolicy.class, "성별 제한의 서버 코드. 필터 요청에 사용"));
     fields.add(
         field(prefix + ".genderPolicy.label", JsonFieldType.STRING, "성별 제한 배지에 표시할 현재 언어의 문구"));
+    fields.add(
+        enumField(
+            prefix + ".arcRequired.code",
+            ArcRequirement.class,
+            "외국인등록증(ARC) 요구 여부의 서버 코드. 진단 arcStatus와 1:1로 대응"));
+    fields.add(
+        field(prefix + ".arcRequired.label", JsonFieldType.STRING, "ARC 요구 여부로 표시할 현재 언어의 문구"));
+    fields.add(field(prefix + ".ageMin", JsonFieldType.NUMBER, "입주 가능한 최소 연령"));
+    fields.add(field(prefix + ".ageMax", JsonFieldType.NUMBER, "입주 가능한 최대 연령"));
+    fields.add(
+        enumField(
+            prefix + ".languagesSupported[].code",
+            SupportedLanguage.class,
+            "임대인이 응대 가능한 외국어의 서버 코드"));
+    fields.add(
+        field(
+            prefix + ".languagesSupported[].label",
+            JsonFieldType.STRING,
+            "응대 가능 언어로 표시할 현재 언어의 문구"));
+    fields.add(
+        field(prefix + ".contact.managerName", JsonFieldType.STRING, "매물 담당자 이름. 문의 화면에 표시"));
+    fields.add(
+        field(
+            prefix + ".contact.phone",
+            JsonFieldType.STRING,
+            "전화 문의를 받는 번호. 임대인 계정 연락처와 별개 값이라 마스킹하지 않는다"));
+    fields.add(field(prefix + ".contact.sms", JsonFieldType.STRING, "문자 문의를 받는 번호"));
+    fields.add(
+        optField(
+            prefix + ".blogUrl",
+            JsonFieldType.STRING,
+            "매물 홍보용 블로그 주소. 임대인이 입력하지 않으면 값이 null이 아니라 필드 자체가 생략된다"));
     fields.addAll(locationFields(prefix, variant));
     fields.add(enumField(prefix + ".address.city.code", City.class, "지역 필터에 사용할 시·도 서버 코드"));
     fields.add(
@@ -770,6 +802,14 @@ public final class ListingDocsFields {
             prefix + ".nearestTransit.name",
             JsonFieldType.STRING,
             "교통 배지에 표시할 역 이름. 카드 응답은 영어일 때 Station을 Sta.로 줄인 이름을 주고, 상세 응답은 정식 이름을 준다"));
+    fields.add(
+        enumField(
+            prefix + ".nearbyFacilities[].code",
+            NearbyFacility.class,
+            "주변 편의시설의 서버 코드. 교통과 무관한 값이라 매물 루트가 소유한다"));
+    fields.add(
+        field(
+            prefix + ".nearbyFacilities[].label", JsonFieldType.STRING, "주변 편의시설로 표시할 현재 언어의 문구"));
     fields.add(
         field(
             prefix + ".nearestTransit.walkMinutes",

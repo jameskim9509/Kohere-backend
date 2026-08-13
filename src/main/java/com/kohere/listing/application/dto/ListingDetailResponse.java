@@ -25,9 +25,16 @@ public record ListingDetailResponse(
     CodeLabelResponse rentalType,
     String refundPolicy,
     CodeLabelResponse genderPolicy,
+    CodeLabelResponse arcRequired,
+    int ageMin,
+    int ageMax,
+    List<CodeLabelResponse> languagesSupported,
+    ContactResponse contact,
+    @JsonInclude(JsonInclude.Include.NON_NULL) String blogUrl,
     @JsonInclude(JsonInclude.Include.NON_NULL) GeoPoint location,
     AddressResponse address,
     NearestTransitResponse nearestTransit,
+    List<CodeLabelResponse> nearbyFacilities,
     Set<String> nearbyUniversityCodes,
     BuildingResponse building,
     FacilitiesResponse facilities,
@@ -40,6 +47,9 @@ public record ListingDetailResponse(
     int favoriteCount,
     Instant createdAt,
     Instant updatedAt) {
+
+  /** 세입자가 매물 문의에 쓰는 담당자 연락처다. 임대인 계정 연락처와는 별개 값이라 마스킹하지 않는다. */
+  public record ContactResponse(String managerName, String phone, String sms) {}
 
   /** 프론트 지도 컴포넌트에서 바로 쓰는 위도·경도 값이다. */
   public record GeoPoint(double lat, double lng) {}
