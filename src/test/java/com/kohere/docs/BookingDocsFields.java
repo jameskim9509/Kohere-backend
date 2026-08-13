@@ -42,6 +42,16 @@ public final class BookingDocsFields {
 
   private BookingDocsFields() {}
 
+  /**
+   * 신고 사유 카탈로그({@code booking_report_reasons})의 현재 활성 code — enum이 아니라 <b>DB 행</b>이라 배포 없이 늘어난다
+   * (V17 시드 6종). 그래서 {@code enumField}가 아니라 {@code codeField}로 값을 직접 나열하고, description에 하드코딩 금지 안내를
+   * 단다.
+   *
+   * <p>§6 신고 접수·§7 사유 목록이 공유하며, {@code BookingManagementDocsTest}의 항목 수 단정에서도 쓴다.
+   */
+  public static final List<String> REPORT_REASON_CODES =
+      List.of("SPAM", "ABUSE", "SEXUAL_CONTENT", "EXTERNAL_CONTACT", "FALSE_INFO", "ETC");
+
   // ── §1 예약 생성 — POST /api/v1/listings/{listingId}/bookings ──────────────
 
   public static final String CREATE_SUMMARY = "매물 예약 신청";
@@ -372,6 +382,20 @@ public final class BookingDocsFields {
 
   public static final String REPORT_SUMMARY = "예약 신고 접수";
 
+  /**
+   * 신고 요청에서 코드로 받는 항목이다. 값 목록은 필드 기술자와 같은 상수를 쓴다.
+   *
+   * <p>이 값은 enum이 아니라 DB 카탈로그라 배포 없이 늘어난다. 표에 현재 값을 보여 주되 하드코딩하지 말라는 안내를 함께 붙인다.
+   */
+  private static String reportCodeValues() {
+    return ApiDocsFields.codeValues().add("reason", REPORT_REASON_CODES).table()
+        + """
+
+        서버가 관리하는 카탈로그라 **배포 없이 늘어날 수 있다.** 위 값을 하드코딩하지 말고 \
+        `GET /api/v1/bookings/report-reasons`의 응답을 쓴다.
+        """;
+  }
+
   public static final String REPORT_DESCRIPTION =
       """
       예약 1건에 대한 신고를 접수·저장한다. 범위는 접수까지이고 운영자 검토·제재는 포함하지 않는다.
@@ -386,6 +410,11 @@ public final class BookingDocsFields {
       - 본문 전체를 `{}`로 보내도 접수된다.
       - **다건 허용** — 동일 신고자가 동일 예약을 여러 번 신고할 수 있다(409가 없다).
       - **삭제·차단 상태와 무관하다** — 이미 삭제했거나 상대를 차단한 예약도 신고할 수 있다. 그래서 같은 예약이 `GET /api/v1/bookings/{bookingId}`에서는 404인데 여기서는 201일 수 있다.
+
+      """
+          + reportCodeValues()
+          + """
+
 
       **응답 주의사항**
 
@@ -486,16 +515,6 @@ public final class BookingDocsFields {
   }
 
   // ── 두 오퍼레이션 이상이 공유하는 필드 문구 ────────────────────────────────
-
-  /**
-   * 신고 사유 카탈로그({@code booking_report_reasons})의 현재 활성 code — enum이 아니라 <b>DB 행</b>이라 배포 없이 늘어난다
-   * (V17 시드 6종). 그래서 {@code enumField}가 아니라 {@code codeField}로 값을 직접 나열하고, description에 하드코딩 금지 안내를
-   * 단다.
-   *
-   * <p>§6 신고 접수·§7 사유 목록이 공유하며, {@code BookingManagementDocsTest}의 항목 수 단정에서도 쓴다.
-   */
-  public static final List<String> REPORT_REASON_CODES =
-      List.of("SPAM", "ABUSE", "SEXUAL_CONTENT", "EXTERNAL_CONTACT", "FALSE_INFO", "ETC");
 
   private static final String REASON_CODE_DESCRIPTION =
       "신고 사유 코드 — 언어 무관 불변 식별자. 서버가 관리하는 활성 사유라"

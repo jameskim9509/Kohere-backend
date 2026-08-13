@@ -70,6 +70,11 @@ public final class QuizDocsFields {
 
   public static final String QUIZ_ANSWER_SUMMARY = "퀴즈 정답 제출·채점";
 
+  /** 퀴즈 답 제출에서 코드로 받는 항목이다. 필드 기술자와 같은 enum에서 뽑는다. */
+  private static String answerCodeValues() {
+    return ApiDocsFields.codeValues().add("selectedChoice", ChoiceKey.class).table();
+  }
+
   public static final String QUIZ_ANSWER_DESCRIPTION =
       """
       제출한 보기 키를 저장된 정답과 대조해 즉시 채점한다. 같은 퀴즈를 몇 번이든 다시 제출할 수 있고 결과도 매번 같다 — 제출 기록이 남지 않고 포인트도 지급되지 않는다.
@@ -79,6 +84,13 @@ public final class QuizDocsFields {
       - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
       - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
       - 서명이 깨진 토큰도 게스트로 처리해 200이지만, 만료된 access token은 게스트로 강등하지 않고 401 `TOKEN_EXPIRED`로 재발급을 유도한다.
+
+      **요청 주의사항**
+
+      """
+          + answerCodeValues()
+          + """
+
 
       **응답 주의사항**
 

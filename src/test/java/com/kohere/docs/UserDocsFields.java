@@ -100,6 +100,17 @@ public final class UserDocsFields {
 
   public static final String PATCH_ME_SUMMARY = "내 프로필 부분 수정";
 
+  /** 프로필 수정에서 코드로 받는 항목이다. 온보딩과 같은 값 집합을 쓴다. */
+  private static String patchMeCodeValues() {
+    return ApiDocsFields.codeValues()
+        .add("gender", Gender.class)
+        .add("occupation", Occupation.class)
+        .add("visaType", VisaType.class)
+        .add("country", COUNTRY_CODES)
+        .add("lang", LANG_CODES)
+        .table();
+  }
+
   public static final String PATCH_ME_DESCRIPTION =
       """
       보낸 필드만 바뀐다. 필드를 빼도 `null`을 보내도 기존 값이 남으므로 값을 지울 수는 없다. 응답은 수정된 프로필 전체이며 `GET /users/me`와 동일 스키마다.
@@ -112,6 +123,11 @@ public final class UserDocsFields {
 
       - 수정 가능 필드가 `userType`으로 갈린다 — 임대인은 `name`·`phoneNumber`·`marketingAgreed`만 바꿀 수 있고, `lang`은 `ko` 고정이라 바꿀 수 없으며 `birthDate`는 조회 전용이다.
       - 임대인 `phoneNumber` 변경은 새 번호를 SMS로 재인증한 뒤에만 반영된다.
+
+      """
+          + patchMeCodeValues()
+          + """
+
 
       **응답 주의사항**
 
