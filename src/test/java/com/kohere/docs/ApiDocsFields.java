@@ -50,15 +50,6 @@ public final class ApiDocsFields {
   }
 
   /**
-   * 요청 본문·쿼리 파라미터의 코드 선택 항목과 허용 값을 오퍼레이션 description용 표로 만든다.
-   *
-   * <p>값을 <b>enum 클래스에서 직접 뽑는다</b> — {@link #enumField}가 스키마에 싣는 것과 같은 소스라, 상수가 늘거나 줄면 표도 함께 바뀐다.
-   * 손으로 나열하면 enum만 바뀌고 문서가 남아 어긋난다.
-   *
-   * <p>스키마에도 같은 값이 실리지만 Swagger UI에서 그건 Schema 탭을 펼쳐야 보인다. 요청을 만들 때 눈으로 훑을 자리가 필요해 description에도 둔다
-   * — 특히 쿼리 파라미터는 REST Docs가 타입·enum을 싣지 않아 여기 적지 않으면 값을 알 방법이 없다.
-   */
-  /**
    * enum 상수를 파라미터 설명에 끼워 넣을 한 줄 목록으로 만든다.
    *
    * <p>쿼리 파라미터는 REST Docs가 타입·enum을 스키마에 싣지 않아 설명 문자열이 값을 알리는 유일한 통로다. 손으로 나열하면 enum만 바뀌고 문서가 남으므로
@@ -68,6 +59,15 @@ public final class ApiDocsFields {
     return String.join(", ", enumValues(enumType));
   }
 
+  /**
+   * 요청 본문의 코드 선택 항목과 허용 값을 오퍼레이션 description용 표로 만든다.
+   *
+   * <p>값을 <b>enum 클래스에서 직접 뽑는다</b> — {@link #enumField}가 스키마에 싣는 것과 같은 소스라, 상수가 늘거나 줄면 표도 함께 바뀐다.
+   * 손으로 나열하면 enum만 바뀌고 문서가 남아 어긋난다.
+   *
+   * <p>스키마에도 같은 값이 실리지만 Swagger UI에서 그건 Schema 탭을 펼쳐야 보인다. 요청을 만들 때 눈으로 훑을 자리가 필요해 description에도
+   * 둔다.
+   */
   public static CodeValues codeValues() {
     return new CodeValues();
   }

@@ -532,6 +532,7 @@ public final class ListingDocsFields {
     List<FieldDescriptor> fields = new ArrayList<>();
     fields.add(field("title", JsonFieldType.STRING, "지점명"));
     fields.add(enumField("type", ListingType.class, "공간 유형"));
+    fields.add(field("contact", JsonFieldType.OBJECT, "세입자에게 공개할 매물 담당 연락처"));
     fields.add(field("contact.managerName", JsonFieldType.STRING, "지점 운영자명. 세입자에게 그대로 공개된다"));
     fields.add(field("contact.phone", JsonFieldType.STRING, "전화문의 수신 연락처. 예: `+82) 10-1234-5678`"));
     fields.add(field("contact.sms", JsonFieldType.STRING, "문자문의 수신 연락처. 형식은 phone과 같다"));
@@ -541,9 +542,11 @@ public final class ListingDocsFields {
             JsonFieldType.STRING,
             "사업자등록번호 숫자 10자리. 형식만 확인하고 저장하며 응답에는 나오지 않는다"));
     fields.add(optField("blogUrl", JsonFieldType.STRING, "지점 블로그·홈페이지 주소. 없으면 생략"));
+    fields.add(field("address", JsonFieldType.OBJECT, "매물 주소"));
     fields.add(
         field("address.fullAddress", JsonFieldType.STRING, "도로명 주소 한 줄. 서버가 여기서 시·도와 구·군을 뽑는다"));
     fields.add(optField("address.detail", JsonFieldType.STRING, "동·호수 등 상세 주소. 없으면 생략"));
+    fields.add(field("building", JsonFieldType.OBJECT, "건물 정보"));
     fields.add(enumField("building.type", Listing.BuildingType.class, "건물 형태"));
     fields.add(field("building.totalFloors", JsonFieldType.NUMBER, "건물 총 층수. 1 이상"));
     fields.add(
@@ -558,6 +561,7 @@ public final class ListingDocsFields {
         enumArrayField("languagesSupported", SupportedLanguage.class, "응대 가능한 외국어. 1개 이상 선택"));
     fields.add(field("ageRange", JsonFieldType.STRING, "이용 연령대를 `min~max` 한 칸으로. 예: `20~35`"));
     fields.add(enumField("arcRequired", ArcRequirement.class, "입주에 외국인등록증(ARC)이 필요한지 여부"));
+    fields.add(field("facilities", JsonFieldType.OBJECT, "공용 시설·비품"));
     fields.add(
         enumArrayField("facilities.heatingSystem", Listing.HeatingSystem.class, "난방시설. 1개 이상"));
     fields.add(enumArrayField("facilities.kitchen", KitchenFacility.class, "주방시설. 1개 이상"));
@@ -571,6 +575,7 @@ public final class ListingDocsFields {
             "공용공간. 1개 이상. 수량 없이 종류만 보낸다"));
     fields.add(enumArrayField("facilities.providedSupplies", ProvidedSupply.class, "제공비품. 1개 이상"));
     fields.add(enumArrayField("nearbyFacilities", NearbyFacility.class, "주변 편의시설. 1개 이상"));
+    fields.add(field("nearestTransit", JsonFieldType.OBJECT, "가장 가까운 대중교통"));
     fields.add(enumField("nearestTransit.type", Listing.TransitType.class, "가까운 교통수단"));
     fields.add(field("nearestTransit.name", JsonFieldType.STRING, "근처 지하철역명"));
     fields.add(field("nearestTransit.walkMinutes", JsonFieldType.NUMBER, "역까지 도보 소요시간(분). 0 이상"));
@@ -581,6 +586,7 @@ public final class ListingDocsFields {
         field("imageUrls", JsonFieldType.ARRAY, "지점 대표사진 URL 목록. 첫 번째 값이 카드·상세의 대표 이미지가 된다"));
     fields.add(field("roomOffers", JsonFieldType.ARRAY, "객실 타입 목록. 1개 이상"));
     fields.add(field("roomOffers[].name", JsonFieldType.STRING, "객실 타입명"));
+    fields.add(field("roomOffers[].contract", JsonFieldType.OBJECT, "방 타입별 이용 기간"));
     fields.add(
         field("roomOffers[].contract.minStayMonths", JsonFieldType.NUMBER, "최소 이용 개월. 1 이상"));
     fields.add(
@@ -588,6 +594,7 @@ public final class ListingDocsFields {
             "roomOffers[].contract.maxStayMonths",
             JsonFieldType.NUMBER,
             "최대 이용 개월. minStayMonths 이상"));
+    fields.add(field("roomOffers[].pricing", JsonFieldType.OBJECT, "방 타입별 비용"));
     fields.add(
         field("roomOffers[].pricing.monthlyRent", JsonFieldType.NUMBER, "월 기준 객실 비용(KRW). 0 이상"));
     fields.add(field("roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW). 0 이상"));
