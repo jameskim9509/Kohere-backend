@@ -59,58 +59,6 @@ public final class ApiDocsFields {
     return String.join(", ", enumValues(enumType));
   }
 
-  /**
-   * 요청 본문의 코드 선택 항목과 허용 값을 오퍼레이션 description용 표로 만든다.
-   *
-   * <p>값을 <b>enum 클래스에서 직접 뽑는다</b> — {@link #enumField}가 스키마에 싣는 것과 같은 소스라, 상수가 늘거나 줄면 표도 함께 바뀐다.
-   * 손으로 나열하면 enum만 바뀌고 문서가 남아 어긋난다.
-   *
-   * <p>스키마에도 같은 값이 실리지만 Swagger UI에서 그건 Schema 탭을 펼쳐야 보인다. 요청을 만들 때 눈으로 훑을 자리가 필요해 description에도
-   * 둔다.
-   */
-  public static CodeValues codeValues() {
-    return new CodeValues();
-  }
-
-  /** {@link #codeValues()}가 반환하는 표 빌더다. */
-  public static final class CodeValues {
-
-    /** 개행은 항상 {@code \n}이다 — 생성된 YAML이 OS에 따라 달라지면 안 된다. */
-    private static final String NEWLINE = "\n";
-
-    private final List<String> rows = new ArrayList<>();
-
-    private CodeValues() {}
-
-    /** enum 상수 전체를 그 항목의 허용 값으로 싣는다. */
-    public CodeValues add(String field, Class<? extends Enum<?>> enumType) {
-      return add(field, Arrays.stream(enumType.getEnumConstants()).map(Enum::name).toList());
-    }
-
-    /** enum 클래스가 없거나(DB 카탈로그) 허용 집합이 상수 전체와 다를 때 값을 직접 싣는다. */
-    public CodeValues add(String field, List<String> codes) {
-      rows.add(
-          "| `"
-              + field
-              + "` | "
-              + String.join(" · ", codes.stream().map(code -> "`" + code + "`").toList())
-              + " |");
-      return this;
-    }
-
-    /** description에 그대로 붙일 마크다운 표를 만든다. */
-    public String table() {
-      return """
-          **선택 가능한 값**
-
-          | 항목 | 값 |
-          |---|---|
-          """
-          + String.join(NEWLINE, rows)
-          + NEWLINE;
-    }
-  }
-
   public static FieldDescriptor optEnumField(
       String path, Class<? extends Enum<?>> enumType, String description) {
     return new EnumFields(enumType).withPath(path).optional().description(description);

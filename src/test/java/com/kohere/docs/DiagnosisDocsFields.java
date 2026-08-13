@@ -465,14 +465,6 @@ public final class DiagnosisDocsFields {
 
   public static final String ANSWER_SUMMARY = "단계 답 저장";
 
-  /** 답 저장 요청에서 코드로 받는 항목이다. 값 목록은 필드 기술자와 같은 상수를 쓴다. */
-  private static String answerCodeValues() {
-    return ApiDocsFields.codeValues()
-        .add("field", ANSWER_FIELD_CODES)
-        .add("codes[]", SELECTABLE_CONDITION_CODES)
-        .table();
-  }
-
   public static final String ANSWER_DESCRIPTION =
       """
       현재 단계의 답 1개를 진행 중인 진단에 저장한다.
@@ -493,10 +485,6 @@ public final class DiagnosisDocsFields {
 
       - 해당하는 쪽만 채우고 나머지 필드는 보내지 않는다. 누적 답을 묶어 재전송하지 않는다.
       - 진행 중 진단은 토큰의 사용자로 식별하며 사용자당 1건이다. 진행 중 진단이 없으면 첫 답을 저장할 때 서버가 만든다.
-
-      """
-          + answerCodeValues()
-          + """
 
 
       **응답 주의사항**

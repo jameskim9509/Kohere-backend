@@ -40,22 +40,6 @@ public final class AuthDocsFields {
 
   public static final String SOCIAL_LOGIN_SUMMARY = "소셜 로그인";
 
-  /** 소셜 로그인 요청에서 코드로 받는 항목이다. 필드 기술자와 같은 enum에서 뽑는다. */
-  private static String socialLoginCodeValues() {
-    return ApiDocsFields.codeValues().add("provider", Provider.class).table();
-  }
-
-  /** 온보딩 제출에서 코드로 받는 항목이다. 국가·언어는 enum이 아니라 허용 코드 목록이다. */
-  private static String onboardingCodeValues() {
-    return ApiDocsFields.codeValues()
-        .add("gender", Gender.class)
-        .add("occupation", Occupation.class)
-        .add("visaType", VisaType.class)
-        .add("country", COUNTRY_CODES)
-        .add("lang", LANG_CODES)
-        .table();
-  }
-
   public static final String SOCIAL_LOGIN_DESCRIPTION =
       """
       소셜 자격(Apple/Google)을 검증하고 서버 토큰을 발급한다. 신규면 계정을 만들고 온보딩 전용 토큰만 준다.
@@ -68,10 +52,6 @@ public final class AuthDocsFields {
 
       - provider별 자격이 다르다 — `GOOGLE`은 `idToken`, `APPLE`은 1회용 `authorizationCode`(약 5분 만료)다.
       - `email`·`name`은 최초 로그인에서만 캡처하고 재로그인 요청 값은 무시한다.
-
-      """
-          + socialLoginCodeValues()
-          + """
 
 
       **응답 주의사항**
@@ -209,10 +189,6 @@ public final class AuthDocsFields {
       **요청 주의사항**
 
       - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않는다.
-
-      """
-          + onboardingCodeValues()
-          + """
 
 
       **응답 주의사항**

@@ -38,7 +38,11 @@ window.onload = function () {
     defaultModelExpandDepth: 3,
     validatorUrl: null,
     persistAuthorization: true,
-    tryItOutEnabled: true,
+    // try-it-out 을 기본으로 켜지 않는다 — 켜면 요청 본문이 편집기로 바뀌면서
+    // Example Value | Schema 토글이 사라져 필수 표시·enum·필드 설명을 볼 자리가 없어진다
+    // (ADR-0017 은 "필수/선택은 스키마 required 로 알린다"고 정해 두었다).
+    // 실행은 "Try it out" 을 한 번 눌러서 한다.
+    tryItOutEnabled: false,
     displayRequestDuration: true,
   });
 };

@@ -328,34 +328,6 @@ public final class ListingDocsFields {
 
   public static final String LISTING_REGISTER_SUMMARY = "매물 등록(임대인)";
 
-  /**
-   * 등록 요청에서 코드로 받는 항목과 허용 값이다.
-   *
-   * <p>필드 기술자가 {@code enumField}로 싣는 것과 같은 enum에서 뽑으므로 상수가 바뀌면 표도 따라 바뀐다. 자유 입력 항목(제목·주소·설명 등)은 고를
-   * 값이 없어 넣지 않는다.
-   */
-  private static String registerCodeValues() {
-    return ApiDocsFields.codeValues()
-        .add("type", ListingType.class)
-        .add("building.type", Listing.BuildingType.class)
-        .add("genderPolicy", Listing.GenderPolicy.class)
-        .add("arcRequired", ArcRequirement.class)
-        .add("languagesSupported[]", SupportedLanguage.class)
-        .add("nearbyFacilities[]", NearbyFacility.class)
-        .add("nearestTransit.type", Listing.TransitType.class)
-        .add("facilities.heatingSystem[]", Listing.HeatingSystem.class)
-        .add("facilities.kitchen[]", KitchenFacility.class)
-        .add("facilities.laundry[]", LaundryFacility.class)
-        .add("facilities.livingAmenities[]", LivingAmenity.class)
-        .add("facilities.securityFeatures[]", SecurityFeature.class)
-        .add("facilities.commonSpaces[]", Listing.CommonSpaceType.class)
-        .add("facilities.providedSupplies[]", ProvidedSupply.class)
-        .add("roomOffers[].filterTags[]", ConditionTag.class)
-        .add("preferredNationalities[]", Nationality.class)
-        .add("contractDifficulties[]", ContractDifficulty.class)
-        .table();
-  }
-
   public static final String LISTING_REGISTER_DESCRIPTION =
       """
       임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입을 매물 하나로 저장한다.
@@ -370,10 +342,6 @@ public final class ListingDocsFields {
       - 사업자등록번호 진위는 이후 승인 심사에서 확인한다. `POST /api/v1/auth/business/verify`를 **미리 호출할 필요 없다.**
       - 코드 값은 서버가 가진 코드표에 있는 것만 받는다. 400 `LISTING_UNKNOWN_CATALOG_CODE`는 입력 오타가 아니라 앱의 코드표가 서버와 어긋났다는 뜻이므로, 입력 교정 대신 코드표 재조회(앱 갱신)를 안내한다.
       - 자유 입력 문구에는 길이 제한이 없다.
-
-      """
-          + registerCodeValues()
-          + """
 
       **응답 주의사항**
 
