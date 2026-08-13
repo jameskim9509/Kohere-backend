@@ -2,6 +2,7 @@ package com.kohere.docs;
 
 import static com.kohere.docs.ApiDocsFields.codeArrayField;
 import static com.kohere.docs.ApiDocsFields.codeField;
+import static com.kohere.docs.ApiDocsFields.codeList;
 import static com.kohere.docs.ApiDocsFields.enumArrayField;
 import static com.kohere.docs.ApiDocsFields.enumField;
 import static com.kohere.docs.ApiDocsFields.errorNull;
@@ -444,12 +445,13 @@ public final class ListingDocsFields {
           .description("보증금 최대값(KRW). 보증금 필터의 상한값. minDeposit과 같은 방식으로 roomOffers[]를 좁힌다"),
       parameterWithName("type")
           .optional()
-          .description("매물 유형 필터 칩. GOSHIWON, CO_LIVING, SHARE_HOUSE 중 하나"),
+          .description("매물 유형 필터 칩 — " + codeList(ListingType.class) + " 중 하나"),
       parameterWithName("conditions")
           .optional()
           .description(
-              "옵션 필터 칩 코드. MOVE_IN_NOW, FEMALE_ONLY, MEALS_INCLUDED, DOUBLE_ROOM, PRIVATE_BATH, ENGLISH_OK, ADDRESS_REGISTRATION, NO_MAINT_FEE를 "
-                  + "반복 파라미터나 콤마로 보낼 수 있음. 보낸 조건을 모두 가진 방 타입이 있는 매물만 남고, 응답 roomOffers[]도 그 방 타입만 포함"),
+              "옵션 필터 칩 코드 — "
+                  + codeList(ConditionTag.class)
+                  + ". 반복 파라미터나 콤마로 보낼 수 있음. 보낸 조건을 모두 가진 방 타입이 있는 매물만 남고, 응답 roomOffers[]도 그 방 타입만 포함"),
       parameterWithName("sort")
           .optional()
           .description(
@@ -477,10 +479,13 @@ public final class ListingDocsFields {
       parameterWithName("maxDeposit").optional().description("보증금 최대값(KRW)"),
       parameterWithName("type")
           .optional()
-          .description("매물 유형 필터 칩. GOSHIWON, CO_LIVING, SHARE_HOUSE 중 하나"),
+          .description("매물 유형 필터 칩 — " + codeList(ListingType.class) + " 중 하나"),
       parameterWithName("conditions")
           .optional()
-          .description("옵션 필터 칩 코드. 목록 API와 같은 필터를 보내면 지도 마커와 바텀시트 목록을 같은 조건으로 맞출 수 있음")
+          .description(
+              "옵션 필터 칩 코드 — "
+                  + codeList(ConditionTag.class)
+                  + ". 목록 API와 같은 필터를 보내면 지도 마커와 바텀시트 목록을 같은 조건으로 맞출 수 있음")
     };
   }
 

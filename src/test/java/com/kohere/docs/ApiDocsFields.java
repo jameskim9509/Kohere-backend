@@ -58,6 +58,16 @@ public final class ApiDocsFields {
    * <p>스키마에도 같은 값이 실리지만 Swagger UI에서 그건 Schema 탭을 펼쳐야 보인다. 요청을 만들 때 눈으로 훑을 자리가 필요해 description에도 둔다
    * — 특히 쿼리 파라미터는 REST Docs가 타입·enum을 싣지 않아 여기 적지 않으면 값을 알 방법이 없다.
    */
+  /**
+   * enum 상수를 파라미터 설명에 끼워 넣을 한 줄 목록으로 만든다.
+   *
+   * <p>쿼리 파라미터는 REST Docs가 타입·enum을 스키마에 싣지 않아 설명 문자열이 값을 알리는 유일한 통로다. 손으로 나열하면 enum만 바뀌고 문서가 남으므로
+   * 여기서 뽑는다.
+   */
+  public static String codeList(Class<? extends Enum<?>> enumType) {
+    return String.join(", ", enumValues(enumType));
+  }
+
   public static CodeValues codeValues() {
     return new CodeValues();
   }
