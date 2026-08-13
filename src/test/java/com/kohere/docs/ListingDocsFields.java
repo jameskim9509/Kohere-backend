@@ -104,7 +104,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - 제목·주소·역명·방 이름·설명은 서버가 사용자 언어 문자열 하나로 선택해서 전달한다. 비로그인·온보딩 미완료 사용자는 영어가 기본이고, 온보딩을 완료한 로그인 사용자는 계정 언어를 사용한다.
+      - 표시 문구의 **언어가 토큰에 따라 달라진다** — 온보딩을 완료한 로그인 사용자는 계정 언어, 그 외(비로그인·온보딩 미완료)는 영어다. 같은 매물이라도 로그인 전후로 문구가 바뀌므로 응답을 캐시한다면 인증 상태를 키에 넣는다.
 
       **에러 코드**
 
@@ -158,7 +158,7 @@ public final class ListingDocsFields {
 
       - `matchedPlace=null`, `content=[]`: 검색어와 일치하는 장소가 없음
       - `matchedPlace` 존재, `content=[]`: 장소는 찾았지만 주변 매물이 없음
-      - 매물의 다국어 문자열과 `code/label` 사용 규칙은 매물 목록 API와 동일하며, 비로그인·온보딩 미완료 사용자는 영어가 기본이다.
+      - 표시 문구의 언어 규칙은 매물 목록 API와 같다.
 
       **에러 코드**
 
@@ -209,7 +209,6 @@ public final class ListingDocsFields {
 
       - 온보딩을 완료한 로그인 사용자는 실제 찜 상태와 계정 언어가 적용되고, 조회한 매물이 최근 본 목록에 기록된다.
       - 비로그인·온보딩 미완료 사용자는 `favorited=false`이며 최근 본 기록을 남기지 않는다. 로그인 전에 조회한 매물은 로그인 후 최근 본 목록으로 소급해 옮기지 않는다.
-      - `title`, 주소, 역명, 방 이름, `refundPolicy`, `description`, `extraNotes`는 서버가 사용자 언어로 선택한 문자열 하나다.
       - 역명은 이 API에서만 정식 이름으로 내려간다. 목록·검색·찜·최근 본 응답은 영어일 때 `Station`을 `Sta.`로 줄인다.
 
       **에러 코드**
@@ -338,8 +337,6 @@ public final class ListingDocsFields {
 
       **요청 주의사항**
 
-      - **서버가 정하는 값은 본문에 없다** — `listingId`·`roomOffers[].roomOfferId`(서버 발급)·`status`(`PENDING`)·`favoriteCount`(`0`)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT`)·`roomOffers[].pricing.currency`(`KRW`)·`roomOffers[].status`(`ACTIVE`). 매물 소유자도 토큰에서 읽는다. 함께 보내도 무시한다.
-      - **다국어 문구는 한국어 한 값만 보낸다.** `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name` 8종이 해당한다. 영어 문구는 이후 승인 심사에서 채우므로 클라이언트가 번역해 보내지 않는다.
       - `building.usedFloorRange`·`ageRange`는 **요청과 응답의 모양이 다르다.** 보낼 때는 `min~max` 문자열 한 칸이지만 응답은 `building.usedFloorMin`/`usedFloorMax`, `ageMin`/`ageMax`로 갈라져 돌아온다.
       - 사업자등록번호 진위는 이후 승인 심사에서 확인한다. `POST /api/v1/auth/business/verify`를 **미리 호출할 필요 없다.**
       - 코드 값은 서버가 가진 코드표에 있는 것만 받는다. 400 `LISTING_UNKNOWN_CATALOG_CODE`는 입력 오타가 아니라 앱의 코드표가 서버와 어긋났다는 뜻이므로, 입력 교정 대신 코드표 재조회(앱 갱신)를 안내한다.
