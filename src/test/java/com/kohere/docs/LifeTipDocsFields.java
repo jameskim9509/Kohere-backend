@@ -1,10 +1,9 @@
 package com.kohere.docs;
 
-import static com.kohere.docs.ApiDocsFields.codeField;
 import static com.kohere.docs.ApiDocsFields.errorNull;
 import static com.kohere.docs.ApiDocsFields.field;
 import static com.kohere.docs.ApiDocsFields.optField;
-import static com.kohere.docs.ApiDocsParams.codeParam;
+import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
 import java.util.List;
 import org.springframework.restdocs.payload.FieldDescriptor;
@@ -21,13 +20,6 @@ import org.springframework.restdocs.request.ParameterDescriptor;
 public final class LifeTipDocsFields {
 
   private LifeTipDocsFields() {}
-
-  /**
-   * 캐노니컬 카탈로그 시드({@link com.kohere.lifetip.infrastructure.LifeTipCatalogSeedChangeUnit})가 적재하는 주제
-   * 코드 전체. enum 클래스가 없는 DB 카탈로그다.
-   */
-  public static final List<String> TOPIC_CODES =
-      List.of("MOVING_IN", "ADMINISTRATION", "TRANSPORT", "FINANCE", "HOUSING");
 
   // ===== GET /api/v1/life-tips/topics =====
 
@@ -59,7 +51,10 @@ public final class LifeTipDocsFields {
   public static List<FieldDescriptor> topicsResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        codeField("data.topics[].code", TOPIC_CODES, "언어 무관 주제 식별 코드(주제별 팁 조회의 경로 값)"),
+        field(
+            "data.topics[].code",
+            JsonFieldType.STRING,
+            "언어 무관 주제 식별 코드(주제별 팁 조회의 경로 값). 서버 카탈로그라 배포 없이 늘어나므로 값을 고정 목록으로 다루지 않는다"),
         field("data.topics[].name", JsonFieldType.STRING, "표시 언어로 번역된 주제 표시명"),
         field("data.topics[].shortDescription", JsonFieldType.STRING, "번역된 짧은 설명(홈 카드용)"),
         field("data.topics[].longDescription", JsonFieldType.STRING, "번역된 긴 설명(주제 상세 상단용)"),
@@ -103,15 +98,16 @@ public final class LifeTipDocsFields {
   public static final String[] LIFE_TIPS_TIPS_404 = {"LIFE_TIP_TOPIC_NOT_FOUND"};
 
   /**
-   * {@code codeField}는 {@link FieldDescriptor}라 {@code pathParameters}에 넣을 수 없으므로 허용값을 실으려면 {@code
-   * ApiDocsParams.codeParam}을 쓴다. 성공·에러 스니펫이 같은 배열을 쓴다(#151 규약 12).
+   * 주제 코드는 <b>허용값을 싣지 않는다</b>.
+   *
+   * <p>{@code codeParam}으로 값을 실으면 스펙에 {@code enum}이 박혀 Swagger UI가 이 경로 변수를 드롭다운으로 잠근다. 주제는 enum이
+   * 아니라 DB 카탈로그({@code lifeTipTopics})라 배포 없이 늘어나는데, 그러면 새로 넣은 주제를 UI에서 고를 수 없다 — 서버는
+   * {@code @PathVariable String}으로 그대로 받아 정상 처리하는데도 그렇다.
    */
   public static ParameterDescriptor[] tipsPathParameters() {
     return new ParameterDescriptor[] {
-      codeParam(
-          "topicCode",
-          TOPIC_CODES,
-          "주제 코드(UPPER_SNAKE). 목록은 `GET /api/v1/life-tips/topics` 응답의 `topics[].code`로 확인한다")
+      parameterWithName("topicCode")
+          .description("주제 코드(UPPER_SNAKE). `GET /api/v1/life-tips/topics` 응답의 `topics[].code`를 쓴다")
     };
   }
 
