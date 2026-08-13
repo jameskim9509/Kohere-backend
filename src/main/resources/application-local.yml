@@ -90,3 +90,17 @@ app:
       # 로컬은 프로젝트 루트 .env에서 주입한다. 빈 값이면 다른 기능은 기동되고 장소 검색 호출만 502로 실패한다.
       client-id: ${NAVER_SEARCH_CLIENT_ID:}
       client-secret: ${NAVER_SEARCH_CLIENT_SECRET:}
+  images:
+    # 매물 사진 저장소(ADR-0041) — docker compose의 MinIO를 쓴다. S3와 같은 API라 배포 환경과 같은 어댑터가 돌아간다.
+    #   인프라만 띄웠다면: docker compose up -d minio minio-init
+    # MinIO를 안 띄우고 다른 기능만 볼 땐 APP_IMAGES_ENABLED=false로 스텁 폴백(업로드 없이 URL만 생성)을 쓴다.
+    enabled: ${APP_IMAGES_ENABLED:true}
+    bucket: ${APP_IMAGES_BUCKET:kohere-local-images}
+    # 컨테이너 안(app 서비스)에서는 minio:9000, 호스트에서 bootRun 할 땐 localhost:9000이다.
+    endpoint: ${APP_IMAGES_ENDPOINT:http://localhost:9000}
+    # MinIO는 가상 호스트 스타일을 쓰면 bucket.localhost를 DNS로 찾지 못해 실패한다.
+    path-style-access: true
+    access-key: ${MINIO_ROOT_USER:minioadmin}
+    secret-key: ${MINIO_ROOT_PASSWORD:minioadmin}
+    # 응답 URL을 로컬 브라우저에서 그대로 열 수 있게 스킴·버킷 경로까지 지정한다(배포는 cdn-domain을 쓴다).
+    public-base-url: ${APP_IMAGES_PUBLIC_BASE_URL:http://localhost:9000/kohere-local-images}
