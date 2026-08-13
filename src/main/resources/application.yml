@@ -30,6 +30,15 @@ spring:
     locale: en
     locale-resolver: accept-header
 
+  # 매물 등록이 사진을 multipart로 받는다(ADR-0041).
+  # 장당 상한은 서블릿이 아니라 도메인이 본다 — 서블릿이 먼저 끊으면 LISTING_IMAGE_TOO_LARGE 대신
+  # 어느 part가 문제인지 알 수 없는 일반 실패가 나가고, 형식·장수 위반과 안내 문구를 나눌 수 없다.
+  # 요청 총량만 서블릿이 막는다(상식 밖 크기 차단). 임계 초과는 413 PAYLOAD_TOO_LARGE다.
+  servlet:
+    multipart:
+      max-file-size: -1
+      max-request-size: 220MB
+
 # 로그 레벨을 명시한다(ADR-0038). 이전에는 저장소 전체에 선언이 0건이라 Boot 기본값에 암묵 의존했다 —
 # 기본값이 바뀌면 조용히 따라 움직인다. appender 구성은 logback-spring.xml이 소유하고 레벨은 여기가 정본이다.
 # DEBUG는 local 전용(application-local.yml)이고 dev·prod는 root=INFO로 억제한다.

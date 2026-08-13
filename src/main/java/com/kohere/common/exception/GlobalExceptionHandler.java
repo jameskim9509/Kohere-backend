@@ -16,6 +16,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -88,6 +89,17 @@ public class GlobalExceptionHandler {
   })
   public ResponseEntity<ApiResponse<Void>> handleMalformed(Exception e) {
     return errorResponse(ErrorCode.MALFORMED_REQUEST);
+  }
+
+  /**
+   * 요청 총량이 서블릿 상한을 넘었다.
+   *
+   * <p>multipart 해석은 핸들러를 찾기 전에 일어나므로 어느 엔드포인트인지 알 수 없다 — 도메인 코드 대신 공통 코드를 쓴다. 사진 한 장의 상한은 도메인이 따로
+   * 보고 {@code LISTING_IMAGE_TOO_LARGE}로 안내한다(ADR-0041).
+   */
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  public ResponseEntity<ApiResponse<Void>> handlePayloadTooLarge(MaxUploadSizeExceededException e) {
+    return errorResponse(ErrorCode.PAYLOAD_TOO_LARGE);
   }
 
   @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

@@ -330,15 +330,27 @@ public final class ListingDocsFields {
 
   public static final String LISTING_REGISTER_DESCRIPTION =
       """
-      임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입을 매물 하나로 저장한다.
+      임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입과 사진을 매물 하나로 저장한다.
 
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
+      - `Content-Type: multipart/form-data` — 등록 정보 JSON과 사진 파일을 한 요청에 함께 보낸다.
+
+      **요청 part**
+
+      | part | Content-Type | 개수 | 내용 |
+      |---|---|---|---|
+      | `request` | `application/json` | 1 | 아래 요청 본문(이 문서의 스키마·예시가 이 part의 내용이다) |
+      | `listingImages` | `image/*` | 1~10 | 지점 대표사진. 첫 파일이 카드·상세의 대표 이미지가 된다 |
+      | `roomImages{i}` | `image/*` | 방마다 2~10 | `roomOffers[i]`의 객실 사진. `roomImages0`이 `roomOffers[0]`, `roomImages1`이 `roomOffers[1]` … 모든 방에 대해 보낸다 |
 
       **요청 주의사항**
 
       - `building.usedFloorRange`·`ageRange`는 **요청과 응답의 모양이 다르다.** 보낼 때는 `min~max` 문자열 한 칸이지만 응답은 `building.usedFloorMin`/`usedFloorMax`, `ageMin`/`ageMax`로 갈라져 돌아온다.
+      - **사진 URL은 보내지 않는다.** 파일을 올리면 서버가 저장 위치를 정해 응답의 `imageUrls`·`roomOffers[].roomImageUrls`에 담아 준다. 순서는 보낸 순서를 유지한다.
+      - 사진은 장당 **10MB** 이하이고 형식은 `image/jpeg` · `image/png` · `image/webp` · `image/heic` 넷이다.
+      - 방과 파일은 **part 이름의 인덱스**로 짝짓는다. 파일명은 쓰지 않으므로 아무 이름이나 보내도 된다.
       - 사업자등록번호 진위는 이후 승인 심사에서 확인한다. `POST /api/v1/auth/business/verify`를 **미리 호출할 필요 없다.**
       - 코드 값은 서버가 가진 코드표에 있는 것만 받는다. 400 `LISTING_UNKNOWN_CATALOG_CODE`는 입력 오타가 아니라 앱의 코드표가 서버와 어긋났다는 뜻이므로, 입력 교정 대신 코드표 재조회(앱 갱신)를 안내한다.
       - 자유 입력 문구에는 길이 제한이 없다.
@@ -352,18 +364,28 @@ public final class ListingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개, `roomImageUrls` 2장 미만. 위반 필드는 `error.errors[]`에 실린다 |
+      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
       | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함. 도로명 주소 재입력을 유도한다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
-      | 400 | `MALFORMED_REQUEST` | 본문 JSON 파싱 불가 또는 타입 불일치 |
+      | 400 | `LISTING_IMAGE_REQUIRED` | 지점 사진이 1~10장이 아니거나, 어느 방의 사진이 2~10장이 아님(빈 파일 포함) |
+      | 400 | `LISTING_IMAGE_PART_MISMATCH` | `roomImages{i}`의 인덱스가 `roomOffers` 범위 밖이거나 사진이 오지 않은 방이 있음 |
+      | 400 | `MALFORMED_REQUEST` | `request` part의 JSON 파싱 불가·타입 불일치, multipart 형식 위반, `request` part 누락 |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자의 등록 요청 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 413 | `LISTING_IMAGE_TOO_LARGE` | 사진 한 장이 10MB를 넘음 |
+      | 415 | `LISTING_IMAGE_UNSUPPORTED_TYPE` | 사진 형식이 허용 목록에 없음 |
+      | 502 | `UPSTREAM_ERROR` | 사진 저장소 업로드 실패. 매물은 저장되지 않고 이미 올라간 사진은 서버가 지운다 |
       """;
 
   public static final String[] LISTING_REGISTER_400 = {
-    "INVALID_INPUT", "LISTING_INVALID_ADDRESS", "LISTING_UNKNOWN_CATALOG_CODE", "MALFORMED_REQUEST"
+    "INVALID_INPUT",
+    "LISTING_INVALID_ADDRESS",
+    "LISTING_UNKNOWN_CATALOG_CODE",
+    "LISTING_IMAGE_REQUIRED",
+    "LISTING_IMAGE_PART_MISMATCH",
+    "MALFORMED_REQUEST"
   };
 
   public static final String[] LISTING_REGISTER_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
@@ -550,8 +572,6 @@ public final class ListingDocsFields {
     fields.add(field("description", JsonFieldType.STRING, "지점 소개글"));
     fields.add(field("extraNotes", JsonFieldType.STRING, "생활 규칙과 유의사항"));
     fields.add(field("refundPolicy", JsonFieldType.STRING, "환불정책 문구"));
-    fields.add(
-        field("imageUrls", JsonFieldType.ARRAY, "지점 대표사진 URL 목록. 첫 번째 값이 카드·상세의 대표 이미지가 된다"));
     fields.add(field("roomOffers", JsonFieldType.ARRAY, "객실 타입 목록. 1개 이상"));
     fields.add(field("roomOffers[].name", JsonFieldType.STRING, "객실 타입명"));
     fields.add(field("roomOffers[].contract", JsonFieldType.OBJECT, "방 타입별 이용 기간"));
@@ -573,7 +593,6 @@ public final class ListingDocsFields {
             "roomOffers[].filterTags",
             ConditionTag.class,
             "해당 객실 타입의 옵션. 1개 이상이며, 응답 상위 conditions는 이 값들의 합집합이다"));
-    fields.add(field("roomOffers[].roomImageUrls", JsonFieldType.ARRAY, "객실 사진 URL 목록. 2장 이상"));
     fields.add(
         enumArrayField(
             "preferredNationalities", Nationality.class, "설문 — 선호하는 입주자 국적. 1개 이상이며 응답에는 나오지 않는다"));

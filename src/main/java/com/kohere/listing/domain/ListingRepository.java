@@ -48,6 +48,14 @@ public interface ListingRepository {
       int size,
       String sort);
 
+  /**
+   * 저장 전에 식별자를 하나 발급한다.
+   *
+   * <p>보통은 저장할 때 저장소가 식별자를 붙이면 되지만, 사진 저장 키가 매물·방 식별자를 포함해서(ADR-0041 §2) 저장보다 먼저 알아야 한다. 식별자 형식은 저장
+   * 기술이 정하므로 발급도 저장소가 맡는다.
+   */
+  String nextIdentity();
+
   /** 매물 도메인 객체를 저장하고 저장된 결과를 반환한다. */
   Listing save(Listing listing);
 

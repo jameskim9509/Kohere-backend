@@ -18,7 +18,6 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Set;
 
@@ -31,6 +30,9 @@ import java.util.Set;
  *
  * <p>다국어 문구는 <b>한국어 한 값만</b> 받는다. 저장 계약({@code LocalizedText})이 두 언어를 모두 요구하므로 서버가 {@code en}에 같은
  * 값을 복사하고, 영어 번역은 관리자가 승인 심사에서 채운다.
+ *
+ * <p>사진은 이 JSON에 없다. 요청이 {@code multipart/form-data}이고 이 DTO는 그중 {@code request} part 하나에 대응한다 —
+ * 파일은 {@code listingImages}·{@code roomImages{i}} part로 오고 서버가 저장한 URL을 채운다(ADR-0041).
  *
  * <p>요청에 없는 값은 서버가 채운다 — {@code _id}·{@code roomOffers[].roomOfferId}·{@code
  * schemaVersion}(4)·{@code status}({@code PENDING})·{@code favoriteCount}(0)·{@code
@@ -58,7 +60,6 @@ public record ListingRegisterRequest(
     @NotBlank String description,
     @NotBlank String extraNotes,
     @NotBlank String refundPolicy,
-    @NotEmpty List<String> imageUrls,
     @NotEmpty @Valid List<RoomOfferRequest> roomOffers,
     @NotEmpty Set<Nationality> preferredNationalities,
     @NotEmpty Set<ContractDifficulty> contractDifficulties,
@@ -93,13 +94,12 @@ public record ListingRegisterRequest(
   public record NearestTransitRequest(
       @NotNull Listing.TransitType type, @NotBlank String name, @Min(0) int walkMinutes) {}
 
-  /** 개별 객실 타입이다. 사진은 최소 2장을 요구한다. */
+  /** 개별 객실 타입이다. 사진은 이 JSON이 아니라 {@code roomImages{i}} part로 온다. */
   public record RoomOfferRequest(
       @NotBlank String name,
       @NotNull @Valid ContractRequest contract,
       @NotNull @Valid PricingRequest pricing,
-      @NotEmpty Set<ConditionTag> filterTags,
-      @NotNull @Size(min = 2) List<String> roomImageUrls) {}
+      @NotEmpty Set<ConditionTag> filterTags) {}
 
   /** 이용 기간(개월)이다. {@code maxStayMonths >= minStayMonths}는 도메인이 재검증한다. */
   public record ContractRequest(@Min(1) int minStayMonths, @Min(1) int maxStayMonths) {}

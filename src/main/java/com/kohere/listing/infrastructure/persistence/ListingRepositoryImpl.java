@@ -175,6 +175,12 @@ public class ListingRepositoryImpl implements ListingRepository {
     return findPage(criteria, page, size, sortBy(sort));
   }
 
+  /** 저장 전에 쓸 ObjectId를 미리 발급한다. 저장 시 발급하는 값과 같은 형식이라 이후 조회·매핑이 달라지지 않는다. */
+  @Override
+  public String nextIdentity() {
+    return new ObjectId().toHexString();
+  }
+
   /** 도메인 모델을 Mongo Document로 변환해 저장한 뒤 다시 도메인 모델로 반환한다. */
   @Override
   public Listing save(Listing listing) {

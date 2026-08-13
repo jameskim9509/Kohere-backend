@@ -1,7 +1,6 @@
 package com.kohere.listing.infrastructure;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
-import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.kohere.docs.ApiDocsErrors.errorSnippet;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
@@ -16,18 +15,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
-import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
-import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.multipart;
+import static org.springframework.restdocs.operation.preprocess.Preprocessors.modifyHeaders;
+import static org.springframework.restdocs.operation.preprocess.Preprocessors.preprocessRequest;
+import static org.springframework.restdocs.payload.PayloadDocumentation.requestPartFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.epages.restdocs.apispec.ResourceDocumentation;
+import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsTags;
+import com.kohere.listing.presentation.dto.ListingImagePartReader;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -43,8 +47,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
+import org.springframework.restdocs.operation.preprocess.ContentModifyingOperationPreprocessor;
+import org.springframework.restdocs.operation.preprocess.OperationRequestPreprocessor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -90,6 +97,11 @@ class ListingRegisterDocsTest {
   private static final String NO_MAINT_FEE_CATALOG_ID = "CONDITION_TAG:NO_MAINT_FEE";
 
   private static final String MALFORMED_BODY = "{ \"oops\" }";
+
+  /** 사진 part의 형식·내용. 서버는 바이트를 해석하지 않고 형식과 크기만 본다. */
+  private static final String IMAGE_CONTENT_TYPE = "image/jpeg";
+
+  private static final byte[] IMAGE_BYTES = "fake-jpeg-bytes".getBytes(StandardCharsets.UTF_8);
 
   // 다른 키로 서명한 위조 access 토큰. 401 예시도 구조상 JWT여야 restdocs-api-spec이 bearerAuth 보안 스킴을
   // 도출해 Swagger 자물쇠가 유지된다(ListingDocsTest와 동일 처리).
@@ -154,10 +166,6 @@ class ListingRegisterDocsTest {
         "description": "지하철역에서 도보 5분 거리의 관리가 잘 된 고시원입니다.",
         "extraNotes": "객실 내 취사 금지. 오후 11시 이후 정숙.",
         "refundPolicy": "입주 7일 전까지 취소하면 전액 환불합니다.",
-        "imageUrls": [
-          "https://cdn.kohere.app/uploads/2026/08/branch-1.jpg",
-          "https://cdn.kohere.app/uploads/2026/08/branch-2.jpg"
-        ],
         "roomOffers": [
           {
             "name": "스탠다드 1인실",
@@ -167,11 +175,7 @@ class ListingRegisterDocsTest {
               "deposit": 200000,
               "maintenanceFee": 20000
             },
-            "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
-            "roomImageUrls": [
-              "https://cdn.kohere.app/uploads/2026/08/room-101-1.jpg",
-              "https://cdn.kohere.app/uploads/2026/08/room-101-2.jpg"
-            ]
+            "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"]
           }
         ],
         "preferredNationalities": ["JAPAN", "CHINA"],
@@ -250,11 +254,9 @@ class ListingRegisterDocsTest {
         .andDo(
             document(
                 "listing-register",
-                resourceDetails()
-                    .tag(ApiDocsTags.LISTINGS)
-                    .summary(LISTING_REGISTER_SUMMARY)
-                    .description(LISTING_REGISTER_DESCRIPTION),
-                requestFields(registerRequestFields()),
+                showRequestPartOnly(REGISTER_BODY),
+                registerResource(),
+                requestPartFields("request", registerRequestFields()),
                 responseFields(registerResponseFields())));
   }
 
@@ -404,16 +406,66 @@ class ListingRegisterDocsTest {
                 errorCodes));
   }
 
-  private MockHttpServletRequestBuilder register(String bearerToken, String body) {
-    return post("/api/v2/listings")
-        .header(HttpHeaders.AUTHORIZATION, bearerToken)
-        .contentType(MediaType.APPLICATION_JSON)
-        .content(body);
+  /**
+   * OpenAPI에 실을 요청 스키마·예시를 담은 리소스 스니펫이다.
+   *
+   * <p>{@code requestPartFields}는 {@code RequestFieldsSnippet}이 아니라 래퍼가 기술자를 걷어 가지 못한다 — 리소스 스니펫을
+   * 직접 만들어 같은 기술자를 넘긴다. 그래야 Swagger에 요청 스키마가 남는다.
+   */
+  private static org.springframework.restdocs.snippet.Snippet registerResource() {
+    return ResourceDocumentation.resource(
+        ResourceSnippetParameters.builder()
+            .tag(ApiDocsTags.LISTINGS)
+            .summary(LISTING_REGISTER_SUMMARY)
+            .description(LISTING_REGISTER_DESCRIPTION)
+            .requestFields(registerRequestFields())
+            .responseFields(registerResponseFields())
+            .build());
   }
 
-  /** 본문 없이 보내는 요청. 토큰 자체가 거절되는 401·403에는 본문이 필요 없다. */
+  /**
+   * multipart 요청을 문서에 그대로 실으면 boundary가 붙은 Content-Type과 사람이 못 읽는 본문이 OpenAPI에 남는다.
+   *
+   * <p>클라이언트가 봐야 할 것은 {@code request} part의 JSON이므로 그 둘만 바꿔 스니펫을 만든다. 파일 part 규칙은 오퍼레이션 설명의 표가 설명한다
+   * — restdocs-api-spec 0.19.4는 part를 표현하지 못한다(ADR-0041).
+   */
+  private static OperationRequestPreprocessor showRequestPartOnly(String requestPartBody) {
+    return preprocessRequest(
+        modifyHeaders().set(HttpHeaders.CONTENT_TYPE, MediaType.MULTIPART_FORM_DATA_VALUE),
+        new ContentModifyingOperationPreprocessor(
+            (content, contentType) -> requestPartBody.getBytes(StandardCharsets.UTF_8)));
+  }
+
+  /**
+   * 등록 정보 JSON과 사진 파일을 한 요청에 싣는다.
+   *
+   * <p>지점 사진 1장 · 방 사진 2장이 규칙의 하한이라 이 조합이 최소 성공 요청이다. 방 사진 part 이름의 인덱스가 {@code roomOffers} 인덱스다.
+   */
+  private MockHttpServletRequestBuilder register(String bearerToken, String body) {
+    return multipart("/api/v2/listings")
+        .file(jsonPart(body))
+        .file(imagePart(ListingImagePartReader.COVER_PART, "branch-1.jpg"))
+        .file(imagePart(ListingImagePartReader.ROOM_PART_PREFIX + 0, "room-101-1.jpg"))
+        .file(imagePart(ListingImagePartReader.ROOM_PART_PREFIX + 0, "room-101-2.jpg"))
+        .header(HttpHeaders.AUTHORIZATION, bearerToken);
+  }
+
+  /** 파일 없이 보내는 요청. 토큰 자체가 거절되는 401·403에는 본문이 필요 없다. */
   private MockHttpServletRequestBuilder emptyRegister() {
-    return post("/api/v2/listings").contentType(MediaType.APPLICATION_JSON);
+    return multipart("/api/v2/listings");
+  }
+
+  private static MockMultipartFile jsonPart(String body) {
+    return new MockMultipartFile(
+        "request",
+        "request.json",
+        MediaType.APPLICATION_JSON_VALUE,
+        body.getBytes(StandardCharsets.UTF_8));
+  }
+
+  /** 내용은 검사하지 않으므로 형식과 크기만 규칙에 맞는 최소 바이트를 싣는다. */
+  private static MockMultipartFile imagePart(String partName, String fileName) {
+    return new MockMultipartFile(partName, fileName, IMAGE_CONTENT_TYPE, IMAGE_BYTES);
   }
 
   /** 정상 본문에서 한 값만 바꾼 변형이다. 본문에서 유일하게 지목할 수 있는 값만 바꾼다. */

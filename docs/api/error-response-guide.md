@@ -58,6 +58,8 @@
 | 404 Not Found | 리소스 없음, 미정의 경로 | `*_NOT_FOUND`, `RESOURCE_NOT_FOUND` |
 | 405 Method Not Allowed | 허용되지 않은 메서드 | `METHOD_NOT_ALLOWED` |
 | 409 Conflict | 상태 충돌·중복 | `*_ALREADY_EXISTS`, `DUPLICATE_*` |
+| 413 Payload Too Large | 업로드 크기 초과 | `PAYLOAD_TOO_LARGE`, `LISTING_IMAGE_TOO_LARGE` |
+| 415 Unsupported Media Type | 지원하지 않는 파일 형식 | `LISTING_IMAGE_UNSUPPORTED_TYPE` |
 | 422 Unprocessable Entity | 형식은 맞으나 비즈니스 규칙 위반 | 도메인별 코드 |
 | 429 Too Many Requests | 레이트리밋 초과 | `TOO_MANY_REQUESTS` |
 | 500 Internal Server Error | 처리되지 않은 서버 오류 | `INTERNAL_ERROR` |
@@ -82,6 +84,7 @@
 | `FORBIDDEN` | 403 | 권한 없음 |
 | `RESOURCE_NOT_FOUND` | 404 | 일반 리소스 없음 |
 | `METHOD_NOT_ALLOWED` | 405 | 미허용 메서드 |
+| `PAYLOAD_TOO_LARGE` | 413 | 요청 총량이 서블릿 상한을 넘음. multipart 해석이 핸들러 탐색보다 앞서 일어나 어느 엔드포인트인지 알 수 없으므로 도메인 코드가 아니라 공통 코드다 |
 | `TOO_MANY_REQUESTS` | 429 | 호출 한도 초과 |
 | `INTERNAL_ERROR` | 500 | 서버 내부 오류 |
 | `UPSTREAM_ERROR` | 502 | 외부 연동 실패 |

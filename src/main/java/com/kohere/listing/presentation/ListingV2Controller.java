@@ -11,6 +11,8 @@ import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.domain.image.ListingImageParts;
+import com.kohere.listing.presentation.dto.ListingImagePartReader;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingRegisterRequest;
@@ -18,6 +20,7 @@ import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,10 +28,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
 /**
  * 매물 탐색·찜·등록 REST 컨트롤러다. 입력 검증·DTO 변환만 담당하고 비즈니스 로직은 응용 계층에 위임한다 (docs/convention/code-style.md
@@ -105,13 +109,21 @@ public class ListingV2Controller {
    * {@code 403 FORBIDDEN}이다 — 보안 필터는 정식 회원인지까지만 본다.
    *
    * <p>등록 직후 상태는 {@code PENDING}이라 조회·검색·상세에 노출되지 않는다.
+   *
+   * <p>요청은 {@code multipart/form-data}다 — 등록 정보 JSON은 {@code request} part로, 사진은 {@code
+   * listingImages}·{@code roomImages{i}} part로 온다. 사진 URL은 요청에 없고 서버가 업로드 후 채운다(ADR-0041).
    */
-  @PostMapping
+  @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<ListingDetailResponse> register(
       @AuthenticationPrincipal AuthPrincipal principal,
-      @Valid @RequestBody ListingRegisterRequest request) {
-    return ApiResponse.success(listingRegisterService.register(principal.userId(), request));
+      @Valid @RequestPart("request") ListingRegisterRequest request,
+      MultipartHttpServletRequest multipartRequest) {
+    ListingImageParts images =
+        ListingImagePartReader.read(
+            multipartRequest.getMultiFileMap(), request.roomOffers().size());
+    return ApiResponse.success(
+        listingRegisterService.register(principal.userId(), request, images));
   }
 
   /**

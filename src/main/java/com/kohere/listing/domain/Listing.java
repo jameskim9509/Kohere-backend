@@ -16,7 +16,7 @@ import lombok.Getter;
  * <p>도메인 모델은 MongoDB 타입이나 Spring Data 애노테이션에 의존하지 않는다. 저장 모델과의 변환은 infrastructure 계층이 담당한다.
  */
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class Listing {
 
   /** 매물의 고유 식별자다. MongoDB 문서 id와 대응된다. */

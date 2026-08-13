@@ -1,5 +1,6 @@
 package com.kohere.listing.application;
 
+import com.kohere.listing.application.ListingImageUploader.UploadedListingImages;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.District;
@@ -11,9 +12,12 @@ import com.kohere.listing.domain.ListingUnknownCatalogCodeException;
 import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
 import com.kohere.listing.domain.catalog.ListingCatalogRepository;
+import com.kohere.listing.domain.image.ListingImageParts;
 import com.kohere.listing.presentation.dto.ListingRegisterRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,22 +42,69 @@ public class ListingRegisterService {
 
   private final ListingRepository listingRepository;
   private final ListingCatalogRepository listingCatalogRepository;
+  private final ListingImageUploader listingImageUploader;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
 
   /**
    * 등록 요청을 저장하고 생성된 매물을 상세 응답 구조로 돌려준다.
    *
+   * <p>순서가 중요하다 — 입력 검증을 모두 끝낸 뒤에 사진을 올리고, 그다음 저장한다. 검증이 업로드보다 앞서야 거절된 요청이 저장소에 흔적을 남기지 않고, 저장이
+   * 실패하면 방금 올린 사진을 지워 사진 없는 매물이 남지 않는다(ADR-0041 §3).
+   *
    * <p>응답 언어는 다른 조회와 같이 임대인 계정의 표시 언어를 따른다. 다만 등록 직후 문서는 두 언어에 같은 한국어가 들어 있어 어느 언어를 골라도 결과가 같다.
    */
-  public ListingDetailResponse register(long landlordId, ListingRegisterRequest request) {
+  public ListingDetailResponse register(
+      long landlordId, ListingRegisterRequest request, ListingImageParts images) {
     requireLandlord(landlordId);
     ListingCatalogCodes catalog = ListingCatalogCodes.of(listingCatalogRepository.findAll());
-    Listing saved = listingRepository.save(toListing(landlordId, request, catalog));
+    // 사진을 올리기 전에 요청을 통째로 매물로 조립해 본다 — 카탈로그 대조·범위 파싱·주소 판별이 모두 여기서 끝나므로,
+    // 거절될 요청은 저장소에 아무것도 남기지 않는다. 식별자와 사진 URL만 아직 비어 있다.
+    Listing draft = toListing(landlordId, request, catalog);
+
+    String listingId = listingRepository.nextIdentity();
+    List<String> roomOfferIds =
+        request.roomOffers().stream().map(unused -> listingRepository.nextIdentity()).toList();
+    UploadedListingImages uploaded = listingImageUploader.upload(listingId, roomOfferIds, images);
+
+    Listing saved;
+    try {
+      saved = listingRepository.save(withStoredImages(draft, listingId, roomOfferIds, uploaded));
+    } catch (RuntimeException e) {
+      listingImageUploader.rollback(uploaded);
+      throw e;
+    }
     return ListingResponseMapper.toDetail(
         saved,
         false,
         listingLocalizationService.contextFor(userAccountService.getLanguage(landlordId)));
+  }
+
+  /**
+   * 조립해 둔 매물에 발급한 식별자와 업로드 결과를 채운다.
+   *
+   * <p>사진 저장 키가 식별자를 포함해서 저장보다 먼저 발급했고, URL은 업로드가 끝나야 알 수 있다. 두 값만 마지막에 얹는다.
+   */
+  private static Listing withStoredImages(
+      Listing draft, String listingId, List<String> roomOfferIds, UploadedListingImages uploaded) {
+    List<Listing.RoomOffer> roomOffers = new ArrayList<>();
+    for (int i = 0; i < roomOfferIds.size(); i++) {
+      Listing.RoomOffer roomOffer = draft.getRoomOffers().get(i);
+      roomOffers.add(
+          new Listing.RoomOffer(
+              roomOfferIds.get(i),
+              roomOffer.name(),
+              roomOffer.status(),
+              roomOffer.contract(),
+              roomOffer.pricing(),
+              roomOffer.filterTags(),
+              uploaded.roomUrls().get(i)));
+    }
+    return draft.toBuilder()
+        .id(listingId)
+        .imageUrls(uploaded.coverUrls())
+        .roomOffers(List.copyOf(roomOffers))
+        .build();
   }
 
   private void requireLandlord(long landlordId) {
@@ -67,6 +118,9 @@ public class ListingRegisterService {
    *
    * <p>서버가 채우는 값(상태·통화·시각 등)과 폼 1칸에서 나눈 값(운영층·연령대), 주소에서 뽑은 행정구역이 여기서 결정된다. 값 범위 불변식은 {@code
    * ListingValidator}가 저장 직전에 다시 본다.
+   *
+   * <p>식별자와 사진 URL은 아직 비어 있다 — 저장 키가 식별자를 포함하고 URL은 업로드가 끝나야 정해지므로, 그 둘만 {@link #withStoredImages}가
+   * 마지막에 얹는다.
    */
   private Listing toListing(
       long landlordId, ListingRegisterRequest request, ListingCatalogCodes catalog) {
@@ -95,7 +149,7 @@ public class ListingRegisterService {
         .genderPolicy(request.genderPolicy())
         .languagesSupported(request.languagesSupported())
         .favoriteCount(0)
-        .imageUrls(request.imageUrls())
+        .imageUrls(List.of())
         .nearbyUniversityCodes(Set.of())
         .createdAt(now)
         .updatedAt(now)
@@ -166,7 +220,7 @@ public class ListingRegisterService {
             request.pricing().maintenanceFee(),
             Listing.Currency.KRW),
         request.filterTags(),
-        request.roomImageUrls());
+        List.of());
   }
 
   /**
