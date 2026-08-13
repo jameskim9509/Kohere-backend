@@ -1,5 +1,6 @@
 package com.kohere.listing.application.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.kohere.listing.domain.Listing;
 import java.time.Instant;
 import java.util.List;
@@ -23,7 +24,7 @@ public record ListingSummaryResponse(
     int ageMax,
     List<CodeLabelResponse> languagesSupported,
     ListingDetailResponse.ContactResponse contact,
-    String blogUrl,
+    @JsonInclude(JsonInclude.Include.NON_NULL) String blogUrl,
     ListingDetailResponse.GeoPoint location,
     ListingDetailResponse.AddressResponse address,
     ListingDetailResponse.NearestTransitResponse nearestTransit,
