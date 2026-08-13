@@ -6,7 +6,7 @@
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-07-21 |
 | 기준 코드 | `develop` @ `4b64c92`. 본 ADR의 수치·파일 참조는 전부 이 시점 기준이며, 재검증 없이 인용하지 않는다 |
-| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0010](./0010-jwt-authentication-filter.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0019](./0019-infrastructure-as-code-terraform.md), [ADR-0026](./0026-dev-host-memory-budget.md), [ADR-0031](./0031-apple-sign-in-authorization-code-flow.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [#152](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/152) |
+| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0010](./0010-jwt-authentication-filter.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0019](./0019-infrastructure-as-code-terraform.md), [ADR-0026](./0026-dev-host-memory-budget.md), [ADR-0031](./0031-apple-sign-in-authorization-code-flow.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md), [#152](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/152) |
 
 ## Status
 
@@ -96,7 +96,9 @@ Proposed
 
 ### 용도 1 — 사용자 활동 추적
 
-**컨트롤러 매핑 65개 전 요청에 접근 로그 한 줄을 남긴다.** `HandlerInterceptor`·INFO. 동작 46개와 미구현 껍데기 19개(chat 5·community 12·report 2)를 모두 포함한다 — 껍데기 호출은 500이라 용도 5와 같은 `traceId`로 묶여야 한다. 프리픽스는 `/api/v1`과 `/api/v2`(v2 진단·매물 등록) 둘 다이며 인터셉터는 프리픽스로 거르지 않는다.
+**컨트롤러 매핑 65개 전 요청에 접근 로그 한 줄을 남긴다.** `HandlerInterceptor`·INFO. 동작 46개와 미구현 껍데기 19개(chat 5·community 12·report 2)를 모두 포함한다 — 껍데기 호출은 500이라 용도 5와 같은 `traceId`로 묶여야 한다. 프리픽스는 `/api/v1`과 `/api/v2`(v2 진단·매물 등록·매물 조회) 둘 다이며 인터셉터는 프리픽스로 거르지 않는다.
+
+**종료된 v1 매물 조회의 스텁 응답도 접근 로그를 남긴다**([ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md)). 빈 페이지(200)든 `404 LISTING_NOT_FOUND`든 요청은 요청이라 인터셉터를 그대로 탄다. 프리픽스로 거르지 않는 규칙의 실익이 여기서 나온다 — `pathPattern`이 `/api/v1/listings…`인 라인의 잔량이 **구버전 앱이 얼마나 남았는지**를 보여주는 유일한 지표이고, 이관 진척은 같은 기능의 v1/v2 접근 로그 비율로 읽는다. 스텁의 404는 4xx `BusinessException`이라 스택 없이 `status`·`errorCode`로만 관측되며(범위 제외 절), 의도된 동작이므로 그것으로 족하다.
 
 | 항목 | 값 |
 |---|---|
@@ -292,7 +294,7 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 |---|---|
 | 커넥션 풀 포화·힙 사용량 | 메트릭 영역. 풀 설정 자체가 전무해 선행 과제다 |
 | 호스트 메모리·스왑 | 도입한 CloudWatch Agent가 `logs` 전용이라 `metrics` 섹션이 없다. 도입 게이트를 통과시킨 근거(`available`·스왑)를 정작 지속 관측할 수단이 없어 확인이 SSM `free -m` 수동이다 — 지표화는 [ADR-0026](./0026-dev-host-memory-budget.md) 후속 작업 |
-| `GET /listings/{listingId}`의 Mongo 쓰기(`ListingService:162`) | 최근 본 매물 이벤트 제외의 대가로 수용 |
+| `GET /api/v2/listings/{listingId}`의 Mongo 쓰기(`ListingService:162`) | 최근 본 매물 이벤트 제외의 대가로 수용. v1 상세는 스텁(404)이라 쓰기 자체가 없다 |
 | 게스트와 미인증이 로그에서 같은 `anonymous` | 정상 게스트 트래픽과 토큰 미전송 오류가 `userId`만으로는 안 갈린다 — `pathPattern`이 `permitAll` 경로인지로 사후 판별한다 |
 | `ApplicationRunner` 8개의 실행 순서 | `@Order`가 없어 미보장 — 관측만 하고 보장하지 않는다 |
 | prod 반출 검증 | `deploy.yml`이 dev만 배선. ECS Terraform은 CD 미연결이라 실적재 확인 불가 |
@@ -322,7 +324,8 @@ Log Group 네이밍이 환경별로 갈리는 것은 prod가 ECS 관례를 이�
 | 1 | 매핑 65개와 제외 경로 호출, 연속 요청 | 65건 각 1줄·제외 0줄·익명은 `anonymous`, `traceId` 잔류 0건 |
 | 1 | 제외 4종(예약 삭제·차단 해제·찜 추가·해제) 유발 | `pathVars`로 대상 식별자가 복원돼 별도 이벤트 없이 "누가 무엇을"이 확정된다 |
 | 1 | 데이터 변경 7종 유발 | 접근 로그와 같은 `traceId`로 조인, `PROFILE_UPDATED`는 `lang`만 값 노출 |
-| 1 | 게스트로 퀴즈·생활 팁·v2 진단·매물 탐색 GET 호출 | `userId=anonymous`로 접근 로그 1줄, v2 진단 단계는 `guestSessionId`로 추적된다 |
+| 1 | 게스트로 퀴즈·생활 팁·v2 진단·매물 탐색 GET(`/api/v2/listings`) 호출 | `userId=anonymous`로 접근 로그 1줄, v2 진단 단계는 `guestSessionId`로 추적된다 |
+| 1 | 종료된 v1 매물 조회(목록·상세) 호출 | `pathPattern`이 `/api/v1/listings…`인 접근 로그 1줄씩 — 200 빈 페이지와 404가 모두 남아 구버전 앱 잔존 트래픽이 집계된다 |
 | 2 | 어댑터 6개를 성공·4xx·타임아웃으로 유발 | `outcome`·`latencyMs`가 기대값, 502 1건에 WARN 1줄만(ERROR 중복 0) |
 | 2 | 스텁·폴백 5개 활성으로 기동 | 활성 어댑터 5줄, 인증번호 출력 0건 |
 | 3 | 만료 401·위조 401·403·`REVOKED` 토큰 `reissue` | 각각 INFO·WARN·WARN·WARN |

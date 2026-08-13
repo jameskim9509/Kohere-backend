@@ -440,7 +440,7 @@
 | `active` | boolean | false면 검색 후보에서 제외 |
 | `priority` | int | 같은 점수로 매칭될 때 대표 장소 우선순위 |
 
-> **장소 후보 검색(`GET /api/v1/listings/places`) — 무상태, 컬렉션 없음**: 지도 검색창 키워드는 네이버 지역 검색 API로 조회한다(아웃바운드 포트 `PlaceSearchClient`, 인프라 어댑터 `NaverPlaceSearchClient`, 설정 `NaverSearchProperties`(prefix `app.naver.search`)). 결과(최대 5개 장소 후보)를 서버에 저장하지 않는다 — 새 컬렉션도 없고 위 `searchPlaces`도 참조하지 않는다(`searchPlaces`는 별개 엔드포인트 `/api/v1/listings/search` 전용). 따라서 이 절엔 관련 스키마가 없다.
+> **장소 후보 검색(`GET /api/v1/listings/places`) — 무상태, 컬렉션 없음**: 지도 검색창 키워드는 네이버 지역 검색 API로 조회한다(아웃바운드 포트 `PlaceSearchClient`, 인프라 어댑터 `NaverPlaceSearchClient`, 설정 `NaverSearchProperties`(prefix `app.naver.search`)). 결과(최대 5개 장소 후보)를 서버에 저장하지 않는다 — 새 컬렉션도 없고 위 `searchPlaces`도 참조하지 않는다(`searchPlaces`는 별개 엔드포인트 `/api/v2/listings/search` 전용). 따라서 이 절엔 관련 스키마가 없다. **경로가 `/api/v1`인 이유**: 매물 조회 계열 6종은 `/api/v2`로 이관되고 `/api/v1` 조회는 DB에 닿지 않는 `deprecated` 스텁이 됐지만, 이 엔드포인트만은 매물 데이터를 쓰지 않아 영향을 받지 않으므로 `/api/v1`에 그대로 둔다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md) · [03-listings-favorites](../api/specs/03-listings-favorites.md)).
 
 `favorites`
 

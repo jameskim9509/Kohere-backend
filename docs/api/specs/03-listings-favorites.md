@@ -3,7 +3,7 @@
 > [api-design-guide](../api-design-guide.md) · [error-response-guide](../error-response-guide.md)를 따른다. 모든 응답은 공통 래퍼.
 > 관련 유저 스토리: [user-stories](../../requirements/user-stories.md)
 
-임대인의 매물 등록, 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 등록은 `/api/v2`, 조회 계열은 `/api/v1`이다** — `POST /api/v2/listings`가 매물 도메인의 첫 `/api/v2` 엔드포인트이며 요청·응답 모두 처음부터 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). 목록·지도·검색·상세·찜은 현재 `/api/v1` 경로에 그대로 있다.
+임대인의 매물 등록, 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 API의 정본은 `/api/v2`다** — 등록(`POST /api/v2/listings`)에 이어 조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겼고, 요청·응답 모두 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). **기존 `/api/v1` 조회 경로는 개정 전(v3) 응답 구조를 복원한 `deprecated` 스텁**이며 빈 결과나 `404 LISTING_NOT_FOUND`만 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md), 아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)). 장소 후보 검색(`GET /api/v1/listings/places`)만 매물 데이터를 쓰지 않아 `/api/v1`에서 그대로 동작한다.
 
 > **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명·유의사항·환불 정책 문구는 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·`arcRequired`·행정구역(`address.city`·`address.district`)·`languagesSupported`·`nearbyFacilities`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다. 단 `status`(`ListingStatus`)는 임대인·관리자만 읽는 관리 상태라 번역 대상이 아니며 코드 문자열 그대로 내려간다.
 
@@ -24,27 +24,66 @@
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
 | POST | `/api/v2/listings` | 매물 등록(임대인) — 승인 대기(`PENDING`) 상태로 저장 | 필수(임대인) | 201 |
-| GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
-| GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) | 불필요 | 200 |
-| GET | `/api/v1/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
-| GET | `/api/v1/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
-| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회(정식 로그인 시 최근 본 기록) | 선택 | 200 |
-| POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
-| DELETE | `/api/v1/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
-| GET | `/api/v1/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
-| GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
+| GET | `/api/v2/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
+| GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) — **유일하게 `/api/v1`에 남는 경로** | 불필요 | 200 |
+| GET | `/api/v2/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
+| GET | `/api/v2/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
+| GET | `/api/v2/listings/{listingId}` | 매물 상세 조회(정식 로그인 시 최근 본 기록) | 선택 | 200 |
+| POST | `/api/v2/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
+| DELETE | `/api/v2/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
+| GET | `/api/v2/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
+| GET | `/api/v2/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
 
+> 위 표의 `/api/v2` 경로가 정본이다. 같은 경로의 `/api/v1` 버전은 빈 결과·404만 돌려주는 `deprecated` 스텁으로만 남아 있다(아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)).
+>
 > 매물 등록만 임대인 전용이고 나머지는 세입자·비로그인 사용자를 위한 조회 API다. 등록은 `SecurityConfig`에 **`POST /api/v2/listings`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다([ADR-0010](../../adr/0010-jwt-authentication-filter.md)) — 명시하지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 임대인 여부(`userType=LANDLORD`)는 서비스가 다시 검사해 `403 FORBIDDEN`으로 거른다. 등록된 매물은 `PENDING`이라 아래 조회 API 어디에도 나오지 않는다 — 조회는 `PUBLISHED` 한정이다.
 >
-> 목록·지도·검색·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다. 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어를 적용하고, 상세에서는 실제 찜 상태와 최근 본 기록도 적용한다. 목록·기존 키워드 검색의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`다. 비로그인·온보딩 미완료·위조/형식 오류 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지 않는다. 단, 만료 토큰은 공개 매물 조회에서도 `401 TOKEN_EXPIRED`다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이며, 토큰 없음·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`다.
+> 공개 조회도 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 넣지 않으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 된다(v1 공개 조회 매처와 같은 이유). 결국 `/api/v2/listings` 네임스페이스는 **GET은 공개, POST(등록)는 `hasRole("USER")`** 로 메서드별로 갈린다. 찜 토글(`POST`·`DELETE /api/v2/listings/*/favorite`)과 내 스코프(`GET /api/v2/users/me/favorites`·`/recent-listings`)는 v1과 동일하게 `hasRole("USER")` 매처를 유지한다.
+>
+> 목록·지도·검색·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다(경로는 v2 기준이고 장소 후보 검색만 `/api/v1`이다). 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어를 적용하고, 상세에서는 실제 찜 상태와 최근 본 기록도 적용한다. 목록·기존 키워드 검색의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`다. 비로그인·온보딩 미완료·위조/형식 오류 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지 않는다. 단, 만료 토큰은 공개 매물 조회에서도 `401 TOKEN_EXPIRED`다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이며, 토큰 없음·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`다.
+
+## v1 조회 API 종료(deprecated)
+
+출시된 앱은 `/api/v1/listings` 계열을 호출한다. 그런데 스키마 v4 개편([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md))으로 **`/api/v1` 경로가 v4 구조를 반환하게 되어 구버전 앱이 깨진 상태**다. 이를 바로잡기 위해 조회 계열을 버전으로 분리한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md)).
+
+| | `/api/v1` | `/api/v2` |
+| --- | --- | --- |
+| 응답 구조 | **개정 전(v3) 그대로 복원** | 개정 후(v4) |
+| 데이터 | **0건 · DB 미접근** | 실데이터 |
+| 상태 | `deprecated` · 제거 시점 **미정** | 정본 |
+
+구버전 앱은 계약이 깨진 응답 대신 **"매물 없음" 화면**을 보고 앱 업데이트로 유도된다. v1이 v4 데이터로 v3 모양을 조립하지 않으므로 하위 호환을 위해 없는 값을 날조할 일도 없다(`deposit: 0`으로 채우거나 빈 재고를 만들어 내지 않는다).
+
+### v1 스텁 동작
+
+| Method | Path | 동작 |
+| --- | --- | --- |
+| GET | `/api/v1/listings` | **빈 페이지** — `content: []`, `page.totalElements: 0` |
+| GET | `/api/v1/listings/map` | **빈 결과** — `markers: []`, `total: 0` |
+| GET | `/api/v1/listings/search` | **빈 페이지** — `matchedPlace: null`, `content: []`, `page.totalElements: 0` |
+| GET | `/api/v1/listings/{listingId}` | **`404 LISTING_NOT_FOUND`** |
+| POST | `/api/v1/listings/{listingId}/favorite` | **`404 LISTING_NOT_FOUND`** |
+| DELETE | `/api/v1/listings/{listingId}/favorite` | **`404 LISTING_NOT_FOUND`** |
+| GET | `/api/v1/users/me/favorites` | **빈 페이지** — `content: []`, `page.totalElements: 0` |
+| GET | `/api/v1/users/me/recent-listings` | **빈 결과** — `content: []` |
+| GET | `/api/v1/listings/places` | **그대로 동작** — 매물 데이터를 쓰지 않는다 |
+
+- 빈 결과·404는 **DB에 닿지 않고** 만든다. 필터·bbox·키워드 값과 무관하게 같은 응답이며, 매물이 실제로 있는지도 확인하지 않는다.
+- 응답 래퍼(`{ success, data, error }`)와 페이지 구조(`page.number`·`size`·`totalElements`·`totalPages`·`hasNext`)는 v3 계약 그대로다 — 구버전 앱의 파싱이 깨지지 않아야 "매물 없음" 화면에 도달한다.
+- 인증 규칙도 v3 그대로다. 공개 조회는 비로그인도 `200`(빈 결과)이고, 찜 토글·내 스코프는 여전히 `ROLE_USER` 전용이라 토큰이 없으면 `404`가 아니라 `401 UNAUTHENTICATED`다. 즉 **인가 판정이 먼저**고 스텁 응답은 그 뒤다.
+- **`GET /api/v1/listings/places`만 예외**로 살아 있다. 네이버 지역 검색 API만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
+- **제거 시점은 정하지 않았다.** 구버전 앱 사용 비중을 보고 별도로 결정하며, 그때까지 v1 스텁은 위 표대로 유지된다.
+- 진단 추천(`GET /api/v1/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 v4 개편 전후로 바뀌지 않았으므로 v1·v2 양쪽 모두 실데이터를 그대로 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
 
 ## 상세
+
+> 아래 상세는 모두 **`/api/v2` 정본 경로** 기준이다(장소 후보 검색만 `/api/v1`). 같은 경로의 `/api/v1` 조회는 위 [v1 스텁 동작](#v1-스텁-동작)을 따른다.
 
 ### POST /api/v2/listings — 매물 등록(임대인)
 
 - 설명: 임대인이 등록 폼에서 입력한 지점·건물·공용시설·주변 시설·방 타입 정보를 하나의 매물로 저장한다. 저장 직후 상태는 **`PENDING`(승인 대기)** 이라 세입자용 조회 API에는 노출되지 않으며, 공개 전환은 후속 관리자 승인 API가 담당한다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). `landlordId`는 access 토큰에서 읽으며 요청 본문에 담지 않는다.
-- 경로: 매물 도메인의 첫 `/api/v2` 엔드포인트다. 요청·응답이 모두 스키마 v4 구조라 `/api/v1` 조회 응답과 섞이지 않는다.
+- 경로: 매물 도메인의 첫 `/api/v2` 엔드포인트였고, 이제 조회 계열 6종도 같은 네임스페이스로 옮겨 왔다. `/api/v2/listings`는 **GET이면 공개 매물 조회, POST면 임대인 등록**으로 메서드에 따라 갈린다. 요청·응답이 모두 스키마 v4 구조라 `deprecated`된 `/api/v1` 조회 스텁과 섞이지 않는다.
 
 Path·Query 파라미터: 없음
 
@@ -302,7 +341,7 @@ Request Body:
 }
 ```
 
-- 응답은 매물 상세(`GET /api/v1/listings/{listingId}`)와 같은 v4 구조다. 등록 직후라 `favorited=false`, `favoriteCount=0`이다.
+- 응답은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 v4 구조다. 등록 직후라 `favorited=false`, `favoriteCount=0`이다.
 - `status`는 `PENDING`이며 **코드 문자열 그대로** 내려간다. 임대인·관리자만 읽는 관리 상태라 카탈로그 번역 대상이 아니다.
 - **`location` 키는 응답에 없고 `nearbyUniversityCodes`는 빈 배열이다.** 좌표 파생이 미구현이라 등록 시점에 채우지 않는다.
 - `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로다.
@@ -323,7 +362,7 @@ Request Body:
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰(`ROLE_ONBOARDING`) — `hasRole("USER")` 매처에서 차단 |
 | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자의 등록 요청 |
 
-### GET /api/v1/listings — 매물 리스트
+### GET /api/v2/listings — 매물 리스트
 
 - 설명: 지도 바텀시트나 매물 리스트 화면에 표시할 매물 목록을 반환한다. 응답 항목 1개가 화면의 카드 1개가 된다.
 - 인증: 선택. 로그인 사용자는 계정 표시 언어가 적용되지만, 목록의 `favorited`는 현재 구현상 항상 `false`다.
@@ -481,7 +520,8 @@ Request Body: 없음
 
 - 설명: 지도 검색창의 키워드를 네이버 지역 검색 API로 조회하고, 사용자가 선택할 장소 후보를 정확도순 최대 5개 반환한다.
 - 인증: 불필요
-- 책임 범위: 장소 후보만 반환하며 MongoDB 매물은 조회하지 않는다. 프론트가 후보 좌표로 지도를 이동한 뒤 계산한 bounds를 기존 `/api/v1/listings`와 `/api/v1/listings/map`에 전달한다.
+- 책임 범위: 장소 후보만 반환하며 MongoDB 매물은 조회하지 않는다. 프론트가 후보 좌표로 지도를 이동한 뒤 계산한 bounds를 `/api/v2/listings`와 `/api/v2/listings/map`에 전달한다.
+- 경로: 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았으므로 **`/api/v1`에 그대로 둔다** — 조회 계열 6종이 `/api/v2`로 옮겨간 뒤에도 이 엔드포인트만 `/api/v1`에서 정상 동작한다(위 [v1 조회 API 종료](#v1-조회-api-종료deprecated)).
 - 외부 연동: 장소 검색은 아웃바운드 포트 `PlaceSearchClient`(인프라 어댑터 `NaverPlaceSearchClient` — 네이버 지역 검색 API)로 **동기 호출**한다. 네이버 API 장애·타임아웃·인증정보 누락·응답/좌표 형식 이상 등 연동 실패는 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(공통 코드 — [error-response-guide](../error-response-guide.md)). 인증정보는 환경변수 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`(SSM SecureString)로 주입한다.
 
 Query 파라미터:
@@ -533,9 +573,9 @@ Request Body: 없음
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
 | 502 | `UPSTREAM_ERROR` | 네이버 HTTP 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
 
-### GET /api/v1/listings/map — 지도 마커 조회
+### GET /api/v2/listings/map — 지도 마커 조회
 
-- 설명: 지도에 찍을 마커 좌표만 반환한다. 지도 SDK 마커/클러스터 렌더링에 사용하고, 상세한 카드 정보는 `/api/v1/listings`로 가져온다.
+- 설명: 지도에 찍을 마커 좌표만 반환한다. 지도 SDK 마커/클러스터 렌더링에 사용하고, 상세한 카드 정보는 `/api/v2/listings`로 가져온다.
 - 인증: 선택
 
 Query 파라미터:
@@ -581,7 +621,7 @@ Request Body: 없음
 | 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
 
-### GET /api/v1/listings/search — 키워드 검색
+### GET /api/v2/listings/search — 키워드 검색
 
 - 설명: 검색창에서 학교명·지역명·지하철역명을 입력했을 때, 매칭된 장소와 주변 매물을 함께 반환한다.
 - 인증: 선택
@@ -610,7 +650,7 @@ Request Body: 없음
       "lat": 37.565784,
       "lng": 126.938572
     },
-    "content": [ /* /api/v1/listings content[]와 같은 매물 카드 구조 */ ],
+    "content": [ /* /api/v2/listings content[]와 같은 매물 카드 구조 */ ],
     "page": {
       "number": 0,
       "size": 20,
@@ -635,7 +675,7 @@ Request Body: 없음
 | 400 | `INVALID_INPUT` | 키워드 누락/공백/길이(1~50자) 위반, `size` 범위 초과 |
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
 
-### GET /api/v1/listings/{listingId} — 매물 상세
+### GET /api/v2/listings/{listingId} — 매물 상세
 
 - 설명: 목록 카드나 지도 마커를 눌렀을 때 상세 화면을 그리기 위한 매물 정보를 반환한다.
 - 인증: 선택. 비로그인·온보딩 미완료 사용자는 공개 상세만 받고, 온보딩 완료 사용자는 찜 상태·계정 언어·최근 본 기록이 적용된다.
@@ -773,7 +813,7 @@ Request Body: 없음
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
 | 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
 
-### POST /api/v1/listings/{listingId}/favorite — 찜 등록(토글)
+### POST /api/v2/listings/{listingId}/favorite — 찜 등록(토글)
 
 - 설명: 사용자가 하트를 눌러 매물을 찜 상태로 만든다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
@@ -810,7 +850,7 @@ Request Body: 없음
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
 | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
 
-### DELETE /api/v1/listings/{listingId}/favorite — 찜 해제(토글)
+### DELETE /api/v2/listings/{listingId}/favorite — 찜 해제(토글)
 
 - 설명: 사용자가 하트를 다시 눌러 찜을 해제한다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
@@ -842,7 +882,7 @@ Request Body: 없음
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
 | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
 
-### GET /api/v1/users/me/favorites — 내 찜한 매물 목록
+### GET /api/v2/users/me/favorites — 내 찜한 매물 목록
 
 - 설명: 마이페이지의 찜한 매물 목록을 반환한다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
@@ -961,7 +1001,7 @@ Request Body: 없음
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조·형식 오류 / 만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
 
-### GET /api/v1/users/me/recent-listings — 최근 본 매물
+### GET /api/v2/users/me/recent-listings — 최근 본 매물
 
 - 설명: 마이페이지나 홈의 최근 본 매물 영역에 표시할 매물을 최신 조회순으로 최대 10건 반환한다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
@@ -1090,6 +1130,6 @@ Request Body: 없음
 | `LISTING_INVALID_ADDRESS` | 400 | 매물 등록 시 `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구) |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 
-> `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다.
+> `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다. **deprecated된 v1 상세·찜 토글 스텁도 이 코드를 쓴다** — 매물을 찾지 못해서가 아니라 조회하지 않기 때문이며, 새 코드를 만들지 않아 구버전 앱이 이미 처리하던 에러 그대로 받는다(위 [v1 스텁 동작](#v1-스텁-동작)).
 > 뒤 두 코드는 매물 등록(`POST /api/v2/listings`) 전용이다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
 > 하트 토글은 이미 찜/미찜 상태여도 에러로 보지 않고 현재 하트 상태와 찜 수를 반환한다. 프론트는 응답 body의 `favorited`, `favoriteCount`만 보고 UI를 맞추면 된다.

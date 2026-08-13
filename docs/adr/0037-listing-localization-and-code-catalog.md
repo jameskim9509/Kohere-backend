@@ -5,7 +5,7 @@
 | 번호 | ADR-0037 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-07-17 |
-| 관련 문서 | [ADR-0002](./0002-inter-module-communication-via-events.md), [ADR-0029](./0029-diagnosis-i18n-strategy.md), [ADR-0032](./0032-mongodb-migration-runner.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [listing API](../api/specs/03-listings-favorites.md) |
+| 관련 문서 | [ADR-0002](./0002-inter-module-communication-via-events.md), [ADR-0029](./0029-diagnosis-i18n-strategy.md), [ADR-0032](./0032-mongodb-migration-runner.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md), [listing API](../api/specs/03-listings-favorites.md) |
 
 ## Status
 
@@ -34,6 +34,7 @@ Accepted
 - 공통 번역 수정은 `listingCatalog` 한 문서만 바꾸면 되며 모든 매물 문서를 재작성하지 않는다.
 - 매물 고유 번역은 해당 매물과 함께 읽혀 추가 조회가 필요 없다. 공통 카탈로그는 요청 시작 시 한 번에 읽어 응답 전체에서 재사용한다.
 - API의 표시 코드 필드는 문자열에서 `{code,label}` 객체로 바뀌는 하위 호환 불가 변경이다. 프론트는 표시 위치를 `.label`로 수정해야 한다.
+  - **개정(2026-08-13, [ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md))**: 이 변경은 **경로 버전을 올리지 않고 `/api/v1` 응답을 깬 선례**다 — [api-design-guide](../api/api-design-guide.md)의 "하위 호환이 깨지는 변경은 `/api/v2`로 올린다"와 어긋난다. **이후 하위 호환 불가 변경은 경로 버전을 올린다**([ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md)이 매물 조회를 `/api/v2`로 이관하며 이 선례를 대체한다). 이 줄을 근거로 v1을 다시 깨지 않는다.
 - 새 공통 코드를 enum/저장 데이터에 추가할 때 같은 배포에서 `listingCatalog` 정본도 추가해야 한다. 누락 시 API는 장애 대신 임시로 code를 label로 사용하지만 이는 운영 점검 대상이다.
 
 ## Validation

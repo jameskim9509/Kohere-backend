@@ -63,6 +63,7 @@
 | [0037](./0037-listing-localization-and-code-catalog.md) | 매물 고유 문구는 listings에 임베드하고 공통 코드는 listingCatalog에서 번역한다 | Accepted | 2026-07-17 |
 | [0038](./0038-application-logging-and-cloudwatch.md) | 로그는 다섯 가지 용도가 요구하는 것만 남긴다 | Proposed | 2026-07-21 |
 | [0039](./0039-listing-schema-v4-registration-form.md) | 매물 스키마를 등록 폼 기준 v4로 재정의하고 마이그레이션 체인을 baseline으로 리셋한다 | Proposed | 2026-08-12 |
+| [0040](./0040-listing-query-api-v2-and-v1-sunset.md) | 매물 조회를 /api/v2로 옮기고 v1은 빈 결과로 종료한다 | Proposed | 2026-08-13 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

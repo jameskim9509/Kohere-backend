@@ -52,7 +52,7 @@ flowchart LR
       CDN["S3 + CloudFront<br/>(콘텐츠 이미지 · 클라이언트 직접 로드)"]
     end
 
-    APP -- "REST /api/v1" --> ALB
+    APP -- "REST /api/v1 · /api/v2" --> ALB
     ALB --> SRV
     APP -. "로그인 1회: Google idToken" .-> OIDC
     APP -. "로그인 1회: Apple authorization code" .-> APPLE
@@ -162,7 +162,7 @@ flowchart TB
 
     EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · 네이버(장소검색)"]
 
-    DEV -- "REST /api/v1<br/>localhost:8080" --> APP
+    DEV -- "REST /api/v1 · /api/v2<br/>localhost:8080" --> APP
     CFG -. "DB 접속·시크릿 주입" .-> APP
     APP -- "JDBC  mysql:3306" --> MYSQL
     APP -- "mongo:27017" --> MONGO
@@ -236,7 +236,7 @@ flowchart TB
 
     GHA -- "이미지 push" --> ECR
     ECR -. "deploy(promote)" .-> FARGATE
-    APP -- "REST /api/v1 HTTPS" --> R53
+    APP -- "REST /api/v1 · /api/v2 HTTPS" --> R53
     R53 --> IGW
     IGW --> ALB
     ALB --> FARGATE
@@ -351,7 +351,7 @@ flowchart TB
 | application         | 유스케이스 조율, 트랜잭션 경계, 이벤트 발행                                                               | —                              | `@Service`, `@Transactional`                       |
 | domain              | Aggregate·VO·도메인 규칙,**Repository 인터페이스**                                                | —                              | POJO, enum                                             |
 | infrastructure      | **Repository 구현**, 외부 어댑터(OIDC)                                                              | 모듈별 저장소                   | Spring Data JPA / Data MongoDB / Data Redis            |
-| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본,**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태), **임대인 매물 등록**(`POST /api/v2/listings` — 매물 v2의 첫 엔드포인트, 등록 폼 기준 v4 스키마·`status=PENDING`으로 저장, `SecurityConfig` 명시 매처 `hasRole("USER")` + 서비스의 `userType=LANDLORD` 재검사 2단 인가([ADR-0010](../adr/0010-jwt-authentication-filter.md)), `landlordId`는 토큰에서 취득, 사업자등록번호는 형식 검증만 하고 진위는 관리자 승인 심사에서 수동 확인) — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`). 등록은 단일 도큐먼트 원자 쓰기(좌표·주변 대학은 지오코딩 미구현이라 미채움, 관리자 승인·임대인 수정은 후속)                          |
+| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본(**조회 계열 6종의 정본은 `/api/v2`** — `SecurityConfig`에 `GET /api/v2/listings`·`/api/v2/listings/*` `permitAll` 매처 필요. `/api/v1` 조회는 개정 전(v3) 구조를 복원한 `deprecated` 스텁이라 DB에 닿지 않고 빈 결과·`404 LISTING_NOT_FOUND`만 반환 — [ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)),**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태 — 매물 데이터를 안 써서 **`/api/v1`에 남는 유일한 매물 경로**), **임대인 매물 등록**(`POST /api/v2/listings` — 매물 v2의 첫 엔드포인트, 등록 폼 기준 v4 스키마·`status=PENDING`으로 저장, `SecurityConfig` 명시 매처 `hasRole("USER")` + 서비스의 `userType=LANDLORD` 재검사 2단 인가([ADR-0010](../adr/0010-jwt-authentication-filter.md)), `landlordId`는 토큰에서 취득, 사업자등록번호는 형식 검증만 하고 진위는 관리자 승인 심사에서 수동 확인) — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`). 등록은 단일 도큐먼트 원자 쓰기(좌표·주변 대학은 지오코딩 미구현이라 미채움, 관리자 승인·임대인 수정은 후속)                          |
 | diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학(그룹, 6개)/지역선택·주거조건·월세 범위(min/max)·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 표시 언어 기반 번역; ③ 대학은 6개 그룹 단일선택, ⑤ 월세는 NUMBER_RANGE 자유입력), 결과 생성, 추천 criteria 발행(③ 그룹→멤버 대학코드 집합, ⑤ monthlyRentMin/Max), **v2 서버 주도 흐름**(`POST /api/v2/diagnoses/start` + `POST /api/v2/diagnoses/next` + `GET /api/v2/diagnoses/{id}/recommendations` — 서버는 다음 질문·분기·확정 시점만 판단하고 시작·매물 조회 시점은 클라가 결정, ① 지역 0건이면 카탈로그의 `regionRetry` 문항을 일반 질문으로 내고 예=`RESTART`/아니오=`TERMINATED`, 확정은 매칭을 조회하지 않고 `diagnosisId`만 반환하며 0건은 추천 조회의 빈 목록으로 드러남(제안 없음), 진행 세션 `diagnosisFlowSessions` 별도 저장, issue #157·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
 | booking(매물 예약)  | 매물 예약(신청) 저장 + 내 예약 목록·상세 조회(독립). 조회 시 `listing`·`user` 공개 쿼리 실시간 조인. `BookingCreatedEvent` 발행은 (후속·이연) | (저장소 추후 결정)              | REST 조회 조인 / Application Events(후속)              |
 | chat(채팅)          | (후속·이연, 1차 MVP 제외) F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                      | (저장소 추후 결정)              | 이벤트 리스너                                          |

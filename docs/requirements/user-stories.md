@@ -830,6 +830,8 @@
 
 외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름과, **임대인이 직접 매물을 등록해 관리자 승인 대기 상태로 올리는 흐름**(US-3-6)을 함께 다룬다. 목록·지도·장소 후보·기존 키워드 검색·상세 조회는 가입 전에도 사용할 수 있는 공개 API이고, 찜 등록/해제·찜 목록·최근 본 목록은 인증이 필수이며, 매물 등록은 온보딩을 마친(`ACTIVE`) **임대인 전용**이다. 세입자에게 노출되는 조회(목록·지도·상세·찜 목록·최근 본 목록)는 모두 **`PUBLISHED` 매물만** 대상으로 하므로, 등록 직후의 `PENDING` 매물은 어느 조회에도 나타나지 않는다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 요청 바인딩·필드 검증 실패는 가능한 경우 `error.errors[]`에 필드 상세를 담지만, 최소값>최대값 같은 서비스 계층의 교차 필드 검증은 `errors=[]`일 수 있다.
 
+> **매물 API 버전 경계(조회 v1 종료 · v2 신설)**: 조회 6종(목록 `GET /listings` · 지도 `/listings/map` · 키워드 검색 `/listings/search` · 상세 `/listings/{listingId}` · 찜 토글 `POST`·`DELETE /listings/{listingId}/favorite` · 내 스코프 `/users/me/favorites`·`/users/me/recent-listings`)의 경로는 **`/api/v2`가 정본**이며, 아래 AC의 경로 표기도 v2를 따른다. v4 스키마 개편 이후 `/api/v1`의 같은 경로는 **개정 전(v3) 응답 구조를 그대로 복원한 `deprecated` 스텁**으로 **DB에 접근하지 않고 데이터 0건**만 반환한다 — 목록·키워드 검색·찜 목록·최근 본 목록은 빈 페이지(`content: []`, `totalElements: 0`), 지도는 마커 0건, 상세와 찜 토글은 `404 LISTING_NOT_FOUND`다. 출시된 구버전 앱은 "매물 없음" 화면을 보고 업데이트로 유도되며, 새 데이터로 옛 응답을 조립하지 않으므로 하위 호환용 값을 날조하지 않는다(v1 제거 시점은 미정). **예외로 `GET /api/v1/listings/places`(네이버 장소 검색, US-3-3)는 매물 데이터를 쓰지 않아 v1 그대로 동작한다.** 인가는 같은 네임스페이스 안에서 갈린다 — `/api/v2/listings/**`의 **GET은 공개(`permitAll`)**, 등록 `POST /api/v2/listings`·찜 토글·`me` 스코프 조회(`/api/v2/users/me/**`)는 **인증 필수(`ROLE_USER`)** 다.
+>
 > **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물 유형·임대 유형·ARC 요구·성별 정책·조건 태그·건물 형태·난방·교통·도시·자치구·주방·세탁·공용공간·생활 편의·보안·제공 물품·주변 시설·지원 언어·대학 19개 카테고리 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·상태·통화와 요청 code는 번역하지 않는다.
 
 ### US-3-1 — 매물 리스트 탐색(필터·정렬·페이지네이션)
@@ -845,7 +847,7 @@
 
 - 시나리오: 정상 목록 조회
   Given 관리자 승인을 받은 `PUBLISHED` 매물이 N건 존재하고(승인 대기 `PENDING`·반려 `REJECTED`·일시중지 `PAUSED`·삭제 `DELETED` 매물은 조회 대상이 아니다)
-  When 비로그인 사용자가 `GET /api/v1/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_OK&sort=PRICE_ASC&page=0&size=20`을 호출하면
+  When 비로그인 사용자가 `GET /api/v2/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_OK&sort=PRICE_ASC&page=0&size=20`을 호출하면
   Then `200 OK`로 공통 래퍼의 `data.content[]`에 가격 오름차순으로 **`PUBLISHED` 매물만** 담기고(임대인이 방금 등록해 `PENDING`인 매물은 `data.page.totalElements`에도 잡히지 않는다) `data.page`에 `number/size/totalElements/totalPages/hasNext`가 포함된다
 - 시나리오: 입력 검증 실패(필터 값 오류)
   Given 클라이언트가
@@ -881,7 +883,7 @@
 
 - 시나리오: 정상 bbox 마커 조회
   Given 지도 영역이 유효 좌표로 주어지고
-  When `GET /api/v1/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05`를 호출하면
+  When `GET /api/v2/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05`를 호출하면
   Then `200 OK`로 `data.markers[]`(각 항목 `listingId/lat/lng`)를 반환한다
 - 시나리오: 입력 검증 실패(좌표 불완전/모순)
   Given 클라이언트가
@@ -903,7 +905,7 @@
 **So that** 정확한 주소나 좌표를 몰라도 익숙한 장소 이름을 기준으로 집을 찾을 수 있다
 
 - 메타: 우선순위 **Mid**, 관련 NFR — 네이버 지역 검색 API 응답시간·가용성, 외부 API 인증정보 보호
-- 데이터 관점: `GET /api/v1/listings/places`는 네이버 장소 후보만 최대 5개 반환하고 MongoDB 매물은 조회하지 않는다. 백엔드는 `mapx/mapy`를 WGS84 `lng/lat`으로 변환하며, 사용자가 후보를 선택한 뒤 앱이 계산한 bounds로 기존 `/api/v1/listings`와 `/api/v1/listings/map`을 호출한다.
+- 데이터 관점: `GET /api/v1/listings/places`는 네이버 장소 후보만 최대 5개 반환하고 MongoDB 매물은 조회하지 않는다 — 매물 데이터를 쓰지 않으므로 조회 계열의 v2 이관 대상이 아니라 **v1 경로 그대로 유지**한다. 백엔드는 `mapx/mapy`를 WGS84 `lng/lat`으로 변환하며, 사용자가 후보를 선택한 뒤 앱이 계산한 bounds로 정본인 `/api/v2/listings`와 `/api/v2/listings/map`을 호출한다(한 흐름에 장소 검색 v1과 매물 조회 v2가 섞인다).
 
 **AC (Given / When / Then)**
 
@@ -913,7 +915,7 @@
   Then `200 OK`로 `data.items[]`에 `title`·`address`·`roadAddress`·`lat`·`lng`를 포함한 장소 후보를 최대 5개 반환한다
 - 시나리오: 장소 선택 후 주변 매물 조회
   Given 사용자가 장소 후보 하나를 선택해 앱이 해당 `lat/lng`로 지도를 이동하고 현재 bounds를 계산하면
-  When 같은 `swLat`·`swLng`·`neLat`·`neLng`를 `/api/v1/listings`와 `/api/v1/listings/map`에 전달하면
+  When 같은 `swLat`·`swLng`·`neLat`·`neLng`를 `/api/v2/listings`와 `/api/v2/listings/map`에 전달하면
   Then 매물 목록(`data.content[]`)과 지도 마커(`data.markers[]`)를 각각 `200 OK`로 반환한다
 - 시나리오: 입력 검증 실패(빈/과도 키워드)
   Given 클라이언트가
@@ -932,7 +934,7 @@
   When 장소 검색 API를 호출하면
   Then `502 Bad Gateway`, `error.code=UPSTREAM_ERROR`를 반환한다
 
-> 기존 `GET /api/v1/listings/search`는 호환성을 위해 유지하지만, 본 사용자 스토리의 신규 지도 검색 흐름에서는 사용하지 않는다.
+> 기존 키워드 검색은 `GET /api/v2/listings/search`로 이관돼 그대로 유지하지만, 본 사용자 스토리의 신규 지도 검색 흐름에서는 사용하지 않는다(`/api/v1/listings/search`는 빈 페이지만 반환하는 `deprecated` 스텁이다).
 
 ### US-3-4 — 매물 상세 조회 + 최근 본 매물 기록
 
@@ -947,7 +949,7 @@
 
 - 시나리오: 정상 상세 조회(로그인) 및 기록
   Given 인증된 사용자가 존재하는 매물을 조회하면
-  When `GET /api/v1/listings/{listingId}` (Authorization 포함)
+  When `GET /api/v2/listings/{listingId}` (Authorization 포함)
   Then `200 OK`로 상세(사진 `imageUrls[]`·`roomOffers[].roomImageUrls`, `type`, `rentalType`, `arcRequired`, 방 상품별 `roomOffers[].pricing`(`deposit`·`monthlyRent`·`weeklyRent`)·`roomOffers[].contract`(방 상품별 계약기간), `location`, `conditions[]`, `languagesSupported`, `nearbyFacilities`, `contact`, `ageMin`/`ageMax`, `blogUrl`, `refundPolicy`(문장 하나), `description`·`extraNotes`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다. 매물 담당 연락처(`contact`)는 포함하되 임대인 개인 정보·연락처와 `businessRegistrationNumber`·설문 3종은 상세 응답에 포함하지 않는다
 - 시나리오: 한국어 사용자 표시
   Given 계정의 표시 언어를 한국어(`ko`)로 선택한 사용자가
@@ -964,7 +966,7 @@
 - 시나리오: 경계(최근 본 매물 30개 초과·동일 매물 재조회)
   Given 사용자가 이미 30개의 최근 본 매물을 가졌거나 같은 매물을 다시 보면
   When 상세를 조회하면
-  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, 30개 초과분은 오래된 기록부터 삭제되고, `GET /api/v1/users/me/recent-listings` 조회 시 `PUBLISHED`이면서 ACTIVE 방 상품이 있는 매물만 최신순 최대 10건 반환된다
+  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, 30개 초과분은 오래된 기록부터 삭제되고, `GET /api/v2/users/me/recent-listings` 조회 시 `PUBLISHED`이면서 ACTIVE 방 상품이 있는 매물만 최신순 최대 10건 반환된다
 
 ### US-3-5 — 찜 토글·찜 목록(인증 필수)
 
@@ -979,11 +981,11 @@
 
 - 시나리오: 정상 찜 신규 등록(생성)
   Given 인증된 사용자가 찜하지 않은 매물에 대해
-  When `POST /api/v1/listings/{listingId}/favorite`를 호출하면
+  When `POST /api/v2/listings/{listingId}/favorite`를 호출하면
   Then `201 Created`로 `data={ "favorited": true, "favoriteCount": <증가값> }`를 반환한다
 - 시나리오: 정상 찜 해제
   Given 인증된 사용자가 이미 찜한 매물에 대해
-  When `DELETE /api/v1/listings/{listingId}/favorite`를 호출하면
+  When `DELETE /api/v2/listings/{listingId}/favorite`를 호출하면
   Then `200 OK`로 `data={ "favorited": false, "favoriteCount": <감소값> }`를 반환한다
 - 시나리오: 인증 실패
   Given 토큰이 없거나 만료된 사용자가
@@ -999,7 +1001,7 @@
   Then 유니크 제약으로 중복 행이 생기지 않고, 추가 생성이 없으므로 `200 OK`로 현재 상태 `{ "favorited": true, "favoriteCount": <실제값> }`를 멱등하게 반환한다(별도 `LISTING_ALREADY_FAVORITED` 에러로 보지 않음). 마찬가지로 찜하지 않은 매물 해제는 멱등하게 `200 OK`, `{ "favorited": false, "favoriteCount": <실제값> }`를 반환한다
 - 시나리오: 정상 찜 목록 조회
   Given 인증된 사용자가 찜한 매물이 있고
-  When `GET /api/v1/users/me/favorites?page=0&size=20`을 호출하면
+  When `GET /api/v2/users/me/favorites?page=0&size=20`을 호출하면
   Then `200 OK`로 `data.content[]`(모두 `favorited=true`)와 `data.page`를 최근 찜한 순으로 반환하며, 찜이 없으면 빈 배열을 반환한다. 현재 찜 목록 조회는 `PUBLISHED`만 검사하므로 ACTIVE 방 상품이 없는 공개 매물이 빈 `roomOffers[]`로 포함될 수 있다
 
 ### US-3-6 — 임대인 매물 등록
@@ -1009,7 +1011,7 @@
 **So that** 관리자 승인을 거쳐 내 매물이 세입자 탐색·검색에 노출되고 문의를 받을 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 보안(임대인 전용 인가·매물 문서에 저장되는 PII), 입력 검증(카탈로그 대조·교차 필드 검증)
-- 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(v2에는 현재 진단 `/api/v2/diagnoses`만 있고, 조회(GET) 계열의 v2 이관은 후속이다). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
+- 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(조회 계열도 뒤이어 v2로 이관됐다 — 위 **매물 API 버전 경계** 참고). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
 - 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `POST /api/v2/listings`를 **`hasRole("USER")` 명시 매처**로 둔다 — 매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰이 컨트롤러까지 도달한다(진단 v2가 `permitAll` 매처를 갖는 것과 달리 등록은 열지 않는다). 임대인 여부(`userType=LANDLORD`)는 매처로 표현할 수 없으므로 **서비스에서 재검사**해 세입자면 `403` + `FORBIDDEN`이다.
 - 파생·미구현 관점: 폼 한 칸이 스키마 두 필드로 갈라지는 값은 서버가 파싱한다 — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. `min ≤ max`와 `usedFloorMax ≤ totalFloors`를 함께 검증한다. 주소는 `address.fullAddress`에 **입력값 그대로**(정규화 없음) 저장하고, `address.city`·`district`는 도로명 주소를 파싱해 `City`·`District` enum으로 채운다 — 파싱에 실패하면 `400` + `LISTING_INVALID_ADDRESS`다. **`location`(좌표)과 `nearbyUniversityCodes`는 이번 범위에서 채우지 않는다** — 좌표 없이 저장하고 `nearbyUniversityCodes`는 빈 배열이다(지오코딩은 후속, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) 후속 작업).
 - 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개, `roomOffers[].roomImageUrls`는 최소 2장이다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관).
@@ -1026,7 +1028,7 @@
   Then `201 Created`로 생성된 매물의 상세 응답(v4)을 반환하고, 서버가 `_id`·`roomOffers[].roomOfferId`(ObjectId)·`schemaVersion=4`·`status="PENDING"`·`favoriteCount=0`·`createdAt`/`updatedAt`·`rentalType="MONTHLY_RENT"`·`pricing.currency="KRW"`·`roomOffers[].status="ACTIVE"`를 채운다. `landlordId`는 요청 본문이 아니라 토큰에서 얻은 값으로 저장된다
 - 시나리오: 등록 직후에는 세입자에게 보이지 않는다
   Given 위에서 등록한 매물이 `PENDING` 상태로 저장되어 있고
-  When 세입자가 `GET /api/v1/listings`(목록)·`GET /api/v1/listings/map`(지도)·`GET /api/v1/listings/{listingId}`(상세)를 호출하면
+  When 세입자가 `GET /api/v2/listings`(목록)·`GET /api/v2/listings/map`(지도)·`GET /api/v2/listings/{listingId}`(상세)를 호출하면
   Then 목록·지도에는 해당 매물이 포함되지 않고(`PUBLISHED`만 조회 — US-3-1·US-3-2), 상세는 `404 Not Found` + `error.code=LISTING_NOT_FOUND`다. 노출은 관리자 승인(`PENDING → PUBLISHED`, 후속)이 있어야 시작된다
 - 시나리오: 좌표·주변 대학은 비운 채 저장(미구현)
   Given 임대인이 도로명 주소를 입력해 등록에 성공했고

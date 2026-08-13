@@ -65,6 +65,8 @@
 
 > 400과 422: **요청 자체가 깨졌으면 400**, 요청은 정상이나 **도메인 규칙상 처리 불가**면 422를 쓴다. 팀 내 혼선을 줄이려 본 프로젝트는 비즈니스 규칙 위반에 **409(충돌형)** 또는 **422(그 외)** 를 사용한다.
 
+> **끝난 버전 경로의 404** — deprecated된 `/api/v1` 매물 조회(`GET /api/v1/listings/{listingId}` · `POST`·`DELETE /api/v1/listings/{listingId}/favorite`)는 **대상의 존재 여부와 무관하게** `LISTING_NOT_FOUND`(404)다. 리소스를 못 찾아서가 아니라 그 경로가 매물 데이터를 더는 제공하지 않기 때문이며, 같은 이유로 목록 계열(`GET /api/v1/listings`·`/map`·`/search`, `/api/v1/users/me/favorites`·`/recent-listings`)은 404가 아니라 **빈 페이지(200)** 다. 정본은 `/api/v2/listings*`이며 버전 정책은 [api-design-guide §2-1](./api-design-guide.md)·[ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)이다.
+
 ## 4. 에러 코드 카탈로그
 
 코드는 **`DOMAIN_REASON`** 형태의 UPPER_SNAKE_CASE다. 공통 코드는 아래에, 도메인 코드는 각 [API 스펙](./specs/)과 함께 등록하고 이 표에 누적한다.
@@ -124,14 +126,14 @@
 
 | code | status | 의미 |
 | --- | --- | --- |
-| `LISTING_NOT_FOUND` | 404 | 존재하지 않거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물 |
+| `LISTING_NOT_FOUND` | 404 | 존재하지 않거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물. deprecated된 `/api/v1` 상세·찜 토글은 대상과 무관하게 항상 이 코드다(§3) |
 | `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 bbox 네 좌표가 누락됨 |
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | `LISTING_INVALID_ADDRESS` | 400 | 매물 등록 시 지점 주소에서 `City`·`District`를 파싱하지 못함 — 도로명 주소 형태가 아니거나 카탈로그에 없는 시·구 |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 
-> 조회 계열 네 코드의 상세·발생 지점은 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이다. 등록 계열 두 코드는 매물 등록(`POST /api/v2/listings`)이 추가한다.
+> 조회 계열 네 코드의 상세·발생 지점은 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이며 **경로는 `/api/v2/listings*`다** — deprecated된 `/api/v1` 목록·지도는 매물을 조회하지 않아 정상 호출이 빈 페이지(200)로 끝나고, 매물 데이터를 쓰지 않는 `GET /api/v1/listings/places`만 v1에 남아 종전 코드를 그대로 낸다. 등록 계열 두 코드는 매물 등록(`POST /api/v2/listings`)이 추가한다.
 >
 > - `LISTING_INVALID_ADDRESS`는 **좌표와 무관하다.** 등록은 `location`·`nearbyUniversityCodes`를 채우지 않고 저장하므로(지오코딩은 후속) 좌표 해석 실패라는 상황 자체가 없다. `address.fullAddress`는 입력값을 그대로 저장하고, 이 코드는 거기서 `City`·`District`를 뽑지 못했을 때만 나온다.
 > - `LISTING_UNKNOWN_CATALOG_CODE`는 사용자가 오타를 낸 것이 아니라 **앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다**는 신호라 `INVALID_INPUT`과 분리한다 — 사용자는 앱이 준 선택지에서 골랐을 뿐이라 입력 교정을 요구할 자리가 아니다(§7).
@@ -226,6 +228,7 @@ public class GlobalExceptionHandler {
 - `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로.
 - `400 INVALID_INPUT` → `errors[]`의 `field`를 입력 폼에 매핑해 표시.
 - 매물 등록(`POST /api/v2/listings`)의 두 코드는 사용자에게 요구할 행동이 서로 다르다: `400 LISTING_INVALID_ADDRESS`는 **도로명 주소 재입력**을 유도하고, `400 LISTING_UNKNOWN_CATALOG_CODE`는 입력 교정이 아니라 **코드 카탈로그 재조회(또는 앱 갱신)** 를 안내한다 — 사용자가 앱이 준 선택지에서 골랐는데도 거절됐다는 뜻이기 때문이다.
+- **`/api/v1` 매물 조회가 주는 404·빈 목록은 데이터 상태가 아니다** — 그 경로가 끝났다는 뜻이므로 "삭제된 매물"로 안내하지 말고 앱 업데이트를 유도한다. 매물 데이터는 `/api/v2/listings*`에서 조회한다(§3).
 - **게스트(비로그인)로 퀴즈·생활 팁·진단을 부를 땐 `Authorization` 헤더를 아예 보내지 않는다** — 만료된 토큰을 그대로 붙여 보내면 게스트로 처리되지 않고 `401 TOKEN_EXPIRED`다(재발급하거나 헤더를 떼고 재시도). 진단 v2는 `POST /api/v2/diagnoses/start` 응답의 게스트 세션 키를 보관했다가 이후 요청에 `X-Guest-Session-Id`로 에코해야 하며, 잃어버리면 `400 DIAGNOSIS_SESSION_NOT_FOUND`이므로 `/start`부터 다시 한다(#181).
 - `5xx` → 사용자에게 일반 메시지 + 재시도 버튼. 자동 재시도는 멱등 요청에만.
 - 다국어: `code`별 문구 테이블을 클라이언트가 보유한다(서버 `message`는 fallback).
