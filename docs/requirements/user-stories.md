@@ -1007,14 +1007,16 @@
 ### US-3-6 — 임대인 매물 등록
 
 **As a** 온보딩을 마친(`ACTIVE`) 임대인(`userType=LANDLORD`)
-**I want** 등록 폼이 받는 지점·건물·공용시설·주변시설·객실(방 상품) 정보를 한 번에 제출해 매물을 만들기
+**I want** 등록 폼이 받는 지점·건물·공용시설·주변시설·객실(방 상품) 정보와 사진 파일을 한 번에 제출해 매물을 만들기
 **So that** 관리자 승인을 거쳐 내 매물이 세입자 탐색·검색에 노출되고 문의를 받을 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 보안(임대인 전용 인가·매물 문서에 저장되는 PII), 입력 검증(카탈로그 대조·교차 필드 검증)
 - 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(조회 계열도 뒤이어 v2로 이관됐다 — 위 **매물 API 버전 경계** 참고). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
+- 사진 관점: 요청은 **`multipart/form-data`** 이며 등록 정보 JSON(`request` part)과 사진 파일을 한 요청에 함께 보낸다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 지점 대표사진은 `listingImages`(1~10장), 객실 사진은 `roomImages{i}`(방마다 2~10장)로 보내며 **`i`가 `roomOffers` 배열 인덱스**다(파일명으로 짝짓지 않는다). 서버가 S3에 올리고 저장한 CloudFront URL을 `imageUrls`·`roomOffers[].roomImageUrls`에 채우므로 **요청 본문에는 URL 필드가 없다.** 저장 키는 `listings/{listingId}/cover/{uuid}.{ext}`·`listings/{listingId}/rooms/{roomOfferId}/{uuid}.{ext}`이며, ObjectId를 저장 전에 발급해 키를 먼저 정한다.
+- 정합성 관점: 저장소 두 곳(S3·MongoDB)에 걸친 쓰기라 **업로드 → 저장 순서로 진행하고 저장이 실패하면 방금 올린 객체를 지운다**(보상 삭제). 사진 없는 매물이 DB에 남는 것보다 참조 없는 파일이 S3에 남는 쪽이 덜 해롭다는 판단이며, 업로드 자체가 실패하면 `502` + `UPSTREAM_ERROR`로 매물을 만들지 않는다.
 - 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `POST /api/v2/listings`를 **`hasRole("USER")` 명시 매처**로 둔다 — 매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰이 컨트롤러까지 도달한다(진단 v2가 `permitAll` 매처를 갖는 것과 달리 등록은 열지 않는다). 임대인 여부(`userType=LANDLORD`)는 매처로 표현할 수 없으므로 **서비스에서 재검사**해 세입자면 `403` + `FORBIDDEN`이다.
 - 파생·미구현 관점: 폼 한 칸이 스키마 두 필드로 갈라지는 값은 서버가 파싱한다 — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. `min ≤ max`와 `usedFloorMax ≤ totalFloors`를 함께 검증한다. 주소는 `address.fullAddress`에 **입력값 그대로**(정규화 없음) 저장하고, `address.city`·`district`는 도로명 주소를 파싱해 `City`·`District` enum으로 채운다 — 파싱에 실패하면 `400` + `LISTING_INVALID_ADDRESS`다. **`location`(좌표)과 `nearbyUniversityCodes`는 이번 범위에서 채우지 않는다** — 좌표 없이 저장하고 `nearbyUniversityCodes`는 빈 배열이다(지오코딩은 후속, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) 후속 작업).
-- 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개, `roomOffers[].roomImageUrls`는 최소 2장이다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관).
+- 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 JSON 필드가 아니라 multipart part라 `errors[]`에 실을 필드 경로가 없어 전용 코드를 쓴다 — 장수 위반은 `400` + `LISTING_IMAGE_REQUIRED`, part 인덱스 불일치는 `400` + `LISTING_IMAGE_PART_MISMATCH`, 10MB 초과는 `413` + `LISTING_IMAGE_TOO_LARGE`, 허용 형식(JPEG·PNG·WebP·HEIC) 밖은 `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`이다.
 - 사업자등록번호 관점: 등록 API는 사업자등록번호를 **형식(숫자 10자리)만 검증해 원문 저장**하고 **진위를 자동 검증하지 않는다** — 무상태 검증 API `POST /api/v1/auth/business/verify`(US-1-8)를 **호출하지 않으며**, 진위 확인은 **관리자가 승인 심사에서 수동으로** 한다(해당 엔드포인트 자체는 임대인이 직접 확인용으로 호출하도록 그대로 둔다). 원문은 매물 문서에만 저장하고 `user.businessRegistrationNumberHash`에는 쓰지 않는다(US-1-9와 일관, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) §3, [ADR-0033](../adr/0033-business-registry-verification.md)의 매물 문서 한정 개정).
 - 응답 관점: `201 Created` + 생성된 매물의 **상세 응답 구조(v4)** 를 반환한다. `contact`(담당자명·전화·문자)는 세입자에게도 공개하므로 포함하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 US-3-4와 동일하게 **응답에서 제외**한다. `status`는 카탈로그 번역 대상이 아니라 **코드 문자열 그대로**(`"PENDING"`) 내려간다.
 - 후속(이번 범위 아님): 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API · 임대인 매물 수정 · 지오코딩(`location`·`nearbyUniversityCodes`) · 재고.
@@ -1050,10 +1052,26 @@
   Given 지점 운영층이나 이용 연령대를 `1~2`·`20~35` 형식이 아닌 값(`1-2`·`2~1`처럼 형식 위반이거나 최소>최대)으로 보내거나 `usedFloorMax`가 건물 총 층수(`totalFloors`)를 넘으면
   When `POST /api/v2/listings`를 호출하면
   Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다. 형식 위반은 필드를 특정할 수 있으므로 `error.errors[]`에 담고, `min ≤ max`·`usedFloorMax ≤ totalFloors` 같은 교차 필드 검증은 `errors=[]`일 수 있다
-- 시나리오: 입력 검증 실패(객실·객실 사진 최소 개수)
-  Given `roomOffers`가 비어 있거나 어떤 객실의 `roomImageUrls`가 2장 미만이고
+- 시나리오: 입력 검증 실패(객실 최소 개수)
+  Given `roomOffers`가 비어 있고
   When `POST /api/v2/listings`를 호출하면
-  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 매물을 생성하지 않는다(객실 최소 1개·객실 사진 최소 2장). 반면 지점 소개글·이용 조건 같은 자유 입력 문자열에는 **길이 상한을 두지 않아** 길다는 이유로 거절하지 않는다
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 매물을 생성하지 않는다(객실 최소 1개). 반면 지점 소개글·이용 조건 같은 자유 입력 문자열에는 **길이 상한을 두지 않아** 길다는 이유로 거절하지 않는다
+- 시나리오: 사진이 S3에 저장되고 URL이 응답에 담긴다
+  Given 임대인이 지점 사진 2장과 객실 1개분 사진 2장을 `multipart/form-data`로 실어
+  When `POST /api/v2/listings`를 호출하면
+  Then `201 Created`를 반환하고 응답의 `imageUrls`·`roomOffers[].roomImageUrls`가 `https://{CDN}/listings/{listingId}/cover/…`·`…/rooms/{roomOfferId}/…` 형태이며, 그 키로 실제 객체가 저장소에 존재한다. 순서는 보낸 순서를 유지한다
+- 시나리오: 사진 검증 실패(장수·크기·형식)
+  Given `listingImages`가 0장이거나 10장을 넘거나, 어떤 방의 `roomImages{i}`가 2장 미만이거나 10장을 넘거나, 한 장이 10MB를 넘거나, 형식이 JPEG·PNG·WebP·HEIC가 아니고
+  When `POST /api/v2/listings`를 호출하면
+  Then 각각 `400` + `LISTING_IMAGE_REQUIRED`, `413` + `LISTING_IMAGE_TOO_LARGE`, `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`을 반환하고 매물을 생성하지 않으며 **저장소에 아무것도 올라가지 않는다**(검증이 업로드보다 앞선다)
+- 시나리오: 사진 part와 방의 짝이 맞지 않음
+  Given `roomImages{i}`의 `i`가 `roomOffers` 배열 범위를 벗어나거나 사진이 오지 않은 방이 있고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=LISTING_IMAGE_PART_MISMATCH`를 반환하고 매물을 생성하지 않는다. 사용자 입력이 아니라 앱이 part 이름을 잘못 붙였다는 뜻이라 입력 교정을 요구하지 않는다
+- 시나리오: 저장 실패 시 올린 사진을 되돌린다
+  Given 사진 업로드는 성공했지만 매물 문서 저장이 실패했고
+  When 그 요청이 끝나면
+  Then 매물은 생성되지 않고 **그 요청에서 올린 객체도 저장소에 남지 않는다**(보상 삭제). 업로드 자체가 실패한 경우에는 `502` + `UPSTREAM_ERROR`다
 - 시나리오: 사업자등록번호는 형식만 보고 저장한다
   Given 형식(숫자 10자리)은 맞지만 실제로는 폐업·미등록일 수도 있는 사업자등록번호를 담아
   When `POST /api/v2/listings`를 호출하면

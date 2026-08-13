@@ -374,7 +374,7 @@
 | `languagesSupported` | string[] (enum `SupportedLanguage`) | 임대인이 응대 가능한 언어 코드 |
 | `arcRequired` | string (enum `ArcRequirement`) | NOT NULL · `REQUIRED`/`NOT_REQUIRED` · 매물 공통 ARC 요구 여부(아래 註) |
 | `favoriteCount` | int | default 0, ≥0 · 비정규화 캐시 |
-| `imageUrls` | string[] | `[0]`=썸네일 |
+| `imageUrls` | string[] | `[0]`=썸네일 · 등록 시 업로드한 파일의 CDN URL(`listings/{listingId}/cover/{uuid}.{ext}` — [ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
 | `nearbyUniversityCodes` | string[] | 학교 검색·진단 추천용 코드 |
 | `createdAt` | ISODate | NOT NULL |
 | `updatedAt` | ISODate | NOT NULL |
@@ -394,7 +394,7 @@
 | `roomOffers[].contract` | object | 방 상품별 계약기간(`minStayMonths`·`maxStayMonths`) |
 | `roomOffers[].pricing` | object | `monthlyRent`·`deposit`·`maintenanceFee`·`currency`(KRW 정수, 단일값) |
 | `roomOffers[].filterTags` | string[] (enum `ConditionTag`) | 등록 폼의 방 옵션 선택값 · 응답 태그와 1:1(파생 태그 없음) |
-| `roomOffers[].roomImageUrls` | string[] | 방 상품 전용 이미지 |
+| `roomOffers[].roomImageUrls` | string[] | 방 상품 전용 이미지 · 최소 2장 · 등록 시 업로드한 파일의 CDN URL(`listings/{listingId}/rooms/{roomOfferId}/{uuid}.{ext}`) |
 | `preferredNationalities` | string[] | 임대인 설문 — 선호 국적 · 응답 비노출(아래 註) |
 | `contractDifficulties` | string[] | 임대인 설문 — 계약 시 겪은 어려움 · 응답 비노출(아래 註) |
 | `serviceFeedback` | string | nullable · 임대인 설문 — 서비스 개선 의견 · 응답 비노출(아래 註) |

@@ -82,13 +82,22 @@
 
 ### POST /api/v2/listings — 매물 등록(임대인)
 
-- 설명: 임대인이 등록 폼에서 입력한 지점·건물·공용시설·주변 시설·방 타입 정보를 하나의 매물로 저장한다. 저장 직후 상태는 **`PENDING`(승인 대기)** 이라 세입자용 조회 API에는 노출되지 않으며, 공개 전환은 후속 관리자 승인 API가 담당한다.
+- 설명: 임대인이 등록 폼에서 입력한 지점·건물·공용시설·주변 시설·방 타입 정보와 **사진 파일**을 하나의 매물로 저장한다. 저장 직후 상태는 **`PENDING`(승인 대기)** 이라 세입자용 조회 API에는 노출되지 않으며, 공개 전환은 후속 관리자 승인 API가 담당한다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). `landlordId`는 access 토큰에서 읽으며 요청 본문에 담지 않는다.
 - 경로: 매물 도메인의 첫 `/api/v2` 엔드포인트였고, 이제 조회 계열 6종도 같은 네임스페이스로 옮겨 왔다. `/api/v2/listings`는 **GET이면 공개 매물 조회, POST면 임대인 등록**으로 메서드에 따라 갈린다. 요청·응답이 모두 스키마 v4 구조라 `deprecated`된 `/api/v1` 조회 스텁과 섞이지 않는다.
+- Content-Type: **`multipart/form-data`**. 등록 정보 JSON과 사진 파일을 한 요청에 함께 보낸다([ADR-0041](../../adr/0041-listing-image-upload-to-s3.md)).
 
 Path·Query 파라미터: 없음
 
-Request Body:
+Request Parts:
+
+| part | Content-Type | 개수 | 내용 |
+| --- | --- | --- | --- |
+| `request` | `application/json` | 1 | 아래 Request Body |
+| `listingImages` | `image/*` | 1~10 | 지점 대표사진. 첫 파일이 카드·상세의 대표 이미지가 된다 |
+| `roomImages{i}` | `image/*` | 방마다 2~10 | `roomOffers[i]`의 객실 사진. `roomImages0`이 `roomOffers[0]`, `roomImages1`이 `roomOffers[1]` … 이며 **모든 방에 대해 보내야 한다** |
+
+Request Body(`request` part):
 
 ```jsonc
 {
@@ -134,10 +143,6 @@ Request Body:
   "description": "지하철역에서 도보 5분 거리의 관리가 잘 된 고시원입니다.",
   "extraNotes": "객실 내 취사 금지. 오후 11시 이후 정숙.",
   "refundPolicy": "입주 7일 전까지 취소하면 전액 환불합니다.",
-  "imageUrls": [
-    "https://cdn.kohere.app/uploads/2026/08/branch-1.jpg",
-    "https://cdn.kohere.app/uploads/2026/08/branch-2.jpg"
-  ],
   "roomOffers": [
     {
       "name": "스탠다드 1인실",
@@ -147,11 +152,7 @@ Request Body:
         "deposit": 200000,
         "maintenanceFee": 20000
       },
-      "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
-      "roomImageUrls": [
-        "https://cdn.kohere.app/uploads/2026/08/room-101-1.jpg",
-        "https://cdn.kohere.app/uploads/2026/08/room-101-2.jpg"
-      ]
+      "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"]
     }
   ],
   "preferredNationalities": ["JAPAN", "CHINA"],
@@ -196,7 +197,6 @@ Request Body:
 | `description` | string | 필수 | 지점 소개글 |
 | `extraNotes` | string | 필수 | 이용 조건(생활 규칙)·유의사항 |
 | `refundPolicy` | string | 필수 | 환불정책 문구 |
-| `imageUrls` | string[] | 필수 | 지점 대표사진 URL 목록. 카드·상세의 대표 이미지로 `imageUrls[0]`이 쓰인다 |
 | `roomOffers` | object[] | 필수 | 개별 객실(room) 타입. **최소 1개** |
 | `roomOffers[].name` | string | 필수 | 객실 타입명 |
 | `roomOffers[].contract.minStayMonths` | integer | 필수 | 이용 기간(최소, 개월). 1 이상 |
@@ -205,14 +205,15 @@ Request Body:
 | `roomOffers[].pricing.deposit` | integer(KRW) | 필수 | 보증금. 0 이상 |
 | `roomOffers[].pricing.maintenanceFee` | integer(KRW) | 필수 | 관리비. 0 이상 |
 | `roomOffers[].filterTags` | `ConditionTag[]` | 필수 | 타입별 매물 옵션(복수 선택). 카탈로그 `CONDITION_TAG` 대조 |
-| `roomOffers[].roomImageUrls` | string[] | 필수 | 객실 사진 URL 목록. **최소 2장** |
 | `preferredNationalities` | `Nationality[]` | 필수 | 설문 — 선호하는 국적(복수 선택). 응답에 포함하지 않는다 |
 | `contractDifficulties` | `ContractDifficulty[]` | 필수 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 응답에 포함하지 않는다 |
 | `serviceFeedback` | string | 선택 | 설문 — Kohere에 전하고 싶은 말. 응답에 포함하지 않는다 |
 
 요청 주의사항:
 
-- **서버가 정하는 값은 요청 본문에 없다.** `listingId` · `roomOffers[].roomOfferId`(둘 다 ObjectId 발급) · `schemaVersion`(`4`) · `status`(`PENDING`) · `favoriteCount`(`0`) · `createdAt`/`updatedAt` · `rentalType`(`MONTHLY_RENT` 고정) · `roomOffers[].pricing.currency`(`KRW` 고정) · `roomOffers[].status`(`ACTIVE`)를 클라이언트가 정하지 않는다. `landlordId`도 요청이 아니라 access 토큰에서 읽는다.
+- **서버가 정하는 값은 요청 본문에 없다.** `listingId` · `roomOffers[].roomOfferId`(둘 다 ObjectId 발급) · `schemaVersion`(`4`) · `status`(`PENDING`) · `favoriteCount`(`0`) · `createdAt`/`updatedAt` · `rentalType`(`MONTHLY_RENT` 고정) · `roomOffers[].pricing.currency`(`KRW` 고정) · `roomOffers[].status`(`ACTIVE`)를 클라이언트가 정하지 않는다. `landlordId`도 요청이 아니라 access 토큰에서 읽는다. **사진 URL(`imageUrls`·`roomOffers[].roomImageUrls`)도 마찬가지다** — 파일을 올리면 서버가 저장 위치를 정해 응답에 담아 준다.
+- **사진은 파일로 올린다.** `listingImages`는 1~10장, 각 방의 `roomImages{i}`는 2~10장이다. 장당 **10MB** 이하이고 형식은 `image/jpeg` · `image/png` · `image/webp` · `image/heic` 넷이다. 개수·크기·형식 위반은 각각 `400 LISTING_IMAGE_REQUIRED` · `413 LISTING_IMAGE_TOO_LARGE` · `415 LISTING_IMAGE_UNSUPPORTED_TYPE`다.
+- **방 사진은 part 이름의 인덱스로 방과 짝짓는다.** `roomImages{i}`의 `i`는 `request`의 `roomOffers` 배열 인덱스이며, 빠진 방이 있거나 `i`가 배열 범위를 벗어나면 `400 LISTING_IMAGE_PART_MISMATCH`다. 파일명은 짝짓기에 쓰지 않으므로 아무 이름이나 보내도 된다.
 - **폼 1칸을 서버가 두 필드로 파싱한다.** `building.usedFloorRange`(`1~2`) → `usedFloorMin`·`usedFloorMax`, `ageRange`(`20~35`) → `ageMin`·`ageMax`. 형식 위반은 `400 INVALID_INPUT`이며, `min ≤ max`와 `usedFloorMax ≤ totalFloors`도 함께 검증한다. 원본 문자열은 저장하지 않는다.
 - **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 입력값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 파싱해 `City`·`District` enum으로 확정한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며, 프론트는 도로명 주소 재입력을 유도한다.
 - **좌표와 인근 대학은 이번 범위에서 채우지 않는다.** `location`은 값 없이 저장하고 `nearbyUniversityCodes`는 빈 배열이다. 지오코딩은 후속 작업이며, 후속 관리자 승인은 `location` 보유를 승인 조건으로 둬 좌표 없는 매물이 공개되지 않게 한다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
@@ -313,8 +314,8 @@ Request Body:
           { "code": "ADDRESS_REGISTRATION", "label": "전입신고 가능" }
         ],
         "roomImageUrls": [
-          "https://cdn.kohere.app/uploads/2026/08/room-101-1.jpg",
-          "https://cdn.kohere.app/uploads/2026/08/room-101-2.jpg"
+          "https://cdn.kohere.app/listings/68e0000000000000000000a1/rooms/68e0000000000000000001a1/6f1c9a2e-1d2b-4c3a-9f10-2b7c5d8e4a11.jpg",
+          "https://cdn.kohere.app/listings/68e0000000000000000000a1/rooms/68e0000000000000000001a1/9a2f7b31-5c4d-4e6f-8a09-3c1d6e7f5b22.jpg"
         ]
       }
     ],
@@ -327,8 +328,8 @@ Request Body:
     },
     "blogUrl": "https://blog.naver.com/kohere-goshiwon",
     "imageUrls": [
-      "https://cdn.kohere.app/uploads/2026/08/branch-1.jpg",
-      "https://cdn.kohere.app/uploads/2026/08/branch-2.jpg"
+      "https://cdn.kohere.app/listings/68e0000000000000000000a1/cover/3b8e1f04-7a5c-4d2e-b1f6-0c9a4e2d7f33.jpg",
+      "https://cdn.kohere.app/listings/68e0000000000000000000a1/cover/c47d5a90-2e6b-4f18-a3d7-8b0f1c6e9a44.jpg"
     ],
     "favorited": false,
     "favoriteCount": 0,
@@ -340,6 +341,7 @@ Request Body:
 ```
 
 - 응답은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 v4 구조다. 등록 직후라 `favorited=false`, `favoriteCount=0`이다.
+- **`imageUrls`·`roomOffers[].roomImageUrls`는 업로드한 파일이 저장된 URL이며, 요청에 보낸 순서를 그대로 유지한다.** 별도의 만료 없이 그대로 쓸 수 있는 주소다.
 - `status`는 `PENDING`이며 **코드 문자열 그대로** 내려간다. 임대인·관리자만 읽는 관리 상태라 카탈로그 번역 대상이 아니다.
 - **`location` 키는 응답에 없고 `nearbyUniversityCodes`는 빈 배열이다.** 좌표 파생이 미구현이라 등록 시점에 채우지 않는다.
 - `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로다.
@@ -352,13 +354,18 @@ Request Body:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개, `roomImageUrls` 2장 미만. 위반 필드는 `errors[]`에 실린다 |
+| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개. 위반 필드는 `errors[]`에 실린다 |
 | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구) |
 | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 400 | `LISTING_IMAGE_REQUIRED` | `listingImages`가 0장이거나 10장 초과, 어느 방의 `roomImages{i}`가 2장 미만이거나 10장 초과 |
+| 400 | `LISTING_IMAGE_PART_MISMATCH` | `roomImages{i}`의 `i`가 `roomOffers` 범위를 벗어나거나, 사진이 오지 않은 방이 있음 |
+| 400 | `MALFORMED_REQUEST` | `request` part의 JSON 파싱 불가/타입 불일치, multipart 형식 위반, `request` part 누락 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조·형식 오류 / 만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰(`ROLE_ONBOARDING`) — `hasRole("USER")` 매처에서 차단 |
 | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자의 등록 요청 |
+| 413 | `LISTING_IMAGE_TOO_LARGE` | 사진 한 장이 10MB를 넘음 |
+| 415 | `LISTING_IMAGE_UNSUPPORTED_TYPE` | 사진 형식이 `image/jpeg` · `image/png` · `image/webp` · `image/heic` 중 하나가 아님 |
+| 502 | `UPSTREAM_ERROR` | 사진 저장소(S3) 업로드 실패. 매물은 저장되지 않으며, 이미 올라간 사진은 서버가 지운다 |
 
 ### GET /api/v2/listings — 매물 리스트
 

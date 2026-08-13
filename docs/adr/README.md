@@ -64,6 +64,7 @@
 | [0038](./0038-application-logging-and-cloudwatch.md) | 로그는 다섯 가지 용도가 요구하는 것만 남긴다 | Proposed | 2026-07-21 |
 | [0039](./0039-listing-schema-v4-registration-form.md) | 매물 스키마를 등록 폼 기준 v4로 재정의하고 마이그레이션 체인을 baseline으로 리셋한다 | Proposed | 2026-08-12 |
 | [0040](./0040-listing-query-api-v2-and-v1-sunset.md) | 매물 조회를 /api/v2로 옮기고 v1은 빈 결과로 종료한다 | Proposed | 2026-08-13 |
+| [0041](./0041-listing-image-upload-to-s3.md) | 매물 등록을 multipart로 받아 이미지를 S3에 저장한다 | Proposed | 2026-08-14 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
