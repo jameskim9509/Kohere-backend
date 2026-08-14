@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kohere.listing.domain.image.ListingImageContentType;
+import com.kohere.listing.domain.image.ListingImageKeyNotFoundException;
 import com.kohere.listing.domain.image.ListingImageStorage;
 import com.kohere.listing.domain.image.ListingImageUpload;
 import com.kohere.listing.domain.image.ListingImageUploadException;
@@ -111,6 +112,70 @@ class S3ListingImageStorageIntegrationTest {
 
     assertThatThrownBy(() -> objectBytes(first)).isInstanceOf(NoSuchKeyException.class);
     assertThatThrownBy(() -> objectBytes(second)).isInstanceOf(NoSuchKeyException.class);
+  }
+
+  /** 복사는 확정 위치에 새 객체를 만들고 원본은 남긴다 — 임시본을 남겨야 사용자가 다시 제출할 수 있다. */
+  @Test
+  void copy_대상을_만들고_원본을_남긴다() {
+    String source = "uploads/42/copy-me.jpg";
+    byte[] content = "photo".getBytes(StandardCharsets.UTF_8);
+    storage.upload(upload(source, content));
+    String target = "listings/aaa/cover/copy-me.jpg";
+
+    StoredListingImage stored = storage.copy(source, target);
+
+    assertThat(stored.key()).isEqualTo(target);
+    assertThat(stored.url()).isEqualTo("https://" + CDN_DOMAIN + "/" + target);
+    assertThat(objectBytes(target)).isEqualTo(content);
+    assertThat(objectBytes(source)).isEqualTo(content);
+  }
+
+  /** 복사가 Content-Type을 보존하므로 확정 키의 형식을 따로 물어볼 필요가 없다(ADR-0041 §4). */
+  @Test
+  void copy_Content_Type을_보존한다() {
+    String source = "uploads/42/keep-type.png";
+    storage.upload(
+        new ListingImageUpload(
+            source,
+            ListingImageContentType.PNG,
+            3,
+            new ByteArrayInputStream(new byte[] {1, 2, 3})));
+    String target = "listings/aaa/cover/keep-type.png";
+
+    storage.copy(source, target);
+
+    GetObjectResponse response =
+        s3Client
+            .getObject(
+                GetObjectRequest.builder().bucket(BUCKET).key(target).build(),
+                ResponseTransformer.toBytes())
+            .response();
+    assertThat(response.contentType()).isEqualTo(ListingImageContentType.PNG.mediaType());
+  }
+
+  /**
+   * 없는 원본은 사용자 오류(400)로 갈린다.
+   *
+   * <p>이 구분이 없으면 잘못된 키를 보낸 요청이 "서버 장애니 재시도하라"는 502를 받고 재시도해도 영원히 실패한다. 존재 확인을 따로 두지 않는 근거이기도 하다 —
+   * 복사가 부재를 알려주므로 선검사는 왕복만 늘린다.
+   */
+  @Test
+  void copy_원본이_없으면_키_오류로_바꾼다() {
+    assertThatThrownBy(
+            () -> storage.copy("uploads/42/missing.jpg", "listings/aaa/cover/missing.jpg"))
+        .isInstanceOf(ListingImageKeyNotFoundException.class);
+  }
+
+  /** 없는 버킷은 저장소 장애다 — 키 오류와 갈라져야 안내가 달라진다. */
+  @Test
+  void copy_저장소가_거절하면_업로드_실패로_바꾼다() {
+    ListingImageProperties wrongBucket = new ListingImageProperties();
+    wrongBucket.setBucket("no-such-bucket");
+    wrongBucket.setCdnDomain(CDN_DOMAIN);
+    ListingImageStorage broken = new S3ListingImageStorage(s3Client, wrongBucket);
+
+    assertThatThrownBy(() -> broken.copy("uploads/42/x.jpg", "listings/aaa/cover/x.jpg"))
+        .isInstanceOf(ListingImageUploadException.class);
   }
 
   /** 되돌리기는 이미 실패를 처리하는 중에 불린다 — 없는 키를 만나도 예외를 던지면 원래 실패 원인이 가려진다. */

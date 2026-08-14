@@ -20,7 +20,21 @@ public interface ListingImageStorage {
   StoredListingImage upload(ListingImageUpload image);
 
   /**
-   * 올린 사진을 지운다. 매물 저장이 실패했을 때 되돌리는 보상 경로다(ADR-0041 §3).
+   * 임시 위치의 사진을 확정 위치로 복사한다. <b>원본은 남는다</b> — 지우는 것은 호출자 몫이다.
+   *
+   * <p>존재 확인을 따로 하지 않는 이유는 복사가 겸하기 때문이다. 원본이 없으면 {@link ListingImageKeyNotFoundException}으로 알려주고,
+   * 확인과 복사 사이에 만료가 걸릴 수 있어 복사 실패 경로는 어차피 있어야 한다 — 선검사는 그 경로를 없애 주지 못하고 파일 수만큼 왕복만 늘린다(ADR-0041 §4).
+   *
+   * @param sourceKey 임시 위치의 키
+   * @param targetKey 확정 위치의 키
+   * @return 확정 위치의 키와 읽기 URL
+   * @throws ListingImageKeyNotFoundException 원본이 없는 경우(오타·만료)
+   * @throws ListingImageUploadException 그 밖의 저장소 실패
+   */
+  StoredListingImage copy(String sourceKey, String targetKey);
+
+  /**
+   * 올린 사진을 지운다. 매물 저장이 실패했을 때 되돌리는 보상 경로다(ADR-0041 §4).
    *
    * <p>이미 실패를 처리하는 중에 불리므로 <strong>예외를 던지지 않는다.</strong> 여기서 다시 예외가 나면 원래의 실패 원인이 가려지고, 호출자가 할 수 있는
    * 일도 없다. 지우지 못한 객체는 아무도 참조하지 않는 채 남는데, 그 편이 실패 원인을 잃는 것보다 낫다.

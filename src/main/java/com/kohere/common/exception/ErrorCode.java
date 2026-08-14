@@ -53,9 +53,9 @@ public enum ErrorCode {
   LISTING_AREA_TOO_LARGE(HttpStatus.BAD_REQUEST, "검색 범위가 너무 넓습니다."),
   LISTING_INVALID_ADDRESS(HttpStatus.BAD_REQUEST, "주소를 인식할 수 없습니다. 도로명 주소를 확인해 주세요."),
   LISTING_UNKNOWN_CATALOG_CODE(HttpStatus.BAD_REQUEST, "지원하지 않는 코드가 포함되어 있습니다."),
-  // 사진 4종은 위반 대상이 JSON 필드가 아니라 multipart part라 INVALID_INPUT의 errors[]에 담을 경로가 없다(ADR-0041).
+  // 사진 4종은 위반 대상이 JSON 필드가 아니라 파일 part나 저장 키라 INVALID_INPUT의 errors[]에 담을 경로가 없다(ADR-0041).
   LISTING_IMAGE_REQUIRED(HttpStatus.BAD_REQUEST, "매물 사진 장수가 올바르지 않습니다."),
-  LISTING_IMAGE_PART_MISMATCH(HttpStatus.BAD_REQUEST, "방 사진과 방 정보가 짝이 맞지 않습니다."),
+  LISTING_IMAGE_KEY_NOT_FOUND(HttpStatus.BAD_REQUEST, "사진을 찾을 수 없습니다. 다시 올려 주세요."),
   LISTING_IMAGE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "사진 한 장의 크기가 허용 범위를 넘었습니다."),
   LISTING_IMAGE_UNSUPPORTED_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "지원하지 않는 사진 형식입니다."),
 

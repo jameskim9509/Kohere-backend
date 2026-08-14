@@ -324,33 +324,104 @@ public final class ListingDocsFields {
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
       """;
 
+  // ── §10-1 매물 사진 업로드 — POST /api/v2/listings/images ──────────────────
+
+  public static final String LISTING_IMAGE_UPLOAD_SUMMARY = "매물 사진 업로드(임대인)";
+
+  public static final String LISTING_IMAGE_UPLOAD_DESCRIPTION =
+      """
+      등록 폼에서 고른 사진을 **한 장씩** 올린다. 저장 위치(`key`)와 미리보기 주소(`url`)를 돌려주며, 그 키를 모아 매물 등록(`POST /api/v2/listings`)에 보낸다. 매물을 만들지는 않는다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
+      - `Content-Type: multipart/form-data` — 파일 part `file` 하나뿐이다.
+
+      **요청 part**
+
+      | part | Content-Type | 개수 | 제한 |
+      |---|---|---|---|
+      | `file` | `image/jpeg` · `image/png` · `image/webp` · `image/heic` | 1 | 장당 **10MB** 이하 |
+
+      **왜 한 장씩인가**
+
+      요청이 파일마다 갈려야 브라우저가 **파일별 진행률·전송 속도**를 줄 수 있고, 실패한 파일만 다시 올릴 수 있다. 한 요청에 몰아 실으면 진행 이벤트가 요청 전체 하나뿐이라 그 화면을 만들 수 없다.
+
+      **응답 주의사항**
+
+      - `key`는 등록 요청의 `imageKeys`·`roomOffers[].roomImageKeys`에 담을 값이다.
+      - `url`은 폼 미리보기용이다. 등록이 끝나면 사진이 확정 위치로 옮겨 가므로 **이 URL은 곧 무효가 된다** — 이후에는 등록 응답의 URL을 쓴다.
+      - 이 사진은 아직 어느 매물의 것도 아니다. **올린 뒤 7일 안에 등록**해야 하며, 참조되지 않은 사진은 자동 삭제된다.
+      - 폼에서 뺀 사진은 등록 요청에 담지 않으면 된다. 삭제 API는 없다.
+      - 서버는 형식을 변환하지 않는다 — HEIC를 보내면 HEIC로 저장된다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `LISTING_IMAGE_REQUIRED` | `file` part가 없거나 빈 파일 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 413 | `LISTING_IMAGE_TOO_LARGE` | 사진이 10MB를 넘음 |
+      | 415 | `LISTING_IMAGE_UNSUPPORTED_TYPE` | 형식이 허용 목록에 없음 |
+      | 502 | `UPSTREAM_ERROR` | 사진 저장소 업로드 실패 |
+      """;
+
+  public static final String[] LISTING_IMAGE_UPLOAD_400 = {"LISTING_IMAGE_REQUIRED"};
+
+  public static final String[] LISTING_IMAGE_UPLOAD_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+
+  public static final String[] LISTING_IMAGE_UPLOAD_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
+
+  public static final String[] LISTING_IMAGE_UPLOAD_413 = {"LISTING_IMAGE_TOO_LARGE"};
+
+  public static final String[] LISTING_IMAGE_UPLOAD_415 = {"LISTING_IMAGE_UNSUPPORTED_TYPE"};
+
+  /** 업로드 응답 필드. 두 값의 쓰임이 달라 설명에서 갈라 준다. */
+  public static List<FieldDescriptor> imageUploadResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.add(field("data", JsonFieldType.OBJECT, "업로드 결과"));
+    fields.add(
+        field(
+            "data.key",
+            JsonFieldType.STRING,
+            "저장 키. 매물 등록 요청의 imageKeys·roomOffers[].roomImageKeys에 그대로 담는다"));
+    fields.add(
+        field("data.url", JsonFieldType.STRING, "폼 미리보기용 주소. 등록이 끝나면 사진이 확정 위치로 옮겨 가 무효가 된다"));
+    fields.add(errorNull());
+    return fields;
+  }
+
   // ── §10 매물 등록 — POST /api/v2/listings ──────────────────────────────────
 
   public static final String LISTING_REGISTER_SUMMARY = "매물 등록(임대인)";
 
   public static final String LISTING_REGISTER_DESCRIPTION =
       """
-      임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입과 사진을 매물 하나로 저장한다.
+      임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입과 **미리 올려 둔 사진의 키**를 매물 하나로 저장한다.
 
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
-      - `Content-Type: multipart/form-data` — 등록 정보 JSON과 사진 파일을 한 요청에 함께 보낸다.
 
-      **요청 part**
+      **사진을 먼저 올린다**
 
-      | part | Content-Type | 개수 | 내용 |
-      |---|---|---|---|
-      | `request` | `application/json` | 1 | 아래 요청 본문(이 문서의 스키마·예시가 이 part의 내용이다) |
-      | `listingImages` | `image/*` | 1~10 | 지점 대표사진. 첫 파일이 카드·상세의 대표 이미지가 된다 |
-      | `roomImages{i}` | `image/*` | 방마다 2~10 | `roomOffers[i]`의 객실 사진. `roomImages0`이 `roomOffers[0]`, `roomImages1`이 `roomOffers[1]` … 모든 방에 대해 보낸다 |
+      사진 파일은 이 요청에 싣지 않는다. `POST /api/v2/listings/images`로 **한 장씩** 올려 받은 `key`를 아래 두 필드에 담는다.
+
+      | 필드 | 개수 | 내용 |
+      |---|---|---|
+      | `imageKeys` | 1~5 | 지점 대표사진. 첫 값이 카드·상세의 대표 이미지가 된다 |
+      | `roomOffers[].roomImageKeys` | 방마다 2~5 | 그 객실의 사진 |
 
       **요청 주의사항**
 
       - `building.usedFloorRange`·`ageRange`는 **요청과 응답의 모양이 다르다.** 보낼 때는 `min~max` 문자열 한 칸이지만 응답은 `building.usedFloorMin`/`usedFloorMax`, `ageMin`/`ageMax`로 갈라져 돌아온다.
-      - **사진 URL은 보내지 않는다.** 파일을 올리면 서버가 저장 위치를 정해 응답의 `imageUrls`·`roomOffers[].roomImageUrls`에 담아 준다. 순서는 보낸 순서를 유지한다.
-      - 사진은 장당 **10MB** 이하이고 형식은 `image/jpeg` · `image/png` · `image/webp` · `image/heic` 넷이다.
-      - 방과 파일은 **part 이름의 인덱스**로 짝짓는다. 파일명은 쓰지 않으므로 아무 이름이나 보내도 된다.
+      - **사진 URL은 보내지 않는다.** 키를 보내면 서버가 확정 위치로 옮겨 응답의 `imageUrls`·`roomOffers[].roomImageUrls`에 담아 준다. 순서는 보낸 순서를 유지한다.
+      - **자기가 올린 키만 쓸 수 있다.** 남의 키·없는 키·올린 지 7일이 지난 키는 모두 `400 LISTING_IMAGE_KEY_NOT_FOUND`다.
+      - **등록에 성공하면 업로드 때 받은 미리보기 URL은 무효가 된다.** 이후에는 등록 응답의 URL을 쓴다.
       - 사업자등록번호 진위는 이후 승인 심사에서 확인한다. `POST /api/v1/auth/business/verify`를 **미리 호출할 필요 없다.**
       - 코드 값은 서버가 가진 코드표에 있는 것만 받는다. 400 `LISTING_UNKNOWN_CATALOG_CODE`는 입력 오타가 아니라 앱의 코드표가 서버와 어긋났다는 뜻이므로, 입력 교정 대신 코드표 재조회(앱 갱신)를 안내한다.
       - 자유 입력 문구에는 길이 제한이 없다.
@@ -367,16 +438,14 @@ public final class ListingDocsFields {
       | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
       | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함. 도로명 주소 재입력을 유도한다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
-      | 400 | `LISTING_IMAGE_REQUIRED` | 지점 사진이 1~10장이 아니거나, 어느 방의 사진이 2~10장이 아님(빈 파일 포함) |
-      | 400 | `LISTING_IMAGE_PART_MISMATCH` | `roomImages{i}`의 인덱스가 `roomOffers` 범위 밖이거나 사진이 오지 않은 방이 있음 |
-      | 400 | `MALFORMED_REQUEST` | `request` part의 JSON 파싱 불가·타입 불일치, multipart 형식 위반, `request` part 누락 |
+      | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
+      | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
+      | 400 | `MALFORMED_REQUEST` | 본문 JSON 파싱 불가 또는 타입 불일치 |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자의 등록 요청 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
-      | 413 | `LISTING_IMAGE_TOO_LARGE` | 사진 한 장이 10MB를 넘음 |
-      | 415 | `LISTING_IMAGE_UNSUPPORTED_TYPE` | 사진 형식이 허용 목록에 없음 |
-      | 502 | `UPSTREAM_ERROR` | 사진 저장소 업로드 실패. 매물은 저장되지 않고 이미 올라간 사진은 서버가 지운다 |
+      | 502 | `UPSTREAM_ERROR` | 사진 저장소 복사 실패. 매물은 저장되지 않고 이미 복사한 사진은 서버가 지운다. 임시 사진은 그대로 남아 다시 제출할 수 있다 |
       """;
 
   public static final String[] LISTING_REGISTER_400 = {
@@ -384,17 +453,13 @@ public final class ListingDocsFields {
     "LISTING_INVALID_ADDRESS",
     "LISTING_UNKNOWN_CATALOG_CODE",
     "LISTING_IMAGE_REQUIRED",
-    "LISTING_IMAGE_PART_MISMATCH",
+    "LISTING_IMAGE_KEY_NOT_FOUND",
     "MALFORMED_REQUEST"
   };
 
   public static final String[] LISTING_REGISTER_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
 
   public static final String[] LISTING_REGISTER_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
-
-  public static final String[] LISTING_REGISTER_413 = {"LISTING_IMAGE_TOO_LARGE"};
-
-  public static final String[] LISTING_REGISTER_415 = {"LISTING_IMAGE_UNSUPPORTED_TYPE"};
 
   // ── 공통 실패 응답 문구 ────────────────────────────────────────────────────
 
@@ -576,6 +641,11 @@ public final class ListingDocsFields {
     fields.add(field("description", JsonFieldType.STRING, "지점 소개글"));
     fields.add(field("extraNotes", JsonFieldType.STRING, "생활 규칙과 유의사항"));
     fields.add(field("refundPolicy", JsonFieldType.STRING, "환불정책 문구"));
+    fields.add(
+        field(
+            "imageKeys",
+            JsonFieldType.ARRAY,
+            "지점 대표사진의 저장 키 1~5개. `POST /api/v2/listings/images` 응답의 key를 그대로 담는다. 첫 값이 대표 이미지"));
     fields.add(field("roomOffers", JsonFieldType.ARRAY, "객실 타입 목록. 1개 이상"));
     fields.add(field("roomOffers[].name", JsonFieldType.STRING, "객실 타입명"));
     fields.add(field("roomOffers[].contract", JsonFieldType.OBJECT, "방 타입별 이용 기간"));
@@ -597,6 +667,7 @@ public final class ListingDocsFields {
             "roomOffers[].filterTags",
             ConditionTag.class,
             "해당 객실 타입의 옵션. 1개 이상이며, 응답 상위 conditions는 이 값들의 합집합이다"));
+    fields.add(field("roomOffers[].roomImageKeys", JsonFieldType.ARRAY, "그 객실 사진의 저장 키 2~5개"));
     fields.add(
         enumArrayField(
             "preferredNationalities", Nationality.class, "설문 — 선호하는 입주자 국적. 1개 이상이며 응답에는 나오지 않는다"));

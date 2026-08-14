@@ -20,11 +20,6 @@ public class ListingImageException extends BusinessException {
     return new ListingImageException(ErrorCode.LISTING_IMAGE_REQUIRED);
   }
 
-  /** {@code roomImages{i}} part가 가리키는 방이 없거나, 사진이 오지 않은 방이 있다. */
-  public static ListingImageException partMismatch() {
-    return new ListingImageException(ErrorCode.LISTING_IMAGE_PART_MISMATCH);
-  }
-
   /** 사진 한 장이 허용 크기를 넘었다. */
   public static ListingImageException tooLarge() {
     return new ListingImageException(ErrorCode.LISTING_IMAGE_TOO_LARGE);

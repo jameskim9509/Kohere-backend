@@ -1,6 +1,6 @@
 package com.kohere.listing.application;
 
-import com.kohere.listing.application.ListingImageUploader.UploadedListingImages;
+import com.kohere.listing.application.ListingImageConfirmer.ConfirmedListingImages;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.District;
@@ -12,7 +12,7 @@ import com.kohere.listing.domain.ListingUnknownCatalogCodeException;
 import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
 import com.kohere.listing.domain.catalog.ListingCatalogRepository;
-import com.kohere.listing.domain.image.ListingImageParts;
+import com.kohere.listing.domain.image.ListingImageKeySet;
 import com.kohere.listing.presentation.dto.ListingRegisterRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
@@ -42,38 +42,47 @@ public class ListingRegisterService {
 
   private final ListingRepository listingRepository;
   private final ListingCatalogRepository listingCatalogRepository;
-  private final ListingImageUploader listingImageUploader;
+  private final ListingImageConfirmer listingImageConfirmer;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
 
   /**
    * 등록 요청을 저장하고 생성된 매물을 상세 응답 구조로 돌려준다.
    *
-   * <p>순서가 중요하다 — 입력 검증을 모두 끝낸 뒤에 사진을 올리고, 그다음 저장한다. 검증이 업로드보다 앞서야 거절된 요청이 저장소에 흔적을 남기지 않고, 저장이
-   * 실패하면 방금 올린 사진을 지워 사진 없는 매물이 남지 않는다(ADR-0041 §3).
+   * <p>순서가 중요하다 — 입력 검증을 모두 끝낸 뒤에 사진을 확정 위치로 복사하고, 그다음 저장한다. 검증이 복사보다 앞서야 거절된 요청이 확정 위치에 흔적을 남기지
+   * 않고, 저장이 실패하면 복사본을 지워 사진 없는 매물이 남지 않는다. 임시본은 어느 실패에서도 지우지 않아 사용자가 그대로 다시 제출할 수 있다(ADR-0041 §4).
    *
    * <p>응답 언어는 다른 조회와 같이 임대인 계정의 표시 언어를 따른다. 다만 등록 직후 문서는 두 언어에 같은 한국어가 들어 있어 어느 언어를 골라도 결과가 같다.
    */
-  public ListingDetailResponse register(
-      long landlordId, ListingRegisterRequest request, ListingImageParts images) {
+  public ListingDetailResponse register(long landlordId, ListingRegisterRequest request) {
     requireLandlord(landlordId);
+    // 사진 키 검사가 가장 앞이다 — 저장소를 부르기 전에 장수와 소유권이 끝나므로, 거절될 요청은 확정 위치에 흔적을 남기지 않는다.
+    ListingImageKeySet keys =
+        ListingImageKeySet.of(
+            landlordId,
+            request.imageKeys(),
+            request.roomOffers().stream()
+                .map(ListingRegisterRequest.RoomOfferRequest::roomImageKeys)
+                .toList());
     ListingCatalogCodes catalog = ListingCatalogCodes.of(listingCatalogRepository.findAll());
-    // 사진을 올리기 전에 요청을 통째로 매물로 조립해 본다 — 카탈로그 대조·범위 파싱·주소 판별이 모두 여기서 끝나므로,
-    // 거절될 요청은 저장소에 아무것도 남기지 않는다. 식별자와 사진 URL만 아직 비어 있다.
+    // 요청을 통째로 매물로 조립해 본다 — 카탈로그 대조·범위 파싱·주소 판별이 모두 여기서 끝난다.
+    // 식별자와 사진 URL만 아직 비어 있다.
     Listing draft = toListing(landlordId, request, catalog);
 
     String listingId = listingRepository.nextIdentity();
     List<String> roomOfferIds =
         request.roomOffers().stream().map(unused -> listingRepository.nextIdentity()).toList();
-    UploadedListingImages uploaded = listingImageUploader.upload(listingId, roomOfferIds, images);
+    ConfirmedListingImages confirmed = listingImageConfirmer.confirm(listingId, roomOfferIds, keys);
 
     Listing saved;
     try {
-      saved = listingRepository.save(withStoredImages(draft, listingId, roomOfferIds, uploaded));
+      saved = listingRepository.save(withStoredImages(draft, listingId, roomOfferIds, confirmed));
     } catch (RuntimeException e) {
-      listingImageUploader.rollback(uploaded);
+      listingImageConfirmer.rollback(confirmed);
       throw e;
     }
+    // 저장이 끝나야 임시본을 치운다. 실패해도 만료 규칙이 대신 치우므로 재시도하지 않는다.
+    listingImageConfirmer.discardPending(confirmed);
     return ListingResponseMapper.toDetail(
         saved,
         false,
@@ -83,10 +92,13 @@ public class ListingRegisterService {
   /**
    * 조립해 둔 매물에 발급한 식별자와 업로드 결과를 채운다.
    *
-   * <p>사진 저장 키가 식별자를 포함해서 저장보다 먼저 발급했고, URL은 업로드가 끝나야 알 수 있다. 두 값만 마지막에 얹는다.
+   * <p>확정 키가 식별자를 포함해서 저장보다 먼저 발급했고, URL은 복사가 끝나야 알 수 있다. 두 값만 마지막에 얹는다.
    */
   private static Listing withStoredImages(
-      Listing draft, String listingId, List<String> roomOfferIds, UploadedListingImages uploaded) {
+      Listing draft,
+      String listingId,
+      List<String> roomOfferIds,
+      ConfirmedListingImages confirmed) {
     List<Listing.RoomOffer> roomOffers = new ArrayList<>();
     for (int i = 0; i < roomOfferIds.size(); i++) {
       Listing.RoomOffer roomOffer = draft.getRoomOffers().get(i);
@@ -98,11 +110,11 @@ public class ListingRegisterService {
               roomOffer.contract(),
               roomOffer.pricing(),
               roomOffer.filterTags(),
-              uploaded.roomUrls().get(i)));
+              confirmed.roomUrls().get(i)));
     }
     return draft.toBuilder()
         .id(listingId)
-        .imageUrls(uploaded.coverUrls())
+        .imageUrls(confirmed.coverUrls())
         .roomOffers(List.copyOf(roomOffers))
         .build();
   }

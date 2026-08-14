@@ -28,6 +28,12 @@ public class StubListingImageStorage implements ListingImageStorage {
   }
 
   @Override
+  public StoredListingImage copy(String sourceKey, String targetKey) {
+    // 올린 적이 없으니 옮길 것도 없다. 등록 흐름은 실제와 같은 형태의 URL을 그대로 받는다.
+    return new StoredListingImage(targetKey, "%s/%s".formatted(publicBaseUrl, targetKey));
+  }
+
+  @Override
   public void deleteQuietly(List<String> keys) {
     // 올린 적이 없으니 지울 것도 없다.
   }

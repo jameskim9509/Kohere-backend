@@ -1,5 +1,6 @@
 package com.kohere.listing.infrastructure.external.s3;
 
+import com.kohere.listing.domain.image.ListingImageKeyNotFoundException;
 import com.kohere.listing.domain.image.ListingImageStorage;
 import com.kohere.listing.domain.image.ListingImageUpload;
 import com.kohere.listing.domain.image.ListingImageUploadException;
@@ -9,7 +10,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
@@ -41,6 +44,33 @@ public class S3ListingImageStorage implements ListingImageStorage {
       throw new ListingImageUploadException(e);
     }
     return new StoredListingImage(image.key(), toUrl(image.key()));
+  }
+
+  /**
+   * 임시 위치의 객체를 확정 위치로 복사한다. 바이트가 서버로 내려오지 않고 저장소 안에서 처리된다.
+   *
+   * <p>{@code sourceBucket}/{@code sourceKey}를 쓴다 — 예전 {@code copySource(String)}은 {@code 버킷/키}를 직접
+   * 잇고 URL 인코딩까지 직접 해야 해서 키에 특수문자가 섞이면 깨진다.
+   *
+   * <p>원본 부재({@code NoSuchKey})만 사용자 오류로 가른다. 이 구분이 없으면 잘못된 키를 보낸 요청이 "서버 장애니 재시도하라"는 502를 받고,
+   * 재시도해도 영원히 실패한다.
+   */
+  @Override
+  public StoredListingImage copy(String sourceKey, String targetKey) {
+    try {
+      s3Client.copyObject(
+          CopyObjectRequest.builder()
+              .sourceBucket(properties.getBucket())
+              .sourceKey(sourceKey)
+              .destinationBucket(properties.getBucket())
+              .destinationKey(targetKey)
+              .build());
+    } catch (NoSuchKeyException e) {
+      throw new ListingImageKeyNotFoundException(e);
+    } catch (RuntimeException e) {
+      throw new ListingImageUploadException(e);
+    }
+    return new StoredListingImage(targetKey, toUrl(targetKey));
   }
 
   /**

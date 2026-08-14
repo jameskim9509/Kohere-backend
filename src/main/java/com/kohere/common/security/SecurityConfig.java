@@ -89,7 +89,7 @@ public class SecurityConfig {
                         "/api/v1/auth/logout")
                     .hasRole("USER")
                     // 매물 등록 — ACTIVE(ROLE_USER)만. LANDLORD 여부는 서비스에서 재검사한다(403).
-                    .requestMatchers(HttpMethod.POST, "/api/v2/listings")
+                    .requestMatchers(HttpMethod.POST, "/api/v2/listings", "/api/v2/listings/images")
                     .hasRole("USER")
                     // 찜과 최근 본 매물은 사용자별 데이터를 읽고 변경하므로 ACTIVE(ROLE_USER) 사용자만 허용한다.
                     // 명시하지 않고 anyRequest().authenticated()에 맡기면 ROLE_ONBOARDING 토큰도 통과할 수 있다.
