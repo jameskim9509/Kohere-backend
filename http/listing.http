@@ -1,6 +1,7 @@
 # Kohere — 매물 조회·찜·등록 로컬 수동 테스트 (`/api/v2` 정본 + `/api/v1` 종료 확인)
 # 스펙: docs/api/specs/03-listings-favorites.md · 유저스토리 US-3-1~US-3-6
 # 결정: ADR-0039(v4 스키마·등록 폼) · ADR-0040(조회 v2 이관 · v1 빈 결과 종료) · ADR-0041(사진 S3 업로드)
+#       · ADR-0042(도로명 주소 검색 · 등록이 그 좌표를 받는다)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
@@ -32,10 +33,16 @@
 #
 # 참고:
 #   - 응답 봉투는 `{ success, data, error }`라서 값 경로는 `response.body.$.data.*`다.
-#   - 장소 후보 검색(6)만 `/api/v1`이다. 네이버 지역 검색이라 매물 스키마와 무관해 v1에 남겼다.
+#   - 장소 후보 검색(6)과 도로명 주소 검색(12-0)만 `/api/v1`이다. 외부 API만 부르고 매물 스키마와 무관해 v1에 남겼다.
+#     둘 중 주소 검색은 등록 폼 전용이라 **임대인 토큰이 필요**하다(ADR-0042).
 #   - 등록한 매물은 `status=PENDING`이라 **조회·검색·상세 어디에도 나오지 않는다**(14·15에서 확인).
 #
-# ─────────────────────────────── 사진 업로드 (12-a ~ 13) ───────────────────────────────
+# ─────────────────────────────── 주소 검색 · 사진 업로드 (12-0 ~ 13) ───────────────────────────────
+# 주소는 **먼저 검색한다**(12-0, ADR-0042). NCP Geocoding이 표준 도로명 주소·좌표·supported를 주고,
+# 그 값을 13번 등록의 address.fullAddress·address.lat·address.lng에 그대로 담는다.
+#   · NAVER_GEOCODE_CLIENT_ID/SECRET(.env)이 없으면 12-0만 502 UPSTREAM_ERROR다 — 다른 요청은 정상이다.
+#   · supported=false면 등록에서 400 LISTING_INVALID_ADDRESS다(현재 카탈로그는 서울 9개 구만 안다).
+#
 # 사진은 **한 장씩** `POST /api/v2/listings/images`로 올린다(ADR-0041). 요청이 파일마다 갈려야 브라우저가
 # 파일별 진행률·전송 속도를 줄 수 있고, 실패한 파일만 다시 올릴 수 있다.
 #   ① 12-a~c로 사진 3장을 올려 각각 `{ key, url }`을 받는다 → `uploads/{landlordId}/{uuid}.jpg`
@@ -139,6 +146,19 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 #   코드값은 전부 listingCatalog와 대조한다 — 카탈로그에 없는 코드는 400이다(29-b번).
 #   사진 URL도 요청에 없다 — 서버가 확정 위치로 옮긴 뒤 응답에 담아 준다(업로드 때 받은 url과 다르다).
 
+### 12-0. 도로명 주소 검색 — 등록에 실을 주소·좌표를 얻는다(임대인 전용)
+#    도로명 + 건물번호까지 넣어야 결과가 나온다("신촌"만으로는 비어 있다).
+#    supported=true인 후보의 roadAddress·lat·lng를 13번 본문에 그대로 옮긴다.
+GET {{baseUrl}}/api/v1/listings/addresses?keyword=신촌로 12
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 12-0-a. 403 FORBIDDEN — 세입자 토큰으로 주소 검색(등록 폼 전용 API다)
+GET {{baseUrl}}/api/v1/listings/addresses?keyword=신촌로 12
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 12-0-b. 401 UNAUTHENTICATED — 토큰 없이 주소 검색(같은 v1이어도 공개 조회와 다르다)
+GET {{baseUrl}}/api/v1/listings/addresses?keyword=신촌로 12
+
 ### 12-a. 사진 업로드 ① 지점 대표 → 201 { key, url }. key를 13번이 참조한다
 # @name upload1
 POST {{baseUrl}}/api/v2/listings/images
@@ -221,7 +241,9 @@ Content-Type: application/json
   "blogUrl": "https://blog.example.com/sinchon",
   "address": {
     "fullAddress": "서울특별시 서대문구 신촌로 12",
-    "detail": "3층 301호"
+    "detail": "3층 301호",
+    "lat": 37.5559918,
+    "lng": 126.9368647
   },
   "building": {
     "type": "VILLA",
@@ -342,7 +364,7 @@ Content-Type: application/json
   "type": "SHARE_HOUSE",
   "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
   "businessRegistrationNumber": "1234567890",
-  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
   "genderPolicy": "ANY",
   "languagesSupported": ["ENGLISH"],
@@ -400,7 +422,7 @@ Content-Type: application/json
   "type": "SHARE_HOUSE",
   "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
   "businessRegistrationNumber": "1234567890",
-  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2층에서 4층", "parkingAvailable": false, "elevatorAvailable": true },
   "genderPolicy": "ANY",
   "languagesSupported": ["ENGLISH"],
@@ -449,7 +471,7 @@ Content-Type: application/json
   "type": "SHARE_HOUSE",
   "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
   "businessRegistrationNumber": "1234567890",
-  "address": { "fullAddress": "대전광역시 유성구 대학로 99", "detail": "3층" },
+  "address": { "fullAddress": "대전광역시 유성구 대학로 99", "detail": "3층", "lat": 36.3620, "lng": 127.3560 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
   "genderPolicy": "ANY",
   "languagesSupported": ["ENGLISH"],
@@ -497,7 +519,7 @@ Content-Type: application/json
   "type": "SHARE_HOUSE",
   "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
   "businessRegistrationNumber": "1234567890",
-  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
   "genderPolicy": "ANY",
   "languagesSupported": ["ENGLISH"],
@@ -543,7 +565,7 @@ Content-Type: application/json
   "type": "SHARE_HOUSE",
   "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
   "businessRegistrationNumber": "1234567890",
-  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
   "genderPolicy": "ANY",
   "languagesSupported": ["ENGLISH"],

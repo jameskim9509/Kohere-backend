@@ -81,10 +81,10 @@ public final class ListingDocsFields {
   private static final List<String> PUBLIC_ROOM_OFFER_STATUSES = List.of("ACTIVE");
 
   /**
-   * 같은 매물 문서를 내려주는 두 갈래다. 두 값(상태·좌표)이 항상 함께 움직여 인자 하나로 묶었다.
+   * 같은 매물 문서를 내려주는 두 갈래다. 상태의 도달 가능한 값이 갈려 인자로 구분한다.
    *
-   * <p>공개 조회는 {@code PUBLISHED} 매물만 대상이라 좌표가 반드시 있고, 등록 응답은 {@code PENDING}이며 지오코딩이 아직 없어 좌표가 비어
-   * 있다.
+   * <p>공개 조회는 {@code PUBLISHED}만, 등록 응답은 {@code PENDING}만 나온다. 좌표는 두 갈래가 같다 — 등록이 주소 검색이 준 좌표를 채우기
+   * 때문이다(ADR-0042).
    */
   private enum ListingDocumentVariant {
     PUBLIC_QUERY,
@@ -401,11 +401,23 @@ public final class ListingDocsFields {
 
   public static final String LISTING_REGISTER_DESCRIPTION =
       """
-      임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입과 **미리 올려 둔 사진의 키**를 매물 하나로 저장한다.
+      임대인이 등록 폼에 입력한 지점·건물·공용시설·주변 시설·방 타입과 **먼저 검색해 둔 주소**·**미리 올려 둔 사진의 키**를 매물 하나로 저장한다.
 
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
+
+      **주소를 먼저 검색한다**
+
+      주소 칸은 자유 입력이 아니다. `GET /api/v1/listings/addresses`로 검색해 고른 후보의 값을 아래 세 필드에 그대로 담는다.
+
+      | 검색 응답 | 등록 요청 | 내용 |
+      |---|---|---|
+      | `roadAddress` | `address.fullAddress` | 표준 도로명 주소. 서버가 여기서 시·도와 구·군을 뽑는다 |
+      | `lat` | `address.lat` | 위도. 매물의 `location`이 된다 |
+      | `lng` | `address.lng` | 경도 |
+
+      검색 응답의 `supported=false`인 후보는 등록에서 `400 LISTING_INVALID_ADDRESS`이므로 폼에서 고르게 하지 않는다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다** — 승인 심사가 주소와 좌표의 일치를 본다.
 
       **사진을 먼저 올린다**
 
@@ -419,6 +431,7 @@ public final class ListingDocsFields {
       **요청 주의사항**
 
       - `building.usedFloorRange`·`ageRange`는 **요청과 응답의 모양이 다르다.** 보낼 때는 `min~max` 문자열 한 칸이지만 응답은 `building.usedFloorMin`/`usedFloorMax`, `ageMin`/`ageMax`로 갈라져 돌아온다.
+      - **주소와 좌표는 검색 응답 그대로 보낸다.** `address.fullAddress`는 정규화 없이 저장되고, `address.lat`·`lng`는 응답의 최상위 `location`으로 옮겨 간다. 건물명이 붙은 도로명 주소도 그대로 두면 된다.
       - **사진 URL은 보내지 않는다.** 키를 보내면 서버가 확정 위치로 옮겨 응답의 `imageUrls`·`roomOffers[].roomImageUrls`에 담아 준다. 순서는 보낸 순서를 유지한다.
       - **자기가 올린 키만 쓸 수 있다.** 남의 키·없는 키·올린 지 7일이 지난 키는 모두 `400 LISTING_IMAGE_KEY_NOT_FOUND`다.
       - **등록에 성공하면 업로드 때 받은 미리보기 URL은 무효가 된다.** 이후에는 등록 응답의 URL을 쓴다.
@@ -429,14 +442,15 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - 본문은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
+      - `location`은 요청의 `address.lat`·`address.lng`를 옮긴 값이다. `nearbyUniversityCodes`는 아직 빈 배열이다(좌표 기반 파생은 후속).
       - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다(임대인은 한국어).
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
-      | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함. 도로명 주소 재입력을 유도한다 |
+      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
+      | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함. 주소 검색의 `supported=false`가 그 후보다 — 지원 지역의 주소를 다시 고르게 한다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
       | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -461,6 +475,59 @@ public final class ListingDocsFields {
 
   public static final String[] LISTING_REGISTER_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
 
+  // ── §11 도로명 주소 검색 — GET /api/v1/listings/addresses ──────────────────
+
+  public static final String LISTING_ADDRESS_SEARCH_SUMMARY = "도로명 주소 검색(임대인)";
+
+  public static final String LISTING_ADDRESS_SEARCH_DESCRIPTION =
+      """
+      매물 등록 폼의 주소 칸을 채울 표준 도로명 주소와 좌표를 찾는다. 등록 전에 **먼저 호출하는 API**다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다.
+
+      **고른 값을 등록에 그대로 싣는다**
+
+      | 검색 응답 | 등록 요청 |
+      |---|---|
+      | `roadAddress` | `address.fullAddress` |
+      | `lat` | `address.lat` |
+      | `lng` | `address.lng` |
+
+      **요청 주의사항**
+
+      - **도로명 + 건물번호까지 넣어야 결과가 나온다.** `신촌`처럼 일부만 보내면 후보가 비고, `신촌로 12`면 나온다. 폼에서 그렇게 안내한다.
+      - 서버가 외부 호출 조건(최대 5건·첫 페이지·한국어)을 고정하므로 프론트는 `keyword`만 보낸다.
+
+      **응답 주의사항**
+
+      - **`supported=false`인 후보는 고르게 하지 않는다.** 등록 가능한 지역은 서버 코드표가 정하며, 그대로 등록하면 `400 LISTING_INVALID_ADDRESS`다.
+      - `roadAddress`에는 건물명이 붙어 올 수 있다. 서버가 다듬지 않으므로 **보이는 그대로** 등록에 실으면 된다.
+      - 일치하는 주소가 없으면 `200`과 `data.items=[]`다(에러가 아니다). 도로명이 없는 결과는 서버가 제외한다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 키워드 누락·공백·길이(1~100자) 위반 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 502 | `UPSTREAM_ERROR` | 외부 지오코딩 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
+      """;
+
+  public static final String[] LISTING_ADDRESS_SEARCH_400 = {"INVALID_INPUT"};
+
+  public static final String[] LISTING_ADDRESS_SEARCH_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+
+  public static final String[] LISTING_ADDRESS_SEARCH_403 = {
+    "FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"
+  };
+
+  public static final String[] LISTING_ADDRESS_SEARCH_502 = {"UPSTREAM_ERROR"};
+
   // ── 공통 실패 응답 문구 ────────────────────────────────────────────────────
 
   public static String errorDescription() {
@@ -469,6 +536,14 @@ public final class ListingDocsFields {
   }
 
   // ── 파라미터 기술자 ────────────────────────────────────────────────────────
+
+  /** 주소 검색 API가 프론트에서 받는 유일한 검색 조건을 문서화한다. */
+  public static ParameterDescriptor[] addressQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("keyword")
+          .description("등록 폼 주소 칸 입력값(1~100자). 도로명 + 건물번호까지 넣어야 후보가 나온다. 예: `신촌로 12`")
+    };
+  }
 
   /** 네이버 장소 후보 API가 프론트에서 받는 유일한 검색 조건을 문서화한다. */
   public static ParameterDescriptor[] placeQueryParameters() {
@@ -603,8 +678,21 @@ public final class ListingDocsFields {
     fields.add(optField("blogUrl", JsonFieldType.STRING, "지점 블로그·홈페이지 주소. 없으면 생략"));
     fields.add(field("address", JsonFieldType.OBJECT, "매물 주소"));
     fields.add(
-        field("address.fullAddress", JsonFieldType.STRING, "도로명 주소 한 줄. 서버가 여기서 시·도와 구·군을 뽑는다"));
+        field(
+            "address.fullAddress",
+            JsonFieldType.STRING,
+            "도로명 주소 한 줄. 주소 검색 응답의 roadAddress를 그대로 보낸다. 서버가 여기서 시·도와 구·군을 뽑는다"));
     fields.add(optField("address.detail", JsonFieldType.STRING, "동·호수 등 상세 주소. 없으면 생략"));
+    fields.add(
+        field(
+            "address.lat",
+            JsonFieldType.NUMBER,
+            "위도. 주소 검색 응답의 lat을 그대로 보낸다. 매물의 location이 되며 WGS84 범위(-90~90)를 벗어나면 400"));
+    fields.add(
+        field(
+            "address.lng",
+            JsonFieldType.NUMBER,
+            "경도. 주소 검색 응답의 lng을 그대로 보낸다. WGS84 범위(-180~180)를 벗어나면 400"));
     fields.add(field("building", JsonFieldType.OBJECT, "건물 정보"));
     fields.add(enumField("building.type", Listing.BuildingType.class, "건물 형태"));
     fields.add(field("building.totalFloors", JsonFieldType.NUMBER, "건물 총 층수. 1 이상"));
@@ -682,6 +770,31 @@ public final class ListingDocsFields {
   }
 
   // ── 응답 필드 기술자 ───────────────────────────────────────────────────────
+
+  /** 주소 검색 API 응답 필드 문서 정의다. 등록에 그대로 실리는 값과 보조 표시값을 설명에서 갈라 준다. */
+  public static List<FieldDescriptor> addressSearchResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.items[].roadAddress",
+            JsonFieldType.STRING,
+            "표준 도로명 주소. 등록 요청의 address.fullAddress에 그대로 담는다. 건물명이 붙어 있을 수 있고 서버는 다듬지 않는다"),
+        field(
+            "data.items[].jibunAddress",
+            JsonFieldType.STRING,
+            "지번 주소. 후보를 구분해 보여줄 때만 쓰고 등록에는 보내지 않는다. 제공되지 않으면 빈 문자열"),
+        field(
+            "data.items[].englishAddress",
+            JsonFieldType.STRING,
+            "영문 표기. 보조 표시용이며 등록에는 보내지 않는다. 제공되지 않으면 빈 문자열"),
+        field("data.items[].lat", JsonFieldType.NUMBER, "WGS84 위도. 등록 요청의 address.lat에 그대로 담는다"),
+        field("data.items[].lng", JsonFieldType.NUMBER, "WGS84 경도. 등록 요청의 address.lng에 그대로 담는다"),
+        field(
+            "data.items[].supported",
+            JsonFieldType.BOOLEAN,
+            "이 주소로 매물을 등록할 수 있는지. false면 등록에서 400 LISTING_INVALID_ADDRESS이므로 폼에서 선택을 막는다"),
+        errorNull());
+  }
 
   /** 네이버 원본 메타데이터를 제외하고 프론트에 공개하는 장소 후보 필드만 문서화한다. */
   public static List<FieldDescriptor> placeResponseFields() {
@@ -788,7 +901,7 @@ public final class ListingDocsFields {
   /**
    * 매물 등록 201 응답 필드 문서 정의다.
    *
-   * <p>상세 조회와 같은 매물 문서지만 상태가 {@code PENDING}이고 좌표가 아직 없어 두 필드만 다르다.
+   * <p>상세 조회와 같은 매물 문서지만 상태가 {@code PENDING}이라 그 한 필드만 다르다.
    */
   public static List<FieldDescriptor> registerResponseFields() {
     List<FieldDescriptor> fields = new ArrayList<>();
@@ -874,7 +987,7 @@ public final class ListingDocsFields {
             prefix + ".blogUrl",
             JsonFieldType.STRING,
             "매물 홍보용 블로그 주소. 임대인이 입력하지 않으면 값이 null이 아니라 필드 자체가 생략된다"));
-    fields.addAll(locationFields(prefix, variant));
+    fields.addAll(locationFields(prefix));
     fields.add(enumField(prefix + ".address.city.code", City.class, "지역 필터에 사용할 시·도 서버 코드"));
     fields.add(
         field(prefix + ".address.city.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 시·도 이름"));
@@ -1065,16 +1178,8 @@ public final class ListingDocsFields {
             "공개 상태. 공개 조회에는 PUBLISHED만 내려오므로 별도 필터링 없이 표시 가능");
   }
 
-  /** 좌표는 등록 응답에만 없다. 없을 때는 값이 null이 아니라 키 자체가 빠지므로 하위 lat/lng도 기술하지 않는다. */
-  private static List<FieldDescriptor> locationFields(
-      String prefix, ListingDocumentVariant variant) {
-    if (variant == ListingDocumentVariant.REGISTERED) {
-      return List.of(
-          optField(
-              prefix + ".location",
-              JsonFieldType.OBJECT,
-              "매물 좌표. 등록 응답에는 값이 null이 아니라 필드 자체가 생략된다 — 좌표는 공개 전에 채워지므로 조회 응답에는 항상 lat·lng가 있다"));
-    }
+  /** 좌표는 등록·조회 양쪽에 있다 — 등록이 주소 검색이 준 좌표를 그대로 채우기 때문이다(ADR-0042). */
+  private static List<FieldDescriptor> locationFields(String prefix) {
     return List.of(
         field(prefix + ".location.lat", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 위도"),
         field(prefix + ".location.lng", JsonFieldType.NUMBER, "상세 지도 또는 선택 마커 중심에 사용할 경도"));
