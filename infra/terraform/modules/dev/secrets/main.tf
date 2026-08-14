@@ -53,6 +53,9 @@ locals {
     # 네이버 지역 검색 API 인증정보 — Client ID/Secret 모두 시크릿(#160/#162)
     NAVER_SEARCH_CLIENT_ID     = var.naver_search_client_id
     NAVER_SEARCH_CLIENT_SECRET = var.naver_search_client_secret
+    # NCP Maps Geocoding 인증정보 — 도로명 주소 검색(#223, ADR-0042). 위 검색 API와 콘솔·키가 다르다.
+    NAVER_GEOCODE_CLIENT_ID     = var.naver_geocode_client_id
+    NAVER_GEOCODE_CLIENT_SECRET = var.naver_geocode_client_secret
     # 앱스토어 심사 계정 고정 인증번호(#180) — 코드는 우회 자격, 계정·연락처는 실제 인물 PII라 SecureString.
     FIXED_VERIFICATION_CODE                   = var.fixed_verification_code
     FIXED_VERIFICATION_TENANT_GOOGLE_EMAILS   = var.fixed_verification_tenant_google_emails

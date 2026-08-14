@@ -228,6 +228,11 @@ mail_from        = "noreply@kohere.app"
 naver_search_client_id     = "..."   # sensitive
 naver_search_client_secret = "..."   # sensitive
 
+# --- NCP Maps Geocoding (도로명 주소 검색, 옵션 — SSM SecureString) ---
+# 미설정 시 앱은 정상 기동하되 주소 검색(GET /api/v1/listings/addresses)만 502. NCP 콘솔에서 Maps Application 등록 후 발급(위 검색 API와 다른 키).
+naver_geocode_client_id     = "..."   # sensitive
+naver_geocode_client_secret = "..."   # sensitive
+
 # --- CI/CD (모두 default 있음) ---
 github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"

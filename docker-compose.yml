@@ -170,6 +170,9 @@ services:
       # 네이버 지역 검색 API — 실제 값은 gitignore된 .env에서 읽어 컨테이너 환경변수로만 전달한다.
       NAVER_SEARCH_CLIENT_ID: ${NAVER_SEARCH_CLIENT_ID:-}
       NAVER_SEARCH_CLIENT_SECRET: ${NAVER_SEARCH_CLIENT_SECRET:-}
+      # NCP Maps Geocoding — 도로명 주소 검색(ADR-0042). 위 검색 API와 콘솔·키가 다르다.
+      NAVER_GEOCODE_CLIENT_ID: ${NAVER_GEOCODE_CLIENT_ID:-}
+      NAVER_GEOCODE_CLIENT_SECRET: ${NAVER_GEOCODE_CLIENT_SECRET:-}
       # 매물 사진 저장소(MinIO, ADR-0041). 컨테이너에서는 서비스명으로 찾으므로 endpoint가 minio:9000이다.
       # 응답 URL은 호스트 브라우저가 열 주소라 localhost:9000이어야 한다 — 업로드 주소와 읽기 주소가 다르다.
       APP_IMAGES_BUCKET: ${APP_IMAGES_BUCKET:-kohere-local-images}

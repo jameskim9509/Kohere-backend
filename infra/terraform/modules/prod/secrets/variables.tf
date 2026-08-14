@@ -94,6 +94,20 @@ variable "naver_search_client_secret" {
   sensitive   = true
 }
 
+variable "naver_geocode_client_id" {
+  description = "NCP Maps Geocoding API Client ID(도로명 주소 검색)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "naver_geocode_client_secret" {
+  description = "NCP Maps Geocoding API Client Secret(도로명 주소 검색)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "recovery_window_days" {
   description = "Secrets Manager 삭제 복구 대기일"
   type        = number

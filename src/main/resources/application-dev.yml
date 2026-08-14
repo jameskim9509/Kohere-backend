@@ -80,6 +80,11 @@ app:
       # SSM→refresh-env(.env)→compose env_file로 주입한다. 미주입 시 빈 값으로 기동하고 장소 검색 호출만 502(UPSTREAM_ERROR)로 실패한다.
       client-id: ${NAVER_SEARCH_CLIENT_ID}
       client-secret: ${NAVER_SEARCH_CLIENT_SECRET}
+    geocode:
+      # NCP Maps Geocoding(ADR-0042). 주입 경로는 search와 같지만 콘솔·키가 다르다.
+      # 미주입 시 빈 값으로 기동하고 주소 검색 호출만 502(UPSTREAM_ERROR)로 실패한다.
+      client-id: ${NAVER_GEOCODE_CLIENT_ID}
+      client-secret: ${NAVER_GEOCODE_CLIENT_SECRET}
   images:
     # 매물 사진 저장소(ADR-0041). 버킷·CDN 도메인은 terraform이 APP_IMAGES_* 로 주입한다(비밀 아님).
     # 자격증명은 설정에 두지 않는다 — 태스크 역할이 임시 자격증명을 준다.

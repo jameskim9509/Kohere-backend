@@ -90,6 +90,11 @@ app:
       # 로컬은 프로젝트 루트 .env에서 주입한다. 빈 값이면 다른 기능은 기동되고 장소 검색 호출만 502로 실패한다.
       client-id: ${NAVER_SEARCH_CLIENT_ID:}
       client-secret: ${NAVER_SEARCH_CLIENT_SECRET:}
+    geocode:
+      # NCP 콘솔에서 발급한 Maps 자격증명이다 — 위 search(네이버 Developers)와 다른 값이니 섞어 넣지 않는다.
+      # 빈 값이면 다른 기능은 기동되고 주소 검색 호출만 502로 실패한다.
+      client-id: ${NAVER_GEOCODE_CLIENT_ID:}
+      client-secret: ${NAVER_GEOCODE_CLIENT_SECRET:}
   images:
     # 매물 사진 저장소(ADR-0041) — docker compose의 MinIO를 쓴다. S3와 같은 API라 배포 환경과 같은 어댑터가 돌아간다.
     #   인프라만 띄웠다면: docker compose up -d minio minio-init

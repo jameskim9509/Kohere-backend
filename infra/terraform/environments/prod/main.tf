@@ -139,6 +139,9 @@ module "secrets" {
   # 네이버 지역 검색 API 인증정보(Client ID/Secret 모두 시크릿, #160/#162)
   naver_search_client_id     = var.naver_search_client_id
   naver_search_client_secret = var.naver_search_client_secret
+  # NCP Maps Geocoding 인증정보(도로명 주소 검색 — #223)
+  naver_geocode_client_id     = var.naver_geocode_client_id
+  naver_geocode_client_secret = var.naver_geocode_client_secret
 }
 
 # ===== IAM (ECS 역할 + GitHub OIDC) =====
@@ -216,6 +219,9 @@ locals {
     # 네이버 지역 검색 API(지도 장소 검색, #160/#162) — Client ID/Secret 모두 SSM SecureString(valueFrom).
     { name = "NAVER_SEARCH_CLIENT_ID", valueFrom = module.secrets.param_arns["NAVER_SEARCH_CLIENT_ID"] },
     { name = "NAVER_SEARCH_CLIENT_SECRET", valueFrom = module.secrets.param_arns["NAVER_SEARCH_CLIENT_SECRET"] },
+    # NCP Maps Geocoding(도로명 주소 검색, #223) — Client ID/Secret 모두 SSM SecureString(valueFrom).
+    { name = "NAVER_GEOCODE_CLIENT_ID", valueFrom = module.secrets.param_arns["NAVER_GEOCODE_CLIENT_ID"] },
+    { name = "NAVER_GEOCODE_CLIENT_SECRET", valueFrom = module.secrets.param_arns["NAVER_GEOCODE_CLIENT_SECRET"] },
   ]
 }
 
