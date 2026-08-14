@@ -136,19 +136,23 @@ DELETE {{baseUrl}}/api/v2/listings/{{listingId}}/favorite
 Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 
 # ═══════════════════════ /api/v2 — 매물 등록 (US-3-6, 임대인 전용) ═══════════════════════
-#   사진은 12-a~c에서 한 장씩 올려 받은 key를 imageKeys(1~5개)·roomOffers[].roomImageKeys(방마다 2~5개)로 참조한다.
+#   사진은 12-a~c에서 한 장씩 올려 받은 key를 imageKeys(1~5개)·roomOffers[].roomImageKeys(방마다 2~5개)로 참조하고,
+#   주소·좌표는 12-0 응답의 items[0]을 그대로 참조한다 — 12-0과 12-a~c를 먼저 보내야 이 요청이 성립한다.
+#   NCP 키가 없어 12-0이 502라면, 아래 address의 세 값을 직접 채워 넣고 보낸다(예: 서울특별시 서대문구 신촌로 12 / 37.5559918 / 126.9368647).
 #   등록 요청 자체는 JSON이다 — 파일은 실리지 않는다.
 #   폼 1칸으로 받는 두 값은 `min~max` 문자열이다 — building.usedFloorRange, ageRange.
 #   다국어 문구는 **한국어 한 값만** 보낸다. 서버가 en에 같은 값을 복사하고 영어 번역은 관리자가 승인 심사에서 채운다.
 #   서버가 채우는 값이라 요청에 없는 것: listingId · roomOffers[].roomOfferId · status(PENDING) ·
 #   rentalType(MONTHLY_RENT) · pricing.currency(KRW) · roomOffers[].status(ACTIVE) · favoriteCount(0) · 생성/수정 시각.
-#   좌표(location)와 주변 대학(nearbyUniversityCodes)은 지오코딩 미구현이라 비어 있는 상태로 저장된다.
+#   좌표(location)는 12-0이 준 값을 그대로 저장한다. 주변 대학(nearbyUniversityCodes)만 아직 빈 배열이다.
 #   코드값은 전부 listingCatalog와 대조한다 — 카탈로그에 없는 코드는 400이다(29-b번).
 #   사진 URL도 요청에 없다 — 서버가 확정 위치로 옮긴 뒤 응답에 담아 준다(업로드 때 받은 url과 다르다).
 
 ### 12-0. 도로명 주소 검색 — 등록에 실을 주소·좌표를 얻는다(임대인 전용)
 #    도로명 + 건물번호까지 넣어야 결과가 나온다("신촌"만으로는 비어 있다).
-#    supported=true인 후보의 roadAddress·lat·lng를 13번 본문에 그대로 옮긴다.
+#    13번이 이 응답의 items[0]을 그대로 참조하므로 **13번보다 먼저 보내야 한다.**
+#    supported=false인 후보를 고르면 등록이 400 LISTING_INVALID_ADDRESS다(현재 카탈로그는 서울 9개 구만 안다).
+# @name addressSearch
 GET {{baseUrl}}/api/v1/listings/addresses?keyword=신촌로 12
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
@@ -240,10 +244,10 @@ Content-Type: application/json
   "businessRegistrationNumber": "1234567890",
   "blogUrl": "https://blog.example.com/sinchon",
   "address": {
-    "fullAddress": "서울특별시 서대문구 신촌로 12",
+    "fullAddress": "{{addressSearch.response.body.$.data.items[0].roadAddress}}",
     "detail": "3층 301호",
-    "lat": 37.5559918,
-    "lng": 126.9368647
+    "lat": {{addressSearch.response.body.$.data.items[0].lat}},
+    "lng": {{addressSearch.response.body.$.data.items[0].lng}}
   },
   "building": {
     "type": "VILLA",

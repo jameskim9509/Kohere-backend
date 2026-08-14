@@ -284,7 +284,7 @@
 | `address` | VO `Address` | 표시 주소·행정구역 |
 | `nearestTransit` | VO `NearestTransit` | 가까운 지하철역·도보 시간 |
 | `nearbyFacilities` | `Set<NearbyFacility>` | 주변 편의시설(복수) — 교통과 무관한 값이라 루트가 소유 |
-| `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 **개별 대학(member) 코드**(`SNU`·`CAU` 등) — 진단의 `UniversityGroup` 그룹 코드가 아니라 개별 대학 코드를 저장한다(저장 형식 불변). 진단은 선택 그룹을 member 코드로 펼쳐 `$in`으로 매칭([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 등록 시점에는 빈 집합(좌표 기반 부여 미구현) |
+| `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 **개별 대학(member) 코드**(`SNU`·`CAU` 등) — 진단의 `UniversityGroup` 그룹 코드가 아니라 개별 대학 코드를 저장한다(저장 형식 불변). 진단은 선택 그룹을 member 코드로 펼쳐 `$in`으로 매칭([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 등록 시점에는 빈 집합(좌표는 채워지지만 좌표 기반 대학 부여는 후속) |
 | `building` | VO `Building` | 건물 유형·층수·주차·엘리베이터 |
 | `facilities` | VO `Facilities` | 난방·주방·세탁·생활 편의·보안·공용 공간·제공 물품 |
 | `roomOffers` | `List<RoomOffer>` | 가격·계약기간·검색 태그가 같은 실제 방 묶음. 등록 시 최소 1개 필수이며 각 `roomOfferId`는 서버가 발급한다 |
