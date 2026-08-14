@@ -261,14 +261,12 @@ final class ListingResponseMapper {
   /**
    * 도메인 좌표를 프론트가 바로 쓰는 lat/lng 응답으로 바꾼다.
    *
-   * <p>등록이 요청의 좌표로 {@code location}을 채우므로(ADR-0042) 새로 만든 매물은 항상 좌표를 갖는다. 다만 저장 계약이 여전히 optional이라
-   * 좌표 없이 저장된 예전 문서가 남아 있어 {@code null} 분기를 유지한다 — 그때는 응답에서 {@code location} 키 자체가 빠진다.
+   * <p>좌표는 저장 계약의 필수 필드다(ADR-0042 · changeUnit {@code 0116}) — 등록이 주소 검색이 준 좌표를 채우고, 도메인·MongoDB
+   * validator가 저장 직전에 함께 막는다. 그래서 여기에는 좌표 없는 문서를 위한 분기가 없다.
    */
   private static ListingDetailResponse.GeoPoint toGeoPoint(Listing listing) {
     Listing.GeoPoint location = listing.getLocation();
-    return location == null
-        ? null
-        : new ListingDetailResponse.GeoPoint(location.latitude(), location.longitude());
+    return new ListingDetailResponse.GeoPoint(location.latitude(), location.longitude());
   }
 
   /** 행정 코드는 보존하고 전체/상세 주소만 사용자 언어로 선택한다. */

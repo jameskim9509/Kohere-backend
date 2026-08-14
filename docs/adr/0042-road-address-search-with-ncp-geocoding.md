@@ -52,9 +52,15 @@ Proposed
 
 판정은 등록이 쓰는 것과 **같은 코드**(`ListingCatalogCodes.findCity`/`findDistrict`)로 한다. 별도 사전을 두면 검색과 등록의 판정이 갈라진다.
 
-### 4. 좌표는 요청 필수, 저장 계약은 optional 유지
+### 4. 좌표를 요청과 저장 양쪽에서 필수로 둔다
 
-등록 요청에서 `address.lat`·`address.lng`는 **필수**다(검색을 건너뛴 자유 입력을 막는다). 반면 저장 계약(`ListingValidator`·MongoDB validator의 `required`)은 **건드리지 않는다** — 좌표 없이 저장된 기존 `PENDING` 문서가 있어서, 필수로 올리면 마이그레이션이 따라붙는다. 새 문서는 항상 좌표를 갖고, 옛 문서는 그대로 둔다.
+등록 요청에서 `address.lat`·`address.lng`는 **필수**다(검색을 건너뛴 자유 입력을 막는다). 저장 계약도 함께 조인다 — `ListingValidator`와 MongoDB validator의 `required`에 `location`을 넣는다.
+
+v4 baseline(`0115`)이 `location`을 선택으로 둔 이유는 **채울 경로가 없었기 때문**이지 값이 없어도 되는 필드라서가 아니다. 좌표 없는 매물은 지도·거리 정렬에 오르지 못하고 관리자 승인도 통과하지 못하는 죽은 문서다. 채울 수 있게 된 지금은 그 예외를 유지할 근거가 사라졌다.
+
+**백필 단계가 비어 있다.** migration-policy §4는 확장→백필→축소를 요구하는데, 시드 주입 전이라 좌표 없이 저장된 문서가 0건이라 가운데가 자동으로 충족된다. 조이기는 `0115`를 고치지 않고 **새 changeUnit `0116 listing-location-required`** 가 자기 스키마 사본을 들고 수행한다(baseline은 동결이다). `schemaVersion`은 4 그대로다 — 문서 모양이 바뀌지 않고 이미 유효하던 필드가 필수가 될 뿐이다.
+
+`required`에서 계속 빠지는 셋은 성격이 다르다 — `blogUrl`(선택 입력)·`rejectionReason`(반려 시에만)·`serviceFeedback`(선택 설문)은 값이 없는 것이 정상 상태다.
 
 ### 5. 포트·어댑터와 설정
 
@@ -93,12 +99,12 @@ NCP의 `roadAddress`에는 건물명이 붙어 올 수 있다(`… 불정로 6 N
   - 좌표로 `nearbyUniversityCodes`를 계산한다(ADR-0039가 남긴 나머지 절반).
   - 지원 지역 확장 — `DISTRICT` 카탈로그와 `District` enum을 함께 늘린다(둘 중 하나만 늘리면 조용히 무시된다).
   - 관리자 승인에서 주소·좌표 일치 확인 절차.
-  - 좌표 없이 저장된 기존 `PENDING` 문서의 좌표 보정.
 
 ## Validation
 
 - 주소 검색에 `신촌로 12`를 보내면 `roadAddress`·`lat`·`lng`가 오고, 그 좌표를 지도에 찍으면 실제 위치와 맞는다.
 - 서울 9개 구 밖의 주소(예: `분당구 불정로 6`)는 결과에 포함되되 **`supported=false`** 이며, 그 값을 그대로 등록에 보내면 `400 LISTING_INVALID_ADDRESS`다.
 - 검색 결과의 주소·좌표로 등록하면 `201`이고, 저장된 문서의 `location`이 `{ type: "Point", coordinates: [lng, lat] }`다.
+- 좌표를 빼고 등록하면 `400 INVALID_INPUT`이고 `errors[]`에 `address.lat`·`address.lng`가 실린다. 좌표 없는 문서를 강제로 넣으려 해도 도메인 검증과 MongoDB validator(`0116` 적용 후)가 각각 막는다 — `mongosh`에서 `db.listings.insertOne({...location 없이...})`가 `DocumentValidationFailure`다.
 - 자격증명을 비우면 주소 검색만 `502 UPSTREAM_ERROR`이고 다른 기능은 정상이다. 이때 **NCP로 나가는 요청 자체가 없다.**
 - 세입자(`userType=TENANT`) 토큰으로 부르면 `403 FORBIDDEN`, 토큰 없이 부르면 `401 UNAUTHENTICATED`다(공개 매처에 걸려 200이 나오지 않는다).

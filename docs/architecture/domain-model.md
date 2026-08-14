@@ -280,7 +280,7 @@
 | `ageMin` | int | 이용 가능 최소 연령 |
 | `ageMax` | int | 이용 가능 최대 연령 |
 | `languagesSupported` | `Set<SupportedLanguage>` | 외국어 응대 가능 언어(복수) |
-| `location` | VO `GeoPoint`, nullable | 지도 검색용 좌표. 도메인/GeoJSON 순서는 `longitude, latitude`, API는 `{lat,lng}`. 등록이 요청의 `address.lat`·`lng`로 채운다(ADR-0042). 저장 계약은 계속 nullable — 좌표 없이 저장된 옛 문서가 있다 |
+| `location` | VO `GeoPoint` | NOT NULL · 지도 검색용 좌표. 도메인/GeoJSON 순서는 `longitude, latitude`, API는 `{lat,lng}`. 등록이 주소 검색으로 받은 `address.lat`·`lng`로 채운다(ADR-0042 · changeUnit `0116`에서 필수로 전환) |
 | `address` | VO `Address` | 표시 주소·행정구역 |
 | `nearestTransit` | VO `NearestTransit` | 가까운 지하철역·도보 시간 |
 | `nearbyFacilities` | `Set<NearbyFacility>` | 주변 편의시설(복수) — 교통과 무관한 값이라 루트가 소유 |

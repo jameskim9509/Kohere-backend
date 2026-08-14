@@ -97,7 +97,7 @@ public class Listing {
   /**
    * 지도 검색과 거리 계산에 사용하는 좌표다.
    *
-   * <p>등록은 주소 검색이 준 좌표를 요청으로 받아 채운다(ADR-0042). 저장 계약은 계속 optional인데, 그 전에 좌표 없이 저장된 문서가 남아 있기 때문이다.
+   * <p>등록은 주소 검색이 준 좌표를 요청으로 받아 채운다(ADR-0042). 저장 계약의 <b>필수</b> 필드이며 도메인·MongoDB validator가 함께 막는다.
    */
   private final GeoPoint location;
 

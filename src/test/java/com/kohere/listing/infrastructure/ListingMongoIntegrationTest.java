@@ -135,6 +135,21 @@ class ListingMongoIntegrationTest {
         .hasMessageContaining("roomOffers");
   }
 
+  /**
+   * 좌표 없는 매물은 저장 경로에서 막힌다(ADR-0042 · changeUnit {@code 0116}).
+   *
+   * <p>배포 환경에서는 MongoDB validator의 {@code required}가 같은 것을 한 겹 더 막지만, 테스트는 Mongock을 끄고 돌아
+   * validator가 걸리지 않는다 — 그래서 여기서 확인하는 것은 도메인 검증이다.
+   */
+  @Test
+  void save_도메인검증으로_좌표없는_매물을_거부한다() {
+    Listing invalid = sampleListingBuilder().location(null).build();
+
+    assertThatThrownBy(() -> listingRepository.save(invalid))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("location");
+  }
+
   /** 매물·방상품 id가 없으면 저장 어댑터가 Mongo ObjectId를 발급한다. */
   @Test
   void save_아이디가_없으면_ObjectId를_발급한다() {

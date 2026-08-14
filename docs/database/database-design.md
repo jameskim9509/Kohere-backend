@@ -363,8 +363,8 @@
 | `contact` | object | NOT NULL · 매물별 담당 연락처(`managerName`·`phone`·`sms`) · 임대인 개인 연락처와 별개 값(아래 註) |
 | `businessRegistrationNumber` | string | 사업자등록번호 **원문** · 응답 비노출(아래 註) |
 | `blogUrl` | string | nullable · 임대인 소개 페이지 URL |
-| `ageMin` | int | nullable · 이용 가능 연령 하한 |
-| `ageMax` | int | nullable · 이용 가능 연령 상한 |
+| `ageMin` | int | NOT NULL · 이용 가능 연령 하한 · 등록 폼의 `ageRange`(`min~max`)를 서버가 나눈 값 |
+| `ageMax` | int | NOT NULL · 이용 가능 연령 상한 |
 | `title` | object | NOT NULL · 매물 고유 표시명 `{ko,en}` |
 | `type` | string (enum `ListingType`) | NOT NULL · `GOSHIWON`/`CO_LIVING`/`SHARE_HOUSE` |
 | `rentalType` | string (enum `RentalType`) | 매물 공통 임대 방식 · `MONTHLY_RENT` 단일값 |
@@ -383,7 +383,7 @@
 | `description` | object | 매물 상세 설명 `{ko,en}` |
 | `extraNotes` | object | 자유 입력 주의사항 `{ko,en}` |
 | `facilities` | object | 난방·주방·세탁·생활 편의·보안·공용 공간·제공 물품 · `commonSpaces`는 `CommonSpaceType` 코드 배열 |
-| `location` | GeoJSON `Point` | `[lng,lat]`, `2dsphere` · nullable(아래 註) |
+| `location` | GeoJSON `Point` | NOT NULL · `[lng,lat]`, `2dsphere`(아래 註) |
 | `nearestTransit` | object | `type` 코드(`SUBWAY`)·`name:{ko,en}`·`walkMinutes` |
 | `nearbyFacilities` | string[] (enum `NearbyFacility`) | 주변 시설 코드 |
 | `refundPolicy` | object | 매물 공통 환불 정책 문장 `{ko,en}` |
@@ -482,7 +482,7 @@
 - **카운트 정합**: `favoriteCount`는 `favorites` 집계의 비정규화 캐시다. 현재 찜 문서 insert/delete와 카운터 증감은 같은 MongoDB에서 순차적으로 별도 실행하며 트랜잭션·배치 재계산은 구현되어 있지 않다. 두 번째 쓰기 실패 시 차이가 생길 수 있는 현재 운영 제약이다.
 - **찜 목록 노출 조건**: 현재 aggregation은 대상 매물의 `status=PUBLISHED`만 검사하고 ACTIVE `roomOffers` 존재 여부는 검사하지 않는다. 따라서 다른 사용자 조회와 달리 빈 `roomOffers[]` 카드가 포함될 수 있다.
 - **최근 본**: 사용자별 최신 30개까지만 보관하고, 조회 API는 그중 `PUBLISHED`이면서 ACTIVE `roomOffers`가 있는 매물만 `viewedAt desc limit 10`으로 반환한다.
-- **좌표**: 저장 `[lng,lat]` ↔ API `{lat,lng}` 변환. `location`은 v4 validator의 `required`에서 빠져 있어 등록 직후에는 비어 있을 수 있고, 좌표 없는 매물은 관리자 승인을 통과하지 못한다(`PENDING`에 머문다).
+- **좌표**: 저장 `[lng,lat]` ↔ API `{lat,lng}` 변환. `location`은 **v4 validator의 `required`**다 — 도로명 주소 검색(`GET /api/v1/listings/addresses`)이 준 좌표를 등록 요청이 되돌려 보내므로 좌표 없는 매물이 생길 경로가 없다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). 최초 v4 baseline(`0115`)은 지오코딩이 없어 이 필드를 선택으로 뒀고, `0116 listing-location-required`가 필수로 조였다(시드 주입 전이라 백필 대상 0건).
 - **ARC 요구**: 매물 루트 `arcRequired`(`REQUIRED`/`NOT_REQUIRED`) 한 필드가 정본이다. 파생 태그(`ConditionTag.NO_ARC`)는 없어졌고 `roomOffers[].filterTags` 저장값과 응답 태그가 1:1이다. 진단 `arcStatus`와의 매핑은 §4-4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)).
 - **매물 문서의 임대인 PII**: `businessRegistrationNumber`는 **원문**을, `contact`(`managerName`·`phone`·`sms`)는 평문을 이 컬렉션에 저장한다 — [ADR-0033](../adr/0033-business-registry-verification.md)의 "원문 비저장·해시로만 영속"을 **매물 문서 한정으로 개정**한 결과다(온보딩·`users` 테이블에는 미채택, `auth`의 검증은 무상태 유지 — §4-1 A-4). `contact`는 매물별 담당 연락처라 임대인 개인 연락처(`users.phone_number`, 마스킹 대상)와 **별개 값**이므로 마스킹하지 않고 **세입자 응답에 공개**한다. 응답에서 제외하는 것은 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)이다. 임대인 탈퇴 시 이 문서의 PII 처리는 [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)의 익명화 대상(MySQL `users` 컬럼)에 없어 후속 설계 대상이다.
 - `favorited`·`distanceMeters`는 조회 시점 산출 표현값으로 영속하지 않는다(domain-model).
