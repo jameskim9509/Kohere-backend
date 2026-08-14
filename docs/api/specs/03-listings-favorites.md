@@ -3,7 +3,7 @@
 > [api-design-guide](../api-design-guide.md) · [error-response-guide](../error-response-guide.md)를 따른다. 모든 응답은 공통 래퍼.
 > 관련 유저 스토리: [user-stories](../../requirements/user-stories.md)
 
-임대인의 매물 등록, 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 API의 정본은 `/api/v2`다** — 사진 업로드·등록(`POST /api/v2/listings/images`·`POST /api/v2/listings`)에 이어 조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겼고, 요청·응답 모두 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). **기존 `/api/v1` 조회 경로는 개정 전(v3) 응답 구조를 복원한 `deprecated` 스텁**이며 빈 결과나 `404 LISTING_NOT_FOUND`만 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md), 아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)). 장소 후보 검색(`GET /api/v1/listings/places`)만 매물 데이터를 쓰지 않아 `/api/v1`에서 그대로 동작한다.
+임대인의 매물 등록, 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 API의 정본은 `/api/v2`다** — 사진 업로드·등록(`POST /api/v2/listings/images`·`POST /api/v2/listings`)에 이어 조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겼고, 요청·응답 모두 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). **기존 `/api/v1` 조회 경로는 개정 전(v3) 응답 구조를 복원한 `deprecated` 스텁**이며 빈 결과나 `404 LISTING_NOT_FOUND`만 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md), 아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)). 장소 후보 검색(`GET /api/v1/listings/places`)과 도로명 주소 검색(`GET /api/v1/listings/addresses`)만 매물 데이터를 쓰지 않아 `/api/v1`에서 그대로 동작한다 — 둘 중 주소 검색은 등록 폼 전용이라 **임대인 인증이 필요하다**([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)).
 
 > **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명·유의사항·환불 정책 문구는 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·`arcRequired`·행정구역(`address.city`·`address.district`)·`languagesSupported`·`nearbyFacilities`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다. 단 `status`(`ListingStatus`)는 임대인·관리자만 읽는 관리 상태라 번역 대상이 아니며 코드 문자열 그대로 내려간다.
 
@@ -23,6 +23,7 @@
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
+| GET | `/api/v1/listings/addresses` | 도로명 주소 검색(임대인) — 등록 폼의 주소 칸을 채우고 좌표를 함께 받는다 | 필수(임대인) | 200 |
 | POST | `/api/v2/listings/images` | 매물 사진 업로드(임대인) — **한 장씩**, 저장 키를 돌려준다 | 필수(임대인) | 201 |
 | POST | `/api/v2/listings` | 매물 등록(임대인) — 올려 둔 사진 키를 참조해 승인 대기(`PENDING`) 상태로 저장 | 필수(임대인) | 201 |
 | GET | `/api/v2/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
@@ -37,7 +38,7 @@
 
 > 위 표의 `/api/v2` 경로가 정본이다. 같은 경로의 `/api/v1` 버전은 빈 결과·404만 돌려주는 `deprecated` 스텁으로만 남아 있다(아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)).
 >
-> 사진 업로드와 매물 등록만 임대인 전용이고 나머지는 세입자·비로그인 사용자를 위한 조회 API다. 두 경로는 `SecurityConfig`에 **`POST /api/v2/listings`·`POST /api/v2/listings/images`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다([ADR-0010](../../adr/0010-jwt-authentication-filter.md)) — 명시하지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 임대인 여부(`userType=LANDLORD`)는 서비스가 다시 검사해 `403 FORBIDDEN`으로 거른다. 등록된 매물은 `PENDING`이라 아래 조회 API 어디에도 나오지 않는다 — 조회는 `PUBLISHED` 한정이다.
+> 주소 검색·사진 업로드·매물 등록만 임대인 전용이고 나머지는 세입자·비로그인 사용자를 위한 조회 API다. 세 경로는 `SecurityConfig`에 **`GET /api/v1/listings/addresses`·`POST /api/v2/listings`·`POST /api/v2/listings/images`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다([ADR-0010](../../adr/0010-jwt-authentication-filter.md)) — 주소 검색 매처는 공개 조회 매처(`GET /api/v1/listings/*` `permitAll`)보다 **먼저** 선언해야 한다. 먼저 매칭된 규칙이 이기므로 뒤에 두면 인증 규칙이 통째로 무시된다 — 명시하지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 임대인 여부(`userType=LANDLORD`)는 서비스가 다시 검사해 `403 FORBIDDEN`으로 거른다. 등록된 매물은 `PENDING`이라 아래 조회 API 어디에도 나오지 않는다 — 조회는 `PUBLISHED` 한정이다.
 >
 > 공개 조회도 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 넣지 않으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 된다(v1 공개 조회 매처와 같은 이유). 결국 `/api/v2/listings` 네임스페이스는 **GET은 공개, POST(등록)는 `hasRole("USER")`** 로 메서드별로 갈린다. 찜 토글(`POST`·`DELETE /api/v2/listings/*/favorite`)과 내 스코프(`GET /api/v2/users/me/favorites`·`/recent-listings`)는 v1과 동일하게 `hasRole("USER")` 매처를 유지한다.
 >
@@ -68,11 +69,12 @@
 | GET | `/api/v1/users/me/favorites` | **빈 페이지** — `content: []`, `page.totalElements: 0` |
 | GET | `/api/v1/users/me/recent-listings` | **빈 결과** — `content: []` |
 | GET | `/api/v1/listings/places` | **그대로 동작** — 매물 데이터를 쓰지 않는다 |
+| GET | `/api/v1/listings/addresses` | **그대로 동작** — 매물 데이터를 쓰지 않는다(등록 폼 전용, 임대인 인증 필요) |
 
 - 빈 결과·404는 **DB에 닿지 않고** 만든다. 필터·bbox·키워드 값과 무관하게 같은 응답이며, 매물이 실제로 있는지도 확인하지 않는다.
 - 응답 래퍼(`{ success, data, error }`)와 페이지 구조(`page.number`·`size`·`totalElements`·`totalPages`·`hasNext`)는 v3 계약 그대로다 — 구버전 앱의 파싱이 깨지지 않아야 "매물 없음" 화면에 도달한다.
 - 인증 규칙도 v3 그대로다. 공개 조회는 비로그인도 `200`(빈 결과)이고, 찜 토글·내 스코프는 여전히 `ROLE_USER` 전용이라 토큰이 없으면 `404`가 아니라 `401 UNAUTHENTICATED`다. 즉 **인가 판정이 먼저**고 스텁 응답은 그 뒤다.
-- **`GET /api/v1/listings/places`만 예외**로 살아 있다. 네이버 지역 검색 API만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
+- **`GET /api/v1/listings/places`와 `GET /api/v1/listings/addresses`만 예외**로 살아 있다. 외부 API(네이버 지역 검색 · NCP Geocoding)만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places`·`addresses` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
 - **Swagger에서 v1 오퍼레이션은 `deprecated` 배지로 구분된다.** OpenAPI `deprecated: true`가 실려 Swagger UI가 취소선과 배지를 붙인다. summary에는 버전 표기를 두지 않는다 — 경로가 이미 `/api/v1`을 보여준다.
 - **제거 시점은 정하지 않았다.** 구버전 앱 사용 비중을 보고 별도로 결정하며, 그때까지 v1 스텁은 위 표대로 유지된다.
 - 진단 추천(`GET /api/v1/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 v4 개편 전후로 바뀌지 않았으므로 v1·v2 양쪽 모두 실데이터를 그대로 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
@@ -80,6 +82,77 @@
 ## 상세
 
 > 아래 상세는 모두 **`/api/v2` 정본 경로** 기준이다(장소 후보 검색만 `/api/v1`). 같은 경로의 `/api/v1` 조회는 위 [v1 스텁 동작](#v1-스텁-동작)을 따른다.
+
+### GET /api/v1/listings/addresses — 도로명 주소 검색(임대인)
+
+- 설명: 등록 폼의 주소 칸을 채우기 위해 **표준 도로명 주소와 좌표**를 찾는다. 임대인이 후보 하나를 고르면 그 `roadAddress`·`lat`·`lng`를 매물 등록(`POST /api/v2/listings`)의 `address.fullAddress`·`address.lat`·`address.lng`에 그대로 담는다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)).
+- 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). 등록 폼 전용 API라 공개하지 않는다(공개로 두면 인증 없이 외부 호출 쿼터를 소모하는 지오코딩 프록시가 된다).
+- 경로: 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않으므로 **`/api/v1`에 둔다**(장소 후보 검색과 같은 이유). 다만 인증 정책은 정반대다.
+- 책임 범위: 주소 후보만 반환하며 매물을 조회하지도, 저장하지도 않는다. 등록은 이 API를 부른 적이 있는지 알지 못한다 — **좌표를 되돌려 보내는 것은 클라이언트의 책임**이다.
+- 외부 연동: 아웃바운드 포트 `AddressSearchClient`(인프라 어댑터 `NcpGeocodeClient` — NCP Maps Geocoding API)로 **동기 호출**한다. HTTP 오류·타임아웃·인증정보 누락·응답 형식 이상은 모두 `502 UPSTREAM_ERROR`다. 인증정보는 환경변수 `NAVER_GEOCODE_CLIENT_ID`/`NAVER_GEOCODE_CLIENT_SECRET`(SSM SecureString)로 주입하며, **네이버 지역 검색(`NAVER_SEARCH_*`)과는 콘솔도 값도 다르다.**
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- | --- |
+| `keyword` | string | 필수 | — | 검색할 주소. 앞뒤 공백 제거 후 1~100자 |
+
+서버가 외부 호출에 고정하는 값:
+
+| 이름 | 값 | 설명 |
+| --- | --- | --- |
+| `count` | `5` | 한 번에 받을 최대 후보 수 |
+| `page` | `1` | 첫 페이지 고정(후보를 더 넘겨보는 UI가 없다) |
+| `language` | `kor` | 한국어 응답. 영어 표기는 `englishAddress`로 함께 온다 |
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "roadAddress": "서울특별시 서대문구 신촌로 12",
+        "jibunAddress": "서울특별시 서대문구 창천동 1-1",
+        "englishAddress": "12, Sinchon-ro, Seodaemun-gu, Seoul, Republic of Korea",
+        "lat": 37.5559918,
+        "lng": 126.9368647,
+        "supported": true
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `roadAddress` | string | 표준 도로명 주소. **등록 요청의 `address.fullAddress`에 그대로 담는다.** 건물명이 붙어 있을 수 있으며 서버는 다듬지 않는다 |
+| `jibunAddress` | string | 지번 주소. 사용자가 후보를 구분할 때 보조로 표시한다(등록에는 보내지 않는다) |
+| `englishAddress` | string | 영문 표기. 외국인 세입자 화면의 참고용이며 등록에는 보내지 않는다 |
+| `lat` / `lng` | number | WGS84 십진수 좌표. **등록 요청의 `address.lat`·`address.lng`에 그대로 담는다** |
+| `supported` | boolean | **이 주소로 매물을 등록할 수 있는지.** 서버 카탈로그에서 시·도와 구·군이 모두 판별될 때만 `true`다 |
+
+주의사항:
+
+- **`supported=false`인 후보를 고르면 등록에서 `400 LISTING_INVALID_ADDRESS`가 된다.** 검색은 전국을 돌려주지만 등록 가능한 지역은 카탈로그(`CITY`·`DISTRICT`)가 정하며 현재는 서울 일부 자치구뿐이다. **폼은 이 값으로 선택을 막거나 안내한다** — `city`·`district` 코드는 내려주지 않으므로 지원 지역이 늘어도 클라이언트는 그대로 둔다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md) §3).
+- **부분 키워드에는 약하다.** `신촌`처럼 도로명 일부만 보내면 결과가 비고, `신촌로 12`처럼 도로명 + 건물번호를 넣어야 후보가 나온다. 폼에서 그렇게 안내한다.
+- 정상적으로 결과가 없으면 `200 OK`와 `data.items=[]`다(장애가 아니다).
+- 도로명이 없는 결과(지번만 있는 주소)는 응답에서 제외한다 — 등록이 받는 것은 도로명 주소다.
+- 외부 응답의 `status`·`meta`·`distance`·`addressElements`는 공개하지 않는다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `keyword` 누락·공백·길이(1~100자) 위반 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조·형식 오류 / 만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰(`ROLE_ONBOARDING`) |
+| 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+| 502 | `UPSTREAM_ERROR` | NCP HTTP 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
 
 ### POST /api/v2/listings/images — 매물 사진 업로드(임대인)
 
@@ -141,6 +214,7 @@ Request Parts:
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). `landlordId`는 access 토큰에서 읽으며 요청 본문에 담지 않는다.
 - 경로: 매물 도메인의 첫 `/api/v2` 엔드포인트였고, 이제 조회 계열 6종도 같은 네임스페이스로 옮겨 왔다. `/api/v2/listings`는 **GET이면 공개 매물 조회, POST면 임대인 등록**으로 메서드에 따라 갈린다. 요청·응답이 모두 스키마 v4 구조라 `deprecated`된 `/api/v1` 조회 스텁과 섞이지 않는다.
 - Content-Type: **`application/json`**. 사진 파일은 이 요청에 싣지 않고 `POST /api/v2/listings/images`가 돌려준 **키**로 참조한다([ADR-0041](../../adr/0041-listing-image-upload-to-s3.md)).
+- 선행 호출: 주소는 **`GET /api/v1/listings/addresses`로 먼저 검색**해 고른 후보의 `roadAddress`·`lat`·`lng`를 그대로 담는다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)). 사진 키와 같은 방식이다 — 앞선 호출이 준 값을 되돌려 보낸다.
 
 Path·Query 파라미터: 없음
 
@@ -159,7 +233,9 @@ Request Body:
   "blogUrl": "https://blog.naver.com/kohere-goshiwon",
   "address": {
     "fullAddress": "서울특별시 서대문구 신촌로 12",
-    "detail": "3층 305호"
+    "detail": "3층 305호",
+    "lat": 37.5559918,
+    "lng": 126.9368647
   },
   "building": {
     "type": "VILLA",
@@ -227,8 +303,10 @@ Request Body:
 | `contact.sms` | string | 필수 | 문자문의 수신 연락처. 형식은 `phone`과 동일 |
 | `businessRegistrationNumber` | string | 필수 | 숫자 10자리. **형식만 검증하고 그대로 저장**한다(아래 요청 주의사항) |
 | `blogUrl` | string | 선택 | 지점 블로그. 값이 있으면 URL 형식 |
-| `address.fullAddress` | string | 필수 | 도로명 주소. **입력값을 그대로 저장**하며 정규화하지 않는다 |
+| `address.fullAddress` | string | 필수 | 도로명 주소. **주소 검색 응답의 `roadAddress`를 그대로** 보낸다. 서버는 받은 값을 정규화 없이 저장한다 |
 | `address.detail` | string | 선택 | 동·호수 등 상세 주소. 미입력이면 `null` |
+| `address.lat` | number | 필수 | 위도. **주소 검색 응답의 `lat`을 그대로** 보낸다. WGS84 범위(-90~90) |
+| `address.lng` | number | 필수 | 경도. **주소 검색 응답의 `lng`을 그대로** 보낸다. WGS84 범위(-180~180) |
 | `building.type` | `BuildingType` | 필수 | 건물 형태. 카탈로그 `BUILDING_TYPE` 대조 |
 | `building.totalFloors` | integer | 필수 | 건물 총 층수. 1 이상 |
 | `building.usedFloorRange` | string | 필수 | 지점 운영층을 `min~max` 1칸으로 받는다(예 `1~2`). 서버가 `usedFloorMin`·`usedFloorMax`로 파싱 |
@@ -273,8 +351,9 @@ Request Body:
 - **자기가 올린 키만 쓸 수 있다.** 키는 `uploads/{내 landlordId}/…` 형태이며, 남의 키나 존재하지 않는 키(오타·7일 만료)는 `400 LISTING_IMAGE_KEY_NOT_FOUND`다. 셋을 한 코드로 묶은 것은 구분해 알려주면 남의 키가 있는지 없는지가 새어 나가기 때문이다.
 - **등록에 성공하면 사진이 확정 위치로 옮겨 간다.** 업로드 때 받은 `uploads/…` URL은 무효가 되므로 **등록 응답의 URL을 쓴다.**
 - **폼 1칸을 서버가 두 필드로 파싱한다.** `building.usedFloorRange`(`1~2`) → `usedFloorMin`·`usedFloorMax`, `ageRange`(`20~35`) → `ageMin`·`ageMax`. 형식 위반은 `400 INVALID_INPUT`이며, `min ≤ max`와 `usedFloorMax ≤ totalFloors`도 함께 검증한다. 원본 문자열은 저장하지 않는다.
-- **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 입력값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 파싱해 `City`·`District` enum으로 확정한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며, 프론트는 도로명 주소 재입력을 유도한다.
-- **좌표와 인근 대학은 이번 범위에서 채우지 않는다.** `location`은 값 없이 저장하고 `nearbyUniversityCodes`는 빈 배열이다. 지오코딩은 후속 작업이며, 후속 관리자 승인은 `location` 보유를 승인 조건으로 둬 좌표 없는 매물이 공개되지 않게 한다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
+- **주소는 먼저 검색한다.** 주소 칸은 자유 입력이 아니다 — `GET /api/v1/listings/addresses`로 검색해 고른 후보의 `roadAddress`·`lat`·`lng`를 그대로 담는다. 서버는 이 API를 부른 적이 있는지 확인하지 않으므로 값을 보관했다 되돌려 보내는 것은 클라이언트의 몫이며, **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다**(승인 심사가 주소와 좌표의 일치를 본다).
+- **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 받은 값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 파싱해 `City`·`District` enum으로 확정한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`다 — 검색 응답의 `supported=false`가 이 실패를 미리 알려주므로, 폼이 그 값을 보면 여기까지 오지 않는다.
+- **좌표는 요청 값으로 채우고, 인근 대학은 아직 비운다.** `address.lat`·`lng`가 `location`으로 저장되어 지도·거리 정렬과 관리자 승인 조건(좌표 보유)을 만족한다. `nearbyUniversityCodes`는 여전히 빈 배열이며 좌표 기반 계산은 후속이다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md) 후속 작업). 저장 계약에서 `location`은 계속 optional이다 — 좌표 없이 저장된 기존 문서를 깨지 않기 위해서다.
 - **코드 필드는 `listingCatalog` 대조를 통과해야 한다.** 위 표의 각 코드 배열·단일 코드는 `(category, code)`가 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다. 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리한다 — 프론트는 입력 교정 대신 코드 카탈로그 재조회(또는 앱 갱신)를 안내한다.
 - **문자열 길이 제한은 두지 않는다.** 서버·DB 어느 계층도 자유 입력 문구의 길이를 강제하지 않는다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다.** 숫자 10자리 형식만 확인하고 원문을 매물 문서에 저장하며, 진위·영업 상태는 **관리자가 승인 심사에서 수동으로** 확인한다. 이 엔드포인트는 `POST /api/v1/auth/business/verify`(무상태 검증 — [01-auth-onboarding](./01-auth-onboarding.md))를 호출하지 않는다.
@@ -300,6 +379,7 @@ Request Body:
       { "code": "ENGLISH", "label": "영어" },
       { "code": "CHINESE", "label": "중국어" }
     ],
+    "location": { "lat": 37.5559918, "lng": 126.9368647 },
     "address": {
       "city": { "code": "SEOUL", "label": "서울특별시" },
       "district": { "code": "SEODAEMUN_GU", "label": "서대문구" },
@@ -401,19 +481,19 @@ Request Body:
 - 응답은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 v4 구조다. 등록 직후라 `favorited=false`, `favoriteCount=0`이다.
 - **`imageUrls`·`roomOffers[].roomImageUrls`는 확정 위치의 URL이며, `imageKeys`·`roomImageKeys`에 보낸 순서를 그대로 유지한다.** 파일명(`{uuid}.{ext}`)은 업로드 때 받은 키의 것을 그대로 쓰므로 두 값을 눈으로 대조할 수 있다. 업로드 때 받은 임시 URL과 다르다 — 이쪽이 만료 없이 계속 쓰는 주소다.
 - `status`는 `PENDING`이며 **코드 문자열 그대로** 내려간다. 임대인·관리자만 읽는 관리 상태라 카탈로그 번역 대상이 아니다.
-- **`location` 키는 응답에 없고 `nearbyUniversityCodes`는 빈 배열이다.** 좌표 파생이 미구현이라 등록 시점에 채우지 않는다.
-- `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로다.
+- **`location`은 요청의 `address.lat`·`address.lng`를 그대로 옮긴 값이고, `nearbyUniversityCodes`는 빈 배열이다.** 좌표는 주소 검색이 준 것을 되돌려 받은 것이며, 주변 대학 파생은 후속이다.
+- `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로이고, 요청의 `lat`·`lng`는 `address` 안이 아니라 **최상위 `location`** 으로 옮겨 간다(상세 조회와 같은 구조).
 - 상위 `conditions`는 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이다. 등록 요청에는 없고 서버가 계산한다.
 - `contact`(담당자명·전화문의·문자문의)는 **세입자에게 그대로 공개**하는 매물별 담당 연락처이므로 응답에 포함한다. 반면 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 **응답에 포함하지 않는다**([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
 - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다. 임대인은 `lang="ko"`로 고정이라 위 예시처럼 한국어 라벨이 내려간다.
-- 등록된 매물은 `PENDING`이라 목록·지도·검색·상세·찜 어디에도 나오지 않는다. 공개 전환(`PENDING → PUBLISHED`/`REJECTED`), 임대인 수정, 지오코딩, 재고 관리는 모두 **후속 작업**이다.
+- 등록된 매물은 `PENDING`이라 목록·지도·검색·상세·찜 어디에도 나오지 않는다. 공개 전환(`PENDING → PUBLISHED`/`REJECTED`), 임대인 수정, 주변 대학 파생, 재고 관리는 모두 **후속 작업**이다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액), `roomOffers` 0개. 위반 필드는 `errors[]`에 실린다 |
-| 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구) |
+| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액, `address.lat`·`address.lng`가 WGS84 범위 밖), `address.lat`·`address.lng` 누락, `roomOffers` 0개. 위반 필드는 `errors[]`에 실린다 |
+| 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구 — 주소 검색 응답의 `supported=false`가 그 후보다) |
 | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
 | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -1189,4 +1269,5 @@ Request Body: 없음
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다. **deprecated된 v1 상세·찜 토글 스텁도 이 코드를 쓴다** — 매물을 찾지 못해서가 아니라 조회하지 않기 때문이며, 새 코드를 만들지 않아 구버전 앱이 이미 처리하던 에러 그대로 받는다(위 [v1 스텁 동작](#v1-스텁-동작)).
 > 뒤 두 코드는 매물 등록(`POST /api/v2/listings`) 전용이다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
+> **주소 검색(`GET /api/v1/listings/addresses`)도 전용 코드를 두지 않는다** — 키워드 검증은 `INVALID_INPUT`, 외부 연동 실패는 `UPSTREAM_ERROR`(502)이며 둘 다 공통 코드다. 지원하지 않는 지역은 검색 단계에서 에러가 아니라 `supported=false`로 알리고, 실제 거절은 등록의 `LISTING_INVALID_ADDRESS`가 맡는다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)).
 > 하트 토글은 이미 찜/미찜 상태여도 에러로 보지 않고 현재 하트 상태와 찜 수를 반환한다. 프론트는 응답 body의 `favorited`, `favoriteCount`만 보고 UI를 맞추면 된다.

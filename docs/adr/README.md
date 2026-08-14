@@ -65,6 +65,7 @@
 | [0039](./0039-listing-schema-v4-registration-form.md) | 매물 스키마를 등록 폼 기준 v4로 재정의하고 마이그레이션 체인을 baseline으로 리셋한다 | Proposed | 2026-08-12 |
 | [0040](./0040-listing-query-api-v2-and-v1-sunset.md) | 매물 조회를 /api/v2로 옮기고 v1은 빈 결과로 종료한다 | Proposed | 2026-08-13 |
 | [0041](./0041-listing-image-upload-to-s3.md) | 매물 사진을 한 장씩 올려 받고 등록에서 확정한다 | Proposed | 2026-08-14 |
+| [0042](./0042-road-address-search-with-ncp-geocoding.md) | 도로명 주소는 NCP Geocoding으로 검색하고, 등록이 그 좌표를 받는다 | Proposed | 2026-08-14 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

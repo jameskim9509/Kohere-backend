@@ -2,7 +2,7 @@
 
 > 모듈: 매물 등록 · 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 >
-> 온보딩을 마친 임대인(`ROLE_USER`, `ACTIVE`, `userType=LANDLORD`)이 사진을 올리고 등록 폼으로 매물을 만드는 흐름이다. **요청이 둘로 나뉜다** — 사진은 `POST /api/v2/listings/images`로 **한 장씩** 올려 키를 받고, 등록(`POST /api/v2/listings`)은 그 키 목록을 담은 JSON이다([ADR-0041](../../../adr/0041-listing-image-upload-to-s3.md)). 요청을 파일마다 가르는 이유는 브라우저가 요청 단위로만 진행률을 주기 때문이다 — 한 요청에 몰아 실으면 파일별 진행률·속도를 만들 수 없고 실패한 파일만 다시 올릴 수도 없다. **매물 도메인의 첫 `/api/v2` 엔드포인트**였고, 이어서 조회 계열 6종도 `/api/v2`로 이관돼 같은 네임스페이스가 **GET은 공개 조회, POST는 임대인 등록**으로 갈린다([ADR-0040](../../../adr/0040-listing-query-api-v2-and-v1-sunset.md) — `/api/v1` 조회는 빈 결과·`404`만 내는 `deprecated` 스텁이다). 저장 스키마는 등록 폼 기준 v4([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md))이고, 등록된 매물은 `status=PENDING`으로 저장돼 **관리자 승인 전까지 탐색·상세에 노출되지 않는다**(US-3-1·US-3-4는 `PUBLISHED`만 조회한다).
+> 온보딩을 마친 임대인(`ROLE_USER`, `ACTIVE`, `userType=LANDLORD`)이 주소를 찾고 사진을 올려 등록 폼으로 매물을 만드는 흐름이다. **요청이 셋으로 나뉜다** — 주소는 `GET /api/v1/listings/addresses`로 검색해 표준 도로명 주소와 좌표를 받고([ADR-0042](../../../adr/0042-road-address-search-with-ncp-geocoding.md)), 사진은 `POST /api/v2/listings/images`로 **한 장씩** 올려 키를 받고, 등록(`POST /api/v2/listings`)은 그 주소·좌표·키를 담은 JSON이다([ADR-0041](../../../adr/0041-listing-image-upload-to-s3.md)). 앞선 두 호출이 준 값을 클라이언트가 되돌려 보내는 모양이 같다. 요청을 파일마다 가르는 이유는 브라우저가 요청 단위로만 진행률을 주기 때문이다 — 한 요청에 몰아 실으면 파일별 진행률·속도를 만들 수 없고 실패한 파일만 다시 올릴 수도 없다. **매물 도메인의 첫 `/api/v2` 엔드포인트**였고, 이어서 조회 계열 6종도 `/api/v2`로 이관돼 같은 네임스페이스가 **GET은 공개 조회, POST는 임대인 등록**으로 갈린다([ADR-0040](../../../adr/0040-listing-query-api-v2-and-v1-sunset.md) — `/api/v1` 조회는 빈 결과·`404`만 내는 `deprecated` 스텁이다). 저장 스키마는 등록 폼 기준 v4([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md))이고, 등록된 매물은 `status=PENDING`으로 저장돼 **관리자 승인 전까지 탐색·상세에 노출되지 않는다**(US-3-1·US-3-4는 `PUBLISHED`만 조회한다).
 
 ```mermaid
 sequenceDiagram
@@ -12,7 +12,36 @@ sequenceDiagram
     participant LIST as listing 모듈
     participant USER as user 공개 API
     participant S3 as 이미지 저장소(S3)
+    participant NCP as NCP Geocoding
     participant DB as MongoDB
+
+    Note over U,C: ⓪ 도로명 주소 검색 — 주소 칸을 채울 때<br/>등록이 받는 주소·좌표의 출처다. 자유 입력이 아니다
+
+    U->>C: 주소 입력("신촌로 12")
+    C->>SEC: GET /api/v1/listings/addresses?keyword=…<br/>Authorization: Bearer 정식 토큰
+    Note over SEC: hasRole("USER") 명시 매처<br/>공개 조회 매처(GET /api/v1/listings/*)보다 먼저 선언해야 한다
+    SEC->>LIST: 인증된 요청 전달 (userId)
+    LIST->>USER: getUserType(userId)
+    USER-->>LIST: userType
+
+    alt 임대인 아님 (userType=TENANT)
+        LIST-->>C: 403 FORBIDDEN
+    else 임대인 (userType=LANDLORD)
+        LIST->>NCP: GET /map-geocode/v2/geocode?query=…&count=5
+
+        alt 외부 오류·타임아웃·인증정보 누락
+            NCP-->>LIST: 오류
+            LIST-->>C: 502 UPSTREAM_ERROR
+            Note over U,DB: ↑ 키가 없으면 요청 자체를 보내지 않고 502다
+        else 정상
+            NCP-->>LIST: addresses[] (roadAddress · x · y)
+            LIST->>DB: listingCatalog에서 CITY·DISTRICT 라벨 조회
+            DB-->>LIST: 카탈로그 엔트리
+            Note over LIST: 도로명 없는 결과 제외 · x/y → lng/lat<br/>City·District가 둘 다 잡히면 supported=true
+            LIST-->>C: 200 { items[]: roadAddress · lat · lng · supported }
+            C-->>U: 후보 표시(supported=false는 선택 불가 안내)
+        end
+    end
 
     Note over U,C: ① 사진 업로드 — 파일 수만큼 반복한다<br/>요청이 파일마다 갈려야 진행률·속도·재시도가 파일 단위로 성립한다
 
@@ -44,7 +73,7 @@ sequenceDiagram
     Note over U,C: ② 매물 등록 — 폼을 다 채우고 1회<br/>사진은 파일이 아니라 ①에서 받은 key 목록으로 참조한다
 
     U->>C: 등록 제출
-    C->>SEC: POST /api/v2/listings (application/json)<br/>{ 등록 정보, imageKeys[], roomOffers[].roomImageKeys[] }
+    C->>SEC: POST /api/v2/listings (application/json)<br/>{ 등록 정보, address(fullAddress·lat·lng), imageKeys[], roomOffers[].roomImageKeys[] }
     Note over SEC: JWT 검증 · hasRole("USER") 명시 매처<br/>같은 경로의 GET(매물 조회)은 permitAll이라 method로 갈린다
 
     alt 토큰 없음/만료/위조
@@ -69,7 +98,7 @@ sequenceDiagram
                 LIST-->>C: 400 INVALID_INPUT / LISTING_INVALID_ADDRESS<br/>LISTING_UNKNOWN_CATALOG_CODE / LISTING_IMAGE_REQUIRED / LISTING_IMAGE_KEY_NOT_FOUND
                 Note over U,DB: ↑ 복사도 저장도 없다
             else 검증 통과
-                Note over LIST: 서버가 채우는 값<br/>schemaVersion=4 · status=PENDING · favoriteCount=0<br/>rentalType=MONTHLY_RENT · pricing.currency=KRW · roomOffers[].status=ACTIVE<br/>다국어 8종은 {ko, en} 양쪽에 같은 값 · location·nearbyUniversityCodes는 미구현
+                Note over LIST: 서버가 채우는 값<br/>schemaVersion=4 · status=PENDING · favoriteCount=0<br/>rentalType=MONTHLY_RENT · pricing.currency=KRW · roomOffers[].status=ACTIVE<br/>다국어 8종은 {ko, en} 양쪽에 같은 값<br/>location은 요청의 address.lat·lng를 옮긴 값 · nearbyUniversityCodes는 아직 빈 배열
                 Note over LIST: 확정 키가 식별자를 포함하므로 저장 전에 발급한다<br/>listingId · roomOffers[].roomOfferId
                 LIST->>S3: CopyObject × N<br/>uploads/… → listings/{listingId}/cover/… · /rooms/{roomOfferId}/…
 
@@ -122,8 +151,9 @@ sequenceDiagram
 - **다국어 문구는 한국어 한 값만 받는다.** 서버가 `{ko, en}` 양쪽에 같은 값을 넣는다(`en = ko`). 대상 8종 — `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name`. 저장 계약(`LocalizedText`)이 두 언어를 모두 요구하므로 영어가 빈 문서는 만들 수 없고, 실제 번역은 관리자가 승인 심사에서 채운다. 등록 직후는 `PENDING`이라 세입자 조회에 노출되지 않는다.
 - **서버가 채우는 값은 요청 본문에 없다**: `_id`·`roomOffers[].roomOfferId`(저장 어댑터가 ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). 등록 직후 상태가 `PENDING`이므로 목록·지도·상세(`PUBLISHED`만 조회)에는 아직 나오지 않는다.
 - **폼 1칸이 스키마 2필드로 갈라지는 입력은 서버가 파싱한다** — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. 형식이 어긋나면 `400 INVALID_INPUT`이고, `min ≤ max`와 `usedFloorMax ≤ totalFloors`는 `ListingValidator.validateForSave`가 저장 직전에 다시 확인한다.
-- **주소는 입력값을 정규화하지 않는다** — `address.fullAddress`는 받은 그대로 저장하고, 도로명 주소를 파싱해 `address.city`(`City`)·`district`(`District`) enum만 파생한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며 이는 **좌표와 무관한 실패**다. **`location`(좌표)과 `nearbyUniversityCodes`는 이번 범위에서 미구현**이라 좌표 없이·빈 배열로 저장한다([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md) 후속 작업).
+- **주소는 검색으로 받고, 서버는 정규화하지 않는다** — `address.fullAddress`는 받은 그대로 저장하고 도로명 주소를 파싱해 `address.city`(`City`)·`district`(`District`) enum만 파생한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며, ⓪에서 그 후보는 이미 `supported=false`로 표시된다 — **검색 응답을 보고 고르면 이 실패에 도달하지 않는다**(검색은 전국을 돌려주지만 등록은 카탈로그가 가진 시·도와 구·군만 통과한다).
+- **좌표는 검색 결과를 되돌려 받아 저장한다** — 요청의 `address.lat`·`lng`가 `location`이 된다. 서버는 등록 시점에 지오코딩을 다시 하지 않는다(등록마다 외부 왕복과 502 경로가 생기는 것을 피한다 — [ADR-0042](../../../adr/0042-road-address-search-with-ncp-geocoding.md) §2). 좌표 위조는 관리자 승인 심사가 흡수한다. 저장 계약에서 `location`은 계속 optional이라 좌표 없이 저장된 기존 문서는 그대로 유효하다. `nearbyUniversityCodes`는 아직 빈 배열이다(좌표 기반 파생은 후속).
 - **코드 필드는 `listingCatalog` 대조로 검증한다** — 요청의 각 코드가 `(category, code)`로 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../../../api/error-response-guide.md); 카탈로그 19개 카테고리는 [ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)·[ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md)). 구조 검증은 `roomOffers` 최소 1개이며, **문자열 길이 제한은 두지 않는다**(정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드 API가 형식·크기로 `LISTING_IMAGE_TOO_LARGE`·`LISTING_IMAGE_UNSUPPORTED_TYPE`을, 등록이 키로 `LISTING_IMAGE_KEY_NOT_FOUND`를 쓰고, 장수 규칙인 `LISTING_IMAGE_REQUIRED`는 두 곳이 함께 쓴다(업로드는 빈 파일, 등록은 `imageKeys` 1~5·방마다 `roomImageKeys` 2~5 위반). 검증 실패 분기에는 `listings` 저장도 S3 복사도 없다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다** — 형식만 확인하고 원문을 매물 문서에 저장한다([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md) §3). `auth`의 무상태 검증 `POST /api/v1/auth/business/verify`([US-1-8](../01-auth-onboarding/us-1-8-business-verification.md))를 **호출하지 않으며**, 진위 확인은 관리자가 승인 심사에서 수동으로 한다(엔드포인트 자체는 그대로 둔다).
 - **응답 노출 범위는 상세 조회(US-3-4)와 같다** — 매물별 담당 연락처 `contact`(담당자명·전화·문자)는 임대인 개인 연락처와 별개 값이라 **세입자에게 공개**하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에서 제외한다. `status`는 카탈로그 번역 대상이 아니므로 **코드 문자열 그대로** 내려간다.
-- **후속(이번 범위 아님)**: 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`, 승인 조건에 `location` 보유 포함)·임대인 매물 수정·지오코딩으로 `location`·`nearbyUniversityCodes` 채우기·재고 관리.
+- **후속(이번 범위 아님)**: 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`, 승인 조건에 `location` 보유 포함 — 이제 등록이 좌표를 채우므로 자동 충족된다)·임대인 매물 수정·좌표로 `nearbyUniversityCodes` 파생·등록 가능 지역 확대(`DISTRICT` 카탈로그 + enum)·재고 관리.
