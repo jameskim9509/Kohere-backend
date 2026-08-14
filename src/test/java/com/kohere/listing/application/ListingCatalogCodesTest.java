@@ -73,6 +73,36 @@ class ListingCatalogCodesTest {
     assertThat(catalog.findCity("  ")).isEmpty();
   }
 
+  /**
+   * 주소 검색(NCP Geocoding)이 주는 모양 그대로 행정구역을 뽑는다(ADR-0042).
+   *
+   * <p>등록은 검색 응답의 {@code roadAddress}를 손대지 않고 그대로 받는다. NCP는 도로명 뒤에 <b>건물명</b>을 덧붙여 주는데, 그 접미사가 파싱을
+   * 방해하지 않아야 한다 — 시·도와 구·군은 문자열 앞쪽에 있다.
+   */
+  @Test
+  void findCityAndDistrict_NCP가_준_건물명_붙은_도로명주소를_파싱한다() {
+    ListingCatalogCodes catalog = catalog();
+    String ncpRoadAddress = "서울특별시 서대문구 신촌로 12 코히어빌딩";
+
+    assertThat(catalog.findCity(ncpRoadAddress)).contains(City.SEOUL);
+    assertThat(catalog.findDistrict(ncpRoadAddress)).contains(District.SEODAEMUN_GU);
+  }
+
+  /**
+   * 시·도만 카탈로그에 있는 지역은 구·군에서 걸린다 — 등록의 {@code 400 LISTING_INVALID_ADDRESS}가 나는 지점이다.
+   *
+   * <p>주소 검색이 이 후보를 {@code supported=false}로 내려보내는 근거이기도 하다. 카탈로그에 {@code GYEONGGI}는 있지만 그 시·군·구는
+   * 없다.
+   */
+  @Test
+  void findDistrict_시도만_아는_지역은_비어있다() {
+    ListingCatalogCodes catalog = catalog();
+    String ncpRoadAddress = "경기도 성남시 분당구 불정로 6 NAVER그린팩토리";
+
+    assertThat(catalog.findCity(ncpRoadAddress)).contains(City.GYEONGGI);
+    assertThat(catalog.findDistrict(ncpRoadAddress)).isEmpty();
+  }
+
   /** 카탈로그에는 있으나 도메인 enum에 없는 코드는 매칭 대상에서 빠진다. */
   @Test
   void findDistrict_도메인_enum에_없는_코드는_무시한다() {
@@ -88,7 +118,11 @@ class ListingCatalogCodesTest {
         List.of(
             entry(ListingCatalogCategory.LISTING_TYPE, "SHARE_HOUSE", "쉐어하우스", "Share House"),
             entry(ListingCatalogCategory.CITY, "SEOUL", "서울특별시", "Seoul"),
+            // 시·도만 있고 그 구·군은 없는 지역이다. 정본 카탈로그도 같은 상태라(DISTRICT는 서울 9개 구뿐)
+            // 등록 가능 지역이 검색 결과보다 좁다는 사실을 이 항목이 재현한다.
+            entry(ListingCatalogCategory.CITY, "GYEONGGI", "경기도", "Gyeonggi-do"),
             entry(ListingCatalogCategory.DISTRICT, "GWANAK_GU", "관악구", "Gwanak-gu"),
+            entry(ListingCatalogCategory.DISTRICT, "SEODAEMUN_GU", "서대문구", "Seodaemun-gu"),
             entry(ListingCatalogCategory.DISTRICT, "MAPO_GU", "마포구", "Mapo-gu")));
   }
 
