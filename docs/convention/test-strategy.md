@@ -54,9 +54,9 @@
 - 같은 `(path, method, status)`의 스니펫은 **같은 필드 헬퍼**를 호출한다. 파일이 달라도 마찬가지다.
 - 케이스 구분은 summary가 아니라 **identifier**로 한다. identifier가 Swagger Examples 드롭다운의 항목명이 된다.
 
-**multipart 요청을 문서화할 때**([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) 한 가지를 더 지킨다.
+**파일을 받는 엔드포인트를 문서화할 때**([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) 한 가지를 더 지킨다.
 
-- **요청 스니펫에는 `request` part의 JSON만 싣는다.** `restdocs-api-spec` 0.19.4는 파일 part를 표현하지 못해, 요청을 그대로 실으면 boundary가 붙은 `Content-Type`과 사람이 못 읽는 본문이 OpenAPI에 남는다. `preprocessRequest`로 `Content-Type`을 `multipart/form-data`로 바꾸고 본문을 `request` part JSON으로 갈아끼운다. 또 `requestPartFields`는 래퍼가 기술자를 걷어 가지 못하므로 같은 기술자로 `resource()`를 직접 만들어야 Swagger에 요청 스키마가 남는다. 파일 part의 이름·개수·형식·크기 규칙은 오퍼레이션 description에 적는다(매물 등록 예: `ListingDocsFields.LISTING_REGISTER_DESCRIPTION`).
+- **파일 part는 문서에 스키마로 남길 수 없다.** `restdocs-api-spec` 0.19.4가 multipart를 표현하지 못하고, 요청을 그대로 실으면 boundary가 붙은 `Content-Type`과 사람이 못 읽는 본문이 OpenAPI에 남는다. `preprocessRequest`의 `modifyHeaders`로 `Content-Type`에서 boundary를 걷어내고, part 이름·개수·형식·크기 규칙은 **오퍼레이션 description**에 적는다(매물 사진 업로드 예: `ListingDocsFields.LISTING_IMAGE_UPLOAD_DESCRIPTION`). 그래서 **파일을 받는 요청과 구조화된 요청은 엔드포인트를 가르는 편이 낫다** — 매물 등록이 사진을 파일로 받다가 키 참조로 바뀌면서 요청이 JSON으로 돌아왔고, 그 덕에 요청 스키마가 Swagger에 복구됐다.
 
 **같은 리소스가 `/api/v1`·`/api/v2`에 병존할 때**([api-design-guide §2-1](../api/api-design-guide.md)) 두 가지를 더 지킨다.
 
