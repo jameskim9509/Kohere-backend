@@ -35,6 +35,15 @@ variable "abort_incomplete_multipart_days" {
   default     = 7
 }
 
+# 매물 등록은 사진을 먼저 올려 두고 나중에 등록으로 확정한다(ADR-0041). 확정되지 않은 사진은
+# 아무도 참조하지 않으므로 이 규칙이 치운다 — prefix가 갈려 있어서 확정된 사진(listings/)은
+# 이 규칙에 걸릴 수가 없다. 임대인이 며칠에 걸쳐 폼을 작성해도 사진이 남아 있도록 기본 7일이다.
+variable "pending_upload_expiration_days" {
+  description = "확정되지 않은 임시 업로드(uploads/ prefix)를 삭제하기까지의 일수"
+  type        = number
+  default     = 7
+}
+
 # ----- 커스텀 도메인(별칭 + ACM) — 필수. HTTPS·커스텀 도메인 강제 -----
 variable "domain_aliases" {
   description = "CloudFront 별칭 도메인 목록(예: [\"cdn.kohere.app\"]) — 필수"
