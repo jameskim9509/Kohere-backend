@@ -61,7 +61,6 @@ class ListingImageConfirmerTest {
     assertThat(confirmed.roomUrls().get(0))
         .allMatch(url -> url.contains("/rooms/" + ROOM_OFFER_IDS.get(0) + "/"));
     assertThat(confirmed.copiedKeys()).hasSize(7);
-    assertThat(confirmed.pendingKeys()).hasSize(7);
   }
 
   /** 확정 키는 임시 키의 파일명을 그대로 옮겨 붙인다 — 확장자가 어긋날 여지가 없다. */
@@ -118,25 +117,23 @@ class ListingImageConfirmerTest {
   @Test
   void rollback_복사본만_지우고_임시본은_남긴다() {
     givenStorageEchoesTargetKey();
-    ConfirmedListingImages confirmed =
-        confirmer.confirm(LISTING_ID, ROOM_OFFER_IDS, keys(1, List.of(2, 2)));
+    ListingImageKeySet keys = keys(1, List.of(2, 2));
+    ConfirmedListingImages confirmed = confirmer.confirm(LISTING_ID, ROOM_OFFER_IDS, keys);
 
     confirmer.rollback(confirmed);
 
     then(listingImageStorage).should().deleteQuietly(confirmed.copiedKeys());
-    then(listingImageStorage).should(never()).deleteQuietly(confirmed.pendingKeys());
+    then(listingImageStorage).should(never()).deleteQuietly(keys.allKeys());
   }
 
   /** 저장까지 끝난 뒤에만 임시본을 치운다. */
   @Test
   void discardPending_임시본을_지운다() {
-    givenStorageEchoesTargetKey();
-    ConfirmedListingImages confirmed =
-        confirmer.confirm(LISTING_ID, ROOM_OFFER_IDS, keys(1, List.of(2, 2)));
+    ListingImageKeySet keys = keys(1, List.of(2, 2));
 
-    confirmer.discardPending(confirmed);
+    confirmer.discardPending(keys);
 
-    then(listingImageStorage).should().deleteQuietly(confirmed.pendingKeys());
+    then(listingImageStorage).should().deleteQuietly(keys.allKeys());
   }
 
   /** 되돌리기까지 실패해도 원래 실패 원인이 가려지지 않아야 한다 — 가려지면 왜 실패했는지 아무도 모른다. */

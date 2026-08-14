@@ -54,7 +54,7 @@ public class ListingImageConfirmer {
         roomUrls.add(List.copyOf(urls));
       }
       return new ConfirmedListingImages(
-          List.copyOf(coverUrls), List.copyOf(roomUrls), List.copyOf(copied), keys.allKeys());
+          List.copyOf(coverUrls), List.copyOf(roomUrls), List.copyOf(copied));
     } catch (RuntimeException e) {
       deleteQuietly(copied);
       throw e;
@@ -66,9 +66,13 @@ public class ListingImageConfirmer {
     deleteQuietly(images.copiedKeys());
   }
 
-  /** 저장까지 끝난 뒤 임시본을 치운다. 실패해도 만료 규칙이 대신 치우므로 재시도하지 않는다. */
-  public void discardPending(ConfirmedListingImages images) {
-    deleteQuietly(images.pendingKeys());
+  /**
+   * 저장까지 끝난 뒤 임시본을 치운다. 실패해도 만료 규칙이 대신 치우므로 재시도하지 않는다.
+   *
+   * <p>확정 결과가 아니라 원래의 키 묶음을 받는다 — 호출자가 이미 들고 있는 값이라 되돌려줄 이유가 없다.
+   */
+  public void discardPending(ListingImageKeySet keys) {
+    deleteQuietly(keys.allKeys());
   }
 
   /**
@@ -98,11 +102,7 @@ public class ListingImageConfirmer {
    * @param coverUrls 지점 대표사진 URL. 요청 순서를 유지한다
    * @param roomUrls 방별 사진 URL. 바깥 리스트의 순서가 {@code roomOffers} 순서다
    * @param copiedKeys 되돌릴 때 지울 확정 위치의 키
-   * @param pendingKeys 저장 성공 후 치울 임시 위치의 키
    */
   public record ConfirmedListingImages(
-      List<String> coverUrls,
-      List<List<String>> roomUrls,
-      List<String> copiedKeys,
-      List<String> pendingKeys) {}
+      List<String> coverUrls, List<List<String>> roomUrls, List<String> copiedKeys) {}
 }

@@ -82,7 +82,7 @@ public class ListingRegisterService {
       throw e;
     }
     // 저장이 끝나야 임시본을 치운다. 실패해도 만료 규칙이 대신 치우므로 재시도하지 않는다.
-    listingImageConfirmer.discardPending(confirmed);
+    listingImageConfirmer.discardPending(keys);
     return ListingResponseMapper.toDetail(
         saved,
         false,
