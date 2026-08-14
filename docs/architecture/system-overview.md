@@ -131,7 +131,7 @@ flowchart TB
 
 #### 1-3-1. 로컬 개발 아키텍처 (M0–M4, 클라우드 비용 0)
 
-개발자 머신에서 **단일 `docker-compose`** 로 app + MySQL + MongoDB + Redis를 함께 기동한다(`./gradlew bootRun`은 같은 이미지의 앱을 단일 JVM으로 띄울 수도 있음). M0–M4 동안 AWS 인프라는 띄우지 않는다(러닝 비용 0). 아래 매핑은 두 환경이 동일하게 따르는 표준이며, **클라우드 대응 열의 매니지드 서비스는 M7에서 프로비저닝**한다.
+개발자 머신에서 **단일 `docker-compose`** 로 app + MySQL + MongoDB + Redis + MailHog + **MinIO**(매물 사진용 S3 호환 저장소, `minio-init`이 버킷을 최초 1회 만든다)를 함께 기동한다(`./gradlew bootRun`은 같은 이미지의 앱을 단일 JVM으로 띄울 수도 있음). M0–M4 동안 AWS 인프라는 띄우지 않는다(러닝 비용 0 — 사진도 S3가 아니라 로컬 MinIO에 올린다). 아래 매핑은 두 환경이 동일하게 따르는 표준이며, **클라우드 대응 열의 매니지드 서비스는 M7에서 프로비저닝**한다.
 
 | 요소         | 로컬 구성                                                             | 클라우드 대응(M7)                                   |
 | ------------ | --------------------------------------------------------------------- | --------------------------------------------------- |
@@ -140,13 +140,15 @@ flowchart TB
 | MySQL        | `mysql:8` 컨테이너                                                  | RDS for MySQL 8.0 (auth·user)                      |
 | MongoDB      | `mongo` 컨테이너 + `2dsphere`                                     | Amazon DocumentDB (listing[+찜·최근본]·diagnosis) |
 | Redis        | `redis` 컨테이너                                                    | ElastiCache (refresh 토큰 TTL)                      |
-| 콘텐츠 이미지  | 백엔드 미보관(URL만 저장)                                             | S3 + CloudFront(Route53 별칭→클라이언트 로드)      |
+| 매물 사진      | `minio` 컨테이너(S3 호환 · :9000 API/:9001 콘솔) + `minio-init`(버킷 생성) — **앱이 등록 요청의 파일을 직접 업로드** | 같은 S3 버킷의 `listings/` prefix(앱 역할에 `PutObject`·`DeleteObject`) + CloudFront |
+| 콘텐츠 이미지  | 그 밖의 이미지(생활팁·국기 등)는 백엔드 미보관 — URL만 저장           | S3 + CloudFront(Route53 별칭→클라이언트 로드)      |
+| 메일(인증번호) | `mailhog` 컨테이너(:1025 SMTP / :8025 UI)                           | Gmail SMTP                                          |
 | 시크릿·설정 | `application-local.yml` / 환경변수                                  | SSM Parameter Store(SecureString)                   |
 | 로그         | 콘솔 텍스트 + `logs/app.json`(1줄 JSON, `app.log.dir`) — compose는 `./logs` 바인드 | dev=Agent tail → CloudWatch Logs, prod=`awslogs` 드라이버 |
 
 > **booking·chat 저장소는 추후 결정**(추후 ADR) — 위 매핑에는 강제 반영하지 않는다.
 
-로컬 `docker-compose` 구성도 — 한 도커 네트워크 안에서 app·MySQL·MongoDB·Redis가 **서비스명**으로 서로를 찾는다:
+로컬 `docker-compose` 구성도 — 한 도커 네트워크 안에서 app·MySQL·MongoDB·Redis·MinIO·MailHog가 **서비스명**으로 서로를 찾는다:
 
 ```mermaid
 flowchart TB
@@ -158,6 +160,8 @@ flowchart TB
       MYSQL[("mysql:8 · :3306<br/>auth · user")]
       MONGO[("mongo + 2dsphere · :27017<br/>listing(+찜·최근본) · diagnosis")]
       REDIS[("redis · :6379<br/>refresh token (TTL)")]
+      MINIO[("minio · :9000 S3 API / :9001 콘솔<br/>매물 사진 원본 · 버킷 kohere-local-images<br/>minio-init이 최초 1회 생성")]
+      MAILHOG["mailhog · :1025 SMTP / :8025 UI<br/>인증번호 메일 수신함"]
     end
 
     EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · 네이버(장소검색)"]
@@ -167,10 +171,16 @@ flowchart TB
     APP -- "JDBC  mysql:3306" --> MYSQL
     APP -- "mongo:27017" --> MONGO
     APP -- "redis:6379" --> REDIS
+    APP -- "PutObject / DeleteObject(보상 삭제)<br/>minio:9000" --> MINIO
+    APP -- "SMTP  mailhog:1025" --> MAILHOG
+    DEV -. "사진 GET localhost:9000 · 콘솔 :9001" .-> MINIO
+    DEV -. "받은 메일 확인 localhost:8025" .-> MAILHOG
     APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·장소검색" .-> EXT
 ```
 
-> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·네이버 지역검색(장소) 는 제3자 외부 실호출이다. 이메일 인증 메일은 **로컬은 MailHog**, dev/prod는 **Gmail SMTP**다. 콘텐츠 이미지(매물·생활팁·국기 등)는 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
+> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`·`minio`·`mailhog`)으로 부르고, 개발자는 `localhost:8080`으로 app에 접속한다 — 올라간 사진은 `localhost:9001`(MinIO 콘솔), 받은 인증 메일은 `localhost:8025`(MailHog UI)에서 확인한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·네이버 지역검색(장소) 는 제3자 외부 실호출이다. 이메일 인증 메일은 **로컬은 MailHog**, dev/prod는 **Gmail SMTP**다.
+>
+> **매물 사진만 백엔드가 원본을 보관한다.** 등록 요청(`multipart/form-data`)으로 받은 파일을 앱이 직접 올리고 그 URL을 매물 문서에 저장한다 — 로컬은 MinIO(업로드는 compose 안에서 `minio:9000`, 응답 URL은 호스트에서 열리는 `http://localhost:9000/kohere-local-images/…`), dev/prod는 S3 업로드 + CloudFront URL이다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 그 밖의 콘텐츠 이미지(생활팁 등)는 백엔드가 보관하지 않고 URL만 저장하며 클라이언트가 CloudFront에서 직접 로드한다.
 
 #### 1-3-2. prod 클라우드 배포 아키텍처 (운영 시 배포 예정, AWS)
 
@@ -350,8 +360,8 @@ flowchart TB
 | presentation        | REST 엔드포인트, DTO, 형식 검증, 공통 래퍼 응답(ResponseBodyAdvice 자동 적용, [ADR-0013](../adr/0013-response-auto-wrapping.md)) | —                              | Spring MVC, Bean Validation                            |
 | application         | 유스케이스 조율, 트랜잭션 경계, 이벤트 발행                                                               | —                              | `@Service`, `@Transactional`                       |
 | domain              | Aggregate·VO·도메인 규칙,**Repository 인터페이스**                                                | —                              | POJO, enum                                             |
-| infrastructure      | **Repository 구현**, 외부 어댑터(OIDC)                                                              | 모듈별 저장소                   | Spring Data JPA / Data MongoDB / Data Redis            |
-| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본(**조회 계열 6종의 정본은 `/api/v2`** — `SecurityConfig`에 `GET /api/v2/listings`·`/api/v2/listings/*` `permitAll` 매처 필요. `/api/v1` 조회는 개정 전(v3) 구조를 복원한 `deprecated` 스텁이라 DB에 닿지 않고 빈 결과·`404 LISTING_NOT_FOUND`만 반환 — [ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)),**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태 — 매물 데이터를 안 써서 **`/api/v1`에 남는 유일한 매물 경로**), **임대인 매물 등록**(`POST /api/v2/listings` — 매물 v2의 첫 엔드포인트, 등록 폼 기준 v4 스키마·`status=PENDING`으로 저장, `SecurityConfig` 명시 매처 `hasRole("USER")` + 서비스의 `userType=LANDLORD` 재검사 2단 인가([ADR-0010](../adr/0010-jwt-authentication-filter.md)), `landlordId`는 토큰에서 취득, 사업자등록번호는 형식 검증만 하고 진위는 관리자 승인 심사에서 수동 확인) — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`). 등록은 단일 도큐먼트 원자 쓰기(좌표·주변 대학은 지오코딩 미구현이라 미채움, 관리자 승인·임대인 수정은 후속)                          |
+| infrastructure      | **Repository 구현**, 외부 어댑터(OIDC·SMS·사업자검증·장소검색·**오브젝트 스토리지**)                | 모듈별 저장소 + S3(사진 원본)   | Spring Data JPA / Data MongoDB / Data Redis / AWS SDK v2 |
+| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본(**조회 계열 6종의 정본은 `/api/v2`** — `SecurityConfig`에 `GET /api/v2/listings`·`/api/v2/listings/*` `permitAll` 매처 필요. `/api/v1` 조회는 개정 전(v3) 구조를 복원한 `deprecated` 스텁이라 DB에 닿지 않고 빈 결과·`404 LISTING_NOT_FOUND`만 반환 — [ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)),**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태 — 매물 데이터를 안 써서 **`/api/v1`에 남는 유일한 매물 경로**), **임대인 매물 등록**(`POST /api/v2/listings` — 매물 v2의 첫 엔드포인트, **요청은 `multipart/form-data`**(part `request` JSON 1개 · `listingImages` 1~10장 · `roomImages{i}` 방마다 2~10장 — 사진 URL은 요청에 없고 서버가 업로드 결과로 채운다, [ADR-0041](../adr/0041-listing-image-upload-to-s3.md)), 등록 폼 기준 v4 스키마·`status=PENDING`으로 저장, `SecurityConfig` 명시 매처 `hasRole("USER")` + 서비스의 `userType=LANDLORD` 재검사 2단 인가([ADR-0010](../adr/0010-jwt-authentication-filter.md)), `landlordId`는 토큰에서 취득, 사업자등록번호는 형식 검증만 하고 진위는 관리자 승인 심사에서 수동 확인) — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`) + **매물 사진 업로드 어댑터**(포트 `ListingImageStorage` → `S3ListingImageStorage`, 로컬은 MinIO). 등록은 **검증 → 사진 업로드 → 단일 도큐먼트 원자 쓰기** 순서이며 저장이 실패하면 올린 객체를 보상 삭제한다(좌표·주변 대학은 지오코딩 미구현이라 미채움, 관리자 승인·임대인 수정은 후속)                          |
 | diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학(그룹, 6개)/지역선택·주거조건·월세 범위(min/max)·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 표시 언어 기반 번역; ③ 대학은 6개 그룹 단일선택, ⑤ 월세는 NUMBER_RANGE 자유입력), 결과 생성, 추천 criteria 발행(③ 그룹→멤버 대학코드 집합, ⑤ monthlyRentMin/Max), **v2 서버 주도 흐름**(`POST /api/v2/diagnoses/start` + `POST /api/v2/diagnoses/next` + `GET /api/v2/diagnoses/{id}/recommendations` — 서버는 다음 질문·분기·확정 시점만 판단하고 시작·매물 조회 시점은 클라가 결정, ① 지역 0건이면 카탈로그의 `regionRetry` 문항을 일반 질문으로 내고 예=`RESTART`/아니오=`TERMINATED`, 확정은 매칭을 조회하지 않고 `diagnosisId`만 반환하며 0건은 추천 조회의 빈 목록으로 드러남(제안 없음), 진행 세션 `diagnosisFlowSessions` 별도 저장, issue #157·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
 | booking(매물 예약)  | 매물 예약(신청) 저장 + 내 예약 목록·상세 조회(독립). 조회 시 `listing`·`user` 공개 쿼리 실시간 조인. `BookingCreatedEvent` 발행은 (후속·이연) | (저장소 추후 결정)              | REST 조회 조인 / Application Events(후속)              |
 | chat(채팅)          | (후속·이연, 1차 MVP 제외) F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                      | (저장소 추후 결정)              | 이벤트 리스너                                          |
@@ -412,7 +422,7 @@ flowchart TB
 | 이메일 인증(세입자)          | **Gmail SMTP**(dev/prod 실 SMTP · 로컬은 MailHog), 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터)                                                                       | 도입   | 세입자 온보딩 선행(`POST /api/v1/auth/email/verification-code`·`/verify`). 발송 실패 **502**(`UPSTREAM_ERROR`)                                                                                                                                                                                                              |
 | 장소 키워드 검색(매물)       | **네이버 지역 검색 API**(`/v1/search/local.json`), 아웃바운드 포트 `PlaceSearchClient`(인프라 어댑터 `NaverPlaceSearchClient`)                                                    | 도입   | listing 지도 검색창 키워드→장소 후보(`GET /api/v1/listings/places?keyword`, 인증 불필요). 최대 5개(`title`[`<b>` 유지]·`address`·`roadAddress`·`lng`·`lat`, 네이버 `mapx/mapy`→WGS84 변환), **무상태**(매물 미조회·미저장). 키워드 누락·공백·50자 초과 **400**(`INVALID_INPUT`), 네이버 4xx/5xx·타임아웃·인증정보 누락·응답/좌표 형식 이상 **502**(공통 `UPSTREAM_ERROR` 재사용). 설정 `app.naver.search`(`NaverSearchProperties`), 시크릿 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`(SSM SecureString) |
 | 임대인 연락                  | **F-03 매물 예약(신청) 저장 + 내 예약 조회**(booking 독립; 조회 시 `listing`·`user` 공개 쿼리 실시간 조인). 신청→인앱 채팅방 기록(booking→chat, `BookingCreatedEvent`)은 **후속·이연**                                                        | 도입(예약)   | 인앱 채팅 기록·실시간 WebSocket·푸시는 추후. booking 저장소 추후 결정                                                                                                                                                                                                                                                                            |
-| 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                                                                                                                              | 도입   | 콘텐츠 이미지 호스팅(매물·생활팁·국기 등, 키 프리픽스로 구분) — 클라이언트는`cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖                                                                                                                                                                    |
+| 오브젝트 스토리지            | **AWS S3 + CloudFront**(로컬은 **MinIO** — 같은 어댑터에 endpoint만 교체), 아웃바운드 포트 `ListingImageStorage`(인프라 어댑터 `S3ListingImageStorage`, AWS SDK for Java v2 `s3`+`url-connection-client`) | 도입   | 콘텐츠 이미지 호스팅(매물 `listings/`·생활팁 `life-tips/` — 한 버킷을 키 프리픽스로 구분) — 클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드하고 백엔드는 **URL만 저장**한다(서빙 경로 비경유). **매물 사진은 등록 요청(`POST /api/v2/listings`, multipart)이 실어 보낸 파일을 서버가 `PutObject`** 한다 — 키는 `listings/{listingId}/cover/{uuid}.{ext}`·`listings/{listingId}/rooms/{roomOfferId}/{uuid}.{ext}`이고, 버킷이 비공개(OAC)라 문서에 넣는 URL은 CloudFront 기준이다. 매물 저장이 실패하면 방금 올린 객체를 **보상 삭제**한다. 설정 `app.images.*`(`ListingImageProperties`), `enabled=false`면 `StubListingImageStorage` 폴백(기본값·test). 장당 10MB·`image/jpeg`·`png`·`webp`·`heic`. 그 밖의 사용자 업로드 UI는 MVP 밖이다. [ADR-0041](../adr/0041-listing-image-upload-to-s3.md) |
 | 푸시 알림(FCM/APNs)          | —                                                                                                                                                                                         | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                                                                                                                                                                                                                                |
 | 채팅 실시간(WebSocket/STOMP) | —                                                                                                                                                                                         | 추후   | F-03은 REST 채팅 기록만. 실시간 전송은 추후                                                                                                                                                                                                                                                                                              |
 
@@ -421,9 +431,9 @@ flowchart TB
 | 영역            | 채택                                                                                     | 상태   | 비고                                                                                                                                                                                      |
 | --------------- | ---------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 테스트          | JUnit 5 · AssertJ · Mockito · Modulith test                                           | 배선됨 | —                                                                                                                                                                                        |
-| 통합 테스트     | **Testcontainers** — MySQL·Redis(`@ServiceConnection`)                              | ✅ 배선 | auth-onboarding 통합/문서 테스트가 실제 MySQL·Redis로 검증(Docker 필요; TC **1.21.4**로 신버전 Docker 호환, [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)). MongoDB는 listing·diagnosis 도입 시 추가 |
+| 통합 테스트     | **Testcontainers** — MySQL·Redis(`@ServiceConnection`)·MongoDB + **MinIO**            | ✅ 배선 | auth-onboarding은 공용 `TestcontainersConfiguration`의 실제 MySQL·Redis로, listing·diagnosis·lifetip·gamification은 각 테스트가 직접 선언한 `MongoDBContainer`로 검증한다(Docker 필요; TC **1.21.4**로 신버전 Docker 호환, [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)). **매물 사진 저장 어댑터는 `MinIOContainer`로 실제 S3 프로토콜을 태워** 업로드·보상 삭제를 검증한다 — 목으로는 키·URL 조립까지만 보이고 SDK 호출이 성립하는지는 알 수 없다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
 | 로깅            | **Logback + logstash-logback-encoder** — `CONSOLE` 텍스트 + `JSON_FILE` 1줄 JSON(`test` 제외 전 프로파일), MDC `traceId`·`userId`·`onboarding` | ✅ 배선 | **[ADR-0038](../adr/0038-application-logging-and-cloudwatch.md)** — 로그는 **다섯 용도**(활동추적·외부의존성·보안감사·성능지연·서버오류)가 요구하는 것만 남긴다("모든 예외 로깅" 폐기). 전 요청 접근 로그(`HandlerInterceptor`, `pathPattern`+`pathVars`+`latencyMs`), 401/403 감사 로그(`SecurityErrorResponder.write` 한 곳). PII 원천 배제. 4xx는 스택 없이 `status`·`errorCode`로만([error-response-guide §6](../api/error-response-guide.md)) |
-| 로그 수집       | **dev**: CloudWatch Agent가 `/logs/app.json` tail → Log Group `/kohere/dev/app`(보존 30일) · **prod**: ECS `awslogs` 드라이버 → `/ecs/<name_prefix>` | dev ✅ 배선 / prod 미검증 | 로그 **내용**(JSON·MDC)과 **전송 경로**(CloudWatch)는 직교 — 앱은 파일까지만 책임지고 **AWS SDK를 물지 않는다**. IAM은 해당 Log Group 하나로 스코프(관리형 `logs:*` 미사용, `CreateLogGroup`·`PutRetentionPolicy` 미부여). **일 수집량 상한 200MB**(≈ 월 $5)는 `IncomingBytes` 알람으로 감시 — 비용 기준으로 정했고 AWS가 하드 리밋을 주지 않아 조기 경보다. prod은 CD 미연결이라 실적재 미검증 |
+| 로그 수집       | **dev**: CloudWatch Agent가 `/logs/app.json` tail → Log Group `/kohere/dev/app`(보존 30일) · **prod**: ECS `awslogs` 드라이버 → `/ecs/<name_prefix>` | dev ✅ 배선 / prod 미검증 | 로그 **내용**(JSON·MDC)과 **전송 경로**(CloudWatch)는 직교 — 앱은 파일까지만 책임지고 **로깅 자체는 AWS SDK를 타지 않는다**(반출은 Agent·`awslogs` 드라이버 몫이다 — 앱이 무는 AWS SDK는 매물 사진 업로드용 `s3` 하나뿐이고 로그 경로와 무관하다, [ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). IAM은 해당 Log Group 하나로 스코프(관리형 `logs:*` 미사용, `CreateLogGroup`·`PutRetentionPolicy` 미부여). **일 수집량 상한 200MB**(≈ 월 $5)는 `IncomingBytes` 알람으로 감시 — 비용 기준으로 정했고 AWS가 하드 리밋을 주지 않아 조기 경보다. prod은 CD 미연결이라 실적재 미검증 |
 | 메트릭/트레이싱 | Actuator(health)                                                                         | 도입   | Micrometer/Prometheus → 추후. **호스트 메모리·스왑은 미수집** — EC2 기본 지표에 없고 CloudWatch Agent도 logs 전용이라 확인이 SSM `free -m` 수동이다([ADR-0026](../adr/0026-dev-host-memory-budget.md) 후속 작업) |
 | API 문서        | **REST Docs → OpenAPI3(restdocs-api-spec) → Swagger UI**                   | ✅ 배선   | [ADR-0007](../adr/0007-api-docs-spring-rest-docs.md)·[ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md). 테스트가 캡처한 자원을 `openapi3`가 모아 `/swagger-ui/index.html`(try-it-out)로 서빙. 어노테이션 미사용(드리프트 0). [api/specs](../api/specs/README.md) Markdown은 설계 정본 |
 | DTO 매핑        | 수동 정적 팩토리(`of(...)`)                                                            | 도입   | MapStruct → 추후                                                                                                                                                                         |
@@ -442,7 +452,8 @@ ADR-0005가 **cross-store 조인·트랜잭션을 금지**하므로 단일 엔�
 | 위험                      | 내용                                                                | 완화                                                                                              |
 | ------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | 교차 스토어 조회          | `diagnosis`(Mongo)↔`listing`(Mongo)는 같은 store지만 조인 금지 | `RecommendationCriteria` 공개 쿼리로 분리, N+1·배치 조회 주의(ADR-0005 D2·D5)                 |
-| 교차 스토어 트랜잭션 불가 | XA 미사용                                                           | 쓰기 경로를**단일 store**로 한정, store 넘는 정합은 이벤트 최종 일관성(ADR-0005 D6)         |
+| 교차 스토어 트랜잭션 불가 | XA 미사용                                                           | DB 쓰기 경로를**단일 store**로 한정, store 넘는 정합은 이벤트 최종 일관성(ADR-0005 D6). 오브젝트 스토리지 교차 쓰기는 아래 행     |
+| DB↔오브젝트 스토리지 교차 쓰기 | 매물 등록이 **S3(사진)+MongoDB(문서)** 두 저장소에 쓴다 — XA 없음 | **검증 → 업로드 → 문서 저장** 순서로 거절될 요청이 저장소에 흔적을 남기지 않게 하고, 저장이 실패하면 올린 객체를 **보상 삭제**한다. 보상까지 실패해 남는 고아 객체는 감수하고 정리 배치는 후속 — 순서·근거는 [ADR-0041](../adr/0041-listing-image-upload-to-s3.md) §3 |
 | Redis refresh 내구성      | 페일오버/재시작 시 폐기·로그아웃 토큰 부활 → 재생공격             | **AOF + 복제**, TTL=refresh 만료로 타이트, 강한 폐기 필요 시 MySQL로 이전/access 블랙리스트 |
 | 두 스택 동시 설정         | JPA·Mongo 리포지토리 패키지·트랜잭션 매니저 구분                  | `@EnableJpaRepositories`/`@EnableMongoRepositories` 패키지 한정 + 컨텍스트 기동 테스트        |
 | 경계검증의 사각           | `ModularityTest`는 코드 경계만 강제, 교차 스토어 쿼리는 못 막음   | 모듈은 자기 store만 Repository로 노출, 타 모듈 데이터는 공개 쿼리/이벤트로만                      |
@@ -468,7 +479,7 @@ ADR-0005가 **cross-store 조인·트랜잭션을 금지**하므로 단일 엔�
 - [api-design-guide](../api/api-design-guide.md) · [error-response-guide](../api/error-response-guide.md) · [non-functional-requirements](../requirements/non-functional-requirements.md)(템플릿)
 - [domain-model](domain-model.md) — 모듈별 애그리거트 카탈로그(루트·식별자·불변식·저장소 매핑) · [sequence-diagrams](sequence-diagrams/README.md)
 
-> **배선 완료(auth-onboarding 구현, 스택 Boot 3.5 — [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)):** `web`·`data-jpa`+`mysql-connector-j`·`data-redis`(refresh Redis 어댑터, ADR-0006)·`spring-security`·`oauth2-jose`·`jjwt` + API 문서(`restdocs-mockmvc`·`restdocs-api-spec`·`swagger-ui` webjar, ADR-0017) + 통합 테스트 Testcontainers 1.21.4(MySQL·Redis). **남은 갱신:** `data-mongodb`(listing·diagnosis).
+> **배선 완료(스택 Boot 3.5 — [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)):** `web`·`data-jpa`+`mysql-connector-j`·**`data-mongodb`**(listing·diagnosis 지오, ADR-0005)·`data-redis`(refresh Redis 어댑터, ADR-0006)·`spring-security`·`oauth2-jose`·`jjwt`·**`software.amazon.awssdk:s3`+`url-connection-client`**(매물 사진 업로드 — 로컬은 endpoint만 바꿔 MinIO, [ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) + API 문서(`restdocs-mockmvc`·`restdocs-api-spec`·`swagger-ui` webjar, ADR-0017) + 통합 테스트 Testcontainers 1.21.4(MySQL·Redis·MongoDB·**MinIO**). 전체 목록의 정본은 [build.gradle](../../build.gradle).
 
 ## 체크리스트
 

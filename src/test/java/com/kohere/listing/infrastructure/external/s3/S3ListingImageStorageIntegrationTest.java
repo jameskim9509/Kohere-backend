@@ -31,8 +31,8 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 /**
  * 매물 사진 저장 어댑터를 실제 S3 프로토콜(MinIO)로 검증한다.
  *
- * <p>목으로는 키·URL 조립까지만 보이고 SDK 호출이 실제로 성립하는지는 알 수 없다 — 콘텐츠 길이·경로 스타일·삭제 요청의 체크섬 요구처럼 프로토콜에 닿는 부분이 여기서만 드러난다.
- * 로컬 개발도 같은 MinIO를 쓰므로 이 테스트가 로컬 기동을 함께 지켜 준다(ADR-0041 §5).
+ * <p>목으로는 키·URL 조립까지만 보이고 SDK 호출이 실제로 성립하는지는 알 수 없다 — 콘텐츠 길이·경로 스타일·삭제 요청의 체크섬 요구처럼 프로토콜에 닿는 부분이
+ * 여기서만 드러난다. 로컬 개발도 같은 MinIO를 쓰므로 이 테스트가 로컬 기동을 함께 지켜 준다(ADR-0041 §5).
  */
 @Testcontainers
 class S3ListingImageStorageIntegrationTest {

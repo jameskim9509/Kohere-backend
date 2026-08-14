@@ -16,6 +16,7 @@
 | **단위(domain)** | 애그리거트 불변식·상태 전이·값 객체 규칙 | JUnit5 + AssertJ | 없음 |
 | **단위(application)** | 유스케이스 조율 — 분기·예외·협력 호출 | JUnit5 + Mockito(포트·타 모듈 공개 API 모킹) | 없음 |
 | **단위(infrastructure)** | 외부 기술을 걷어내도 남는 어댑터 순수 로직 — 해시·서명·프로토콜/상태→예외 매핑 | JUnit5 + AssertJ(HTTP는 `MockRestServiceServer`) | 없음/경량 |
+| **어댑터 통합** | 프로토콜에 실제로 닿아야 드러나는 어댑터 동작 — 요청 조립·응답 매핑·오류→예외 변환 | JUnit5 + AssertJ + Testcontainers(오브젝트 스토리지는 `MinIOContainer`) | 없음(컨테이너만 띄우고 어댑터는 직접 생성) |
 | **슬라이스(선택)** | 컨트롤러 직렬화·입력 검증·보안 매핑 | `@WebMvcTest`(+ `spring-security-test`) | 웹 계층 |
 | **통합(integration)** | 모듈 간 협력·영속·보안 종단 흐름 + API 문서 스니펫 | `@SpringBootTest` + MockMvc (+ REST Docs) | 전체 |
 | **모듈 경계** | 의존 방향·NamedInterface·이벤트 | `ApplicationModules.verify()` / `@ApplicationModuleTest` | Modulith |
@@ -34,7 +35,7 @@
 
 ### 3-3. 인프라 어댑터
 
-어댑터에서 외부 기술(DB·Redis·HTTP·암호 라이브러리)을 걷어내도 남는 **자체 로직**이 있으면 단위로 검증한다 — 해시·서명, 프로토콜/상태→예외 매핑 등. 기준은 **동어반복 경계**다: 외부 기술에 단순 위임하는 부분(Redis/JPA 호출)은 mock해도 구현을 그대로 되읊을 뿐이라 통합(Testcontainers)으로 미루고, 위임을 벗어난 변환·판단만 단위로 고정한다. 순수 해시·서명은 컨텍스트 없이, HTTP 어댑터는 `MockRestServiceServer`로 네트워크 없이 상태→예외 매핑을 검증한다. 통합에서 외부 연동을 가짜로 대체(`@TestConfiguration @Primary`)하면 어댑터의 실제 변환 경로는 통합이 닿지 못하므로, 이 단위 검증이 그 경로의 유일한 보증이 된다.
+어댑터에서 외부 기술(DB·Redis·HTTP·오브젝트 스토리지·암호 라이브러리)을 걷어내도 남는 **자체 로직**이 있으면 단위로 검증한다 — 해시·서명, 프로토콜/상태→예외 매핑 등. 기준은 **동어반복 경계**다: 외부 기술에 단순 위임하는 부분(Redis/JPA 호출)은 mock해도 구현을 그대로 되읊을 뿐이라 통합(Testcontainers)으로 미루고, 위임을 벗어난 변환·판단만 단위로 고정한다. 순수 해시·서명은 컨텍스트 없이, HTTP 어댑터는 `MockRestServiceServer`로 네트워크 없이 상태→예외 매핑을 검증한다. 통합에서 외부 연동을 가짜로 대체(`@TestConfiguration @Primary`·설정 스위치의 스텁 폴백)하면 어댑터의 실제 변환 경로는 통합이 닿지 못하므로, 이 단위 검증이 그 경로의 유일한 보증이 된다. 다만 **프로토콜 호환 구현을 컨테이너로 띄울 수 있으면 단위 대신 그 위에서 어댑터를 통째로 검증한다** — 사진 저장 어댑터(`S3ListingImageStorage`)가 그렇다. 목으로는 키·URL 조립까지만 보이고 콘텐츠 길이·경로 스타일·삭제 요청의 체크섬 요구처럼 프로토콜에 닿는 부분은 드러나지 않으므로, Spring 컨텍스트 없이 `MinIOContainer` 위에서 어댑터를 직접 만들어 업로드·삭제·저장소 오류→예외 매핑을 검증한다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 이때 단위로 남는 것은 SDK를 타지 않는 키 조립·part 검증 타입(`ListingImageKeys`·`ListingImageParts`·`ListingImagePartReader`)이다.
 
 ### 3-4. 통합
 
@@ -52,6 +53,10 @@
 - 모든 `document()`에 **태그와 오퍼레이션 상수**(summary·description)를 지정한다. 성공·에러 스니펫이 같은 문자열을 쓴다.
 - 같은 `(path, method, status)`의 스니펫은 **같은 필드 헬퍼**를 호출한다. 파일이 달라도 마찬가지다.
 - 케이스 구분은 summary가 아니라 **identifier**로 한다. identifier가 Swagger Examples 드롭다운의 항목명이 된다.
+
+**multipart 요청을 문서화할 때**([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) 한 가지를 더 지킨다.
+
+- **요청 스니펫에는 `request` part의 JSON만 싣는다.** `restdocs-api-spec` 0.19.4는 파일 part를 표현하지 못해, 요청을 그대로 실으면 boundary가 붙은 `Content-Type`과 사람이 못 읽는 본문이 OpenAPI에 남는다. `preprocessRequest`로 `Content-Type`을 `multipart/form-data`로 바꾸고 본문을 `request` part JSON으로 갈아끼운다. 또 `requestPartFields`는 래퍼가 기술자를 걷어 가지 못하므로 같은 기술자로 `resource()`를 직접 만들어야 Swagger에 요청 스키마가 남는다. 파일 part의 이름·개수·형식·크기 규칙은 오퍼레이션 description에 적는다(매물 등록 예: `ListingDocsFields.LISTING_REGISTER_DESCRIPTION`).
 
 **같은 리소스가 `/api/v1`·`/api/v2`에 병존할 때**([api-design-guide §2-1](../api/api-design-guide.md)) 두 가지를 더 지킨다.
 
@@ -73,8 +78,8 @@
 
 ## 4. 테스트 데이터·인프라
 
-- **통합 테스트 = Testcontainers**: 실제 엔진을 띄워 검증한다(`@ServiceConnection`으로 연결 자동 주입). 폴리글랏([ADR-0005](../adr/0005-polyglot-persistence.md)/[ADR-0006](../adr/0006-refresh-token-store-redis.md))에서 **해당 테스트가 실제로 쓰는 엔진만** 띄우고, 쓰지 않는 엔진은 띄우지 않는다. Docker 데몬이 필요하다(로컬·CI 공통).
-- **단위 테스트는 컨테이너가 필요 없다.** 외부 연동(예: 소셜 로그인 검증)은 통합에서도 가짜로 대체해 네트워크 의존을 없앤다.
+- **통합 테스트 = Testcontainers**: 실제 엔진을 띄워 검증한다. 폴리글랏([ADR-0005](../adr/0005-polyglot-persistence.md)/[ADR-0006](../adr/0006-refresh-token-store-redis.md))에서 **해당 테스트가 실제로 쓰는 엔진만** 띄우고, 쓰지 않는 엔진은 띄우지 않는다 — MySQL·Redis는 공용 `TestcontainersConfiguration`, MongoDB는 필요한 테스트가 직접 선언하며 모두 `@ServiceConnection`으로 연결이 자동 주입된다. 오브젝트 스토리지는 **MinIO**(`org.testcontainers:minio`, [ADR-0041](../adr/0041-listing-image-upload-to-s3.md))를 띄우되 `@ServiceConnection` 대상이 아니라 컨테이너가 알려 준 endpoint·자격증명으로 `S3Client`를 직접 조립한다. Docker 데몬이 필요하다(로컬·CI 공통).
+- **단위 테스트는 컨테이너가 필요 없다.** 네트워크 너머의 외부 연동은 통합에서도 실물을 부르지 않는다. 대체 수단은 둘이고 **프로토콜 호환 구현을 로컬 컨테이너로 띄울 수 있으면 가짜보다 그것을 먼저 쓴다** — 어댑터는 그 컨테이너로 검증하고(S3 ↔ MinIO: `S3ListingImageStorageIntegrationTest`), 띄울 수 없으면 가짜로 대체한다(소셜 로그인 검증: `@TestConfiguration @Primary`). 애플리케이션 통합(`@SpringBootTest`)은 어느 쪽이든 스텁으로 가볍게 돌린다 — 사진 저장소처럼 설정 스위치로 스텁 폴백이 있으면 테스트 프로파일에서 그 스위치를 끈다(`app.images.enabled=false` → `StubListingImageStorage`).
 - 로컬 개발은 docker-compose로 동일 엔진을 제공하고, 운영 스키마는 Flyway로 관리한다([ADR-0008](../adr/0008-mysql-migration-flyway.md)).
 - 비밀값은 테스트 전용 더미를 쓰고 운영 시크릿은 커밋하지 않는다.
 
