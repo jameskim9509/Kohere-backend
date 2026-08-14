@@ -52,6 +52,12 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health", "/swagger-ui/**")
                     .permitAll()
+                    // 도로명 주소 검색은 등록 폼 전용이라 같은 /api/v1/listings/* 아래지만 공개하지 않는다(ADR-0042).
+                    // 아래 공개 매처보다 반드시 먼저 선언한다 — 먼저 매칭된 규칙이 이기므로 순서가 뒤집히면
+                    // 이 인증 요구가 통째로 무시되고 인증 없이 외부 지오코딩 쿼터를 소모하는 프록시가 된다.
+                    // 임대인 여부(userType=LANDLORD)는 매처로 표현할 수 없어 서비스가 재검사한다(403).
+                    .requestMatchers(HttpMethod.GET, "/api/v1/listings/addresses")
+                    .hasRole("USER")
                     // 매물 탐색은 가입 전에도 사용할 수 있는 공개 기능이다. HTTP method를 GET으로 한정하고 한 단계
                     // 하위 경로만 열어 /{listingId}/favorite·/{listingId}/bookings 같은 사용자 액션은 공개하지 않는다.
                     // /listings/*는 v1이 map·search·places·{listingId}를, v2가 map·search·{listingId}를

@@ -113,6 +113,9 @@ public class ListingV2Controller {
    *
    * <p>등록 직후 상태는 {@code PENDING}이라 조회·검색·상세에 노출되지 않는다.
    *
+   * <p>주소는 {@code GET /api/v1/listings/addresses}로 먼저 검색한다 — 고른 후보의 도로명 주소와 좌표를 {@code address}에
+   * 그대로 담으면 서버가 그 좌표로 {@code location}을 채운다(ADR-0042).
+   *
    * <p>사진 파일은 이 요청에 없다 — {@link #uploadImage}로 미리 올려 받은 키를 {@code imageKeys}·{@code
    * roomOffers[].roomImageKeys}로 참조하고, 서버가 확정 위치로 복사해 그 URL을 응답에 채운다(ADR-0041).
    */

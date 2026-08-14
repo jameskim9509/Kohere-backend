@@ -261,8 +261,8 @@ final class ListingResponseMapper {
   /**
    * 도메인 좌표를 프론트가 바로 쓰는 lat/lng 응답으로 바꾼다.
    *
-   * <p>등록 직후 매물은 지오코딩이 없어 좌표가 비어 있다({@code POST /api/v2/listings}). 그때는 {@code null}을 반환하고 응답에서
-   * {@code location} 키 자체가 빠진다. 공개 조회 응답은 좌표를 가진 매물만 대상이라 이 분기를 타지 않는다.
+   * <p>등록이 요청의 좌표로 {@code location}을 채우므로(ADR-0042) 새로 만든 매물은 항상 좌표를 갖는다. 다만 저장 계약이 여전히 optional이라
+   * 좌표 없이 저장된 예전 문서가 남아 있어 {@code null} 분기를 유지한다 — 그때는 응답에서 {@code location} 키 자체가 빠진다.
    */
   private static ListingDetailResponse.GeoPoint toGeoPoint(Listing listing) {
     Listing.GeoPoint location = listing.getLocation();
