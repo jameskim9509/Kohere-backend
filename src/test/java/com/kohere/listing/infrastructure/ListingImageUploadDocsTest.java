@@ -218,6 +218,24 @@ class ListingImageUploadDocsTest {
         new ContentModifyingOperationPreprocessor((content, contentType) -> new byte[0]));
   }
 
+  /**
+   * part 이름을 틀리면 400이지 500이 아니다.
+   *
+   * <p>필수 part가 빠지면 Spring이 {@code MissingServletRequestPartException}을 던지는데, 전역 핸들러의 {@code
+   * Exception} 처리가 먼저 잡아 500으로 나가던 것을 {@code MALFORMED_REQUEST}로 잡아 준다. 클라이언트가 이름을 틀린 것이지 서버 장애가
+   * 아니다.
+   */
+  @Test
+  void 사진업로드_file_part가_없으면_400이다() throws Exception {
+    mockMvc
+        .perform(
+            multipart("/api/v2/listings/images")
+                .file(new MockMultipartFile("photo", "a.jpg", IMAGE_CONTENT_TYPE, IMAGE_BYTES))
+                .header(HttpHeaders.AUTHORIZATION, landlordToken()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"));
+  }
+
   private void performError(
       MockHttpServletRequestBuilder request,
       ResultMatcher expectedStatus,

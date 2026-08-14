@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -83,9 +84,18 @@ public class GlobalExceptionHandler {
         .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, ec.getDefaultMessage()), details));
   }
 
+  /**
+   * 요청을 해석조차 못 한 경우다.
+   *
+   * <p>{@code MissingServletRequestPartException}이 함께 있는 이유 — multipart 요청에 필수 part가 빠지면 Spring이 이
+   * 예외를 던지는데, 이 클래스의 {@code @ExceptionHandler(Exception.class)}가 {@code
+   * DefaultHandlerExceptionResolver}보다 먼저 잡아 <b>500 INTERNAL_ERROR</b>로 나가 버린다. 클라이언트가 part 이름을 틀린
+   * 것이지 서버 장애가 아니다.
+   */
   @ExceptionHandler({
     HttpMessageNotReadableException.class,
-    MethodArgumentTypeMismatchException.class
+    MethodArgumentTypeMismatchException.class,
+    MissingServletRequestPartException.class
   })
   public ResponseEntity<ApiResponse<Void>> handleMalformed(Exception e) {
     return errorResponse(ErrorCode.MALFORMED_REQUEST);
