@@ -35,7 +35,7 @@
 
 ### 3-3. 인프라 어댑터
 
-어댑터에서 외부 기술(DB·Redis·HTTP·오브젝트 스토리지·암호 라이브러리)을 걷어내도 남는 **자체 로직**이 있으면 단위로 검증한다 — 해시·서명, 프로토콜/상태→예외 매핑 등. 기준은 **동어반복 경계**다: 외부 기술에 단순 위임하는 부분(Redis/JPA 호출)은 mock해도 구현을 그대로 되읊을 뿐이라 통합(Testcontainers)으로 미루고, 위임을 벗어난 변환·판단만 단위로 고정한다. 순수 해시·서명은 컨텍스트 없이, HTTP 어댑터는 `MockRestServiceServer`로 네트워크 없이 상태→예외 매핑을 검증한다. 통합에서 외부 연동을 가짜로 대체(`@TestConfiguration @Primary`·설정 스위치의 스텁 폴백)하면 어댑터의 실제 변환 경로는 통합이 닿지 못하므로, 이 단위 검증이 그 경로의 유일한 보증이 된다. 다만 **프로토콜 호환 구현을 컨테이너로 띄울 수 있으면 단위 대신 그 위에서 어댑터를 통째로 검증한다** — 사진 저장 어댑터(`S3ListingImageStorage`)가 그렇다. 목으로는 키·URL 조립까지만 보이고 콘텐츠 길이·경로 스타일·삭제 요청의 체크섬 요구처럼 프로토콜에 닿는 부분은 드러나지 않으므로, Spring 컨텍스트 없이 `MinIOContainer` 위에서 어댑터를 직접 만들어 업로드·삭제·저장소 오류→예외 매핑을 검증한다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 이때 단위로 남는 것은 SDK를 타지 않는 키 조립·part 검증 타입(`ListingImageKeys`·`ListingImageParts`·`ListingImagePartReader`)이다.
+어댑터에서 외부 기술(DB·Redis·HTTP·오브젝트 스토리지·암호 라이브러리)을 걷어내도 남는 **자체 로직**이 있으면 단위로 검증한다 — 해시·서명, 프로토콜/상태→예외 매핑 등. 기준은 **동어반복 경계**다: 외부 기술에 단순 위임하는 부분(Redis/JPA 호출)은 mock해도 구현을 그대로 되읊을 뿐이라 통합(Testcontainers)으로 미루고, 위임을 벗어난 변환·판단만 단위로 고정한다. 순수 해시·서명은 컨텍스트 없이, HTTP 어댑터는 `MockRestServiceServer`로 네트워크 없이 상태→예외 매핑을 검증한다. 통합에서 외부 연동을 가짜로 대체(`@TestConfiguration @Primary`·설정 스위치의 스텁 폴백)하면 어댑터의 실제 변환 경로는 통합이 닿지 못하므로, 이 단위 검증이 그 경로의 유일한 보증이 된다. 다만 **프로토콜 호환 구현을 컨테이너로 띄울 수 있으면 단위 대신 그 위에서 어댑터를 통째로 검증한다** — 사진 저장 어댑터(`S3ListingImageStorage`)가 그렇다. 목으로는 키·URL 조립까지만 보이고 콘텐츠 길이·경로 스타일·삭제 요청의 체크섬 요구처럼 프로토콜에 닿는 부분은 드러나지 않으므로, Spring 컨텍스트 없이 `MinIOContainer` 위에서 어댑터를 직접 만들어 업로드·복사·삭제와 저장소 오류→예외 매핑(없는 원본은 키 오류, 그 밖의 실패는 업로드 실패)을 검증한다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 이때 단위로 남는 것은 SDK를 타지 않는 키 조립·입력 검증 타입(`ListingImageKeys`·`ListingImageKeySet`·`PendingListingImage`)이다.
 
 ### 3-4. 통합
 
@@ -56,7 +56,7 @@
 
 **파일을 받는 엔드포인트를 문서화할 때**([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) 한 가지를 더 지킨다.
 
-- **파일 part는 문서에 스키마로 남길 수 없다.** `restdocs-api-spec` 0.19.4가 multipart를 표현하지 못하고, 요청을 그대로 실으면 boundary가 붙은 `Content-Type`과 사람이 못 읽는 본문이 OpenAPI에 남는다. `preprocessRequest`의 `modifyHeaders`로 `Content-Type`에서 boundary를 걷어내고, part 이름·개수·형식·크기 규칙은 **오퍼레이션 description**에 적는다(매물 사진 업로드 예: `ListingDocsFields.LISTING_IMAGE_UPLOAD_DESCRIPTION`). 그래서 **파일을 받는 요청과 구조화된 요청은 엔드포인트를 가르는 편이 낫다** — 매물 등록이 사진을 파일로 받다가 키 참조로 바뀌면서 요청이 JSON으로 돌아왔고, 그 덕에 요청 스키마가 Swagger에 복구됐다.
+- **파일 part는 문서에 스키마로 남길 수 없다.** `restdocs-api-spec` 0.19.4가 multipart를 표현하지 못하고, 요청을 그대로 실으면 boundary가 붙은 `Content-Type`과 사람이 못 읽는 본문이 OpenAPI에 남는다. MockMvc가 part를 요청 본문과 따로 들고 있어 REST Docs가 보는 본문에 boundary 섞인 바이너리가 남으므로, `preprocessRequest(new ContentModifyingOperationPreprocessor(...))`로 본문을 비워 OpenAPI에 `requestBody`가 생기지 않게 한다. part 이름·개수·형식·크기 규칙은 **오퍼레이션 description**에 적는다(매물 사진 업로드 예: `ListingDocsFields.LISTING_IMAGE_UPLOAD_DESCRIPTION`). 그래서 **파일을 받는 요청과 구조화된 요청은 엔드포인트를 가르는 편이 낫다** — 매물 등록이 사진을 파일로 받다가 키 참조로 바뀌면서 요청이 JSON으로 돌아왔고, 그 덕에 요청 스키마가 Swagger에 복구됐다.
 
 **같은 리소스가 `/api/v1`·`/api/v2`에 병존할 때**([api-design-guide §2-1](../api/api-design-guide.md)) 두 가지를 더 지킨다.
 

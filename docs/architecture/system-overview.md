@@ -140,7 +140,7 @@ flowchart TB
 | MySQL        | `mysql:8` 컨테이너                                                  | RDS for MySQL 8.0 (auth·user)                      |
 | MongoDB      | `mongo` 컨테이너 + `2dsphere`                                     | Amazon DocumentDB (listing[+찜·최근본]·diagnosis) |
 | Redis        | `redis` 컨테이너                                                    | ElastiCache (refresh 토큰 TTL)                      |
-| 매물 사진      | `minio` 컨테이너(S3 호환 · :9000 API/:9001 콘솔) + `minio-init`(버킷 생성) — **앱이 등록 요청의 파일을 직접 업로드** | 같은 S3 버킷의 `listings/` prefix(앱 역할에 `PutObject`·`DeleteObject`) + CloudFront |
+| 매물 사진      | `minio` 컨테이너(S3 호환 · :9000 API/:9001 콘솔) + `minio-init`(버킷 생성) — **업로드 API가 한 장씩 받아 `uploads/`에 올리고, 등록이 확정될 때 `listings/`로 복사** | 같은 S3 버킷의 `uploads/`(임시)·`listings/`(확정) prefix(앱 역할에 `PutObject`·`GetObject`·`DeleteObject`) + CloudFront |
 | 콘텐츠 이미지  | 그 밖의 이미지(생활팁·국기 등)는 백엔드 미보관 — URL만 저장           | S3 + CloudFront(Route53 별칭→클라이언트 로드)      |
 | 메일(인증번호) | `mailhog` 컨테이너(:1025 SMTP / :8025 UI)                           | Gmail SMTP                                          |
 | 시크릿·설정 | `application-local.yml` / 환경변수                                  | SSM Parameter Store(SecureString)                   |
@@ -171,7 +171,7 @@ flowchart TB
     APP -- "JDBC  mysql:3306" --> MYSQL
     APP -- "mongo:27017" --> MONGO
     APP -- "redis:6379" --> REDIS
-    APP -- "PutObject / DeleteObject(보상 삭제)<br/>minio:9000" --> MINIO
+    APP -- "PutObject / CopyObject(확정) / DeleteObject(보상·임시본 정리)<br/>minio:9000" --> MINIO
     APP -- "SMTP  mailhog:1025" --> MAILHOG
     DEV -. "사진 GET localhost:9000 · 콘솔 :9001" .-> MINIO
     DEV -. "받은 메일 확인 localhost:8025" .-> MAILHOG
@@ -431,7 +431,7 @@ flowchart TB
 | 영역            | 채택                                                                                     | 상태   | 비고                                                                                                                                                                                      |
 | --------------- | ---------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 테스트          | JUnit 5 · AssertJ · Mockito · Modulith test                                           | 배선됨 | —                                                                                                                                                                                        |
-| 통합 테스트     | **Testcontainers** — MySQL·Redis(`@ServiceConnection`)·MongoDB + **MinIO**            | ✅ 배선 | auth-onboarding은 공용 `TestcontainersConfiguration`의 실제 MySQL·Redis로, listing·diagnosis·lifetip·gamification은 각 테스트가 직접 선언한 `MongoDBContainer`로 검증한다(Docker 필요; TC **1.21.4**로 신버전 Docker 호환, [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)). **매물 사진 저장 어댑터는 `MinIOContainer`로 실제 S3 프로토콜을 태워** 업로드·보상 삭제를 검증한다 — 목으로는 키·URL 조립까지만 보이고 SDK 호출이 성립하는지는 알 수 없다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
+| 통합 테스트     | **Testcontainers** — MySQL·Redis(`@ServiceConnection`)·MongoDB + **MinIO**            | ✅ 배선 | auth-onboarding은 공용 `TestcontainersConfiguration`의 실제 MySQL·Redis로, listing·diagnosis·lifetip·gamification은 각 테스트가 직접 선언한 `MongoDBContainer`로 검증한다(Docker 필요; TC **1.21.4**로 신버전 Docker 호환, [ADR-0016](../adr/0016-downgrade-to-spring-boot-3.md)). **매물 사진 저장 어댑터는 `MinIOContainer`로 실제 S3 프로토콜을 태워** 업로드·확정 복사·보상 삭제를 검증한다 — 목으로는 키·URL 조립까지만 보이고 SDK 호출이 성립하는지는 알 수 없다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
 | 로깅            | **Logback + logstash-logback-encoder** — `CONSOLE` 텍스트 + `JSON_FILE` 1줄 JSON(`test` 제외 전 프로파일), MDC `traceId`·`userId`·`onboarding` | ✅ 배선 | **[ADR-0038](../adr/0038-application-logging-and-cloudwatch.md)** — 로그는 **다섯 용도**(활동추적·외부의존성·보안감사·성능지연·서버오류)가 요구하는 것만 남긴다("모든 예외 로깅" 폐기). 전 요청 접근 로그(`HandlerInterceptor`, `pathPattern`+`pathVars`+`latencyMs`), 401/403 감사 로그(`SecurityErrorResponder.write` 한 곳). PII 원천 배제. 4xx는 스택 없이 `status`·`errorCode`로만([error-response-guide §6](../api/error-response-guide.md)) |
 | 로그 수집       | **dev**: CloudWatch Agent가 `/logs/app.json` tail → Log Group `/kohere/dev/app`(보존 30일) · **prod**: ECS `awslogs` 드라이버 → `/ecs/<name_prefix>` | dev ✅ 배선 / prod 미검증 | 로그 **내용**(JSON·MDC)과 **전송 경로**(CloudWatch)는 직교 — 앱은 파일까지만 책임지고 **로깅 자체는 AWS SDK를 타지 않는다**(반출은 Agent·`awslogs` 드라이버 몫이다 — 앱이 무는 AWS SDK는 매물 사진 업로드용 `s3` 하나뿐이고 로그 경로와 무관하다, [ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). IAM은 해당 Log Group 하나로 스코프(관리형 `logs:*` 미사용, `CreateLogGroup`·`PutRetentionPolicy` 미부여). **일 수집량 상한 200MB**(≈ 월 $5)는 `IncomingBytes` 알람으로 감시 — 비용 기준으로 정했고 AWS가 하드 리밋을 주지 않아 조기 경보다. prod은 CD 미연결이라 실적재 미검증 |
 | 메트릭/트레이싱 | Actuator(health)                                                                         | 도입   | Micrometer/Prometheus → 추후. **호스트 메모리·스왑은 미수집** — EC2 기본 지표에 없고 CloudWatch Agent도 logs 전용이라 확인이 SSM `free -m` 수동이다([ADR-0026](../adr/0026-dev-host-memory-budget.md) 후속 작업) |
@@ -453,7 +453,7 @@ ADR-0005가 **cross-store 조인·트랜잭션을 금지**하므로 단일 엔�
 | ------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | 교차 스토어 조회          | `diagnosis`(Mongo)↔`listing`(Mongo)는 같은 store지만 조인 금지 | `RecommendationCriteria` 공개 쿼리로 분리, N+1·배치 조회 주의(ADR-0005 D2·D5)                 |
 | 교차 스토어 트랜잭션 불가 | XA 미사용                                                           | DB 쓰기 경로를**단일 store**로 한정, store 넘는 정합은 이벤트 최종 일관성(ADR-0005 D6). 오브젝트 스토리지 교차 쓰기는 아래 행     |
-| DB↔오브젝트 스토리지 교차 쓰기 | 매물 등록이 **S3(사진)+MongoDB(문서)** 두 저장소에 쓴다 — XA 없음 | **검증 → 업로드 → 문서 저장** 순서로 거절될 요청이 저장소에 흔적을 남기지 않게 하고, 저장이 실패하면 올린 객체를 **보상 삭제**한다. 보상까지 실패해 남는 고아 객체는 감수하고 정리 배치는 후속 — 순서·근거는 [ADR-0041](../adr/0041-listing-image-upload-to-s3.md) §3 |
+| DB↔오브젝트 스토리지 교차 쓰기 | 매물 등록이 **S3(사진)+MongoDB(문서)** 두 저장소에 쓴다 — XA 없음 | **검증(사진 키 장수·소유권 포함) → 확정 위치로 복사 → 문서 저장 → 임시본 삭제** 순서라 거절될 요청은 확정 위치에 흔적을 남기지 않는다. 복사·저장이 실패하면 **복사본만 보상 삭제**하고 임시본은 남긴다 — 확정되지 않은 임시본은 `uploads/` prefix 만료(기본 7일)가 치우고, 보상까지 실패해 `listings/` 아래 남는 고아만 감수한다(정리 배치는 후속). 순서·근거는 [ADR-0041](../adr/0041-listing-image-upload-to-s3.md) §4 |
 | Redis refresh 내구성      | 페일오버/재시작 시 폐기·로그아웃 토큰 부활 → 재생공격             | **AOF + 복제**, TTL=refresh 만료로 타이트, 강한 폐기 필요 시 MySQL로 이전/access 블랙리스트 |
 | 두 스택 동시 설정         | JPA·Mongo 리포지토리 패키지·트랜잭션 매니저 구분                  | `@EnableJpaRepositories`/`@EnableMongoRepositories` 패키지 한정 + 컨텍스트 기동 테스트        |
 | 경계검증의 사각           | `ModularityTest`는 코드 경계만 강제, 교차 스토어 쿼리는 못 막음   | 모듈은 자기 store만 Repository로 노출, 타 모듈 데이터는 공개 쿼리/이벤트로만                      |

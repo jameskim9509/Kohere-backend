@@ -6,7 +6,7 @@
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-08-14 |
 | 개정일 | 2026-08-14 — 단일 multipart(초안)에서 **파일별 업로드 + 키 참조**로 결정을 바꿨다. 경위는 [Alternatives](#alternatives) A |
-| 기준 코드 | `feature/220-listing-registration-api` @ `7e29fdf`. 본 ADR의 파일·경로 참조는 전부 이 시점 기준이며, 재검증 없이 인용하지 않는다 |
+| 기준 코드 | `feature/220-listing-registration-api` @ `fb102b4`. 본 ADR의 파일·경로 참조는 전부 이 시점 기준이며, 재검증 없이 인용하지 않는다 |
 | 관련 문서 | [ADR-0020](./0020-terraform-remote-state-s3-dynamodb.md), [ADR-0023](./0023-secrets-in-ssm-parameter-store.md), [ADR-0033](./0033-business-registry-verification.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md), [listing API](../api/specs/03-listings-favorites.md) |
 
 ## Status
@@ -50,6 +50,8 @@ uploads/{landlordId}/{uuid}.{ext}                         ← 업로드 시점(l
 listings/{listingId}/cover/{uuid}.{ext}                   ← 등록 확정
 listings/{listingId}/rooms/{roomOfferId}/{uuid}.{ext}
 ```
+
+**확정 키는 새 UUID를 뽑지 않는다.** 임시 키의 파일명(`{uuid}.{ext}`)을 그대로 옮겨 붙인다 — 확장자를 다시 만들지 않으므로 업로드 때 검증한 형식과 확정 키의 확장자가 어긋날 수 없다.
 
 버킷을 새로 만들지 않는다. 모듈 설계대로 도메인을 키 prefix로 가른다(생활팁은 `life-tips/`).
 

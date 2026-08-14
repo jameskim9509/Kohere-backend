@@ -221,7 +221,7 @@ Swagger UI는 **소유 모듈 기준 7개 그룹**으로 나뉩니다(표시 순
 | `Bookings` | 매물 신청 생성·조회·삭제·차단·신고 | [04](docs/api/specs/04-booking-inquiry-chat.md) |
 | `Quiz` | 학습 퀴즈 조회·채점 | [06](docs/api/specs/06-gamification.md) |
 | `LifeTips` | 주제별 생활 팁 | [08](docs/api/specs/08-life-tips.md) |
-| `Listings` | 매물 탐색·지도·검색·찜·최근 본 매물 | [03](docs/api/specs/03-listings-favorites.md) |
+| `Listings` | 임대인 매물 등록·사진 업로드 · 매물 탐색·지도·검색·찜·최근 본 매물 | [03](docs/api/specs/03-listings-favorites.md) |
 
 > 귀속 기준은 경로가 아니라 **소유 모듈**입니다 — `/users/me/favorites`는 listing 모듈 소유라 `Listings`에 있습니다.
 

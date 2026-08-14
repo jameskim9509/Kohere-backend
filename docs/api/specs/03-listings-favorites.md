@@ -125,11 +125,13 @@ Request Parts:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `LISTING_IMAGE_REQUIRED` | `file` part가 없거나 빈 파일 |
+| 400 | `LISTING_IMAGE_REQUIRED` | 올린 파일이 비었음 |
+| 400 | `MALFORMED_REQUEST` | `file` part 자체가 없거나 multipart 형식 위반 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조·형식 오류 / 만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰(`ROLE_ONBOARDING`) |
 | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
-| 413 | `LISTING_IMAGE_TOO_LARGE` | 사진이 10MB를 넘음 |
+| 413 | `LISTING_IMAGE_TOO_LARGE` | 사진이 10MB를 넘음(요청이 서블릿 상한 32MB 이하라 핸들러까지 도달한 경우) |
+| 413 | `PAYLOAD_TOO_LARGE` | 요청이 서블릿 상한 32MB를 넘음 — multipart 해석이 핸들러 탐색보다 앞서 일어나 어느 엔드포인트인지 알 수 없어 도메인 코드 대신 공통 코드가 나간다 |
 | 415 | `LISTING_IMAGE_UNSUPPORTED_TYPE` | 형식이 `image/jpeg` · `image/png` · `image/webp` · `image/heic` 중 하나가 아님 |
 | 502 | `UPSTREAM_ERROR` | 사진 저장소 업로드 실패 |
 
@@ -370,8 +372,8 @@ Request Body:
           { "code": "ADDRESS_REGISTRATION", "label": "전입신고 가능" }
         ],
         "roomImageUrls": [
-          "https://cdn.kohere.app/listings/68e0000000000000000000a1/rooms/68e0000000000000000001a1/6f1c9a2e-1d2b-4c3a-9f10-2b7c5d8e4a11.jpg",
-          "https://cdn.kohere.app/listings/68e0000000000000000000a1/rooms/68e0000000000000000001a1/9a2f7b31-5c4d-4e6f-8a09-3c1d6e7f5b22.jpg"
+          "https://cdn.kohere.app/listings/68e0000000000000000000a1/rooms/68e0000000000000000001a1/7b2e8841-2a3b-4c5d-8e9f-0a1b2c3d4e55.jpg",
+          "https://cdn.kohere.app/listings/68e0000000000000000000a1/rooms/68e0000000000000000001a1/c14d05a6-6b7c-4d8e-9f01-2a3b4c5d6e66.jpg"
         ]
       }
     ],
@@ -384,8 +386,8 @@ Request Body:
     },
     "blogUrl": "https://blog.naver.com/kohere-goshiwon",
     "imageUrls": [
-      "https://cdn.kohere.app/listings/68e0000000000000000000a1/cover/3b8e1f04-7a5c-4d2e-b1f6-0c9a4e2d7f33.jpg",
-      "https://cdn.kohere.app/listings/68e0000000000000000000a1/cover/c47d5a90-2e6b-4f18-a3d7-8b0f1c6e9a44.jpg"
+      "https://cdn.kohere.app/listings/68e0000000000000000000a1/cover/3f9a1c2e-1d2b-4c3a-9f10-2b7c5d8e4a11.jpg",
+      "https://cdn.kohere.app/listings/68e0000000000000000000a1/cover/8d21b7f0-5c4d-4e6f-8a09-3c1d6e7f5b22.jpg"
     ],
     "favorited": false,
     "favoriteCount": 0,
@@ -397,7 +399,7 @@ Request Body:
 ```
 
 - 응답은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 v4 구조다. 등록 직후라 `favorited=false`, `favoriteCount=0`이다.
-- **`imageUrls`·`roomOffers[].roomImageUrls`는 확정 위치의 URL이며, `imageKeys`·`roomImageKeys`에 보낸 순서를 그대로 유지한다.** 업로드 때 받은 임시 URL과 다르다 — 이쪽이 만료 없이 계속 쓰는 주소다.
+- **`imageUrls`·`roomOffers[].roomImageUrls`는 확정 위치의 URL이며, `imageKeys`·`roomImageKeys`에 보낸 순서를 그대로 유지한다.** 파일명(`{uuid}.{ext}`)은 업로드 때 받은 키의 것을 그대로 쓰므로 두 값을 눈으로 대조할 수 있다. 업로드 때 받은 임시 URL과 다르다 — 이쪽이 만료 없이 계속 쓰는 주소다.
 - `status`는 `PENDING`이며 **코드 문자열 그대로** 내려간다. 임대인·관리자만 읽는 관리 상태라 카탈로그 번역 대상이 아니다.
 - **`location` 키는 응답에 없고 `nearbyUniversityCodes`는 빈 배열이다.** 좌표 파생이 미구현이라 등록 시점에 채우지 않는다.
 - `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로다.

@@ -45,6 +45,7 @@
 #   · MinIO 콘솔: http://localhost:9001 (minioadmin / minioadmin) — `uploads/`와 `listings/`를 눈으로 비교한다.
 #   · 사진 파일은 `http/images/`의 1x1 JPEG 4장을 쓴다(내용은 검사하지 않는다 — 형식과 크기만 본다).
 #   · 올린 뒤 **7일 안에** 등록해야 한다. 지나면 임시본이 만료돼 등록이 400 LISTING_IMAGE_KEY_NOT_FOUND다.
+#     단, 이 만료는 배포 환경 버킷의 라이프사이클 규칙(`uploads/` prefix)이라 **로컬 MinIO에는 없다** — 로컬 임시본은 직접 지우기 전까지 남는다.
 #   · MinIO를 띄우지 않으려면 `APP_IMAGES_ENABLED=false`로 앱을 기동한다. 업로드 없이 URL만 만드는 스텁이 붙어
 #     등록은 성공하지만 그 URL은 열리지 않는다.
 

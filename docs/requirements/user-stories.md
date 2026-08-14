@@ -1014,7 +1014,7 @@
 - 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(조회 계열도 뒤이어 v2로 이관됐다 — 위 **매물 API 버전 경계** 참고). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
 - 사진 관점: **두 단계**다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 먼저 `POST /api/v2/listings/images`로 사진을 **한 장씩** 올려 `{ key, url }`을 받고, 등록 요청(`application/json`)에 그 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)로 담는다. 요청을 파일마다 가르는 이유는 브라우저가 **요청 단위로만 진행률을 주기 때문**이다 — 한 요청에 몰아 실으면 파일별 진행률·속도를 만들 수 없고 실패한 파일만 다시 올릴 수도 없다. 사진과 방의 짝은 **JSON 구조**가 표현한다(배열 순서가 곧 표시 순서). 임시 사진은 `uploads/{landlordId}/{uuid}.{ext}`에 놓이고, 등록이 확정될 때 `listings/{listingId}/cover/…`·`listings/{listingId}/rooms/{roomOfferId}/…`로 복사된다 — 키가 식별자를 포함하므로 ObjectId를 저장 전에 발급한다. 응답의 URL은 **확정 위치 기준**이라 업로드 때 받은 미리보기 URL과 다르다.
 - 정합성 관점: 사진이 매물보다 **먼저** 저장되므로 폼을 버리면 임시 사진이 남는다 — `uploads/` prefix에만 **7일 만료**를 걸어 자동 정리한다. prefix가 갈리므로 만료 규칙이 살아 있는 매물 사진(`listings/`)을 건드릴 수 없다. 등록은 **키 검사 → 복사 → 문서 저장 → 임시본 삭제** 순이고, 복사나 저장이 실패하면 **복사본만** 걷어낸다 — 임시본은 남겨서 사용자가 그대로 다시 제출할 수 있게 한다.
-- 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `POST /api/v2/listings`를 **`hasRole("USER")` 명시 매처**로 둔다 — 매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰이 컨트롤러까지 도달한다(진단 v2가 `permitAll` 매처를 갖는 것과 달리 등록은 열지 않는다). 임대인 여부(`userType=LANDLORD`)는 매처로 표현할 수 없으므로 **서비스에서 재검사**해 세입자면 `403` + `FORBIDDEN`이다.
+- 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `POST /api/v2/listings`와 `POST /api/v2/listings/images`를 한 매처로 묶어 **`hasRole("USER")` 명시 매처**로 둔다 — 매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰이 컨트롤러까지 도달한다(진단 v2가 `permitAll` 매처를 갖는 것과 달리 등록은 열지 않는다). 임대인 여부(`userType=LANDLORD`)는 매처로 표현할 수 없으므로 **두 엔드포인트 모두 서비스에서 재검사**해 세입자면 `403` + `FORBIDDEN`이다.
 - 파생·미구현 관점: 폼 한 칸이 스키마 두 필드로 갈라지는 값은 서버가 파싱한다 — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. `min ≤ max`와 `usedFloorMax ≤ totalFloors`를 함께 검증한다. 주소는 `address.fullAddress`에 **입력값 그대로**(정규화 없음) 저장하고, `address.city`·`district`는 도로명 주소를 파싱해 `City`·`District` enum으로 채운다 — 파싱에 실패하면 `400` + `LISTING_INVALID_ADDRESS`다. **`location`(좌표)과 `nearbyUniversityCodes`는 이번 범위에서 채우지 않는다** — 좌표 없이 저장하고 `nearbyUniversityCodes`는 빈 배열이다(지오코딩은 후속, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) 후속 작업).
 - 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드에서 빈 파일은 `400` + `LISTING_IMAGE_REQUIRED`, 10MB 초과는 `413` + `LISTING_IMAGE_TOO_LARGE`, 허용 형식(JPEG·PNG·WebP·HEIC) 밖은 `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`이다. 등록에서 키 개수 위반은 `400` + `LISTING_IMAGE_REQUIRED`, 남의 키·없는 키·만료된 키는 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`(셋을 구분해 알려주면 남의 키 존재 여부가 새어 나간다)다.
 - 사업자등록번호 관점: 등록 API는 사업자등록번호를 **형식(숫자 10자리)만 검증해 원문 저장**하고 **진위를 자동 검증하지 않는다** — 무상태 검증 API `POST /api/v1/auth/business/verify`(US-1-8)를 **호출하지 않으며**, 진위 확인은 **관리자가 승인 심사에서 수동으로** 한다(해당 엔드포인트 자체는 임대인이 직접 확인용으로 호출하도록 그대로 둔다). 원문은 매물 문서에만 저장하고 `user.businessRegistrationNumberHash`에는 쓰지 않는다(US-1-9와 일관, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) §3, [ADR-0033](../adr/0033-business-registry-verification.md)의 매물 문서 한정 개정).
@@ -1061,7 +1061,7 @@
   When `POST /api/v2/listings/images`에 그 파일 하나만 실어 호출하면
   Then `201 Created`와 함께 `key`(`uploads/{내 landlordId}/{uuid}.{ext}` 형태)·`url`을 반환하고, 그 URL로 사진이 보인다. 매물은 아직 만들어지지 않는다
 - 시나리오: 업로드 검증 실패(빈 파일·크기·형식)
-  Given `file` part가 없거나 비었거나, 10MB를 넘거나, 형식이 JPEG·PNG·WebP·HEIC가 아니고
+  Given `file` part가 비었거나, 10MB를 넘거나, 형식이 JPEG·PNG·WebP·HEIC가 아니고(part 이름이 틀려 `file`이 아예 없으면 `400` + `MALFORMED_REQUEST`다)
   When `POST /api/v2/listings/images`를 호출하면
   Then 각각 `400` + `LISTING_IMAGE_REQUIRED`, `413` + `LISTING_IMAGE_TOO_LARGE`, `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`을 반환하고 **저장소에 아무것도 올라가지 않는다**(검증이 업로드보다 앞선다)
 - 시나리오: 올린 키로 등록하면 사진이 확정 위치로 옮겨 간다
@@ -1071,7 +1071,7 @@
 - 시나리오: 사진 키 개수 위반
   Given `imageKeys`가 1~5개가 아니거나 어떤 방의 `roomImageKeys`가 2~5개가 아니고
   When `POST /api/v2/listings`를 호출하면
-  Then `400 Bad Request`, `error.code=LISTING_IMAGE_REQUIRED`를 반환하고 매물을 생성하지 않는다
+  Then `400 Bad Request`, `error.code=LISTING_IMAGE_REQUIRED`를 반환하고 매물을 생성하지 않는다(지점 6장 이상, 방 1장이거나 6장 이상). 다만 배열이 아예 비었거나 누락된 경우는 본문 검증(`@NotEmpty`)이 먼저 걸려 `400` + `INVALID_INPUT`이고 위반 필드가 `errors[]`에 실린다
 - 시나리오: 남의 키·없는 키·만료된 키
   Given 등록 요청의 사진 키가 다른 임대인의 `uploads/…`를 가리키거나, 존재하지 않거나, 올린 지 7일이 지났고
   When `POST /api/v2/listings`를 호출하면
@@ -1079,7 +1079,7 @@
 - 시나리오: 저장 실패 시 복사본만 되돌리고 임시본은 남긴다
   Given 사진 복사는 성공했지만 매물 문서 저장이 실패했고
   When 그 요청이 끝나면
-  Then 매물은 생성되지 않고 `listings/` 아래 복사본도 남지 않지만, **`uploads/`의 임시본은 그대로 남아** 사용자가 같은 키로 다시 제출할 수 있다. 복사 자체가 실패한 경우에는 `502` + `UPSTREAM_ERROR`다
+  Then 매물은 생성되지 않고 `listings/` 아래 복사본도 남지 않지만, **`uploads/`의 임시본은 그대로 남아** 사용자가 같은 키로 다시 제출할 수 있다. 복사가 원본을 찾지 못해 실패하면 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`이고, 그 밖의 저장소 실패만 `502` + `UPSTREAM_ERROR`다
 - 시나리오: 등록하지 않은 사진은 7일 뒤 사라진다
   Given 임대인이 사진만 올리고 등록을 끝내지 않았고
   When 7일이 지나면
@@ -1090,8 +1090,8 @@
   Then 서버는 외부 검증 API(`POST /api/v1/auth/business/verify`, US-1-8)를 **호출하지 않고** `201 Created`로 매물을 `PENDING`으로 저장하며, 원문을 매물 문서에 보관하되 응답에는 포함하지 않는다. 진위는 관리자가 승인 심사에서 수동으로 확인한다. 형식 자체가 어긋나면(자릿수·숫자 아님) `400` + `INVALID_INPUT`이다
 - 시나리오: 인증·권한(임대인이 아닌 사용자)
   Given 온보딩을 마친(`ACTIVE`) 세입자(`userType=TENANT`)가 정식 토큰으로
-  When `POST /api/v2/listings`를 호출하면
-  Then `403 Forbidden`, `error.code=FORBIDDEN`을 반환하고 매물을 생성하지 않는다(역할 검사는 SecurityConfig 매처가 아니라 서비스에서 수행한다)
+  When `POST /api/v2/listings`나 `POST /api/v2/listings/images`를 호출하면
+  Then `403 Forbidden`, `error.code=FORBIDDEN`을 반환하고 매물도 임시 사진도 만들어지지 않는다(역할 검사는 SecurityConfig 매처가 아니라 서비스에서 수행한다)
 - 시나리오: 인증·권한(온보딩 미완료·토큰 없음/만료)
   Given 온보딩 스코프(`PENDING`·`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰이거나 `Authorization` 헤더가 없거나 토큰이 위조·만료되었고
   When `POST /api/v2/listings`를 호출하면

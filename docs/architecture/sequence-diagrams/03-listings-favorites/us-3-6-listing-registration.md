@@ -20,20 +20,24 @@ sequenceDiagram
         U->>C: 사진 선택 / 드래그
         C->>SEC: POST /api/v2/listings/images (multipart, file 1개)<br/>Authorization: Bearer 정식 토큰
         SEC->>LIST: 인증된 요청 전달 (userId)
-        LIST->>USER: getUserType(userId)
-        USER-->>LIST: userType
 
-        alt 임대인 아님 (userType=TENANT)
-            LIST-->>C: 403 FORBIDDEN
-        else 형식·크기 위반
+        alt 형식·크기 위반
             Note over LIST: 허용 형식 JPEG · PNG · WebP · HEIC / 장당 10MB / 빈 파일 불가
             LIST-->>C: 400 LISTING_IMAGE_REQUIRED(빈 파일)<br/>413 LISTING_IMAGE_TOO_LARGE<br/>415 LISTING_IMAGE_UNSUPPORTED_TYPE
-            Note over U,DB: ↑ 검증이 업로드보다 앞선다 — 저장소에 아무것도 올라가지 않는다
-        else 통과
-            LIST->>S3: PutObject uploads/{landlordId}/{uuid}.{ext}
-            S3-->>LIST: 저장 완료
-            LIST-->>C: 201 { key, url }
-            C-->>U: 진행률 100% · 미리보기 표시
+            Note over U,DB: ↑ 형식·크기가 가장 앞이다 — user 모듈도 저장소도 부르지 않는다
+        else 형식·크기 통과
+            LIST->>USER: getUserType(userId)
+            USER-->>LIST: userType
+
+            alt 임대인 아님 (userType=TENANT)
+                LIST-->>C: 403 FORBIDDEN
+                Note over U,DB: ↑ 파일이 멀쩡해도 세입자 토큰은 여기서 거절된다
+            else 임대인 (userType=LANDLORD)
+                LIST->>S3: PutObject uploads/{landlordId}/{uuid}.{ext}
+                S3-->>LIST: 저장 완료
+                LIST-->>C: 201 { key, url }
+                C-->>U: 진행률 100% · 미리보기 표시
+            end
         end
     end
 
@@ -69,7 +73,7 @@ sequenceDiagram
                 Note over LIST: 확정 키가 식별자를 포함하므로 저장 전에 발급한다<br/>listingId · roomOffers[].roomOfferId
                 LIST->>S3: CopyObject × N<br/>uploads/… → listings/{listingId}/cover/… · /rooms/{roomOfferId}/…
 
-                alt 원본 없음 (오타 · 7일 만료 · 남의 키)
+                alt 원본 없음 (오타 · 7일 만료)
                     S3-->>LIST: NoSuchKey
                     LIST->>S3: DeleteObject × 이미 복사한 분
                     LIST-->>C: 400 LISTING_IMAGE_KEY_NOT_FOUND
@@ -119,7 +123,7 @@ sequenceDiagram
 - **서버가 채우는 값은 요청 본문에 없다**: `_id`·`roomOffers[].roomOfferId`(저장 어댑터가 ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). 등록 직후 상태가 `PENDING`이므로 목록·지도·상세(`PUBLISHED`만 조회)에는 아직 나오지 않는다.
 - **폼 1칸이 스키마 2필드로 갈라지는 입력은 서버가 파싱한다** — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. 형식이 어긋나면 `400 INVALID_INPUT`이고, `min ≤ max`와 `usedFloorMax ≤ totalFloors`는 `ListingValidator.validateForSave`가 저장 직전에 다시 확인한다.
 - **주소는 입력값을 정규화하지 않는다** — `address.fullAddress`는 받은 그대로 저장하고, 도로명 주소를 파싱해 `address.city`(`City`)·`district`(`District`) enum만 파생한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며 이는 **좌표와 무관한 실패**다. **`location`(좌표)과 `nearbyUniversityCodes`는 이번 범위에서 미구현**이라 좌표 없이·빈 배열로 저장한다([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md) 후속 작업).
-- **코드 필드는 `listingCatalog` 대조로 검증한다** — 요청의 각 코드가 `(category, code)`로 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../../../api/error-response-guide.md); 카탈로그 19개 카테고리는 [ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)·[ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md)). 구조 검증은 `roomOffers` 최소 1개이며, **문자열 길이 제한은 두지 않는다**(정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드 API의 셋(`LISTING_IMAGE_REQUIRED`·`LISTING_IMAGE_TOO_LARGE`·`LISTING_IMAGE_UNSUPPORTED_TYPE`)과 등록의 `LISTING_IMAGE_KEY_NOT_FOUND`다. 검증 실패 분기에는 `listings` 저장도 S3 복사도 없다.
+- **코드 필드는 `listingCatalog` 대조로 검증한다** — 요청의 각 코드가 `(category, code)`로 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../../../api/error-response-guide.md); 카탈로그 19개 카테고리는 [ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)·[ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md)). 구조 검증은 `roomOffers` 최소 1개이며, **문자열 길이 제한은 두지 않는다**(정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드 API가 형식·크기로 `LISTING_IMAGE_TOO_LARGE`·`LISTING_IMAGE_UNSUPPORTED_TYPE`을, 등록이 키로 `LISTING_IMAGE_KEY_NOT_FOUND`를 쓰고, 장수 규칙인 `LISTING_IMAGE_REQUIRED`는 두 곳이 함께 쓴다(업로드는 빈 파일, 등록은 `imageKeys` 1~5·방마다 `roomImageKeys` 2~5 위반). 검증 실패 분기에는 `listings` 저장도 S3 복사도 없다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다** — 형식만 확인하고 원문을 매물 문서에 저장한다([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md) §3). `auth`의 무상태 검증 `POST /api/v1/auth/business/verify`([US-1-8](../01-auth-onboarding/us-1-8-business-verification.md))를 **호출하지 않으며**, 진위 확인은 관리자가 승인 심사에서 수동으로 한다(엔드포인트 자체는 그대로 둔다).
 - **응답 노출 범위는 상세 조회(US-3-4)와 같다** — 매물별 담당 연락처 `contact`(담당자명·전화·문자)는 임대인 개인 연락처와 별개 값이라 **세입자에게 공개**하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에서 제외한다. `status`는 카탈로그 번역 대상이 아니므로 **코드 문자열 그대로** 내려간다.
 - **후속(이번 범위 아님)**: 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`, 승인 조건에 `location` 보유 포함)·임대인 매물 수정·지오코딩으로 `location`·`nearbyUniversityCodes` 채우기·재고 관리.
