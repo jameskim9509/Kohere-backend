@@ -17,7 +17,7 @@ sequenceDiagram
     SEC->>DIAG: 인증된 요청 전달 (userId)
     DIAG->>DB: 진행 중 진단(IN_PROGRESS) 조회 (userId)
     DB-->>DIAG: 저장된 단계별 답
-    Note over DIAG: 저장된 답 재검증<br/>(region 1택, purpose 1택,<br/>STUDY면 university 필수·NON_STUDY면 district 필수<br/>(목적에 맞는 하나만, 위반=INVALID_INPUT),<br/>conditions(④ 사용자 선택) 최대 3개<br/>(⑥ arcStatus=NO_ARC에서 파생한 NO_ARC 조건은 이 계산에서 제외),<br/>monthlyRentMin·monthlyRentMax 각 0 이상 정수 AND monthlyRentMin ≤ monthlyRentMax)
+    Note over DIAG: 저장된 답 재검증<br/>(region 1택, purpose 1택,<br/>STUDY면 university 필수·NON_STUDY면 district 필수<br/>(목적에 맞는 하나만, 위반=INVALID_INPUT),<br/>conditions(④ 사용자 선택) 최대 3개,<br/>monthlyRentMin·monthlyRentMax 각 0 이상 정수 AND monthlyRentMin ≤ monthlyRentMax)
     alt 검증 통과
         Note over DIAG: enum 정규화·중복 제거 후<br/>status IN_PROGRESS → COMPLETED 확정
         DIAG->>DB: 진단 상태 COMPLETED로 전이 저장
@@ -36,5 +36,5 @@ sequenceDiagram
 - 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 diagnosis 모듈로 전달하면, diagnosis 모듈이 진행 중 진단을 조회해 저장된 답을 재검증한다.
 - 입국 목적별 대학·지역 선택은 조건부 필수다 — `STUDY`면 `university`, `NON_STUDY`면 `district`가 채워져야 하며 목적에 맞는 하나만 채워진다(`university`·`district` 두 필드 분리, 값·조건부 필수 규칙은 02 스펙 ③ 참조).
 - 검증 통과 시 diagnosis 모듈이 진단 상태를 `IN_PROGRESS` → `COMPLETED`로 전이해 MongoDB에 확정 저장하고 `201 Created` + `Location` 헤더와 `diagnosisId`·`submittedAt`을 반환한다. 진단 생성(`COMPLETED`)은 이 제출 시점이며, 재진단은 새 진행 중 진단을 시작한다.
-- ④ 조건 4개 이상(⑥ arcStatus=NO_ARC에서 파생한 NO_ARC는 이 계산에서 제외)·월세 음수(`0 이상이어야 합니다.`)·`monthlyRentMin`>`monthlyRentMax`(`monthlyRentMin은 monthlyRentMax 이하여야 합니다.`)·필수 단계 미완료·목적별 대학/지역 누락 등은 공통 `400 INVALID_INPUT` + `errors[]`로 응답한다(진단 도메인 별도 코드 없음).
+- ④ 조건 4개 이상·월세 음수(`0 이상이어야 합니다.`)·`monthlyRentMin`>`monthlyRentMax`(`monthlyRentMin은 monthlyRentMax 이하여야 합니다.`)·필수 단계 미완료·목적별 대학/지역 누락 등은 공통 `400 INVALID_INPUT` + `errors[]`로 응답한다(진단 도메인 별도 코드 없음).
 - **이 흐름은 회원 전용이다**(#181): 신규 `permitAll` 매처의 대상은 `/api/v2/diagnoses/**` 하나이고 **`/api/v1/diagnoses/**`에는 매처를 추가하지 않으므로**, 이 확정 요청은 #181 이후에도 토큰이 필수다(토큰 부재/위조 `401 UNAUTHENTICATED`·만료 `401 TOKEN_EXPIRED`). 따라서 위 다이어그램에 게스트 분기가 없다 — 비회원 진단의 정본 경로는 v2 서버 주도 흐름([us-2-7](us-2-7-v2-server-driven-flow.md))이며, 거기서는 6단계 완료 시 서버가 **자동 확정**하므로 게스트가 이 엔드포인트를 타는 일 자체가 없다(게스트 세션 키 발급 지점도 `POST /api/v2/diagnoses/start` 하나뿐이다).

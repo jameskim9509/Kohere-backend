@@ -42,6 +42,16 @@ public final class BookingDocsFields {
 
   private BookingDocsFields() {}
 
+  /**
+   * 신고 사유 카탈로그({@code booking_report_reasons})의 현재 활성 code — enum이 아니라 <b>DB 행</b>이라 배포 없이 늘어난다
+   * (V17 시드 6종). 그래서 {@code enumField}가 아니라 {@code codeField}로 값을 직접 나열한다. 값이 늘어날 수 있다는 사정은 서버 쪽
+   * 이야기라 description에 적지 않고, 대신 사유 목록 API를 쓰라고만 안내한다.
+   *
+   * <p>§6 신고 접수·§7 사유 목록이 공유하며, {@code BookingManagementDocsTest}의 항목 수 단정에서도 쓴다.
+   */
+  public static final List<String> REPORT_REASON_CODES =
+      List.of("SPAM", "ABUSE", "SEXUAL_CONTENT", "EXTERNAL_CONTACT", "FALSE_INFO", "ETC");
+
   // ── §1 예약 생성 — POST /api/v1/listings/{listingId}/bookings ──────────────
 
   public static final String CREATE_SUMMARY = "매물 예약 신청";
@@ -387,6 +397,7 @@ public final class BookingDocsFields {
       - **다건 허용** — 동일 신고자가 동일 예약을 여러 번 신고할 수 있다(409가 없다).
       - **삭제·차단 상태와 무관하다** — 이미 삭제했거나 상대를 차단한 예약도 신고할 수 있다. 그래서 같은 예약이 `GET /api/v1/bookings/{bookingId}`에서는 404인데 여기서는 201일 수 있다.
 
+
       **응답 주의사항**
 
       - 응답에 신고자 식별자와 `detail` 원문은 노출하지 않는다. 상태(`status`) 필드도 없고, 접수한 신고를 취소·수정하는 엔드포인트도 없다 — 한 번 보내면 되돌릴 수 없다.
@@ -460,7 +471,7 @@ public final class BookingDocsFields {
 
       - 지원 언어는 `en`·`ko`·`ja` 3종이다(임대인은 `ko` 고정). 반환되는 **사유 집합과 순서는 언어와 무관하게 같고**, 요청 언어에 라벨이 없는 사유만 `en` 라벨로 내려온다.
       - **정렬은 서버가 정한 순서로 고정**이며 클라이언트는 받은 순서를 그대로 노출한다.
-      - **사유는 배포 없이 늘어날 수 있다.** 아래 `code` 목록은 현재 시드값 스냅샷일 뿐이니 클라이언트에 하드코딩하지 말고 이 엔드포인트 응답으로 선택지를 구성한다.
+      - 신고 사유 선택지는 **이 엔드포인트의 응답으로 구성한다.**
 
       **에러 코드**
 
@@ -487,19 +498,8 @@ public final class BookingDocsFields {
 
   // ── 두 오퍼레이션 이상이 공유하는 필드 문구 ────────────────────────────────
 
-  /**
-   * 신고 사유 카탈로그({@code booking_report_reasons})의 현재 활성 code — enum이 아니라 <b>DB 행</b>이라 배포 없이 늘어난다
-   * (V17 시드 6종). 그래서 {@code enumField}가 아니라 {@code codeField}로 값을 직접 나열하고, description에 하드코딩 금지 안내를
-   * 단다.
-   *
-   * <p>§6 신고 접수·§7 사유 목록이 공유하며, {@code BookingManagementDocsTest}의 항목 수 단정에서도 쓴다.
-   */
-  public static final List<String> REPORT_REASON_CODES =
-      List.of("SPAM", "ABUSE", "SEXUAL_CONTENT", "EXTERNAL_CONTACT", "FALSE_INFO", "ETC");
-
   private static final String REASON_CODE_DESCRIPTION =
-      "신고 사유 코드 — 언어 무관 불변 식별자. 서버가 관리하는 활성 사유라"
-          + " **배포 없이 늘어날 수 있으니 하드코딩하지 말고 `GET /api/v1/bookings/report-reasons`의 응답을 쓴다**";
+      "신고 사유 코드 — 언어 무관 불변 식별자." + " **`GET /api/v1/bookings/report-reasons`의 응답을 쓴다.**";
 
   private static final String BOOKING_STATUS_DESCRIPTION =
       "예약 상태 — 신청 직후 `REQUESTED` 고정. MVP에서는 `REQUESTED`만 반환된다(수락·거절·취소 엔드포인트 미구현이라 나머지 값으로 전이할 경로가 없다)";

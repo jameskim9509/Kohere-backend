@@ -5,7 +5,7 @@
 | 번호 | ADR-0013 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-06-17 |
-| 관련 문서 | [ADR-0004](./0004-api-response-envelope.md), [error-response-guide](../api/error-response-guide.md), [code-style §5](../convention/code-style.md) |
+| 관련 문서 | [ADR-0004](./0004-api-response-envelope.md), [ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md), [error-response-guide](../api/error-response-guide.md), [code-style §5](../convention/code-style.md) |
 
 ## Status
 
@@ -24,7 +24,7 @@ Accepted
 
 1. 컨트롤러는 **도메인 응답 DTO만 반환**하고 래핑 코드를 두지 않는다.
 2. **제외 규칙**: (a) 이미 `ApiResponse`면 재래핑하지 않는다, (b) `204 No Content` 등 본문 없는 응답, (c) `byte[]`/`Resource`/`String` 등 비-JSON 본문, (d) Spring REST Docs·Actuator·에러 응답(전역 핸들러 소관)은 제외.
-3. **적용 범위**: `supports()`에서 `/api/v1` 컨트롤러(패키지/애너테이션 기준)로 한정한다.
+3. **적용 범위**: **패키지와 반환 타입으로 정하고, 경로 버전은 보지 않는다.** `@ControllerAdvice(basePackages = "com.kohere")`로 우리 컨트롤러만 대상으로 잡아 Actuator·문서 UI 같은 프레임워크 엔드포인트를 걸러내고, 그 안에서 `supports()`는 **반환 타입**만 판정한다 — 이미 `ApiResponse`를 반환하는 핸들러 제외(위 (a)). 나머지 제외 규칙 (b)·(c)는 `beforeBodyWrite`가 본문을 보고 거른다. 따라서 `/api/v1`·`/api/v2`가 **같은 규칙으로 래핑되고**, 버전을 신설해도 [ADR-0004](./0004-api-response-envelope.md)의 봉투가 자동으로 따라온다 — 새 버전을 advice에 등록하는 작업은 없다.
 
 ## Alternatives
 
@@ -45,3 +45,4 @@ Accepted
 
 - 컨트롤러 반환값이 래퍼로 감싸져 나오는지 통합 테스트.
 - 204·바이너리·이미 래핑된 응답이 **재래핑되지 않는지** 확인.
+- `/api/v1`과 `/api/v2` 컨트롤러 응답이 **같은 봉투**로 나오는지 확인 — 적용 범위가 경로 버전과 무관하다는 것이 이 ADR의 전제다.

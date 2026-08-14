@@ -14,11 +14,5 @@ public enum DiagnosisCondition {
   PRIVATE_BATH,
   ENGLISH_OK,
   ADDRESS_REGISTRATION,
-  NO_MAINT_FEE,
-  NO_ARC;
-
-  /** ④에서 사용자가 직접 선택할 수 있는 주거 조건인지(⑥에서 파생하는 {@code NO_ARC}는 제외). */
-  public boolean userSelectable() {
-    return this != NO_ARC;
-  }
+  NO_MAINT_FEE
 }

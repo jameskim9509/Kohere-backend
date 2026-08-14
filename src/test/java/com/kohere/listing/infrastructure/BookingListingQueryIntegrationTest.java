@@ -5,13 +5,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
+import com.kohere.listing.domain.ArcRequirement;
+import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.ContractDifficulty;
+import com.kohere.listing.domain.District;
+import com.kohere.listing.domain.KitchenFacility;
+import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.LivingAmenity;
 import com.kohere.listing.domain.LocalizedText;
+import com.kohere.listing.domain.Nationality;
+import com.kohere.listing.domain.NearbyFacility;
+import com.kohere.listing.domain.ProvidedSupply;
+import com.kohere.listing.domain.SecurityFeature;
+import com.kohere.listing.domain.SupportedLanguage;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -42,7 +53,6 @@ class BookingListingQueryIntegrationTest {
   private static final String LISTING_ID = "6858e2000000000000000002";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000102";
   private static final String LISTINGS_COLLECTION = "listings";
-  private static final LocalDate NEXT_AVAILABLE_FROM = LocalDate.of(2026, 8, 1);
 
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
@@ -56,7 +66,7 @@ class BookingListingQueryIntegrationTest {
   }
 
   @Test
-  @DisplayName("공개 매물의 활성 방 상품을 요약·가격·입주 가능일로 매핑한다")
+  @DisplayName("공개 매물의 활성 방 상품을 요약·가격으로 매핑한다")
   void findsPublishedActiveRoomOffer() {
     listingRepository.save(publishedListing());
 
@@ -73,7 +83,7 @@ class BookingListingQueryIntegrationTest {
     assertThat(view.roomOfferName()).isEqualTo("스탠다드 1인실");
     assertThat(view.deposit()).isEqualTo(500000);
     assertThat(view.monthlyRent()).isEqualTo(550000);
-    assertThat(view.nextAvailableFrom()).isEqualTo(NEXT_AVAILABLE_FROM);
+    assertThat(view.landlordId()).isEqualTo(1L);
   }
 
   @Test
@@ -108,8 +118,7 @@ class BookingListingQueryIntegrationTest {
                         "스탠다드 1인실",
                         Listing.RoomOfferStatus.INACTIVE,
                         500000,
-                        550000,
-                        NEXT_AVAILABLE_FROM)))
+                        550000)))
             .build());
 
     assertThat(bookingListingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
@@ -139,53 +148,53 @@ class BookingListingQueryIntegrationTest {
   private static Listing.ListingBuilder listingBuilder() {
     return Listing.builder()
         .id(LISTING_ID)
-        .schemaVersion(3)
+        .schemaVersion(4)
         .landlordId(1L)
+        .contact(new Listing.Contact("김담당", "+82) 10-1111-2222", "+82) 10-1111-2223"))
+        .businessRegistrationNumber("1112233344")
+        .blogUrl(null)
+        .ageMin(20)
+        .ageMax(35)
         .title(LocalizedText.same("테스트 고시원"))
         .type(ListingType.GOSHIWON)
-        .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
-        .refundPolicy(
-            new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS,
-                LocalizedText.same("입주 7일 전 취소 시 전액 환불")))
-        .contract(new Listing.Contract(2, 6))
+        .status(Listing.ListingStatus.PUBLISHED)
+        .rejectionReason(null)
         .genderPolicy(Listing.GenderPolicy.ANY)
-        .location(new Listing.GeoPoint(126.951422, 37.459471))
-        .address(
-            new Listing.Address("SEOUL", "GWANAK_GU", LocalizedText.same("서울특별시 관악구 테스트로 1"), null))
-        .nearestTransit(
-            new Listing.NearestTransit(
-                Listing.TransitType.SUBWAY,
-                LocalizedText.same("서울대입구역"),
-                5,
-                LocalizedText.same("편의점")))
+        .languagesSupported(Set.of(SupportedLanguage.ENGLISH))
+        .favoriteCount(0)
+        .imageUrls(List.of("https://cdn.kohere.com/listings/thumb.jpg"))
         .nearbyUniversityCodes(Set.of("SNU"))
+        .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
+        .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
+        .address(
+            new Listing.Address(
+                City.SEOUL, District.GWANAK_GU, LocalizedText.same("서울특별시 관악구 테스트로 1"), null))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
-        .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
+        .description(LocalizedText.same("테스트 설명"))
+        .extraNotes(LocalizedText.same("테스트 주의사항"))
         .facilities(
             new Listing.Facilities(
                 Set.of(Listing.HeatingSystem.CENTRAL),
-                Set.of("공용 냉장고"),
-                Set.of("COIN_LAUNDRY"),
-                Set.of("WIFI"),
-                Set.of("CCTV"),
-                List.of(new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 2)),
-                Set.of("BEDDING")))
+                Set.of(KitchenFacility.SHARED_REFRIGERATOR),
+                Set.of(LaundryFacility.WASHER),
+                Set.of(LivingAmenity.WIFI),
+                Set.of(SecurityFeature.CCTV),
+                Set.of(Listing.CommonSpaceType.SHARED_TOILET),
+                Set.of(ProvidedSupply.BEDDING)))
+        .location(new Listing.GeoPoint(126.951422, 37.459471))
+        .nearestTransit(
+            new Listing.NearestTransit(Listing.TransitType.SUBWAY, LocalizedText.same("서울대입구역"), 5))
+        .nearbyFacilities(Set.of(NearbyFacility.CONVENIENCE_STORE))
+        .arcRequired(ArcRequirement.NOT_REQUIRED)
+        .refundPolicy(LocalizedText.same("입주 7일 전 취소 시 전액 환불"))
         .roomOffers(
             List.of(
                 roomOffer(
-                    ROOM_OFFER_ID,
-                    "스탠다드 1인실",
-                    Listing.RoomOfferStatus.ACTIVE,
-                    500000,
-                    550000,
-                    NEXT_AVAILABLE_FROM)))
-        .descriptions(new Listing.Descriptions("테스트 설명", "Test description", "테스트"))
-        .imageUrls(List.of("https://cdn.kohere.com/listings/thumb.jpg"))
-        .favoriteCount(0)
-        .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
-        .updatedAt(Instant.parse("2026-06-24T00:00:00Z"));
+                    ROOM_OFFER_ID, "스탠다드 1인실", Listing.RoomOfferStatus.ACTIVE, 500000, 550000)))
+        .preferredNationalities(Set.of(Nationality.JAPAN))
+        .contractDifficulties(Set.of(ContractDifficulty.LANGUAGE))
+        .serviceFeedback(null);
   }
 
   private static Listing.RoomOffer roomOffer(
@@ -193,14 +202,13 @@ class BookingListingQueryIntegrationTest {
       String name,
       Listing.RoomOfferStatus status,
       int deposit,
-      int monthlyRent,
-      LocalDate nextAvailableFrom) {
+      int monthlyRent) {
     return new Listing.RoomOffer(
         roomOfferId,
         LocalizedText.same(name),
         status,
+        new Listing.Contract(2, 6),
         new Listing.Pricing(monthlyRent, deposit, 0, Listing.Currency.KRW),
-        new Listing.Inventory(10, 3, nextAvailableFrom),
         Set.of(ConditionTag.FEMALE_ONLY),
         List.of());
   }

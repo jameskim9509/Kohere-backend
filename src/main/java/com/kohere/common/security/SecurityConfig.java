@@ -54,8 +54,14 @@ public class SecurityConfig {
                     .permitAll()
                     // 매물 탐색은 가입 전에도 사용할 수 있는 공개 기능이다. HTTP method를 GET으로 한정하고 한 단계
                     // 하위 경로만 열어 /{listingId}/favorite·/{listingId}/bookings 같은 사용자 액션은 공개하지 않는다.
-                    // /listings/*는 현재 map·search·places·{listingId} 상세 조회를 포함한다.
+                    // /listings/*는 v1이 map·search·places·{listingId}를, v2가 map·search·{listingId}를
+                    // 덮는다
+                    // (places는 v2에 없다 — 매물 데이터를 쓰지 않아 v1에 남겼다).
+                    // v1은 빈 결과만 주지만(ADR-0040) 매처는 남긴다 — 401로 바뀌면 구버전 앱이 빈 화면 대신
+                    // 로그인 만료로 오인한다. 장소 후보 검색(/listings/places)은 v1에서 계속 동작한다.
                     .requestMatchers(HttpMethod.GET, "/api/v1/listings", "/api/v1/listings/*")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v2/listings", "/api/v2/listings/*")
                     .permitAll()
                     // (2) 온보딩 스코프 이상 허용 — 약관 동의·연락처 인증·온보딩 흐름(PENDING/TERMS_AGREED 토큰 허용).
                     // 세입자 이메일 인증(/auth/email/**)은 #192에서 온보딩 흐름에서 제외돼 정식(ACTIVE) 전용으로 반전 → (3)으로
@@ -82,16 +88,27 @@ public class SecurityConfig {
                         "/api/v1/auth/business/verify",
                         "/api/v1/auth/logout")
                     .hasRole("USER")
+                    // 매물 등록 — ACTIVE(ROLE_USER)만. LANDLORD 여부는 서비스에서 재검사한다(403).
+                    .requestMatchers(HttpMethod.POST, "/api/v2/listings", "/api/v2/listings/images")
+                    .hasRole("USER")
                     // 찜과 최근 본 매물은 사용자별 데이터를 읽고 변경하므로 ACTIVE(ROLE_USER) 사용자만 허용한다.
                     // 명시하지 않고 anyRequest().authenticated()에 맡기면 ROLE_ONBOARDING 토큰도 통과할 수 있다.
+                    // v1은 빈 결과·404만 주지만(ADR-0040) 인가는 그대로 둔다 — 빈 목록과 비로그인은 구버전 앱에서
+                    // 다르게 처리된다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/favorite")
                     .hasRole("USER")
                     .requestMatchers(HttpMethod.DELETE, "/api/v1/listings/*/favorite")
                     .hasRole("USER")
+                    .requestMatchers(HttpMethod.POST, "/api/v2/listings/*/favorite")
+                    .hasRole("USER")
+                    .requestMatchers(HttpMethod.DELETE, "/api/v2/listings/*/favorite")
+                    .hasRole("USER")
                     .requestMatchers(
                         HttpMethod.GET,
                         "/api/v1/users/me/favorites",
-                        "/api/v1/users/me/recent-listings")
+                        "/api/v1/users/me/recent-listings",
+                        "/api/v2/users/me/favorites",
+                        "/api/v2/users/me/recent-listings")
                     .hasRole("USER")
                     // 매물 예약(신청) — ACTIVE(ROLE_USER) 세입자만. TENANT 여부는 서비스에서 재검사한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/bookings")

@@ -5,6 +5,7 @@ import static org.springframework.restdocs.snippet.Attributes.key;
 
 import com.epages.restdocs.apispec.EnumFields;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
@@ -46,6 +47,16 @@ public final class ApiDocsFields {
   public static FieldDescriptor enumField(
       String path, Class<? extends Enum<?>> enumType, String description) {
     return new EnumFields(enumType).withPath(path).description(description);
+  }
+
+  /**
+   * enum 상수를 파라미터 설명에 끼워 넣을 한 줄 목록으로 만든다.
+   *
+   * <p>쿼리 파라미터는 REST Docs가 타입·enum을 스키마에 싣지 않아 설명 문자열이 값을 알리는 유일한 통로다. 손으로 나열하면 enum만 바뀌고 문서가 남으므로
+   * 여기서 뽑는다.
+   */
+  public static String codeList(Class<? extends Enum<?>> enumType) {
+    return String.join(", ", enumValues(enumType));
   }
 
   public static FieldDescriptor optEnumField(
@@ -91,6 +102,21 @@ public final class ApiDocsFields {
   public static FieldDescriptor optCodeArrayField(
       String path, List<String> allowedValues, String description) {
     return codeArrayField(path, allowedValues, description).optional();
+  }
+
+  /**
+   * 배열 원소가 enum 코드값인 경우. {@link #enumField}의 배열판이라 상수가 바뀌면 문서가 따라간다(드리프트 0).
+   *
+   * <p>{@link EnumFields}는 스칼라 경로만 다루므로 값을 직접 뽑아 {@link #codeArrayField}에 넘긴다. 값은 Jackson 기본 직렬화와
+   * 같은 {@code name()}이다 — 와이어 값이 상수명과 다르면 {@link #codeArrayField}로 직접 나열한다.
+   */
+  public static FieldDescriptor enumArrayField(
+      String path, Class<? extends Enum<?>> enumType, String description) {
+    return codeArrayField(path, enumValues(enumType), description);
+  }
+
+  private static List<String> enumValues(Class<? extends Enum<?>> enumType) {
+    return Arrays.stream(enumType.getEnumConstants()).map(Enum::name).toList();
   }
 
   /**

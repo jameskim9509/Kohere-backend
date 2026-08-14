@@ -2,6 +2,7 @@ package com.kohere.listing.infrastructure.persistence;
 
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
+import com.kohere.listing.domain.ArcRequirement;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingMapSearchResult;
@@ -34,6 +35,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class ListingRepositoryImpl implements ListingRepository {
+
+  /** 진단 ⑥ arcStatus의 ARC 미발급 답이다. 이 값일 때만 ARC 불요 매물로 좁힌다. */
+  private static final String NO_ARC_ANSWER = "NO_ARC";
+
+  /** 진단 ③ 지역구 선택지의 "그 외" 코드다. 특정 구가 아니라 아래 명시 5구의 여집합을 뜻한다. */
+  private static final String DIAGNOSIS_ETC_DISTRICT = "ETC";
+
+  /** 진단이 명시적으로 제시하는 지역구다. {@code ETC}는 이 집합의 여집합으로 매칭한다. */
+  private static final List<String> DIAGNOSIS_DISTRICTS =
+      List.of("GURO_GU", "YEONGDEUNGPO_GU", "GEUMCHEON_GU", "GWANAK_GU", "DONGDAEMUN_GU");
 
   private static final int MAX_PAGE_SIZE = 100;
   private static final double EARTH_RADIUS_METERS = 6_371_000.0;
@@ -124,6 +135,7 @@ public class ListingRepositoryImpl implements ListingRepository {
       Set<ConditionTag> conditions,
       Set<String> universityCodes,
       String district,
+      String arcStatus,
       int page,
       int size,
       String sort) {
@@ -135,8 +147,9 @@ public class ListingRepositoryImpl implements ListingRepository {
     if (universityCodes != null && !universityCodes.isEmpty()) {
       rootCriteria.add(Criteria.where("nearbyUniversityCodes").in(universityCodes));
     }
-    if (district != null && !district.isBlank()) {
-      rootCriteria.add(Criteria.where("address.district").is(district));
+    addDistrictCriteria(rootCriteria, district);
+    if (NO_ARC_ANSWER.equals(arcStatus)) {
+      rootCriteria.add(Criteria.where("arcRequired").is(ArcRequirement.NOT_REQUIRED.name()));
     }
 
     List<Criteria> roomOfferCriteria = new ArrayList<>();
@@ -148,17 +161,11 @@ public class ListingRepositoryImpl implements ListingRepository {
       roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").lte(monthlyRentMax));
     }
     Set<ConditionTag> requestedConditions = conditions == null ? Set.of() : conditions;
-    if (requestedConditions.contains(ConditionTag.NO_ARC)) {
-      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(false));
-    }
 
     Set<ConditionTag> roomOfferConditions = roomOfferConditions(requestedConditions);
     if (!roomOfferConditions.isEmpty()) {
       roomOfferCriteria.add(
           Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
-      if (roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)) {
-        roomOfferCriteria.add(Criteria.where("inventory.availableCount").gt(0));
-      }
     }
     rootCriteria.add(
         Criteria.where("roomOffers")
@@ -166,6 +173,12 @@ public class ListingRepositoryImpl implements ListingRepository {
 
     Criteria criteria = new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
     return findPage(criteria, page, size, sortBy(sort));
+  }
+
+  /** 저장 전에 쓸 ObjectId를 미리 발급한다. 저장 시 발급하는 값과 같은 형식이라 이후 조회·매핑이 달라지지 않는다. */
+  @Override
+  public String nextIdentity() {
+    return new ObjectId().toHexString();
   }
 
   /** 도메인 모델을 Mongo Document로 변환해 저장한 뒤 다시 도메인 모델로 반환한다. */
@@ -254,9 +267,6 @@ public class ListingRepositoryImpl implements ListingRepository {
       rootCriteria.add(
           Criteria.where("type").in(condition.types().stream().map(Enum::name).toList()));
     }
-    if (condition.requiresNoArc()) {
-      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(false));
-    }
 
     rootCriteria.add(Criteria.where("roomOffers").elemMatch(roomOfferCriteria(condition)));
     return new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
@@ -286,11 +296,9 @@ public class ListingRepositoryImpl implements ListingRepository {
 
     Set<ConditionTag> roomOfferConditions = condition.roomOfferConditions();
     if (!roomOfferConditions.isEmpty()) {
+      // v4에는 재고(inventory)가 없어 MOVE_IN_NOW도 다른 태그와 동일하게 filterTags 포함 여부로만 판정한다.
       criteria.add(
           Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
-      if (roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)) {
-        criteria.add(Criteria.where("inventory.availableCount").gt(0));
-      }
     }
     return new Criteria().andOperator(criteria.toArray(Criteria[]::new));
   }
@@ -386,19 +394,13 @@ public class ListingRepositoryImpl implements ListingRepository {
       return false;
     }
 
-    Set<ConditionTag> roomOfferConditions = condition.roomOfferConditions();
-    if (!roomOffer.filterTags().containsAll(roomOfferConditions)) {
-      return false;
-    }
-    return !roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)
-        || roomOffer.inventory().availableCount() > 0;
+    // v4에는 재고가 없어 MOVE_IN_NOW도 다른 태그와 동일하게 filterTags 포함 여부로만 판정한다.
+    return roomOffer.filterTags().containsAll(condition.roomOfferConditions());
   }
 
   /** 추천 조건에서 NO_ARC 같은 매물 정책 필터를 제외하고 roomOffer 태그 조건만 남긴다. */
   private static Set<ConditionTag> roomOfferConditions(Set<ConditionTag> conditions) {
-    return conditions.stream()
-        .filter(ConditionTag::storedInRoomOfferFilterTags)
-        .collect(Collectors.toUnmodifiableSet());
+    return conditions.stream().collect(Collectors.toUnmodifiableSet());
   }
 
   /** 가까운 순서 비교에만 쓰는 간단한 거리값이다. 실제 표시 거리는 application 계층에서 미터로 계산한다. */
@@ -482,5 +484,23 @@ public class ListingRepositoryImpl implements ListingRepository {
         .mapToInt(roomOffer -> roomOffer.pricing().deposit())
         .min()
         .orElseThrow();
+  }
+
+  /**
+   * 진단 지역구 답을 매물 {@code address.district} 조건으로 바꾼다.
+   *
+   * <p>진단 선택지는 명시 5구와 {@code ETC}("그 외")뿐이고 매물 카탈로그는 9구다. {@code ETC}는 특정 구가 아니라 <b>명시 5구의 여집합</b>을
+   * 뜻하므로 등가 비교가 아니라 {@code $nin}으로 매칭해야 한다. 등가 비교로 두면 {@code address.district}에 저장된 값 중 어느 것도 문자열
+   * {@code "ETC"}와 같지 않아 항상 0건이 된다.
+   */
+  private static void addDistrictCriteria(List<Criteria> rootCriteria, String district) {
+    if (district == null || district.isBlank()) {
+      return;
+    }
+    if (DIAGNOSIS_ETC_DISTRICT.equals(district)) {
+      rootCriteria.add(Criteria.where("address.district").nin(DIAGNOSIS_DISTRICTS));
+      return;
+    }
+    rootCriteria.add(Criteria.where("address.district").is(district));
   }
 }

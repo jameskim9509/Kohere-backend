@@ -54,7 +54,6 @@ import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
 import com.kohere.user.api.ApplicantProfileView;
 import com.kohere.user.api.UserAccountService;
-import java.time.LocalDate;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -134,7 +133,6 @@ class BookingDocsTest {
         "101호 원룸",
         5_000_000,
         500_000,
-        LocalDate.of(2026, 1, 1),
         LANDLORD_ID);
   }
 

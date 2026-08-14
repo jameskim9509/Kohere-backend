@@ -16,5 +16,41 @@
     "category": "LIVING_AMENITY",
     "code": "WIFI",
     "label": { "ko": "와이파이", "en": "Wi-Fi" }
+  },
+  {
+    "_id": "CITY:SEOUL",
+    "category": "CITY",
+    "code": "SEOUL",
+    "label": { "ko": "서울특별시", "en": "Seoul" }
+  },
+  {
+    "_id": "DISTRICT:GWANAK_GU",
+    "category": "DISTRICT",
+    "code": "GWANAK_GU",
+    "label": { "ko": "관악구", "en": "Gwanak-gu" }
+  },
+  {
+    "_id": "ARC_REQUIREMENT:NOT_REQUIRED",
+    "category": "ARC_REQUIREMENT",
+    "code": "NOT_REQUIRED",
+    "label": { "ko": "외국인 등록증 불필요", "en": "ARC Not Required" }
+  },
+  {
+    "_id": "SUPPORTED_LANGUAGE:ENGLISH",
+    "category": "SUPPORTED_LANGUAGE",
+    "code": "ENGLISH",
+    "label": { "ko": "영어", "en": "English" }
+  },
+  {
+    "_id": "NEARBY_FACILITY:CONVENIENCE_STORE",
+    "category": "NEARBY_FACILITY",
+    "code": "CONVENIENCE_STORE",
+    "label": { "ko": "편의점", "en": "Convenience Store" }
+  },
+  {
+    "_id": "UNIVERSITY:SNU",
+    "category": "UNIVERSITY",
+    "code": "SNU",
+    "label": { "ko": "서울대학교", "en": "Seoul National Univ." }
   }
 ]

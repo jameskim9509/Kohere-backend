@@ -1,0 +1,599 @@
+# Kohere — 매물 조회·찜·등록 로컬 수동 테스트 (`/api/v2` 정본 + `/api/v1` 종료 확인)
+# 스펙: docs/api/specs/03-listings-favorites.md · 유저스토리 US-3-1~US-3-6
+# 결정: ADR-0039(v4 스키마·등록 폼) · ADR-0040(조회 v2 이관 · v1 빈 결과 종료) · ADR-0041(사진 S3 업로드)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#   3) **시드 주입** — 아래 "시드" 절을 먼저 읽는다. 앱은 매물을 하나도 넣지 않는다.
+#   4) 1·2번 로그인부터 위에서 순서대로 "Send Request" 클릭 — 토큰은 이름붙은 응답으로 자동 전달된다.
+#
+# ─────────────────────────────── 시드 (필수) ───────────────────────────────
+# v4 개편에서 매물·카탈로그 시더를 **모두 제거**했다(ADR-0039 §4 — 마이그레이션은 스키마만 건드리고 시드는 직접 넣는다).
+# 그래서 앱을 띄우기만 하면 `listings`·`listingCatalog`가 비어 있고, 아래가 벌어진다:
+#   · 조회(3~) → v2도 빈 목록이라 v1 스텁(20~)과 구분이 안 된다.
+#   · 등록(13) → 코드 대조 상대가 없어 `400 INVALID_INPUT`으로 전부 거절된다.
+#
+# 저장소 루트의 시드 파일 2개를 넣는다(둘 다 git 추적 대상이 아니다):
+#   mongoimport --uri mongodb://localhost:27017/kohere --collection listingCatalog --jsonArray --file kohere.listingCatalog.seed.json
+#   mongoimport --uri mongodb://localhost:27017/kohere --collection listings       --jsonArray --file kohere.listings.seed.json
+#
+#   · **`--drop`을 붙이지 않는다.** `listings`를 drop하면 `ListingV4BaselineChangeUnit`이 건 `$jsonSchema`
+#     validator까지 함께 사라지고, Mongock은 이미 실행된 것으로 기록돼 있어 다시 만들어 주지 않는다.
+#     이미 지웠다면 `changelog` 컬렉션에서 해당 실행 기록을 지우고 앱을 재기동한다.
+#   · 다시 넣을 때는 `mongosh`에서 `db.listings.deleteMany({})`로 문서만 비우고 import한다.
+#   · 카탈로그 103건 / 매물 2건이 들어간다. MongoDB Compass의 "Import JSON"으로 넣어도 된다.
+#
+# 시드 매물 2건 (둘 다 `PUBLISHED` — 조회에 보인다)
+#   · 68e0000000000000000000a1  신림 스테이   GOSHIWON  서울 관악구  방 2개(38만·52만)
+#   · 68e0000000000000000000b1  홍대 코리빙 하우스  CO_LIVING  서울 마포구  방 1개(65만)
+#   소유 임대인은 각각 userId 11·12로 박혀 있다. 마스터 임대인(2번 로그인)은 다른 userId를 받으므로
+#   **이 두 매물의 소유자가 아니다** — 등록(13)으로 만든 매물만 마스터 임대인 소유다.
+#
+# 참고:
+#   - 응답 봉투는 `{ success, data, error }`라서 값 경로는 `response.body.$.data.*`다.
+#   - 장소 후보 검색(6)만 `/api/v1`이다. 네이버 지역 검색이라 매물 스키마와 무관해 v1에 남겼다.
+#   - 등록한 매물은 `status=PENDING`이라 **조회·검색·상세 어디에도 나오지 않는다**(14·15에서 확인).
+#
+# ─────────────────────────────── 사진 업로드 (12-a ~ 13) ───────────────────────────────
+# 사진은 **한 장씩** `POST /api/v2/listings/images`로 올린다(ADR-0041). 요청이 파일마다 갈려야 브라우저가
+# 파일별 진행률·전송 속도를 줄 수 있고, 실패한 파일만 다시 올릴 수 있다.
+#   ① 12-a~c로 사진 3장을 올려 각각 `{ key, url }`을 받는다 → `uploads/{landlordId}/{uuid}.jpg`
+#   ② 13번 등록이 그 key를 `imageKeys`·`roomOffers[].roomImageKeys`로 참조한다(REST Client가 자동으로 이어 준다)
+#   ③ 등록에 성공하면 서버가 `listings/{listingId}/...`로 옮기고 임시본을 지운다 — 응답 URL이 그 확정 주소다
+#
+#   · MinIO 콘솔: http://localhost:9001 (minioadmin / minioadmin) — `uploads/`와 `listings/`를 눈으로 비교한다.
+#   · 사진 파일은 `http/images/`의 1x1 JPEG 4장을 쓴다(내용은 검사하지 않는다 — 형식과 크기만 본다).
+#   · 올린 뒤 **7일 안에** 등록해야 한다. 지나면 임시본이 만료돼 등록이 400 LISTING_IMAGE_KEY_NOT_FOUND다.
+#     단, 이 만료는 배포 환경 버킷의 라이프사이클 규칙(`uploads/` prefix)이라 **로컬 MinIO에는 없다** — 로컬 임시본은 직접 지우기 전까지 남는다.
+#   · MinIO를 띄우지 않으려면 `APP_IMAGES_ENABLED=false`로 앱을 기동한다. 업로드 없이 URL만 만드는 스텁이 붙어
+#     등록은 성공하지만 그 URL은 열리지 않는다.
+
+@baseUrl = http://localhost:8080
+@secret = local-dev-test-login-secret
+
+# 시드 매물(신림 스테이). 다른 매물로 바꾸려면 3번 응답의 data.content[].listingId를 붙여넣는다.
+@listingId = 68e0000000000000000000a1
+
+# 시드 매물이 들어 있는 지도 범위(신림 일대). 홍대 매물(126.925, 37.553)은 이 범위 밖이다.
+@swLat = 37.4550
+@swLng = 126.9450
+@neLat = 37.4650
+@neLng = 126.9600
+
+### 0. 헬스 체크 (인증 불필요) — 200 UP이면 앱 + 인프라(MySQL·Redis·Mongo) 정상
+GET {{baseUrl}}/actuator/health
+
+### 1. 세입자(TENANT) 마스터 로그인 → 정식 토큰
+#    실제 소셜 로그인 없이 시드된 마스터 계정으로 받는다(자세한 원리는 test-master-login.http).
+# @name tenantLogin
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "master:tenant:{{secret}}"
+}
+
+### 2. 임대인(LANDLORD) 마스터 로그인 → 정식 토큰 (등록 13번에 필요)
+# @name landlordLogin
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "master:landlord:{{secret}}"
+}
+
+# ═══════════════════════ /api/v2 — 정본 조회 (US-3-1~US-3-5) ═══════════════════════
+#   목록·지도·검색·상세는 **비회원도 조회할 수 있다**(SecurityConfig permitAll).
+#   토큰을 실으면 계정 언어가 적용되고, 상세는 찜 상태·최근 본 기록까지 반영한다.
+
+### 3. 매물 목록 — 비회원(토큰 없음). 시드 2건이 모두 보인다
+GET {{baseUrl}}/api/v2/listings?page=0&size=20
+
+### 4. 매물 목록 — 필터·정렬. 신림 고시원 1건만 남고, 그 안에서도 조건을 통과한 방만 카드에 실린다
+#    conditions는 반복 파라미터다. sort=DISTANCE는 bbox 4개가 함께 있어야 한다(32번 참고).
+GET {{baseUrl}}/api/v2/listings?swLat={{swLat}}&swLng={{swLng}}&neLat={{neLat}}&neLng={{neLng}}&type=GOSHIWON&conditions=FEMALE_ONLY&conditions=ADDRESS_REGISTRATION&maxBudget=500000&maxDeposit=500000&sort=PRICE_ASC&page=0&size=20
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 5. 지도 마커 — 좌표만 내려준다(카드 정보는 상세에서 가져간다)
+GET {{baseUrl}}/api/v2/listings/map?swLat={{swLat}}&swLng={{swLng}}&neLat={{neLat}}&neLng={{neLng}}&type=GOSHIWON
+
+### 6. 키워드 매물 검색 — 일치한 장소가 있으면 matchedPlace로 함께 내려주고 3km 이내 매물을 거리순으로 준다
+#    searchPlaces는 Mongock(SearchPlaceSeedChangeUnit)이 자동으로 넣으므로 따로 시드하지 않아도 된다.
+GET {{baseUrl}}/api/v2/listings/search?keyword=서울대&sort=DISTANCE&page=0&size=20
+
+### 7. 장소 후보 검색 — **이것만 `/api/v1`이다**. 네이버 지역 검색 결과라 매물 데이터를 쓰지 않는다
+#    네이버 자격증명(NAVER_SEARCH_CLIENT_ID/SECRET)이 없으면 502 UPSTREAM_ERROR가 정상이다.
+GET {{baseUrl}}/api/v1/listings/places?keyword=경희대
+
+### 8. 매물 상세 — 로그인 상태로 부르면 최근 본 매물에 기록된다(11번에서 확인)
+GET {{baseUrl}}/api/v2/listings/{{listingId}}
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 9. 찜 등록 — 새로 찜하면 201, 이미 찜한 매물을 다시 부르면 200(중복 저장 없음)
+POST {{baseUrl}}/api/v2/listings/{{listingId}}/favorite
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 10. 내 찜 목록 — 최근 찜한 순, 공개 중인 매물만
+GET {{baseUrl}}/api/v2/users/me/favorites?page=0&size=20
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 11. 최근 본 매물 — 8번 상세 조회가 기록돼 1건 보인다. 최신순 최대 10개
+GET {{baseUrl}}/api/v2/users/me/recent-listings
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 12. 찜 해제 — 찜하지 않은 매물이어도 200이다
+DELETE {{baseUrl}}/api/v2/listings/{{listingId}}/favorite
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+# ═══════════════════════ /api/v2 — 매물 등록 (US-3-6, 임대인 전용) ═══════════════════════
+#   사진은 12-a~c에서 한 장씩 올려 받은 key를 imageKeys(1~5개)·roomOffers[].roomImageKeys(방마다 2~5개)로 참조한다.
+#   등록 요청 자체는 JSON이다 — 파일은 실리지 않는다.
+#   폼 1칸으로 받는 두 값은 `min~max` 문자열이다 — building.usedFloorRange, ageRange.
+#   다국어 문구는 **한국어 한 값만** 보낸다. 서버가 en에 같은 값을 복사하고 영어 번역은 관리자가 승인 심사에서 채운다.
+#   서버가 채우는 값이라 요청에 없는 것: listingId · roomOffers[].roomOfferId · status(PENDING) ·
+#   rentalType(MONTHLY_RENT) · pricing.currency(KRW) · roomOffers[].status(ACTIVE) · favoriteCount(0) · 생성/수정 시각.
+#   좌표(location)와 주변 대학(nearbyUniversityCodes)은 지오코딩 미구현이라 비어 있는 상태로 저장된다.
+#   코드값은 전부 listingCatalog와 대조한다 — 카탈로그에 없는 코드는 400이다(29-b번).
+#   사진 URL도 요청에 없다 — 서버가 확정 위치로 옮긴 뒤 응답에 담아 준다(업로드 때 받은 url과 다르다).
+
+### 12-a. 사진 업로드 ① 지점 대표 → 201 { key, url }. key를 13번이 참조한다
+# @name upload1
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary--
+
+### 12-b. 사진 업로드 ② 방 사진 1
+# @name upload2
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary--
+
+### 12-c. 사진 업로드 ③ 방 사진 2 (방 사진은 최소 2장이다)
+# @name upload3
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
+
+### 12-d. 415 LISTING_IMAGE_UNSUPPORTED_TYPE — 허용 목록 밖 형식
+#     파일 내용이 아니라 part의 Content-Type을 본다. JPEG·PNG·WebP·HEIC만 받는다.
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="animation.gif"
+Content-Type: image/gif
+
+< ./images/branch-2.jpg
+--KohereBoundary--
+
+### 12-e. 403 FORBIDDEN — 세입자 토큰으로 사진 업로드
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="branch-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-1.jpg
+--KohereBoundary--
+
+### 13. 매물 등록 → 201 Created. 응답 status는 PENDING이다
+# @name register
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "신촌 셰어하우스",
+  "type": "SHARE_HOUSE",
+  "contact": {
+    "managerName": "김담당",
+    "phone": "02-1234-5678",
+    "sms": "010-1234-5678"
+  },
+  "businessRegistrationNumber": "1234567890",
+  "blogUrl": "https://blog.example.com/sinchon",
+  "address": {
+    "fullAddress": "서울특별시 서대문구 신촌로 12",
+    "detail": "3층 301호"
+  },
+  "building": {
+    "type": "VILLA",
+    "totalFloors": 5,
+    "usedFloorRange": "2~4",
+    "parkingAvailable": false,
+    "elevatorAvailable": true
+  },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH", "CHINESE"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION", "MICROWAVE", "SHARED_REFRIGERATOR"],
+    "laundry": ["WASHER", "DRYER"],
+    "livingAmenities": ["WIFI", "TV", "AIR_CONDITIONER"],
+    "securityFeatures": ["CCTV", "ENTRANCE_DOOR_LOCK", "DOOR_LOCK"],
+    "commonSpaces": ["SHARED_KITCHEN", "LOUNGE"],
+    "providedSupplies": ["BEDDING", "TISSUE"]
+  },
+  "nearestTransit": {
+    "type": "SUBWAY",
+    "name": "신촌역",
+    "walkMinutes": 7
+  },
+  "nearbyFacilities": ["CONVENIENCE_STORE", "MART", "PARK"],
+  "description": "신촌역 도보 7분 거리의 외국인 전용 셰어하우스입니다.",
+  "extraNotes": "취사 가능, 반려동물 불가.",
+  "refundPolicy": "입주 7일 전 취소 시 전액 환불, 이후에는 50%를 환불합니다.",
+  "imageKeys": ["{{upload1.response.body.$.data.key}}"],
+  "roomOffers": [
+    {
+      "name": "1인실 A타입",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": {
+        "monthlyRent": 550000,
+        "deposit": 500000,
+        "maintenanceFee": 50000
+      },
+      "filterTags": ["MOVE_IN_NOW", "PRIVATE_BATH", "ENGLISH_OK"],
+      "roomImageKeys": [
+        "{{upload2.response.body.$.data.key}}",
+        "{{upload3.response.body.$.data.key}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["CHINA", "SOUTHEAST_ASIA"],
+  "contractDifficulties": ["LANGUAGE", "PAYMENT"],
+  "serviceFeedback": "등록 절차가 더 간단해지면 좋겠습니다."
+}
+
+### 14. 등록 직후 상세 조회 → **404 LISTING_NOT_FOUND**. PENDING이라 승인 전에는 어디에도 노출되지 않는다
+GET {{baseUrl}}/api/v2/listings/{{register.response.body.$.data.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 15. 등록 목록 대조 → 3번과 같은 2건. 방금 등록한 매물은 여기에도 없다
+GET {{baseUrl}}/api/v2/listings?page=0&size=20
+
+# ═══════════════════ /api/v1 — 종료된 조회 (ADR-0040) ═══════════════════
+#   출시된 구버전 앱이 부르는 경로다. **저장소를 아예 타지 않고** 빈 결과나 404만 준다.
+#   아래는 전부 "시드 매물이 실제로 있는데도" 비어 있어야 통과다 — 데이터가 없어서 비는 게 아니라
+#   v1이 DB를 보지 않아서 빈다는 것을 3·8번과 비교해 확인한다.
+#
+#   **21~24는 찜이 있는 상태에서 봐야 의미가 있다.** 12번에서 찜을 해제했으므로 9번(찜 등록)을 한 번 더
+#   실행한 뒤 내려온다. 그래야 "v1은 비어 있는데 v2(10번)에는 그대로 있다"는 대비가 드러난다.
+
+### 16. v1 목록 → 200 · content [] · page.totalElements 0
+#     page·size는 검사 없이 그대로 반향된다(size=500을 보내면 page.size도 500).
+GET {{baseUrl}}/api/v1/listings?page=0&size=20
+
+### 17. v1 목록 — **구버전 앱의 필터 값**. v4에서 삭제된 코드(NO_ARC·OTHER)를 보내도 400이 아니라 빈 목록이어야 한다
+#     v1은 필터 파라미터를 바인딩하지 않는다. 400이 나오면 종료 계약이 깨진 것이다.
+GET {{baseUrl}}/api/v1/listings?type=OTHER&conditions=NO_ARC&size=500
+
+### 18. v1 지도 → 200 · markers [] · total 0. bbox를 아예 빼도 400이 아니다
+GET {{baseUrl}}/api/v1/listings/map
+
+### 19. v1 키워드 검색 → 200 · matchedPlace null · content []
+GET {{baseUrl}}/api/v1/listings/search?keyword=서울대
+
+### 20. v1 상세 → **404 LISTING_NOT_FOUND**. 실제로 존재하는 시드 매물 id인데도 그렇다
+GET {{baseUrl}}/api/v1/listings/{{listingId}}
+
+### 21. v1 찜 등록 → 404. 찜은 저장되지 않고, 기존에 저장된 찜도 그대로다
+POST {{baseUrl}}/api/v1/listings/{{listingId}}/favorite
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 22. v1 찜 해제 → 404. 저장된 찜이 지워지지 않는다
+DELETE {{baseUrl}}/api/v1/listings/{{listingId}}/favorite
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 23. v1 내 찜 목록 → 200 · content []. 찜이 있는 상태에서도 비어 있다(같은 찜이 10번에는 보인다)
+GET {{baseUrl}}/api/v1/users/me/favorites?page=0&size=20
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 24. v1 최근 본 매물 → 200 · content []. **이 응답에는 page 객체가 없다**(목록 계열과 모양이 다르다)
+GET {{baseUrl}}/api/v1/users/me/recent-listings
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 25. v1 인가는 그대로다 — 토큰 없이 찜하면 404가 아니라 **401 UNAUTHENTICATED**
+#     빈 목록을 준다고 인가까지 풀면 구버전 앱의 로그인 만료 처리가 조용히 깨진다. 인가 판정이 스텁보다 먼저다.
+POST {{baseUrl}}/api/v1/listings/{{listingId}}/favorite
+
+# ─────────────────────────── 에러 케이스 ───────────────────────────
+
+### 26. 401 UNAUTHENTICATED — 토큰 없이 v2 찜 등록
+POST {{baseUrl}}/api/v2/listings/{{listingId}}/favorite
+
+### 27. 403 FORBIDDEN — 세입자 토큰으로 매물 등록(등록은 임대인 전용)
+#     보안 필터는 정식 회원인지까지만 보고, 임대인 여부는 서비스가 user::api로 다시 확인한다.
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "세입자가 등록 시도",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "imageKeys": ["{{upload1.response.body.$.data.key}}"],
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{upload2.response.body.$.data.key}}",
+        "{{upload3.response.body.$.data.key}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+
+### 28. 400 INVALID_INPUT — 필수 필드 누락(title·roomOffers 등). error.errors[]에 필드별 사유가 담긴다
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "type": "SHARE_HOUSE",
+  "businessRegistrationNumber": "1234567890"
+}
+
+### 29. 400 INVALID_INPUT — usedFloorRange 형식 위반(`min~max`가 아님)
+#     ageRange도 같은 규칙이다. min > max여도 400이다.
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "층 범위 형식 오류",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2층에서 4층", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "imageKeys": ["{{upload1.response.body.$.data.key}}"],
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{upload2.response.body.$.data.key}}",
+        "{{upload3.response.body.$.data.key}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+
+### 29-b. 400 INVALID_INPUT — listingCatalog에 없는 코드
+#     enum에는 있지만 카탈로그에 시드되지 않은 코드는 거절한다. 아래는 CITY 카탈로그에 없는 주소를 보낸다
+#     (시드 CITY는 서울특별시·부산광역시·경기도 3종뿐이라 "대전광역시"는 행정구역 파싱에 실패한다).
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "카탈로그에 없는 도시",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "대전광역시 유성구 대학로 99", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "유성온천역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "imageKeys": ["{{upload1.response.body.$.data.key}}"],
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{upload2.response.body.$.data.key}}",
+        "{{upload3.response.body.$.data.key}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+
+### 29-c. 400 LISTING_IMAGE_REQUIRED — 방 사진 키가 2개 미만
+#     지점 1~5개, 방마다 2~5개다. 사진은 JSON 필드가 아니라 별도 업로드로 들어와 errors[]에 실을 경로가 없어 전용 코드를 쓴다.
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "사진 키 부족",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "imageKeys": ["{{upload1.response.body.$.data.key}}"],
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": ["{{upload2.response.body.$.data.key}}"]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+
+### 29-d. 400 LISTING_IMAGE_KEY_NOT_FOUND — 남의 키를 가리킨다
+#     키에 landlordId가 박혀 있어 문자열 비교만으로 걸러진다. 없는 키·만료된 키도 같은 코드다 —
+#     구분해 알려주면 남의 키가 있는지 없는지가 새어 나간다.
+POST {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "남의 사진 키",
+  "type": "SHARE_HOUSE",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "businessRegistrationNumber": "1234567890",
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층" },
+  "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["LOUNGE"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "설명",
+  "extraNotes": "비고",
+  "refundPolicy": "환불 규정",
+  "imageKeys": ["uploads/999999/not-mine.jpg"],
+  "roomOffers": [
+    {
+      "name": "1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 500000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": ["{{upload2.response.body.$.data.key}}", "{{upload3.response.body.$.data.key}}"]
+    }
+  ],
+  "preferredNationalities": ["CHINA"],
+  "contractDifficulties": ["LANGUAGE"]
+}
+
+### 29-e. 413 LISTING_IMAGE_TOO_LARGE — 장당 10MB 초과
+#     10MB가 넘는 이미지를 http/images/ 에 넣고 12-a의 경로를 그 파일로 바꿔 확인한다(업로드 API에서 난다).
+
+### 30. 404 LISTING_NOT_FOUND — 없는 매물 상세(v2)
+GET {{baseUrl}}/api/v2/listings/6858e20000000000000000ff
+
+### 31. 400 LISTING_INVALID_BBOX — bbox 네 좌표 중 일부만 보냄
+GET {{baseUrl}}/api/v2/listings?swLat={{swLat}}&swLng={{swLng}}
+
+### 32. 400 LISTING_INVALID_SORT_PARAM — sort=DISTANCE인데 bbox가 없음
+GET {{baseUrl}}/api/v2/listings?sort=DISTANCE&page=0&size=20
+
+### 33. 400 INVALID_INPUT — 정의되지 않은 정렬 값
+GET {{baseUrl}}/api/v2/listings?sort=UNKNOWN
+
+### 34. 401 TOKEN_EXPIRED — 만료 토큰은 공개 조회에서도 익명으로 강등하지 않는다
+#     @expiredToken에 만료된 access token을 붙여넣어 확인한다(토큰 없음·위조는 익명 200이지만 만료만 401이다).
+@expiredToken = PASTE_EXPIRED_ACCESS_TOKEN
+GET {{baseUrl}}/api/v2/listings
+Authorization: Bearer {{expiredToken}}

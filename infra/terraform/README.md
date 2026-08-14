@@ -117,5 +117,6 @@ terraform apply
 - **Redis 전송 암호화**: 기본 off(앱이 host/port만 사용). 켜려면 `redis_transit_encryption=true` + Spring SSL/auth token 설정 필요.
 - **NAT**: 기본 `single_nat_gateway=true`(비용 절감). HA가 필요하면 `false`.
 - **삭제 보호**: RDS·DocumentDB 기본 `deletion_protection=true`. `terraform destroy` 전에 false로 변경 필요.
+- **콘텐츠 이미지 버킷**: 앱이 태스크 역할(dev는 인스턴스 프로파일)로 직접 `PutObject`·`CopyObject`(임시본 `uploads/` → 확정 `listings/`)·`DeleteObject` 한다([ADR-0041](../../docs/adr/0041-listing-image-upload-to-s3.md)). IAM에 `s3:GetObject`가 함께 붙어 있는 것은 복사가 원본을 읽기 때문이다. 버전 관리는 기본 **off**(`enable_versioning=false`) — 업로드 실패 시 앱의 보상 삭제가 객체를 실제로 지워야 하기 때문이며, 그만큼 잘못 덮어쓴 이미지는 되돌릴 수 없다. 라이프사이클 규칙은 둘이다 — 중단된 멀티파트 조각 정리(`abort_incomplete_multipart_days`, 기본 7일)와 **확정되지 않은 임시 업로드 만료**(`uploads/` prefix, `pending_upload_expiration_days`, 기본 7일)다. 뒤쪽은 위생 장치가 아니라 **설계의 필수 부품**이다 — 매물 등록이 사진을 먼저 올려 두고 나중에 확정하므로, 폼을 버리면 남는 파일을 이 규칙이 치운다. prefix로 대상을 가르므로 확정된 사진(`listings/`)은 규칙에 걸릴 수가 없다. 버킷에 객체가 남아 있으면 `force_destroy` 가 없어 destroy가 `BucketNotEmpty` 로 실패한다.
 - **상태에 시크릿 포함**: 생성된 비밀번호/키가 state에 들어간다 — 원격 state(S3)는 암호화+버전관리+TLS 강제로 보호된다.
-- **CloudFront 커스텀 도메인**: 기본은 CloudFront 기본 도메인. 커스텀 도메인을 쓰려면 us-east-1 ACM 인증서가 별도로 필요(현재 범위 밖).
+- **CloudFront 커스텀 도메인**: 옵션이 아니라 **필수**다. `domain_aliases`·`acm_certificate_arn`·`route53_zone_id` 는 기본값이 없고, prod·dev 루트가 `cdn_domain_name`·`route53_zone_id` 를 받아 `cdn_acm` 모듈로 us-east-1 ACM 인증서를 발급·DNS 검증한 뒤 CloudFront 별칭과 Route53 A/AAAA 레코드까지 만든다.

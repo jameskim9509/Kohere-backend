@@ -34,6 +34,12 @@ app:
       # 테스트 컨텍스트 기동용 더미 값. HTTP 어댑터 단위 테스트는 MockRestServiceServer로 실제 네트워크를 차단한다.
       client-id: test-naver-client-id
       client-secret: test-naver-client-secret
+  images:
+    # enabled=false → StubListingImageStorage 폴백. 문서·컨트롤러 테스트가 저장소 없이 등록 흐름을 그대로 탄다.
+    # 어댑터 자체는 MinIO 컨테이너를 띄우는 통합 테스트가 검증한다.
+    enabled: false
+    bucket: test-images-bucket
+    cdn-domain: cdn.test.kohere.app
 
 # Mongock 비활성 — 테스트는 Mongo 미가용(슬라이스 테스트만 Testcontainers). 1회성 마이그레이션은 test에서 돌리지 않는다.
 mongock:

@@ -113,6 +113,7 @@ public final class UserDocsFields {
       - 수정 가능 필드가 `userType`으로 갈린다 — 임대인은 `name`·`phoneNumber`·`marketingAgreed`만 바꿀 수 있고, `lang`은 `ko` 고정이라 바꿀 수 없으며 `birthDate`는 조회 전용이다.
       - 임대인 `phoneNumber` 변경은 새 번호를 SMS로 재인증한 뒤에만 반영된다.
 
+
       **응답 주의사항**
 
       - 역할 전용 필드(`(세입자만)`·`(임대인만)`)는 다른 역할의 응답에서 값이 null이 아니라 **필드 자체가 생략**된다.

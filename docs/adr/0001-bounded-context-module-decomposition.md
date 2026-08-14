@@ -5,7 +5,7 @@
 | 번호      | ADR-0001                                                                                                                                                                                  |
 | 작성자    | Kohere Backend 팀                                                                                                                                                                         |
 | 작성일    | 2026-06-15                                                                                                                                                                                |
-| 관련 문서 | [code-style §3](../convention/code-style.md), [error-response-guide §4](../api/error-response-guide.md), [API specs](../api/specs/README.md), [system-overview](../architecture/system-overview.md) |
+| 관련 문서 | [code-style §3](../convention/code-style.md), [error-response-guide §4](../api/error-response-guide.md), [API specs](../api/specs/README.md), [system-overview](../architecture/system-overview.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md) |
 
 ## Status
 
@@ -46,7 +46,7 @@ Accepted
 2. **에러코드 prefix 표를 정본 모듈 목록으로 본다.** [error-response-guide §4](../api/error-response-guide.md)의 prefix가 곧 모듈이며, 코드의 도메인 예외(`*_NOT_FOUND` 등)와 모듈이 1:1로 매칭되도록 한다.
 3. **애그리거트 응집과 "변경 이유의 단일성"(SRP)으로 검증한다.** 한 스펙 문서라도 애그리거트와 변경 이유가 다르면 쪼갠다 → `auth`(자격증명·세션, 보안 정책에 따라 변경)와 `user`(신원·프로필, 약관/프로필 정책에 따라 변경)를 분리. `booking`(예약 lifecycle)과 `chat`(메시징)도 동일 이유로 분리.
 4. **단방향 의존이 성립할 때만 쪼갠다(순환 금지).** `auth → user`, `booking → listing·chat`, `community → chat`, `diagnosis → listing`처럼 한 방향으로만 흐를 때 분리한다. 양방향/순환이 생기면 합친다. (진단 문항 라벨 번역에 사용자 표시 언어가 필요해 `diagnosis → user`(표시 언어 조회 `getLanguage`) 협력도 같은 단방향으로 더해진다 — 순환 없음. 실현은 `user` 모듈 공개 query 동기 호출로 확정한다([ADR-0002](./0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 미사용).)
-5. **유비쿼터스 언어 경계를 존중한다.** 같은 용어가 맥락마다 다른 의미면 다른 컨텍스트로 본다(예: `ConditionTag`(매물 편의시설)와 진단 입력 `conditions`는 값 집합이 달라 각 모듈이 자기 enum을 갖는다 — `listing.ConditionTag` vs `diagnosis.DiagnosisCondition`). 같은 원칙으로 진단 3단계 대학·지역구 선택지(`UniversityGroup`·`District` 류)도 `diagnosis` 모듈이 자기 입력 enum으로 보유한다 — 진단 입력 어휘이지 `listing`의 매물 속성 어휘가 아니다(`UniversityGroup`/`District` 두 필드 분리·정확한 값 목록은 02 스펙·domain-model에 확정).
+5. **유비쿼터스 언어 경계를 존중한다.** 같은 용어가 맥락마다 다른 의미면 다른 컨텍스트로 본다(예: `ConditionTag`(매물 편의시설)와 진단 입력 `conditions`는 값 집합이 달라 각 모듈이 자기 enum을 갖는다 — `listing.ConditionTag` vs `diagnosis.DiagnosisCondition`). 같은 원칙으로 진단 3단계 대학·지역구 선택지(`UniversityGroup`·`District` 류)도 `diagnosis` 모듈이 자기 입력 enum으로 보유한다 — 진단 입력 어휘이지 `listing`의 매물 속성 어휘가 아니다. **이름이 같아도 모듈마다 값 집합이 다르며**(`diagnosis.District`는 5구 + `ETC` 6종, `listing.District`는 카탈로그 9종), 값 집합을 일치시키지 않고 **매핑으로 잇는다**(`ETC`는 그 5구의 여집합 — [ADR-0039](./0039-listing-schema-v4-registration-form.md)). (`UniversityGroup`/`District` 두 필드 분리·정확한 값 목록은 02 스펙·domain-model에 확정.)
 6. **횡단 공통 타입은 도메인 로직 없이 공유 커널로 격리한다.** `ApiResponse`·`ErrorCode`·`BusinessException`·전역 핸들러·페이지 응답을 `common`(OPEN)에 두고 모든 모듈이 의존한다.
 
 경계는 `package-info.java`의 `@ApplicationModule(allowedDependencies = {"common"})`로 선언해 **허용 의존을 화이트리스트로 강제**하고, `ApplicationModules.verify()` 테스트로 빌드 시점에 지속 검증한다. (현 스켈레톤은 모듈 간 직접 의존을 두지 않고 `common`에만 의존하며, cross-BC 협력은 공개 API/이벤트로 연결할 지점을 각 `package-info` Javadoc에 TODO로 명시했다.)

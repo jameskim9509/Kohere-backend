@@ -7,9 +7,9 @@ package com.kohere.docs;
  * 전부 {@code /api/v1/...}이라 46개 오퍼레이션이 {@code api} 하나로 뭉친다(1단계 실측). 그리고 오퍼레이션 태그는 그 오퍼레이션에 속한 스니펫
  * 태그의 union이므로, <b>한 스니펫만 빠뜨려도 두 그룹에 중복 노출된다</b>.
  *
- * <p>귀속 기준은 경로가 아니라 <b>소유 모듈(스펙 문서)</b>이다 — {@code /api/v1/users/me/favorites}는 listing 모듈 ({@code
- * MyListingController}) 소유라 {@link #LISTINGS}, {@code /api/v1/users/me/blocks}는 user 모듈 소유라 {@link
- * #USERS}다.
+ * <p>귀속 기준은 경로가 아니라 <b>소유 모듈(스펙 문서)</b>이다 — {@code /api/v2/users/me/favorites}는 listing 모듈 ({@code
+ * MyListingV2Controller}) 소유라 {@link #LISTINGS}, {@code /api/v1/users/me/blocks}는 user 모듈 소유라
+ * {@link #USERS}다.
  *
  * <p>deepLinking 앵커가 태그명을 URL 인코딩하므로 이름은 ASCII로 둔다. 태그 <b>설명</b>은 넣지 않는다 — 테스트가 정할 수 없고 빌드 시점 별도
  * 파일로만 넣을 수 있어 「문서의 단일 소스는 테스트」 원칙에서 벗어난다(ADR-0017).

@@ -20,7 +20,13 @@ import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.application.dto.RecentListingsResponse;
+import com.kohere.listing.domain.ArcRequirement;
+import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.ContractDifficulty;
+import com.kohere.listing.domain.District;
+import com.kohere.listing.domain.KitchenFacility;
+import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingInvalidSortParamException;
 import com.kohere.listing.domain.ListingMapSearchResult;
@@ -30,30 +36,25 @@ import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.LivingAmenity;
 import com.kohere.listing.domain.LocalizedText;
+import com.kohere.listing.domain.Nationality;
+import com.kohere.listing.domain.NearbyFacility;
+import com.kohere.listing.domain.ProvidedSupply;
+import com.kohere.listing.domain.SecurityFeature;
+import com.kohere.listing.domain.SupportedLanguage;
 import com.kohere.listing.domain.favorite.Favorite;
 import com.kohere.listing.domain.favorite.FavoriteRepository;
 import com.kohere.listing.domain.place.SearchPlaceRepository;
 import com.kohere.listing.domain.recent.RecentListingRepository;
-import com.kohere.listing.infrastructure.migration.ListingCatalogLabelFieldChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingCatalogSeedChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingGoshiwonRenameChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingSchemaV2ChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingSchemaV2RepairChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingSchemaV3LocalizationChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingValidatorRelaxBeforeSchemaV3ChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingValidatorV2ChangeUnit;
-import com.kohere.listing.infrastructure.migration.ListingValidatorV3ChangeUnit;
 import com.kohere.listing.infrastructure.migration.SearchPlaceSeedChangeUnit;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
-import com.mongodb.client.model.InsertOneOptions;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import org.bson.Document;
-import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -95,7 +96,7 @@ class ListingMongoIntegrationTest {
   @Autowired private MongoTemplate mongoTemplate;
   @MockitoBean private UserAccountService userAccountService;
 
-  /** 각 테스트가 독립적으로 실행되도록 listing 관련 컬렉션을 비운다. */
+  /** 각 테스트가 독립적으로 실행되도록 listing 관련 컬렉션을 비우고 v4 번역 사전을 다시 심는다. */
   @BeforeEach
   void cleanListingCollections() {
     given(userAccountService.getLanguage(anyLong())).willReturn("en");
@@ -104,25 +105,8 @@ class ListingMongoIntegrationTest {
     mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(SEARCH_PLACES_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
-    // 실제 기동과 같은 0108→0111 순서를 거쳐 테스트도 최종 label 저장 구조만 읽게 한다.
-    new ListingCatalogSeedChangeUnit().execution(mongoTemplate);
-    new ListingCatalogLabelFieldChangeUnit().execution(mongoTemplate);
-  }
-
-  /** 레거시 카탈로그 시드가 실제 MongoDB에서 팀 공통 {@code label:{ko,en}} 구조로 이행되는지 확인한다. */
-  @Test
-  void catalogMigration_labels를_label로_이행한다() {
-    Document monthlyRent =
-        mongoTemplate
-            .getCollection(LISTING_CATALOG_COLLECTION)
-            .find(new Document("_id", "RENTAL_TYPE:MONTHLY_RENT"))
-            .first();
-
-    assertThat(monthlyRent).isNotNull();
-    assertThat(monthlyRent).doesNotContainKey("labels");
-    assertThat(monthlyRent.get("label", Document.class))
-        .containsEntry("ko", "월세")
-        .containsEntry("en", "Monthly Rent");
+    // 응답의 label 자리가 코드값으로 새지 않도록 운영과 같은 정본 카탈로그를 심는다.
+    ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
   }
 
   /** 도메인 매물을 저장한 뒤 중첩 roomOffers와 GeoJSON 좌표가 보존되는지 확인한다. */
@@ -136,7 +120,9 @@ class ListingMongoIntegrationTest {
     assertThat(found.getLocation().latitude()).isEqualTo(37.459471);
     assertThat(found.getRoomOffers()).hasSize(1);
     assertThat(found.getRoomOffers().getFirst().pricing().monthlyRent()).isEqualTo(300000);
-    assertThat(found.getRoomOffers().getFirst().inventory().availableCount()).isEqualTo(1);
+    assertThat(found.getRoomOffers().getFirst().pricing().deposit()).isEqualTo(300000);
+    assertThat(found.getRoomOffers().getFirst().contract().minStayMonths()).isEqualTo(2);
+    assertThat(found.getRoomOffers().getFirst().contract().maxStayMonths()).isEqualTo(6);
   }
 
   /** 저장 경로는 MongoDB validator에 도달하기 전에 도메인 필수 구조를 검증한다. */
@@ -161,163 +147,6 @@ class ListingMongoIntegrationTest {
     assertThat(saved.getRoomOffers().getFirst().roomOfferId()).hasSize(24);
   }
 
-  /** 레거시 고시원 enum 문자열은 루트 매물 유형과 중첩 건물 유형에서 모두 정식 값으로 이행한다. */
-  @Test
-  void migration_GOSIWON을_GOSHIWON으로_이행한다() {
-    Listing legacySource =
-        sampleListingBuilder()
-            .building(new Listing.Building(Listing.BuildingType.GOSHIWON, 1, 2, 4, true, true))
-            .build();
-    listingRepository.save(legacySource);
-
-    mongoTemplate
-        .getCollection(LISTINGS_COLLECTION)
-        .updateOne(
-            new Document("_id", new ObjectId(LISTING_ID)),
-            new Document(
-                "$set", new Document("type", "GOSIWON").append("building.type", "GOSIWON")));
-
-    ListingGoshiwonRenameChangeUnit changeUnit = new ListingGoshiwonRenameChangeUnit();
-    changeUnit.execution(mongoTemplate);
-    changeUnit.execution(mongoTemplate);
-
-    Document migrated =
-        mongoTemplate
-            .getCollection(LISTINGS_COLLECTION)
-            .find(new Document("_id", new ObjectId(LISTING_ID)))
-            .first();
-    assertThat(migrated).isNotNull();
-    assertThat(migrated.getString("type")).isEqualTo("GOSHIWON");
-    assertThat(migrated.get("building", Document.class).getString("type")).isEqualTo("GOSHIWON");
-
-    Listing found = listingRepository.findById(LISTING_ID).orElseThrow();
-    assertThat(found.getType()).isEqualTo(ListingType.GOSHIWON);
-    assertThat(found.getBuilding().type()).isEqualTo(Listing.BuildingType.GOSHIWON);
-  }
-
-  /** v1 문서는 v2 정규화를 거쳐 최종 v3 다국어 저장 구조로 바뀌고 새 도메인 매퍼로 읽힌다. */
-  @Test
-  void migration_v1_문서를_v2_저장구조로_이행한다() {
-    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a01");
-    mongoTemplate
-        .getCollection(LISTINGS_COLLECTION)
-        .insertOne(
-            legacyV1ListingDocument(legacyRoomOfferId),
-            new InsertOneOptions().bypassDocumentValidation(true));
-
-    new ListingValidatorRelaxBeforeSchemaV3ChangeUnit().execution(mongoTemplate);
-    new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
-    new ListingGoshiwonRenameChangeUnit().execution(mongoTemplate);
-    new ListingSchemaV3LocalizationChangeUnit().execution(mongoTemplate);
-    new ListingValidatorV3ChangeUnit().execution(mongoTemplate);
-
-    Document migrated =
-        mongoTemplate
-            .getCollection(LISTINGS_COLLECTION)
-            .find(new Document("_id", new ObjectId(LISTING_ID)))
-            .first();
-    assertThat(migrated).isNotNull();
-    assertThat(migrated.getString("type")).isEqualTo("GOSHIWON");
-    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(3);
-    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
-    assertThat(migrated.getString("genderPolicy")).isEqualTo("FEMALE_ONLY");
-    assertThat(migrated.get("featureSummary")).isNull();
-    assertThat(migrated.get("nearbyPlacesDescription")).isNull();
-    assertThat(migrated.get("extraNotes")).isNull();
-
-    Document nearestTransit = migrated.get("nearestTransit", Document.class);
-    assertThat(nearestTransit.get("nearbyPlacesDescription", Document.class).getString("ko"))
-        .isEqualTo("편의점");
-    Document building = migrated.get("building", Document.class);
-    assertThat(building.get("heatingSystem")).isNull();
-    Document facilities = migrated.get("facilities", Document.class);
-    assertThat(facilities.getList("heatingSystem", String.class)).containsExactly("CENTRAL");
-    assertThat(facilities.getList("kitchen", String.class)).isEmpty();
-    Document descriptions = migrated.get("descriptions", Document.class);
-    assertThat(descriptions.getString("extraNotes")).isEqualTo("레거시 주의사항");
-
-    Document roomOffer = migrated.getList("roomOffers", Document.class).getFirst();
-    assertThat(roomOffer.getString("roomOfferId")).isEqualTo(legacyRoomOfferId.toHexString());
-    assertThat(roomOffer.get("rentalType")).isNull();
-    assertThat(roomOffer.get("contract")).isNull();
-    assertThat(roomOffer.get("genderPolicy")).isNull();
-    assertThat(roomOffer.get("features")).isNull();
-
-    Listing found = listingRepository.findById(LISTING_ID).orElseThrow();
-    assertThat(found.getSchemaVersion()).isEqualTo(3);
-    assertThat(found.getContract().minStayMonths()).isEqualTo(1);
-    assertThat(found.getContract().maxStayMonths()).isEqualTo(12);
-    assertThat(found.getRefundPolicy().code()).isEqualTo(Listing.RefundPolicyCode.PARTIAL_REFUND);
-    assertThat(found.getRoomOffers().getFirst().roomOfferId())
-        .isEqualTo(legacyRoomOfferId.toHexString());
-  }
-
-  /** schemaVersion만 2이고 실제 모양은 v1인 문서도 보정 changeUnit이 다시 v2로 정규화한다. */
-  @Test
-  void migration_v2로_표시된_레거시_문서도_보정한다() {
-    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a02");
-    Document legacy = legacyV1ListingDocument(legacyRoomOfferId);
-    legacy.put("schemaVersion", 2);
-    mongoTemplate
-        .getCollection(LISTINGS_COLLECTION)
-        .insertOne(legacy, new InsertOneOptions().bypassDocumentValidation(true));
-
-    new ListingValidatorRelaxBeforeSchemaV3ChangeUnit().execution(mongoTemplate);
-    new ListingSchemaV2RepairChangeUnit().execution(mongoTemplate);
-    new ListingSchemaV3LocalizationChangeUnit().execution(mongoTemplate);
-    new ListingValidatorV3ChangeUnit().execution(mongoTemplate);
-
-    Document migrated =
-        mongoTemplate
-            .getCollection(LISTINGS_COLLECTION)
-            .find(new Document("_id", new ObjectId(LISTING_ID)))
-            .first();
-    assertThat(migrated).isNotNull();
-    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(3);
-    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
-    assertThat(migrated.get("featureSummary")).isNull();
-    assertThat(migrated.get("nearbyPlacesDescription")).isNull();
-    assertThat(migrated.get("extraNotes")).isNull();
-    assertThat(migrated.get("building", Document.class).get("heatingSystem")).isNull();
-    assertThat(migrated.get("facilities", Document.class).getList("heatingSystem", String.class))
-        .containsExactly("CENTRAL");
-    assertThat(migrated.getList("roomOffers", Document.class).getFirst().getString("roomOfferId"))
-        .isEqualTo(legacyRoomOfferId.toHexString());
-    assertThat(migrated.getList("roomOffers", Document.class).getFirst().get("contract")).isNull();
-  }
-
-  /** 기존 v2 validator가 걸린 DB도 validator를 풀고 v3 이행한 뒤 새 strict validator를 적용한다. */
-  @Test
-  void migration_기존_validator를_풀고_v2_이행후_다시_적용한다() {
-    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a03");
-    mongoTemplate
-        .getCollection(LISTINGS_COLLECTION)
-        .insertOne(
-            legacyV1ListingDocument(legacyRoomOfferId),
-            new InsertOneOptions().bypassDocumentValidation(true));
-
-    new ListingValidatorV2ChangeUnit().execution(mongoTemplate);
-    new ListingValidatorRelaxBeforeSchemaV3ChangeUnit().execution(mongoTemplate);
-    new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
-    new ListingSchemaV3LocalizationChangeUnit().execution(mongoTemplate);
-    new ListingValidatorV3ChangeUnit().execution(mongoTemplate);
-
-    Document migrated =
-        mongoTemplate
-            .getCollection(LISTINGS_COLLECTION)
-            .find(new Document("_id", new ObjectId(LISTING_ID)))
-            .first();
-    assertThat(migrated).isNotNull();
-    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(3);
-    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
-
-    Document invalidLegacy = legacyV1ListingDocument(new ObjectId("6858e2000000000000000a04"));
-    invalidLegacy.put("_id", new ObjectId("6858e2000000000000000b04"));
-    assertThatThrownBy(
-            () -> mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(invalidLegacy))
-        .isInstanceOf(Exception.class);
-  }
-
   /** 앱 시작 시 지도·필터 조회용 MongoDB 인덱스가 생성되는지 확인한다. */
   @Test
   void initialize_지도와_필터_인덱스를_모두_생성한다() {
@@ -332,8 +161,7 @@ class ListingMongoIntegrationTest {
             "listings_status_type_rent",
             "listings_landlord_status_updated",
             "listings_status_room_filter_tags",
-            "listings_status_room_available_count",
-            "listings_status_arc_required");
+            "listings_status_arc_requirement");
 
     Set<String> favoriteIndexNames =
         mongoTemplate.indexOps(FAVORITES_COLLECTION).getIndexInfo().stream()
@@ -374,25 +202,10 @@ class ListingMongoIntegrationTest {
         .contains("연세대학교", "서울대학교", "신촌역", "관악구");
   }
 
-  /** seed 적재가 고정 ObjectId 저장 방식이라 재실행해도 같은 매물이 중복되지 않는지 확인한다. */
-  @Test
-  void seed_두번_실행해도_같은_매물이_중복되지_않는다() {
-    ListingSeedRunner seedRunner = new ListingSeedRunner(listingRepository);
-
-    seedRunner.run(null);
-    seedRunner.run(null);
-
-    assertThat(
-            mongoTemplate
-                .getCollection(LISTINGS_COLLECTION)
-                .countDocuments(new Document("title.ko", "고시원001")))
-        .isEqualTo(1);
-  }
-
   /** 가격과 태그 조건이 같은 roomOffer 안에서 함께 만족될 때만 매칭되는지 확인한다. */
   @Test
   void query_같은_방상품의_가격과_태그를_elemMatch로_조회한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
     Document roomOfferCondition =
         new Document("status", "ACTIVE")
             .append("pricing.monthlyRent", new Document("$lte", 500000))
@@ -408,7 +221,7 @@ class ListingMongoIntegrationTest {
   /** 2dsphere 인덱스로 기준 좌표 반경 내 매물을 찾을 수 있는지 확인한다. */
   @Test
   void query_2dsphere로_반경내_매물을_조회한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
     Document geometry =
         new Document("type", "Point").append("coordinates", List.of(126.951422, 37.459471));
     Document near = new Document("$geometry", geometry).append("$maxDistance", 1000);
@@ -416,25 +229,25 @@ class ListingMongoIntegrationTest {
 
     Document found = mongoTemplate.getCollection(LISTINGS_COLLECTION).find(query).first();
     assertThat(found).isNotNull();
-    assertThat(found.get("title", Document.class).getString("ko")).isEqualTo("고시원001");
+    assertThat(found.get("title", Document.class).getString("ko")).isEqualTo("신림 스테이");
   }
 
   /** 키워드 검색은 POI를 찾은 뒤 해당 좌표 3km 안의 매물 카드를 반환한다. */
   @Test
   void searchListings_대학키워드로_POI와_주변매물을_반환한다() {
     new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
     ListingKeywordSearchResponse response = listingService.searchListings(keywordRequest("서울대"));
 
     assertThat(response.matchedPlace()).isNotNull();
     assertThat(response.matchedPlace().name()).isEqualTo("서울대학교");
     assertThat(response.content()).hasSize(1);
-    assertThat(response.content().getFirst().listingId())
-        .isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
+    assertThat(response.content().getFirst().listingId()).isEqualTo(ListingTestSeeds.LISTING_ID);
     assertThat(response.content().getFirst().roomOffers().getFirst().pricing().monthlyRent())
-        .isEqualTo(300000);
-    assertThat(response.content().getFirst().contract().minStayMonths()).isEqualTo(2);
+        .isEqualTo(380000);
+    assertThat(response.content().getFirst().roomOffers().getFirst().contract().minStayMonths())
+        .isEqualTo(1);
     assertThat(response.content().getFirst().distanceMeters()).isLessThan(500);
     assertThat(response.page().totalElements()).isEqualTo(1);
   }
@@ -443,12 +256,12 @@ class ListingMongoIntegrationTest {
   @Test
   void searchListings_POI는_있지만_주변매물이_없으면_빈목록을_반환한다() {
     new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
-    ListingKeywordSearchResponse response = listingService.searchListings(keywordRequest("연세"));
+    ListingKeywordSearchResponse response = listingService.searchListings(keywordRequest("고려대"));
 
     assertThat(response.matchedPlace()).isNotNull();
-    assertThat(response.matchedPlace().name()).isEqualTo("연세대학교");
+    assertThat(response.matchedPlace().name()).isEqualTo("고려대학교");
     assertThat(response.content()).isEmpty();
     assertThat(response.page().totalElements()).isZero();
   }
@@ -491,7 +304,7 @@ class ListingMongoIntegrationTest {
   /** 목록 검색은 지도 범위와 필터를 모두 만족하는 방 상품을 가진 매물 카드를 반환한다. */
   @Test
   void search_지도범위와_필터로_매물을_조회한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
     PageResponse<ListingSearchResult> result =
         listingRepository.search(
@@ -512,10 +325,10 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().listing().getId())
-        .isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
+        .isEqualTo(ListingTestSeeds.LISTING_ID);
     assertThat(result.content().getFirst().roomOffers())
         .extracting(Listing.RoomOffer::roomOfferId)
-        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ROOM_OFFER_ID);
+        .containsExactly(ListingTestSeeds.ROOM_OFFER_ID);
   }
 
   /** 필터가 없으면 공개 매물 안의 모든 active roomOffer가 매물 카드의 범위 계산 대상이 된다. */
@@ -530,21 +343,18 @@ class ListingMongoIntegrationTest {
                         "Green Zone 1",
                         490000,
                         1000000,
-                        3,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH)),
                     roomOffer(
                         "6858e2000000000000000202",
                         "Green Zone 2",
                         550000,
                         1000000,
-                        2,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH)),
                     roomOffer(
                         "6858e2000000000000000203",
                         "Green Zone 3",
                         450000,
                         500000,
-                        1,
                         Set.of(ConditionTag.ENGLISH_OK)),
                     roomOffer(
                         "6858e2000000000000000204",
@@ -552,7 +362,6 @@ class ListingMongoIntegrationTest {
                         Listing.RoomOfferStatus.INACTIVE,
                         300000,
                         300000,
-                        1,
                         Set.of(ConditionTag.FEMALE_ONLY))))
             .build());
 
@@ -592,21 +401,18 @@ class ListingMongoIntegrationTest {
                         "Green Zone 1",
                         490000,
                         1000000,
-                        3,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH)),
                     roomOffer(
                         "6858e2000000000000000302",
                         "Green Zone 2",
                         550000,
                         1000000,
-                        2,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH)),
                     roomOffer(
                         "6858e2000000000000000303",
                         "Green Zone 3",
                         450000,
                         500000,
-                        1,
                         Set.of(ConditionTag.ENGLISH_OK))))
             .build());
 
@@ -654,7 +460,6 @@ class ListingMongoIntegrationTest {
                         "Green Zone 1",
                         490000,
                         1000000,
-                        3,
                         Set.of(ConditionTag.FEMALE_ONLY))))
             .build());
     listingRepository.save(
@@ -668,7 +473,6 @@ class ListingMongoIntegrationTest {
                         "Green Zone 2",
                         550000,
                         1000000,
-                        2,
                         Set.of(ConditionTag.PRIVATE_BATH))))
             .build());
     listingRepository.save(
@@ -682,7 +486,6 @@ class ListingMongoIntegrationTest {
                         "Green Zone 3",
                         600000,
                         1000000,
-                        1,
                         Set.of(ConditionTag.ENGLISH_OK))))
             .build());
 
@@ -732,26 +535,24 @@ class ListingMongoIntegrationTest {
         .containsExactly(thirdListingId);
   }
 
-  /** 즉시입주 조건은 태그만으로 충분하지 않고, 같은 roomOffer의 availableCount가 1 이상이어야 한다. */
+  /** v4에는 재고가 없으므로 즉시입주는 같은 roomOffer가 MOVE_IN_NOW 태그를 가졌는지로만 판정한다. */
   @Test
-  void search_즉시입주조건은_계약가능수량이_있는_방상품만_반환한다() {
+  void search_즉시입주조건은_MOVE_IN_NOW_태그를_가진_방상품만_반환한다() {
     listingRepository.save(
         sampleListingBuilder()
             .roomOffers(
                 List.of(
                     roomOffer(
                         "6858e2000000000000000501",
-                        "Sold Out Zone",
+                        "Waiting List Zone",
                         490000,
                         1000000,
-                        0,
-                        Set.of(ConditionTag.MOVE_IN_NOW, ConditionTag.FEMALE_ONLY)),
+                        Set.of(ConditionTag.FEMALE_ONLY)),
                     roomOffer(
                         "6858e2000000000000000502",
                         "Move In Now Zone",
                         550000,
                         1000000,
-                        2,
                         Set.of(ConditionTag.MOVE_IN_NOW, ConditionTag.FEMALE_ONLY))))
             .build());
 
@@ -776,8 +577,6 @@ class ListingMongoIntegrationTest {
     assertThat(result.content().getFirst().roomOffers())
         .extracting(roomOffer -> roomOffer.name().en())
         .containsExactly("Move In Now Zone");
-    assertThat(result.content().getFirst().roomOffers().getFirst().inventory().availableCount())
-        .isEqualTo(2);
   }
 
   /** 전입신고 가능 여부는 별도 boolean 파라미터가 아니라 conditions 태그로 필터링한다. */
@@ -792,14 +591,12 @@ class ListingMongoIntegrationTest {
                         "Registration Zone",
                         490000,
                         1000000,
-                        3,
                         Set.of(ConditionTag.ADDRESS_REGISTRATION)),
                     roomOffer(
                         "6858e2000000000000000802",
                         "No Registration Zone",
                         450000,
                         500000,
-                        3,
                         Set.of(ConditionTag.FEMALE_ONLY))))
             .build());
 
@@ -826,71 +623,48 @@ class ListingMongoIntegrationTest {
         .containsExactly("Registration Zone");
   }
 
-  /** NO_ARC 필터를 선택하면 ARC 없이 가능한 매물만 조회하고, 미선택이면 ARC 조건을 적용하지 않는다. */
+  /**
+   * ARC 필터는 v4에서 목록 조건 태그가 아니라 진단 ⑥ arcStatus로 옮겨졌다. NO_ARC 답이면 ARC 불요 매물만 남기고, 답이 없으면 ARC 조건을 적용하지
+   * 않는다.
+   */
   @Test
-  void search_NO_ARC는_arcRequired_false_매물만_필터링한다() {
-    String arcOptionalListingId = "6858e2000000000000000007";
-    String arcRequiredListingId = "6858e2000000000000000008";
-    listingRepository.save(
-        sampleListingBuilder()
-            .id(arcOptionalListingId)
-            .roomOffers(
-                List.of(
-                    roomOffer("6858e2000000000000000901", "ARC Optional", 490000, 0, 3, Set.of())))
-            .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
-            .build());
-    listingRepository.save(
-        sampleListingBuilder()
-            .id(arcRequiredListingId)
-            .roomOffers(
-                List.of(
-                    roomOffer("6858e2000000000000000902", "ARC Required", 490000, 0, 3, Set.of())))
-            .propertyPolicies(new Listing.PropertyPolicies(true, true, true, true, false))
-            .build());
+  void recommend_arcStatus가_NO_ARC면_ARC불요_매물만_반환한다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
-    ListingSearchCondition withoutArcFilter =
-        new ListingSearchCondition(
-            new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
-            null,
-            null,
-            null,
-            null,
-            null,
-            Set.of(ListingType.GOSHIWON),
-            Set.of(),
-            ListingSort.RECOMMENDED,
-            null,
-            null,
-            0,
-            20);
-    ListingSearchCondition onlyNoArc =
-        new ListingSearchCondition(
-            withoutArcFilter.bounds(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            Set.of(ListingType.GOSHIWON),
-            Set.of(ConditionTag.NO_ARC),
-            ListingSort.RECOMMENDED,
-            null,
-            null,
-            0,
-            20);
+    PageResponse<RecommendedListingView> withoutArcAnswer = recommendWithArcStatus(null);
+    PageResponse<RecommendedListingView> noArcOnly = recommendWithArcStatus("NO_ARC");
 
-    PageResponse<ListingSearchResult> unfiltered = listingRepository.search(withoutArcFilter);
-    PageResponse<ListingSearchResult> noArcOnly = listingRepository.search(onlyNoArc);
-
-    assertThat(unfiltered.content())
-        .extracting(searchResult -> searchResult.listing().getId())
-        .containsExactlyInAnyOrder(arcOptionalListingId, arcRequiredListingId);
+    assertThat(withoutArcAnswer.content())
+        .extracting(RecommendedListingView::listingId)
+        .containsExactlyInAnyOrder(ListingTestSeeds.LISTING_ID, ListingTestSeeds.SECOND_LISTING_ID);
     assertThat(noArcOnly.content())
-        .extracting(searchResult -> searchResult.listing().getId())
-        .containsExactly(arcOptionalListingId);
+        .extracting(RecommendedListingView::listingId)
+        .containsExactly(ListingTestSeeds.LISTING_ID);
   }
 
-  /** 서비스 응답은 조건에 맞는 방 상품들을 매물 단위로 집계해 범위 필드와 재고 합계를 내려준다. */
+  /**
+   * 진단 ③ 지역구의 {@code ETC}는 특정 구가 아니라 명시 5구의 여집합이다.
+   *
+   * <p>등가 비교로 두면 {@code address.district}에 저장된 어떤 값도 문자열 {@code "ETC"}와 같지 않아 항상 0건이 된다. 이 테스트는 그
+   * 회귀를 막는다.
+   */
+  @Test
+  void recommend_지역구가_ETC면_명시된_5구를_제외한_매물을_반환한다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+
+    PageResponse<RecommendedListingView> etc = recommendWithDistrict("ETC");
+    PageResponse<RecommendedListingView> gwanakGu = recommendWithDistrict("GWANAK_GU");
+
+    // 시드는 GWANAK_GU(명시 5구)와 MAPO_GU(그 외) 각각 1건이다.
+    assertThat(etc.content())
+        .extracting(RecommendedListingView::listingId)
+        .containsExactly(ListingTestSeeds.SECOND_LISTING_ID);
+    assertThat(gwanakGu.content())
+        .extracting(RecommendedListingView::listingId)
+        .containsExactly(ListingTestSeeds.LISTING_ID);
+  }
+
+  /** 서비스 응답은 조건에 맞는 방 상품들을 매물 단위로 집계해 가격·계약기간을 내려준다. */
   @Test
   void getListings_매물_카드_응답에_가격과_계약기간_범위를_포함한다() {
     listingRepository.save(
@@ -905,7 +679,6 @@ class ListingMongoIntegrationTest {
                         20000,
                         1,
                         6,
-                        3,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH)),
                     roomOffer(
                         "6858e2000000000000000602",
@@ -915,7 +688,6 @@ class ListingMongoIntegrationTest {
                         30000,
                         3,
                         12,
-                        2,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ENGLISH_OK)),
                     roomOffer(
                         "6858e2000000000000000603",
@@ -925,9 +697,7 @@ class ListingMongoIntegrationTest {
                         10000,
                         2,
                         6,
-                        1,
                         Set.of(ConditionTag.ADDRESS_REGISTRATION))))
-            .contract(new Listing.Contract(1, 12))
             .build());
     ListingSearchRequest request = new ListingSearchRequest();
     request.setSwLat(37.45);
@@ -944,19 +714,22 @@ class ListingMongoIntegrationTest {
     assertThat(card.listingId()).isEqualTo(LISTING_ID);
     assertThat(card.status()).isEqualTo(Listing.ListingStatus.PUBLISHED);
     assertThat(card.rentalType().code()).isEqualTo("MONTHLY_RENT");
-    assertThat(card.contract().minStayMonths()).isEqualTo(1);
-    assertThat(card.contract().maxStayMonths()).isEqualTo(12);
+    assertThat(card.refundPolicy()).isEqualTo("입주 7일 전 취소 시 전액 환불");
     assertThat(card.location())
         .isEqualTo(new ListingDetailResponse.GeoPoint(37.459471, 126.951422));
+    assertThat(card.address().city().code()).isEqualTo("SEOUL");
+    assertThat(card.address().district().code()).isEqualTo("GWANAK_GU");
     assertThat(card.address().fullAddress()).isEqualTo("서울특별시 관악구 테스트로 1");
     assertThat(card.nearestTransit().type().code()).isEqualTo("SUBWAY");
     assertThat(card.nearestTransit().name()).isEqualTo("서울대입구역");
     assertThat(card.nearestTransit().walkMinutes()).isEqualTo(5);
-    assertThat(card.nearestTransit().nearbyPlacesDescription()).isEqualTo("편의점");
     assertThat(card.building().type().code()).isEqualTo("VILLA");
     assertThat(card.facilities().heatingSystem())
         .extracting(heating -> heating.code())
         .containsExactly("CENTRAL");
+    assertThat(card.facilities().commonSpaces())
+        .extracting(commonSpace -> commonSpace.code())
+        .containsExactly("SHARED_TOILET");
     assertThat(card.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::name)
         .containsExactly("Green Zone 1", "Green Zone 2");
@@ -970,8 +743,11 @@ class ListingMongoIntegrationTest {
         .extracting(roomOffer -> roomOffer.pricing().maintenanceFee())
         .containsExactly(20000, 30000);
     assertThat(card.roomOffers())
-        .extracting(roomOffer -> roomOffer.inventory().availableCount())
-        .containsExactly(3, 2);
+        .extracting(roomOffer -> roomOffer.contract().minStayMonths())
+        .containsExactly(1, 3);
+    assertThat(card.roomOffers())
+        .extracting(roomOffer -> roomOffer.contract().maxStayMonths())
+        .containsExactly(6, 12);
     assertThat(card.roomOffers().getFirst().filterTags())
         .extracting(tag -> tag.code())
         .containsExactlyInAnyOrder("FEMALE_ONLY", "PRIVATE_BATH");
@@ -987,14 +763,14 @@ class ListingMongoIntegrationTest {
             .id(farListingId)
             .location(new Listing.GeoPoint(127.19, 37.19))
             .roomOffers(
-                List.of(roomOffer("6858e2000000000000000a01", "Far Zone", 490000, 0, 3, Set.of())))
+                List.of(roomOffer("6858e2000000000000000a01", "Far Zone", 490000, 0, Set.of())))
             .build());
     listingRepository.save(
         sampleListingBuilder()
             .id(nearListingId)
             .location(new Listing.GeoPoint(127.101, 37.101))
             .roomOffers(
-                List.of(roomOffer("6858e2000000000000000a02", "Near Zone", 490000, 0, 3, Set.of())))
+                List.of(roomOffer("6858e2000000000000000a02", "Near Zone", 490000, 0, Set.of())))
             .build());
     ListingSearchRequest request = new ListingSearchRequest();
     request.setSwLat(37.0);
@@ -1024,7 +800,7 @@ class ListingMongoIntegrationTest {
   /** 지도 마커 조회는 같은 필터를 적용하되 페이지가 아니라 마커 후보와 전체 개수를 반환한다. */
   @Test
   void searchForMap_지도범위와_필터에_맞는_마커후보를_조회한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
     ListingMapSearchResult result =
         listingRepository.searchForMap(
@@ -1046,7 +822,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.total()).isEqualTo(1);
     assertThat(result.listings()).hasSize(1);
-    assertThat(result.listings().getFirst().getId()).isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
+    assertThat(result.listings().getFirst().getId()).isEqualTo(ListingTestSeeds.LISTING_ID);
   }
 
   /** 지도 마커는 roomOffer 카드 수가 아니라 조건에 맞는 Listing 건물 수 기준으로 1개만 반환한다. */
@@ -1061,14 +837,12 @@ class ListingMongoIntegrationTest {
                         "Green Zone 1",
                         490000,
                         1000000,
-                        3,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH)),
                     roomOffer(
                         "6858e2000000000000000702",
                         "Green Zone 2",
                         550000,
                         1000000,
-                        2,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH))))
             .build());
 
@@ -1248,9 +1022,9 @@ class ListingMongoIntegrationTest {
         .isEqualTo(1);
   }
 
-  /** 상세 응답은 MongoDB v2 구조에 가깝게 루트 공통 필드를 내려주고, 방 상품은 ACTIVE 항목만 내려준다. */
+  /** 상세 응답은 MongoDB v4 구조에 맞게 루트 공통 필드를 내려주고, 방 상품은 ACTIVE 항목만 내려준다. */
   @Test
-  void detail_루트필드와_방목록은_v2_구조를_따르고_ACTIVE_roomOffer만_반환한다() {
+  void detail_루트필드와_방목록은_v4_구조를_따르고_ACTIVE_roomOffer만_반환한다() {
     listingRepository.save(
         sampleListingBuilder()
             .imageUrls(
@@ -1268,7 +1042,6 @@ class ListingMongoIntegrationTest {
                         0,
                         1,
                         6,
-                        2,
                         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION)),
                     roomOffer(
                         "6858e2000000000000000902",
@@ -1278,7 +1051,6 @@ class ListingMongoIntegrationTest {
                         20000,
                         2,
                         12,
-                        1,
                         Set.of(ConditionTag.PRIVATE_BATH, ConditionTag.NO_MAINT_FEE)),
                     roomOffer(
                         "6858e2000000000000000903",
@@ -1286,25 +1058,21 @@ class ListingMongoIntegrationTest {
                         Listing.RoomOfferStatus.INACTIVE,
                         100000,
                         100000,
-                        0,
-                        1,
-                        1,
-                        1,
                         Set.of(ConditionTag.MOVE_IN_NOW))))
-            .contract(new Listing.Contract(1, 12))
             .build());
 
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
 
     assertThat(response.rentalType().code()).isEqualTo("MONTHLY_RENT");
-    assertThat(response.contract().minStayMonths()).isEqualTo(1);
-    assertThat(response.contract().maxStayMonths()).isEqualTo(12);
+    assertThat(response.refundPolicy()).isEqualTo("입주 7일 전 취소 시 전액 환불");
     assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
-    assertThat(response.propertyPolicies().arcRequired()).isFalse();
     assertThat(response.imageUrls()).hasSize(3);
     assertThat(response.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::name)
         .containsExactly("Green Zone 1", "Green Zone 2");
+    assertThat(response.roomOffers())
+        .extracting(roomOffer -> roomOffer.contract().minStayMonths())
+        .containsExactly(1, 2);
     assertThat(response.roomOffers())
         .allSatisfy(
             roomOffer -> {
@@ -1375,7 +1143,7 @@ class ListingMongoIntegrationTest {
               assertThat(response.nearestTransit())
                   .isEqualTo(
                       new ListingDetailResponse.NearestTransitResponse(
-                          response.nearestTransit().type(), "서울대입구역", 5, "편의점"));
+                          response.nearestTransit().type(), "서울대입구역", 5));
               assertThat(response.roomOffers().getFirst().pricing().monthlyRent())
                   .isEqualTo(310000);
             });
@@ -1441,7 +1209,7 @@ class ListingMongoIntegrationTest {
   /** 조건을 모두 만족하는 같은 방 상품이 없으면 목록 검색 결과는 비어 있어야 한다. */
   @Test
   void search_조건을_모두_만족하지_않으면_빈_목록을_반환한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
     PageResponse<ListingSearchResult> result =
         listingRepository.search(
@@ -1466,7 +1234,7 @@ class ListingMongoIntegrationTest {
   /** diagnosis가 전달한 UI 필터 조건 코드로 매물 요약을 반환한다. */
   @Test
   void recommendByCriteria_조건코드로_매물요약을_반환한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
     PageResponse<RecommendedListingView> result =
         listingRecommendationService.recommendByCriteria(
@@ -1477,20 +1245,21 @@ class ListingMongoIntegrationTest {
                 Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 Set.of("SNU"),
                 null,
+                null,
                 0,
                 20,
                 "recommended,desc"));
 
     assertThat(result.content()).hasSize(1);
     RecommendedListingView listing = result.content().getFirst();
-    assertThat(listing.listingId()).isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
-    assertThat(listing.title()).isEqualTo("Goshiwon 001");
+    assertThat(listing.listingId()).isEqualTo(ListingTestSeeds.LISTING_ID);
+    assertThat(listing.title()).isEqualTo("Sillim Stay");
     assertThat(listing.type().code()).isEqualTo("GOSHIWON");
     assertThat(listing.type().label()).isEqualTo("Goshiwon");
-    assertThat(listing.monthlyRentMin()).isEqualTo(300000);
-    assertThat(listing.monthlyRentMax()).isEqualTo(300000);
+    assertThat(listing.monthlyRentMin()).isEqualTo(380000);
+    assertThat(listing.monthlyRentMax()).isEqualTo(520000);
     assertThat(listing.minDeposit()).isEqualTo(300000);
-    assertThat(listing.maxDeposit()).isEqualTo(300000);
+    assertThat(listing.maxDeposit()).isEqualTo(500000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
     assertThat(listing.conditions())
@@ -1511,12 +1280,13 @@ class ListingMongoIntegrationTest {
                 Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 Set.of("SNU"),
                 null,
+                null,
                 0,
                 20,
                 "recommended,desc"),
             "ko");
     RecommendedListingView koreanListing = koreanResult.content().getFirst();
-    assertThat(koreanListing.title()).isEqualTo("고시원001");
+    assertThat(koreanListing.title()).isEqualTo("신림 스테이");
     assertThat(koreanListing.type().code()).isEqualTo("GOSHIWON");
     assertThat(koreanListing.type().label()).isEqualTo("고시원");
   }
@@ -1524,66 +1294,123 @@ class ListingMongoIntegrationTest {
   /** 진단 대학 그룹에서 펼친 개별 대학 코드 집합은 nearbyUniversityCodes와 ANY 매칭되고, 빈 집합은 대학 필터를 생략한다. */
   @Test
   void recommendByCriteria_대학코드집합은_ANY로_매칭하고_빈집합은_대학필터를_생략한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
     PageResponse<RecommendedListingView> matchedByGroupMember =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of("CAU"), null, 0, 20, null));
+                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of("CAU"), null, null, 0, 20, null));
     PageResponse<RecommendedListingView> notMatchedByDifferentUniversity =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of("YONSEI"), null, 0, 20, null));
+                "SEOUL",
+                0,
+                500000,
+                Set.of("FEMALE_ONLY"),
+                Set.of("KOREA"),
+                null,
+                null,
+                0,
+                20,
+                null));
     PageResponse<RecommendedListingView> noUniversityFilter =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of(), null, 0, 20, null));
+                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of(), null, null, 0, 20, null));
 
     assertThat(matchedByGroupMember.content())
         .extracting(RecommendedListingView::listingId)
-        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ID);
+        .containsExactly(ListingTestSeeds.LISTING_ID);
     assertThat(notMatchedByDifferentUniversity.content()).isEmpty();
     assertThat(noUniversityFilter.content())
         .extracting(RecommendedListingView::listingId)
-        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ID);
+        .containsExactly(ListingTestSeeds.LISTING_ID);
   }
 
   /** 추천 월세 하한과 상한은 같은 active roomOffer의 pricing.monthlyRent에 함께 적용된다. */
   @Test
   void recommendByCriteria_월세하한과_상한을_모두_적용한다() {
-    new ListingSeedRunner(listingRepository).run(null);
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
     PageResponse<RecommendedListingView> inRange =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 250000, 350000, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, 0, 20, null));
+                "SEOUL",
+                350000,
+                400000,
+                Set.of("FEMALE_ONLY"),
+                Set.of("SNU"),
+                null,
+                null,
+                0,
+                20,
+                null));
     PageResponse<RecommendedListingView> belowMinimum =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 350001, 500000, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, 0, 20, null));
+                "SEOUL",
+                530000,
+                600000,
+                Set.of("FEMALE_ONLY"),
+                Set.of("SNU"),
+                null,
+                null,
+                0,
+                20,
+                null));
     PageResponse<RecommendedListingView> aboveMaximum =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 299999, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, 0, 20, null));
+                "SEOUL", 0, 379999, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, null, 0, 20, null));
 
     assertThat(inRange.content())
         .extracting(RecommendedListingView::listingId)
-        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ID);
+        .containsExactly(ListingTestSeeds.LISTING_ID);
     assertThat(belowMinimum.content()).isEmpty();
     assertThat(aboveMaximum.content()).isEmpty();
   }
 
-  /** 즉시입주 조건은 active 방 상품의 availableCount가 있을 때만 매칭되는지 확인한다. */
+  /** v4에는 재고가 없으므로 즉시입주 조건은 방 상품의 MOVE_IN_NOW 태그로만 매칭된다. */
   @Test
-  void recommendByCriteria_즉시입주조건은_availableCount가_있어야_매칭된다() {
-    new ListingSeedRunner(listingRepository).run(null);
+  void recommendByCriteria_즉시입주조건은_MOVE_IN_NOW_태그로_매칭한다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
 
-    PageResponse<RecommendedListingView> result =
+    PageResponse<RecommendedListingView> moveInNow =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("MOVE_IN_NOW"), Set.of("SNU"), null, 0, 20, null));
+                "SEOUL", 0, 500000, Set.of("MOVE_IN_NOW"), Set.of("SNU"), null, null, 0, 20, null));
+    PageResponse<RecommendedListingView> notTagged =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL",
+                0,
+                500000,
+                Set.of("MEALS_INCLUDED"),
+                Set.of("SNU"),
+                null,
+                null,
+                0,
+                20,
+                null));
 
-    assertThat(result.content()).isEmpty();
+    assertThat(moveInNow.content())
+        .extracting(RecommendedListingView::listingId)
+        .containsExactly(ListingTestSeeds.LISTING_ID);
+    assertThat(notTagged.content()).isEmpty();
+  }
+
+  /** 진단 ⑥ arcStatus만 바꿔 추천 결과를 비교하기 위한 요청 헬퍼다. */
+  private PageResponse<RecommendedListingView> recommendWithArcStatus(String arcStatus) {
+    return listingRecommendationService.recommendByCriteria(
+        new RecommendationCriteria(
+            "SEOUL", null, null, Set.of(), Set.of(), null, arcStatus, 0, 20, null));
+  }
+
+  /** 진단 ③ 지역구만 바꿔 추천 결과를 비교하기 위한 요청 헬퍼다. */
+  private PageResponse<RecommendedListingView> recommendWithDistrict(String district) {
+    return listingRecommendationService.recommendByCriteria(
+        new RecommendationCriteria(
+            "SEOUL", null, null, Set.of(), Set.of(), district, null, 0, 20, null));
   }
 
   /** 서비스 검색 테스트에서 사용할 기본 키워드 검색 요청을 만든다. */
@@ -1647,140 +1474,59 @@ class ListingMongoIntegrationTest {
                     10000,
                     1,
                     6,
-                    1,
                     Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION))))
         .favoriteCount(index)
         .build();
   }
 
-  /** v2 이행 테스트에서 MongoDB에 직접 넣을 레거시 v1 문서다. */
-  private static Document legacyV1ListingDocument(ObjectId roomOfferId) {
-    return new Document("_id", new ObjectId(LISTING_ID))
-        .append("schemaVersion", 1)
-        .append("landlordId", 1L)
-        .append("title", "레거시 고시원")
-        // 신규 enum으로 읽기 전에 ChangeUnit이 바꿔야 하는 실제 레거시 저장값이다.
-        .append("type", "GOSIWON")
-        .append("status", "PUBLISHED")
-        .append(
-            "location",
-            new Document("type", "Point").append("coordinates", List.of(126.951422, 37.459471)))
-        .append(
-            "address",
-            new Document("city", "SEOUL")
-                .append("district", "GWANAK_GU")
-                .append("fullAddress", "서울특별시 관악구 레거시로 1")
-                .append("detail", null))
-        .append(
-            "nearestTransit",
-            new Document("type", "SUBWAY").append("name", "서울대입구역").append("walkMinutes", 5))
-        .append("nearbyPlacesDescription", "편의점")
-        .append("nearbyUniversityCodes", List.of("SNU"))
-        .append(
-            "building",
-            new Document("type", "VILLA")
-                .append("usedFloorMin", 1)
-                .append("usedFloorMax", 2)
-                .append("totalFloors", 4)
-                .append("parkingAvailable", true)
-                .append("elevatorAvailable", true)
-                .append("heatingSystem", "CENTRAL"))
-        .append(
-            "propertyPolicies",
-            new Document("arcRequired", false)
-                .append("residentRegistrationAvailable", true)
-                .append("studySuitable", true)
-                .append("mealsProvided", true)
-                .append("englishAvailable", false))
-        .append(
-            "facilities",
-            new Document("laundry", List.of("COIN_LAUNDRY"))
-                .append("livingAmenities", List.of("WIFI"))
-                .append("securityFeatures", List.of("CCTV"))
-                .append(
-                    "commonSpaces",
-                    List.of(
-                        new Document("type", "SHARED_TOILET").append("count", 2),
-                        new Document("type", "STUDY_ROOM").append("count", null)))
-                .append("providedSupplies", List.of("BEDDING")))
-        .append(
-            "roomOffers",
-            List.of(
-                new Document("roomOfferId", roomOfferId)
-                    .append("name", "레거시 1인실")
-                    .append("status", "ACTIVE")
-                    .append("rentalType", "MONTHLY_RENT")
-                    .append(
-                        "pricing",
-                        new Document("monthlyRent", 300000)
-                            .append("deposit", 300000)
-                            .append("maintenanceFee", 0)
-                            .append("currency", "KRW"))
-                    .append(
-                        "contract",
-                        new Document("minStayMonths", 1)
-                            .append("maxStayMonths", 12)
-                            .append(
-                                "refundPolicy",
-                                new Document("code", "PARTIAL_REFUND")
-                                    .append("description", "부분 환불")))
-                    .append(
-                        "inventory",
-                        new Document("totalCount", 10)
-                            .append("availableCount", 1)
-                            .append("nextAvailableFrom", null))
-                    .append("genderPolicy", "FEMALE_ONLY")
-                    .append("features", List.of("SINGLE_ROOM"))
-                    .append("filterTags", List.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"))
-                    .append("roomImageUrls", List.of())))
-        .append("featureSummary", List.of("FEMALE_ONLY"))
-        .append("descriptions", new Document("ko", "레거시 설명").append("en", "Legacy description"))
-        .append("extraNotes", "레거시 주의사항")
-        .append("imageUrls", List.of())
-        .append("favoriteCount", 0)
-        .append("createdAt", java.util.Date.from(Instant.parse("2026-06-24T00:00:00Z")))
-        .append("updatedAt", java.util.Date.from(Instant.parse("2026-06-24T00:00:00Z")));
-  }
-
-  /** 저장·조회 테스트에서 일부 필드만 바꿔 쓸 대표 매물 빌더를 만든다. */
+  /** 저장·조회 테스트에서 일부 필드만 바꿔 쓸 v4 대표 매물 빌더를 만든다. */
   private static Listing.ListingBuilder sampleListingBuilder() {
     return Listing.builder()
         .id(LISTING_ID)
-        .schemaVersion(3)
+        .schemaVersion(4)
         .landlordId(1L)
+        .contact(new Listing.Contact("김담당", "+82) 10-1111-2222", "+82) 10-1111-2223"))
+        .businessRegistrationNumber("1112233344")
+        .blogUrl(null)
+        .ageMin(20)
+        .ageMax(35)
         .title(localized("테스트 고시원"))
         .type(ListingType.GOSHIWON)
-        .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
-        .refundPolicy(
-            new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS,
-                localized("입주 7일 전 취소 시 전액 환불")))
-        .contract(new Listing.Contract(2, 6))
+        .status(Listing.ListingStatus.PUBLISHED)
+        .rejectionReason(null)
         .genderPolicy(Listing.GenderPolicy.FEMALE_ONLY)
-        .location(new Listing.GeoPoint(126.951422, 37.459471))
-        .address(new Listing.Address("SEOUL", "GWANAK_GU", localized("서울특별시 관악구 테스트로 1"), null))
-        .nearestTransit(
-            new Listing.NearestTransit(
-                Listing.TransitType.SUBWAY, localized("서울대입구역"), 5, localized("편의점")))
+        .languagesSupported(Set.of(SupportedLanguage.ENGLISH))
+        .favoriteCount(0)
+        .imageUrls(List.of())
         .nearbyUniversityCodes(Set.of("SNU"))
+        .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
+        .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
+        .address(
+            new Listing.Address(
+                City.SEOUL, District.GWANAK_GU, localized("서울특별시 관악구 테스트로 1"), null))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
-        .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
+        .description(localized("테스트 설명"))
+        .extraNotes(localized("테스트 주의사항"))
         .facilities(
             new Listing.Facilities(
                 Set.of(Listing.HeatingSystem.CENTRAL),
-                Set.of("공용 냉장고"),
-                Set.of("COIN_LAUNDRY"),
-                Set.of("WIFI"),
-                Set.of("CCTV"),
-                List.of(new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 2)),
-                Set.of("BEDDING")))
+                Set.of(KitchenFacility.SHARED_REFRIGERATOR),
+                Set.of(LaundryFacility.WASHER),
+                Set.of(LivingAmenity.WIFI),
+                Set.of(SecurityFeature.CCTV),
+                Set.of(Listing.CommonSpaceType.SHARED_TOILET),
+                Set.of(ProvidedSupply.BEDDING)))
+        .location(new Listing.GeoPoint(126.951422, 37.459471))
+        .nearestTransit(
+            new Listing.NearestTransit(Listing.TransitType.SUBWAY, localized("서울대입구역"), 5))
+        .nearbyFacilities(Set.of(NearbyFacility.CONVENIENCE_STORE))
+        .arcRequired(ArcRequirement.NOT_REQUIRED)
+        .refundPolicy(localized("입주 7일 전 취소 시 전액 환불"))
         .roomOffers(List.of(sampleRoomOffer(ROOM_OFFER_ID)))
-        .descriptions(new Listing.Descriptions("테스트 설명", "Test description", "테스트"))
-        .imageUrls(List.of())
-        .favoriteCount(0)
-        .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
-        .updatedAt(Instant.parse("2026-06-24T00:00:00Z"));
+        .preferredNationalities(Set.of(Nationality.JAPAN))
+        .contractDifficulties(Set.of(ContractDifficulty.LANGUAGE))
+        .serviceFeedback(null);
   }
 
   /** 저장·조회 테스트에서 사용할 대표 방 상품을 만든다. */
@@ -1790,31 +1536,20 @@ class ListingMongoIntegrationTest {
         "스탠다드 1인실",
         300000,
         300000,
-        1,
         Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION));
   }
 
   /**
    * 목록 조회 테스트에서 사용할 방 상품 묶음을 만든다.
    *
-   * <p>roomOffer는 실제 방 1개가 아니라 같은 가격·조건을 가진 방 묶음이다. 테스트에서는 이름·가격·재고·태그만 바꿔 여러 카드가 어떻게 펼쳐지는지 확인한다.
+   * <p>roomOffer는 실제 방 1개가 아니라 같은 가격·조건을 가진 방 묶음이다. 테스트에서는 이름·가격·태그만 바꿔 여러 카드가 어떻게 펼쳐지는지 확인한다.
    */
   private static Listing.RoomOffer roomOffer(
-      String roomOfferId,
-      String name,
-      int monthlyRent,
-      int deposit,
-      int availableCount,
-      Set<ConditionTag> filterTags) {
-    return roomOffer(roomOfferId, name, monthlyRent, deposit, 0, 2, 6, availableCount, filterTags);
+      String roomOfferId, String name, int monthlyRent, int deposit, Set<ConditionTag> filterTags) {
+    return roomOffer(roomOfferId, name, monthlyRent, deposit, 0, 2, 6, filterTags);
   }
 
-  /**
-   * 목록 응답 집계 테스트에서 사용할 방 상품 묶음을 만든다.
-   *
-   * <p>v2 저장 스키마에서는 계약기간이 매물 루트로 올라갔기 때문에 {@code minStayMonths}/{@code maxStayMonths} 인자는 기존 테스트
-   * 호출부를 크게 흔들지 않기 위한 호환 파라미터다. 목록 카드의 계약기간은 이 값이 아니라 Listing의 {@code contract}에서 내려온다.
-   */
+  /** 관리비와 계약기간까지 지정하는 방 상품 묶음이다. v4에서는 계약기간이 방 상품마다 다를 수 있다. */
   private static Listing.RoomOffer roomOffer(
       String roomOfferId,
       String name,
@@ -1823,7 +1558,6 @@ class ListingMongoIntegrationTest {
       int maintenanceFee,
       int minStayMonths,
       int maxStayMonths,
-      int availableCount,
       Set<ConditionTag> filterTags) {
     return roomOffer(
         roomOfferId,
@@ -1834,7 +1568,6 @@ class ListingMongoIntegrationTest {
         maintenanceFee,
         minStayMonths,
         maxStayMonths,
-        availableCount,
         filterTags);
   }
 
@@ -1849,10 +1582,8 @@ class ListingMongoIntegrationTest {
       Listing.RoomOfferStatus status,
       int monthlyRent,
       int deposit,
-      int availableCount,
       Set<ConditionTag> filterTags) {
-    return roomOffer(
-        roomOfferId, name, status, monthlyRent, deposit, 0, 2, 6, availableCount, filterTags);
+    return roomOffer(roomOfferId, name, status, monthlyRent, deposit, 0, 2, 6, filterTags);
   }
 
   /** 상태·가격·계약기간까지 모두 지정할 수 있는 가장 상세한 방 상품 테스트 헬퍼다. */
@@ -1865,14 +1596,13 @@ class ListingMongoIntegrationTest {
       int maintenanceFee,
       int minStayMonths,
       int maxStayMonths,
-      int availableCount,
       Set<ConditionTag> filterTags) {
     return new Listing.RoomOffer(
         roomOfferId,
         localized(name),
         status,
+        new Listing.Contract(minStayMonths, maxStayMonths),
         new Listing.Pricing(monthlyRent, deposit, maintenanceFee, Listing.Currency.KRW),
-        new Listing.Inventory(10, availableCount, null),
         filterTags,
         List.of());
   }

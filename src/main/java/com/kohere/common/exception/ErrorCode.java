@@ -19,6 +19,7 @@ public enum ErrorCode {
   RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다."),
   METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 메서드입니다."),
   TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "요청이 너무 많습니다."),
+  PAYLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "요청 크기가 허용 범위를 넘었습니다."),
   INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "일시적인 오류가 발생했습니다."),
   UPSTREAM_ERROR(HttpStatus.BAD_GATEWAY, "외부 연동에 실패했습니다."),
   SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "서비스를 일시적으로 사용할 수 없습니다."),
@@ -50,6 +51,13 @@ public enum ErrorCode {
   LISTING_INVALID_SORT_PARAM(HttpStatus.BAD_REQUEST, "정렬 파라미터가 올바르지 않습니다."),
   LISTING_INVALID_BBOX(HttpStatus.BAD_REQUEST, "지도 좌표 범위가 올바르지 않습니다."),
   LISTING_AREA_TOO_LARGE(HttpStatus.BAD_REQUEST, "검색 범위가 너무 넓습니다."),
+  LISTING_INVALID_ADDRESS(HttpStatus.BAD_REQUEST, "주소를 인식할 수 없습니다. 도로명 주소를 확인해 주세요."),
+  LISTING_UNKNOWN_CATALOG_CODE(HttpStatus.BAD_REQUEST, "지원하지 않는 코드가 포함되어 있습니다."),
+  // 사진 4종은 위반 대상이 JSON 필드가 아니라 파일 part나 저장 키라 INVALID_INPUT의 errors[]에 담을 경로가 없다(ADR-0041).
+  LISTING_IMAGE_REQUIRED(HttpStatus.BAD_REQUEST, "매물 사진 장수가 올바르지 않습니다."),
+  LISTING_IMAGE_KEY_NOT_FOUND(HttpStatus.BAD_REQUEST, "사진을 찾을 수 없습니다. 다시 올려 주세요."),
+  LISTING_IMAGE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "사진 한 장의 크기가 허용 범위를 넘었습니다."),
+  LISTING_IMAGE_UNSUPPORTED_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "지원하지 않는 사진 형식입니다."),
 
   // --- 신청·채팅 (booking/chat) — docs/api/specs/04-booking-inquiry-chat.md ---
   BOOKING_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신청한 매물입니다."),

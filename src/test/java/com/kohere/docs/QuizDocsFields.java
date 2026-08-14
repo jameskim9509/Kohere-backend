@@ -80,6 +80,9 @@ public final class QuizDocsFields {
       - 역할 게이트가 없다 — 게스트·세입자·임대인 모두 200이며 응답 스키마도 동일하다.
       - 서명이 깨진 토큰도 게스트로 처리해 200이지만, 만료된 access token은 게스트로 강등하지 않고 401 `TOKEN_EXPIRED`로 재발급을 유도한다.
 
+      **요청 주의사항**
+
+
       **응답 주의사항**
 
       - `correctChoice`는 오답(`correct=false`)일 때만 내려간다. 정답이면 값이 null이 아니라 **필드 자체가 생략**된다.

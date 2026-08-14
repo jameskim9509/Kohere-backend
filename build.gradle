@@ -32,6 +32,7 @@ repositories {
 ext {
   set('springModulithVersion', '1.4.1')
   set('swaggerUiVersion', '5.18.2')
+  set('awsSdkVersion', '2.31.78')
   // SOLAPI SDK 1.1.0은 Kotlin 2.3.0으로 빌드됨(SDK build.gradle.kts: kotlin("jvm") 2.3.0). Boot 3.5.8 관리
   // kotlin 1.9.25로는 런타임 NoSuchMethodError(kotlin.time.Clock.getSystemClock)로 SMS 발송이 500 실패(ADR-0034).
   // stdlib/reflect만 우리 classpath를 쓰고(kotlinx-serialization은 SDK가 shadowJar로 relocate 번들) → 버전만 맞추면 된다.
@@ -81,8 +82,16 @@ dependencies {
   implementation "org.webjars:swagger-ui:${swaggerUiVersion}"
 
   // 구조화 로깅 — MDC·StructuredArguments를 1줄 JSON으로 인코딩(ADR-0038). 로그 내용과 전송 경로를 직교로 두어
-  // 앱은 AWS SDK를 물지 않는다 — CloudWatch 반출은 Agent(dev)·awslogs 드라이버(prod)가 맡는다.
+  // 로깅 자체는 AWS SDK를 타지 않는다 — CloudWatch 반출은 Agent(dev)·awslogs 드라이버(prod)가 맡는다.
   implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
+
+  // 매물 사진 업로드 — S3(로컬은 endpoint만 바꿔 MinIO, ADR-0041). apache-client는 이 한 경로에 과하고
+  // 전이 의존이 넓어 url-connection-client로 대체한다(동기 PutObject/DeleteObjects만 쓴다).
+  implementation('software.amazon.awssdk:s3') {
+    exclude group: 'software.amazon.awssdk', module: 'apache-client'
+    exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+  }
+  implementation 'software.amazon.awssdk:url-connection-client'
 
   // 생성자 주입 보일러플레이트 제거 (docs/convention/code-style.md §3-4)
   compileOnly 'org.projectlombok:lombok'
@@ -101,6 +110,8 @@ dependencies {
   testImplementation 'org.testcontainers:junit-jupiter'
   testImplementation 'org.testcontainers:mysql'
   testImplementation 'org.testcontainers:mongodb'
+  // 매물 사진 업로드 어댑터는 실제 S3 프로토콜로 검증한다 — 목으로는 키·URL 조립만 보고 SDK 호출은 못 본다(ADR-0041)
+  testImplementation 'org.testcontainers:minio'
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -111,6 +122,8 @@ dependencyManagement {
     mavenBom "org.testcontainers:testcontainers-bom:1.21.4"
     // MongoDB 마이그레이션 Mongock 버전 일괄 관리 (ADR-0032)
     mavenBom "io.mongock:mongock-bom:5.5.0"
+    // 매물 사진 S3 업로드 — SDK 모듈 간 버전 어긋남을 막으려고 BOM으로 묶는다 (ADR-0041)
+    mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
   }
 }
 
@@ -182,6 +195,15 @@ tasks.register('verifyOpenApiSpec') {
     // 엄격한 케밥 정규식을 쓰면 정상값을 거부한다. 형식은 느슨하게 두고 유일성·붕괴를 직접 본다.
     def ID_PATTERN = ~/^[a-z][a-z0-9]*(-[a-z0-9]*)*$/
 
+    // 성공 응답이 존재하지 않는 오퍼레이션 — 항상 4xx 다. 허용 목록으로 둬서 "성공 스니펫을 깜빡한 것"과
+    // "원래 성공이 없는 것"을 구분한다. 새로 넣을 땐 왜 2xx 가 없는지 근거를 함께 적는다.
+    def NO_SUCCESS_RESPONSE = [
+        // 종료된 v1 매물 조회 — 상세·찜 토글은 항상 404 LISTING_NOT_FOUND 다(ADR-0040).
+        'v1-listing-detail',
+        'v1-listing-favorite-add',
+        'v1-listing-favorite-remove',
+    ] as Set
+
     spec.paths.each { path, methods ->
       methods.each { method, op ->
         def id = op.operationId
@@ -221,7 +243,8 @@ tasks.register('verifyOpenApiSpec') {
           seenOperationIds[id] = where
         }
 
-        if (!op.responses.keySet().any { it.toString().startsWith('2') }) {
+        if (!NO_SUCCESS_RESPONSE.contains(id)
+            && !op.responses.keySet().any { it.toString().startsWith('2') }) {
           violations << "${where}: 2xx 응답 없음"
         }
       }

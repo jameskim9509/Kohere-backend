@@ -1,5 +1,6 @@
 package com.kohere.listing.application.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.kohere.listing.domain.Listing;
 import java.time.Instant;
 import java.util.List;
@@ -12,19 +13,25 @@ public record FavoriteListingResponse(
     CodeLabelResponse type,
     Listing.ListingStatus status,
     CodeLabelResponse rentalType,
-    ListingDetailResponse.RefundPolicyResponse refundPolicy,
-    Listing.Contract contract,
+    String refundPolicy,
     CodeLabelResponse genderPolicy,
+    CodeLabelResponse arcRequired,
+    int ageMin,
+    int ageMax,
+    List<CodeLabelResponse> languagesSupported,
+    ListingDetailResponse.ContactResponse contact,
+    @JsonInclude(JsonInclude.Include.NON_NULL) String blogUrl,
     ListingDetailResponse.GeoPoint location,
     ListingDetailResponse.AddressResponse address,
     ListingDetailResponse.NearestTransitResponse nearestTransit,
+    List<CodeLabelResponse> nearbyFacilities,
     Set<String> nearbyUniversityCodes,
     ListingDetailResponse.BuildingResponse building,
-    Listing.PropertyPolicies propertyPolicies,
     ListingDetailResponse.FacilitiesResponse facilities,
     List<CodeLabelResponse> conditions,
     List<ListingDetailResponse.RoomOfferResponse> roomOffers,
-    ListingDetailResponse.DescriptionsResponse descriptions,
+    String description,
+    String extraNotes,
     List<String> imageUrls,
     boolean favorited,
     int favoriteCount,

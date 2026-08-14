@@ -119,9 +119,9 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 | ① 지역 | `region` | enum (단일) | `SEOUL`, `BUSAN`, `GYEONGGI` | 필수, 1택. MVP 매물 데이터는 `SEOUL` 기준 |
 | ② 입국 목적 | `purpose` | enum (단일) | `STUDY`, `NON_STUDY` | 필수, 1택. 유학 여부(`STUDY`/`NON_STUDY`)에 따라 ③ 단계가 갈린다 |
 | ③ 대학·지역 선택 | `university`(enum `UniversityGroup`) / `district`(enum `District`) — **두 필드(분리)** | enum (단일) | 유학(`STUDY`) 시 `university`(`UniversityGroup`, **6개 대학 그룹**): `HUFS_KHU_KOREA`, `SKKU_SUNGSHIN`, `SNU_CAU_SOONGSIL`, `HONGIK_YONSEI_EWHA`, `KONKUK_SEJONG_HYU`, `ETC` / 비유학(`NON_STUDY`) 시 `district`(`District`, UPPER_SNAKE): `GURO_GU`, `YEONGDEUNGPO_GU`, `GEUMCHEON_GU`, `GWANAK_GU`, `DONGDAEMUN_GU`, `ETC` | **두 필드로 분리**하고 입국 목적에 따라 **조건부 1택**: 유학(`STUDY`)→`university` 필수·`district` 없음 / 비유학(`NON_STUDY`)→`district` 필수·`university` 없음. 입국 목적에 맞는 하나만 채워진다. 사용자는 **그룹 1개만 단일 선택**하며(1택), 한 그룹은 소속 대학 **어느 하나라도 인근인** 매물과 매칭된다($in, ANY). 저장은 string enum(그룹 코드). 위반(조건부 필수 누락·입국 목적과 불일치)은 공통 `INVALID_INPUT`(400) + `errors[]`로 처리한다 ([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)) |
-| ④ 주거 환경 조건 | `conditions` | enum 배열 (다중) | `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ENGLISH_OK`, `ADDRESS_REGISTRATION`, `NO_MAINT_FEE`, `MEALS_INCLUDED`, `DOUBLE_ROOM` | 선택(0개 허용), **최대 3개**, 중복 불가. listing `ConditionTag` 이름과 통일. 파생 필터 `NO_ARC`(⑥에서 생성)는 여기서 직접 선택 불가 |
+| ④ 주거 환경 조건 | `conditions` | enum 배열 (다중) | `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ENGLISH_OK`, `ADDRESS_REGISTRATION`, `NO_MAINT_FEE`, `MEALS_INCLUDED`, `DOUBLE_ROOM` | 선택(0개 허용), **최대 3개**, 중복 불가. listing `ConditionTag` 이름과 통일 |
 | ⑤ 월세 범위 | `monthlyRentMin` / `monthlyRentMax` | integer (KRW) — **두 필드(범위)** | 각 0 이상 정수, `monthlyRentMin <= monthlyRentMax` | **둘 다 필수**. 각 KRW 정수 0 이상이고 최소 ≤ 최대. 위반은 공통 `INVALID_INPUT`(400) + `errors[]` ([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)) |
-| ⑥ ARC 발급 여부 | `arcStatus` | enum (단일) | `ARC_ISSUED`, `NO_ARC` | 필수, 1택. `NO_ARC`(미발급)이면 서버가 추천용 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions`에 추가한다(§7; ④ 최대 3개 제한에서 제외, `ARC_ISSUED`이면 추가 없음) |
+| ⑥ ARC 발급 여부 | `arcStatus` | enum (단일) | `ARC_ISSUED`, `NO_ARC` | 필수, 1택. `NO_ARC`(미발급)이면 추천이 매물 루트 `arcRequired=NOT_REQUIRED`를 필터로 적용한다(§7). `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다 |
 
 > `conditions` 4개 이상은 `INVALID_INPUT`의 `errors[]`(필드 `conditions`, reason "최대 3개까지 선택할 수 있습니다.")로 응답한다. 별도 도메인 코드를 두지 않는다.
 >
@@ -508,7 +508,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 
 - **인증**: 필수(회원 전용). **본인 소유가 아니면 `403 FORBIDDEN`.** 소유권 규칙은 §6과 같다(신원 종류·값이 모두 일치할 때만 통과 — 회원 토큰으로 게스트 진단을 조회하면 403). 게스트의 추천 조회는 v2-3(`GET /api/v2/diagnoses/{id}/recommendations`)이 담당한다([게스트 접근](#게스트-접근--비회원-진단-issue-181)).
 - **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다.
-- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.universityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — ⑥ `arcStatus=NO_ARC`면 `diagnosis`가 파생 조건 `NO_ARC`를 전달하고, `listing`은 `propertyPolicies.arcRequired=false`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 현재 매칭된 방 상품만이 아니라 해당 매물의 전체 ACTIVE `roomOffers`를 기준으로 계산한다. `conditions`에는 ACTIVE 방 상품 태그 합집합과 `NO_ARC` 같은 매물 정책 파생 조건이 포함된다.
+- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.universityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — `RecommendationCriteria`는 ⑥ `arcStatus`를 그대로 싣고, `listing`은 `NO_ARC`를 매물 루트 `arcRequired=NOT_REQUIRED`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 현재 매칭된 방 상품만이 아니라 해당 매물의 전체 ACTIVE `roomOffers`를 기준으로 계산한다. `conditions`에는 ACTIVE 방 상품 태그 합집합이 담긴다.
 
 #### Path 파라미터
 
@@ -545,8 +545,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
         "lng": 126.936893,
         "conditions": [
           { "code": "FEMALE_ONLY", "label": "Female Only" },
-          { "code": "PRIVATE_BATH", "label": "Private Bath" },
-          { "code": "NO_ARC", "label": "No ARC" }
+          { "code": "PRIVATE_BATH", "label": "Private Bath" }
         ],
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg"
       }

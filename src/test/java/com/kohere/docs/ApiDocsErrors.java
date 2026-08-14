@@ -50,6 +50,24 @@ public final class ApiDocsErrors {
       String description,
       ParameterDescriptor[] pathParameters,
       String... errorCodes) {
+    return errorSnippet(identifier, tag, summary, description, false, pathParameters, errorCodes);
+  }
+
+  /**
+   * 종료 예정 오퍼레이션용. {@code deprecated=true}는 OpenAPI {@code deprecated} 플래그로 나가 Swagger UI가 경로에 취소선과
+   * 배지를 붙인다.
+   *
+   * <p>성공 스니펫이 없는 오퍼레이션(항상 4xx)은 이 에러 스니펫이 유일한 모델이므로 여기서 플래그를 세워야 한다 — 오퍼레이션의 {@code deprecated}는
+   * 스니펫 모델에서 그대로 온다.
+   */
+  public static RestDocumentationResultHandler errorSnippet(
+      String identifier,
+      String tag,
+      String summary,
+      String description,
+      boolean deprecated,
+      ParameterDescriptor[] pathParameters,
+      String... errorCodes) {
     return document(
         identifier,
         resource(
@@ -57,6 +75,7 @@ public final class ApiDocsErrors {
                 .tag(tag)
                 .summary(summary)
                 .description(description)
+                .deprecated(deprecated)
                 .pathParameters(pathParameters)
                 .responseFields(ApiDocsFields.errorFields(errorCodes))
                 .build()));

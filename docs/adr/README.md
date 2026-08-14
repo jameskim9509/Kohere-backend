@@ -56,12 +56,15 @@
 | [0030](./0030-error-message-i18n-resource-bundle.md) | 에러 응답 메시지 i18n은 리소스 번들(Spring MessageSource)로 번역한다(Accept-Language·영어 폴백) | Accepted | 2026-06-24 |
 | [0031](./0031-apple-sign-in-authorization-code-flow.md) | Apple 로그인은 authorization code 방식으로 전환해 탈퇴 시 토큰을 폐기한다(Google은 idToken 유지) | Accepted | 2026-06-28 |
 | [0032](./0032-mongodb-migration-runner.md) | MongoDB 시드·문서 1회성 변경은 모듈별 Mongock @ChangeUnit으로 1회 자동 적용한다 | Accepted | 2026-06-29 |
-| [0033](./0033-business-registry-verification.md) | 임대인 사업자등록번호는 온보딩과 분리된 무상태 API로 비즈노 조회·검증한다 | Proposed | 2026-06-30 |
+| [0033](./0033-business-registry-verification.md) | 임대인 사업자등록번호는 온보딩과 분리된 무상태 API로 비즈노 조회·검증한다 | Proposed · Amended(2026-07-01, 2026-08-12) | 2026-06-30 |
 | [0034](./0034-landlord-phone-sms-verification.md) | 임대인 연락처는 SMS 인증번호로 검증하고 이메일은 수집하지 않는다 | Proposed | 2026-06-30 |
 | [0035](./0035-gamification-quiz-random-stateless-catalog.md) | 학습 퀴즈를 무상태 랜덤 4지선다로 재설계하고 문항 카탈로그를 MongoDB에 언어-키 맵으로 저장 | Proposed | 2026-07-02 |
 | [0036](./0036-diagnosis-v2-server-driven-flow.md) | 진단 질의응답을 서버 주도(start/next) 흐름으로 /api/v2에 신설하고 진행 상태를 별도 flow-session에 둔다 | Proposed | 2026-07-15 |
 | [0037](./0037-listing-localization-and-code-catalog.md) | 매물 고유 문구는 listings에 임베드하고 공통 코드는 listingCatalog에서 번역한다 | Accepted | 2026-07-17 |
 | [0038](./0038-application-logging-and-cloudwatch.md) | 로그는 다섯 가지 용도가 요구하는 것만 남긴다 | Proposed | 2026-07-21 |
+| [0039](./0039-listing-schema-v4-registration-form.md) | 매물 스키마를 등록 폼 기준 v4로 재정의하고 마이그레이션 체인을 baseline으로 리셋한다 | Proposed | 2026-08-12 |
+| [0040](./0040-listing-query-api-v2-and-v1-sunset.md) | 매물 조회를 /api/v2로 옮기고 v1은 빈 결과로 종료한다 | Proposed | 2026-08-13 |
+| [0041](./0041-listing-image-upload-to-s3.md) | 매물 사진을 한 장씩 올려 받고 등록에서 확정한다 | Proposed | 2026-08-14 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

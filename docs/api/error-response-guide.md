@@ -58,12 +58,16 @@
 | 404 Not Found | 리소스 없음, 미정의 경로 | `*_NOT_FOUND`, `RESOURCE_NOT_FOUND` |
 | 405 Method Not Allowed | 허용되지 않은 메서드 | `METHOD_NOT_ALLOWED` |
 | 409 Conflict | 상태 충돌·중복 | `*_ALREADY_EXISTS`, `DUPLICATE_*` |
+| 413 Payload Too Large | 업로드 크기 초과 | `PAYLOAD_TOO_LARGE`, `LISTING_IMAGE_TOO_LARGE` |
+| 415 Unsupported Media Type | 지원하지 않는 파일 형식 | `LISTING_IMAGE_UNSUPPORTED_TYPE` |
 | 422 Unprocessable Entity | 형식은 맞으나 비즈니스 규칙 위반 | 도메인별 코드 |
 | 429 Too Many Requests | 레이트리밋 초과 | `TOO_MANY_REQUESTS` |
 | 500 Internal Server Error | 처리되지 않은 서버 오류 | `INTERNAL_ERROR` |
 | 502/503 | 외부 연동 실패/일시 불가 | `UPSTREAM_ERROR`, `SERVICE_UNAVAILABLE` |
 
 > 400과 422: **요청 자체가 깨졌으면 400**, 요청은 정상이나 **도메인 규칙상 처리 불가**면 422를 쓴다. 팀 내 혼선을 줄이려 본 프로젝트는 비즈니스 규칙 위반에 **409(충돌형)** 또는 **422(그 외)** 를 사용한다.
+
+> **끝난 버전 경로의 404** — deprecated된 `/api/v1` 매물 조회(`GET /api/v1/listings/{listingId}` · `POST`·`DELETE /api/v1/listings/{listingId}/favorite`)는 **대상의 존재 여부와 무관하게** `LISTING_NOT_FOUND`(404)다. 리소스를 못 찾아서가 아니라 그 경로가 매물 데이터를 더는 제공하지 않기 때문이며, 같은 이유로 목록 계열(`GET /api/v1/listings`·`/map`·`/search`, `/api/v1/users/me/favorites`·`/recent-listings`)은 404가 아니라 **빈 페이지(200)** 다. 정본은 `/api/v2/listings*`이며 버전 정책은 [api-design-guide §2-1](./api-design-guide.md)·[ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)이다.
 
 ## 4. 에러 코드 카탈로그
 
@@ -80,6 +84,7 @@
 | `FORBIDDEN` | 403 | 권한 없음 |
 | `RESOURCE_NOT_FOUND` | 404 | 일반 리소스 없음 |
 | `METHOD_NOT_ALLOWED` | 405 | 미허용 메서드 |
+| `PAYLOAD_TOO_LARGE` | 413 | 요청 총량이 서블릿 상한을 넘음. multipart 해석이 핸들러 탐색보다 앞서 일어나 어느 엔드포인트인지 알 수 없으므로 도메인 코드가 아니라 공통 코드다 |
 | `TOO_MANY_REQUESTS` | 429 | 호출 한도 초과 |
 | `INTERNAL_ERROR` | 500 | 서버 내부 오류 |
 | `UPSTREAM_ERROR` | 502 | 외부 연동 실패 |
@@ -120,11 +125,39 @@
 
 > **게스트가 가장 자주 만나는 코드다(#181)** — 게스트 진단 세션은 토큰이 아니라 **클라이언트가 에코하는 세션 키**로 이어진다: `POST /api/v2/diagnoses/start`가 게스트에게 세션 키를 발급하고, 클라이언트는 이후 `POST /api/v2/diagnoses/next`·추천 조회에 **`X-Guest-Session-Id` 헤더**로 되돌려보낸다. 따라서 헤더를 **빠뜨렸거나**, 값이 **다르거나**, 앱이 키를 **잃어버린** 요청은 서버가 세션을 찾지 못해 그대로 이 코드(400)가 된다 — 회원의 "앱 재시작·터미널 이후 재전송"과 원인만 다를 뿐 **코드도 복구법도 같다**(`POST /start`로 다시 시작). 값이 다르면 남의 세션에 닿는 것이 아니라 "세션 없음"이며(게스트 세션 키는 요청자마다 다르다), 퀴즈·생활 팁은 저장이 없어 세션 키를 요구하지 않으므로 이 코드가 나오지 않는다.
 
+#### listing 도메인 코드
+
+| code | status | 의미 |
+| --- | --- | --- |
+| `LISTING_NOT_FOUND` | 404 | 존재하지 않거나 비공개/삭제 또는 ACTIVE 방 상품이 없는 매물. deprecated된 `/api/v1` 상세·찜 토글은 대상과 무관하게 항상 이 코드다(§3) |
+| `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 bbox 네 좌표가 누락됨 |
+| `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
+| `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
+| `LISTING_INVALID_ADDRESS` | 400 | 매물 등록 시 지점 주소에서 `City`·`District`를 파싱하지 못함 — 도로명 주소 형태가 아니거나 카탈로그에 없는 시·구 |
+| `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
+| `LISTING_IMAGE_REQUIRED` | 400 | 업로드에 파일이 없거나 비었음. 등록에서는 사진 키 개수가 규칙을 벗어남 — 지점 1~5개, 방마다 2~5개 |
+| `LISTING_IMAGE_KEY_NOT_FOUND` | 400 | 등록 요청의 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
+| `LISTING_IMAGE_TOO_LARGE` | 413 | 사진 한 장이 10MB를 넘음 |
+| `LISTING_IMAGE_UNSUPPORTED_TYPE` | 415 | 사진 형식이 `image/jpeg` · `image/png` · `image/webp` · `image/heic` 중 하나가 아님 |
+
+> 조회 계열 네 코드의 상세·발생 지점은 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이며 **경로는 `/api/v2/listings*`다** — deprecated된 `/api/v1` 목록·지도는 매물을 조회하지 않아 정상 호출이 빈 페이지(200)로 끝나고, 매물 데이터를 쓰지 않는 `GET /api/v1/listings/places`만 v1에 남아 종전 코드를 그대로 낸다. 나머지 여섯 코드는 사진 업로드(`POST /api/v2/listings/images`)와 매물 등록(`POST /api/v2/listings`)이 추가한다.
+>
+> - `LISTING_INVALID_ADDRESS`는 **좌표와 무관하다.** 등록은 `location`·`nearbyUniversityCodes`를 채우지 않고 저장하므로(지오코딩은 후속) 좌표 해석 실패라는 상황 자체가 없다. `address.fullAddress`는 입력값을 그대로 저장하고, 이 코드는 거기서 `City`·`District`를 뽑지 못했을 때만 나온다.
+> - `LISTING_UNKNOWN_CATALOG_CODE`는 사용자가 오타를 낸 것이 아니라 **앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다**는 신호라 `INVALID_INPUT`과 분리한다 — 사용자는 앱이 준 선택지에서 골랐을 뿐이라 입력 교정을 요구할 자리가 아니다(§7).
+> - **사진 4종을 별도 코드로 두는 이유.** 업로드(`POST /api/v2/listings/images`)의 셋(`REQUIRED`·`TOO_LARGE`·`UNSUPPORTED_TYPE`)은 위반 대상이 JSON 필드가 아니라 **파일 part**라 `INVALID_INPUT`의 `errors[]` 구조에 담기지 않고, 사용자에게 요구할 행동도 각각 다르다 — 파일을 고르거나, 줄이거나, 형식을 바꾸는 것이다. `LISTING_IMAGE_KEY_NOT_FOUND`는 등록에서만 나며 **남의 키·없는 키·만료된 키를 한 코드로 묶는다** — 구분해 알려주면 남의 키가 있는지 없는지가 새어 나간다. 클라이언트가 할 일은 셋 다 같다(사진을 다시 올린다).
+> - **사진 저장소 실패는 공통 `UPSTREAM_ERROR`(502)** 다 — 외부 연동 실패라 매물 전용 코드를 두지 않는다. 등록 중 복사가 실패하면 매물은 저장되지 않고 이미 복사한 사진은 서버가 지우지만, **임시 사진은 그대로 남아** 사용자가 다시 제출할 수 있다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)).
+
+> **매물 등록에서 의도적으로 신설하지 않은 코드** — 리뷰어가 누락으로 오해하지 않도록 근거를 남긴다.
+> - **임대인 아님(`userType≠LANDLORD`)**: 공통 `FORBIDDEN`(403)을 쓴다. auth의 임대인 전용 게이트(`LandlordOnlyException` — 사업자등록번호 검증)·booking의 세입자 전용 게이트와 같은 처리이며, `LISTING_LANDLORD_ONLY` 같은 코드를 두지 않는다.
+> - **온보딩 미완료 토큰**: SecurityConfig가 `POST /api/v2/listings`에 `hasRole("USER")` 매처를 명시하므로 `ROLE_ONBOARDING` 토큰은 컨트롤러에 닿기 전에 `AUTH_ONBOARDING_REQUIRED`(403)로 막힌다(매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프 토큰이 그대로 통과한다). 토큰이 없거나 만료면 종전대로 `UNAUTHENTICATED`·`TOKEN_EXPIRED`(401)다.
+> - **필수값 누락·형식 위반**: `INVALID_INPUT`(400) + `errors[]`로 충분하다. 지점 운영층 `1~2`·이용 연령대 `20~35`의 형식 위반, `min ≤ max`, `usedFloorMax ≤ totalFloors`, `roomOffers` 최소 1개가 모두 여기에 해당한다. 문자열 길이 제한은 두지 않으므로 그에 대한 코드도 없다.
+> - **사업자등록번호**: 등록 API는 **형식만 보고 저장**하며 진위는 관리자 승인 심사에서 사람이 확인한다. `POST /api/v1/auth/business/verify`를 호출하지 않으므로 `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`(422)는 이 경로에서 나오지 않고, 형식 위반은 `INVALID_INPUT`이다.
+
 #### booking 도메인 코드
 
 | code | status | 의미 |
 | --- | --- | --- |
-| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거이거나 매물의 입주 가능일 이전 |
+| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거 |
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물 신청 아님), 요청자가 삭제·차단으로 숨긴 예약, 또는 삭제·차단·신고 요청자가 참여자가 아님(404로 통일) |
 | `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함 (UNIQUE `(tenant_id, room_offer_id)` 위반) |
 
@@ -203,6 +236,8 @@ public class GlobalExceptionHandler {
 - 먼저 **HTTP status**로 큰 분기(2xx/4xx/5xx), 다음 **`error.code`** 로 세부 분기한다. **`message` 문자열로 분기하지 않는다.**
 - `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로.
 - `400 INVALID_INPUT` → `errors[]`의 `field`를 입력 폼에 매핑해 표시.
+- 매물 등록(`POST /api/v2/listings`)의 코드들은 사용자에게 요구할 행동이 서로 다르다: `400 LISTING_INVALID_ADDRESS`는 **도로명 주소 재입력**을 유도하고, `400 LISTING_UNKNOWN_CATALOG_CODE`는 입력 교정이 아니라 **코드 카탈로그 재조회(또는 앱 갱신)** 를 안내한다 — 사용자가 앱이 준 선택지에서 골랐는데도 거절됐다는 뜻이기 때문이다. 사진 관련 `400 LISTING_IMAGE_REQUIRED`는 **장수 조정**, `413 LISTING_IMAGE_TOO_LARGE`는 **더 작은 파일**, `415 LISTING_IMAGE_UNSUPPORTED_TYPE`은 **지원 형식으로 변환**을 안내한다. `400 LISTING_IMAGE_KEY_NOT_FOUND`는 임시 사진이 사라졌다는 뜻이므로 **사진을 다시 올리게** 한다.
+- **`/api/v1` 매물 조회가 주는 404·빈 목록은 데이터 상태가 아니다** — 그 경로가 끝났다는 뜻이므로 "삭제된 매물"로 안내하지 말고 앱 업데이트를 유도한다. 매물 데이터는 `/api/v2/listings*`에서 조회한다(§3).
 - **게스트(비로그인)로 퀴즈·생활 팁·진단을 부를 땐 `Authorization` 헤더를 아예 보내지 않는다** — 만료된 토큰을 그대로 붙여 보내면 게스트로 처리되지 않고 `401 TOKEN_EXPIRED`다(재발급하거나 헤더를 떼고 재시도). 진단 v2는 `POST /api/v2/diagnoses/start` 응답의 게스트 세션 키를 보관했다가 이후 요청에 `X-Guest-Session-Id`로 에코해야 하며, 잃어버리면 `400 DIAGNOSIS_SESSION_NOT_FOUND`이므로 `/start`부터 다시 한다(#181).
 - `5xx` → 사용자에게 일반 메시지 + 재시도 버튼. 자동 재시도는 멱등 요청에만.
 - 다국어: `code`별 문구 테이블을 클라이언트가 보유한다(서버 `message`는 fallback).

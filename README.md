@@ -176,17 +176,18 @@ CI([.github/workflows/ci.yml](.github/workflows/ci.yml))는 두 가지를 검사
 
 ## 로컬 실행 · 테스트
 
-로컬은 `docker-compose`로 인프라(MySQL·MongoDB·Redis·MailHog)를 띄우고, 앱은 `bootRun`으로 실행합니다. 배포 아키텍처는 [system-overview](docs/architecture/system-overview.md)를 참고하세요. (예시는 bash 기준 — PowerShell은 `./gradlew`를 `.\gradlew`로)
+로컬은 `docker-compose`로 인프라(MySQL·MongoDB·Redis·MailHog·MinIO)를 띄우고, 앱은 `bootRun`으로 실행합니다. 배포 아키텍처는 [system-overview](docs/architecture/system-overview.md)를 참고하세요. (예시는 bash 기준 — PowerShell은 `./gradlew`를 `.\gradlew`로)
 
 **사전 준비**: JDK 21, Docker Desktop
 
 ### 1. 인프라 기동
 
 ```bash
-docker compose up -d mysql mongo redis mailhog
+docker compose up -d mysql mongo redis mailhog minio minio-init
 ```
 
 - **MailHog** = 온보딩 이메일 인증용 가짜 SMTP. 받은 메일은 <http://localhost:8025> 에서 확인합니다.
+- **MinIO** = 매물 사진용 S3 호환 저장소([ADR-0041](docs/adr/0041-listing-image-upload-to-s3.md)). 올라간 객체는 <http://localhost:9001> 콘솔(`minioadmin` / `minioadmin`)에서 확인합니다. 버킷은 `minio-init`이 한 번 만들고 종료합니다 — MinIO 없이 다른 기능만 볼 때는 `APP_IMAGES_ENABLED=false`로 띄우면 업로드 없이 URL만 만드는 스텁이 붙습니다(그 URL은 열리지 않습니다).
 - 마이그레이션 충돌 시(이미 적용된 `V*`를 수정한 경우) `docker compose down -v`로 볼륨을 초기화한 뒤 다시 띄웁니다.
 
 ### 2. 앱 실행
@@ -220,7 +221,7 @@ Swagger UI는 **소유 모듈 기준 7개 그룹**으로 나뉩니다(표시 순
 | `Bookings` | 매물 신청 생성·조회·삭제·차단·신고 | [04](docs/api/specs/04-booking-inquiry-chat.md) |
 | `Quiz` | 학습 퀴즈 조회·채점 | [06](docs/api/specs/06-gamification.md) |
 | `LifeTips` | 주제별 생활 팁 | [08](docs/api/specs/08-life-tips.md) |
-| `Listings` | 매물 탐색·지도·검색·찜·최근 본 매물 | [03](docs/api/specs/03-listings-favorites.md) |
+| `Listings` | 임대인 매물 등록·사진 업로드 · 매물 탐색·지도·검색·찜·최근 본 매물 | [03](docs/api/specs/03-listings-favorites.md) |
 
 > 귀속 기준은 경로가 아니라 **소유 모듈**입니다 — `/users/me/favorites`는 listing 모듈 소유라 `Listings`에 있습니다.
 

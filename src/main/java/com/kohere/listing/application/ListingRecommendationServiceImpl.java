@@ -51,6 +51,7 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
             parseConditionTags(criteria.conditions()),
             criteria.universityCodes(),
             criteria.district(),
+            criteria.arcStatus(),
             criteria.page(),
             criteria.size(),
             criteria.sort());

@@ -4,7 +4,7 @@
 
 ## 목적
 
-폴리글랏(MySQL·MongoDB·Redis)에서 **누가·언제·어떻게 스키마를 바꿨는지**를 추적·재현하고, **로컬↔클라우드 동일 스키마**와 **무중단 배포**를 보장한다. 변경은 사람이 손으로 DB를 만지는 것이 아니라 **마이그레이션 산출물**로만 한다.
+폴리글랏(MySQL·MongoDB·Redis)에서 **누가·언제·어떻게 스키마를 바꿨는지**를 추적·재현하고, **로컬↔클라우드 동일 스키마**와 **무중단 배포**를 보장한다. 변경은 사람이 손으로 DB를 만지는 것이 아니라 **마이그레이션 산출물**로만 한다 — 유일한 예외는 [§8](#8-mongodb-변경-관리)에 범위·근거와 함께 명시한 MongoDB 1회 수동 재시드다.
 
 ## 0. 스토어별 개요
 
@@ -21,7 +21,7 @@
 ### 1. 기본 규칙
 
 - **forward-only**: 롤백 스크립트에 의존하지 않는다. 잘못된 변경은 되돌리는 새 마이그레이션(`V{n+1}`)으로 고친다.
-- **불변(immutable)**: 한 번 적용·머지된 마이그레이션 파일은 **수정하지 않는다**(체크섬 깨짐). 변경은 항상 새 버전.
+- **불변(immutable)**: 한 번 적용·머지된 마이그레이션 파일은 **수정하지 않는다**(체크섬 깨짐). 변경은 항상 새 버전. 이 조항의 근거는 Flyway의 체크섬 검증이므로 **MySQL/Flyway 전용**이다 — 체크섬이 없는 MongoDB(Mongock)에는 같은 조항이 없다([§8](#8-mongodb-변경-관리)).
 - **1 변경 = 1 파일**: 논리적으로 하나인 변경을 한 파일에 모으고, 무관한 변경을 섞지 않는다.
 - **DDL은 Flyway만**: 애플리케이션·사람이 직접 `ALTER` 하지 않는다. Hibernate는 `spring.jpa.hibernate.ddl-auto=validate`로 **검증만** 한다.
 - **결정성**: 모든 환경(로컬·CI·클라우드)이 같은 마이그레이션 집합으로 동일 스키마를 만든다.
@@ -90,6 +90,33 @@
 - **파괴적 일괄 변경 금지**([ADR-0005](../adr/0005-polyglot-persistence.md) D7): 컬렉션 전체를 멈추고 바꾸지 않고, 확장→점진 이행으로 처리한다.
 - 대형 인덱스 생성은 백그라운드/복제 지연을 고려한다.
 
+### 8-1. 매물 스키마 v4 이행 예외(1회)
+
+[ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)가 정한 **명시적 예외**다. 범위는 `listings`·`listingCatalog` 두 컬렉션의 v4 이행 **1회**로 한정하며, 다른 컬렉션·다른 변경에 확장 적용하지 않는다.
+
+1. **listing 마이그레이션 체인을 v4 baseline으로 리셋한다.** `0099`~`0114` changeUnit을 **삭제**하고 `0115 listing-v4-baseline` 하나로 갈음한다 — [§1](#1-기본-규칙)이 인정하는 baseline 채택(`V1__baseline.sql` 대응)의 MongoDB 적용이다. v3 데이터를 폐기하는 이상 그 데이터를 v1→v2→v3로 옮기던 이력은 재현할 대상이 없다.
+   - **존치: `0100`(`listing-search-place-seed`).** 유일하게 다른 컬렉션(`searchPlaces`)을 다루며 v4와 무관하다.
+   - 기존 환경의 changelog에는 `0099`~`0114` 항목이 고아로 남지만, 대응 클래스가 없으면 실행 대상에서 빠질 뿐이라 무해하다.
+   - `0115`는 **스키마만** 다룬다 — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. 데이터는 건드리지 않는다. v4 `$jsonSchema`는 `0115` 안에 **동결**하고 `ListingMongoIndexInitializer`의 정적 메서드를 호출하지 않는다(과거 `0105`가 그렇게 해서 `listingV2JsonSchema()` 죽은 사본이 생겼다).
+2. **시드(`listings` 2건 · `listingCatalog` 103건)는 운영자가 수동 주입한다.** 신규 필드(담당자 연락처·설문 3종 등)에 **대응하는 원본 값이 없어** 백필이 성립하지 않고, 시드를 코드가 소유하면 고칠 때마다 재빌드·재배포가 필요하다 — 위 "파괴적 일괄 변경 금지"의 1회 예외다.
+
+   > **`--drop`을 쓰지 않는다.** 컬렉션을 지우면 **validator가 함께 사라지는데** `0115`는 1회성이라 재기동해도 다시 걸리지 않는다(부트스트랩은 인덱스만 만든다). 반드시 아래 순서를 지킨다.
+
+   ```js
+   db.listingCatalog.deleteMany({})   // drop 금지 — 컬렉션과 validator를 유지한다
+   db.listings.deleteMany({})
+   ```
+
+   ```bash
+   mongoimport --db kohere --collection listingCatalog --jsonArray --file kohere.listingCatalog.seed.json
+   mongoimport --db kohere --collection listings       --jsonArray --file kohere.listings.seed.json
+   ```
+
+   - **신규 환경은 시드 전까지 `listingCatalog`가 비어 있다.** 그동안 매물 응답의 라벨 자리에 코드값(`SHARE_HOUSE` 등)이 그대로 나간다 — API는 실패하지 않으므로 조용히 나빠진다. 배포 절차에 시드 단계를 반드시 포함한다.
+   - 이미 v4 validator가 걸린 컬렉션에 v4 문서를 넣는 것이므로 `validationLevel: off` 완화가 필요 없다. 넣기 전에 기동해도 되고, 기동 전에 넣어도 결과가 같다.
+3. **인덱스 키를 바꿀 때는 새 이름으로 만든다.** 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다 — `listings_status_arc_required`(키 `status, propertyPolicies.arcRequired`)는 새 이름 `listings_status_arc_requirement`(키 `status, arcRequired`)로 만든다.
+4. **인덱스 소유는 부트스트랩이 유지**한다(`ListingMongoIndexInitializer`의 멱등 생성). changeUnit이 하는 일은 **옛 인덱스 2건**(`listings_status_arc_required`·`listings_status_room_available_count`)의 **삭제뿐**이며 `0115`가 1회 수행한다.
+
 ## 9. Redis 변경 관리
 
 - **스키마 없음**: 키스페이스·TTL은 코드 상수로 관리한다([ADR-0006](../adr/0006-refresh-token-store-redis.md), [database-design](./database-design.md) §4-1).
@@ -99,17 +126,17 @@
 ## 체크리스트
 
 - [ ] (MySQL) `V{버전}__{설명}.sql` 네이밍·`db/migration` 배치, 버전 단조 증가
-- [ ] 적용된(머지된) 마이그레이션 파일을 **수정하지 않았다**(forward-only·불변)
-- [ ] 이 릴리스의 변경이 **호환(확장)** 이다 — 비호환이면 [§5 expand-contract](#5-expand-contract-패턴-무중단)로 분리했다
+- [ ] (MySQL) 적용된(머지된) 마이그레이션 파일을 **수정하지 않았다**(forward-only·불변 — 체크섬이 근거인 Flyway 전용 항목이라 Mongock changeUnit에는 해당하지 않는다, [§1](#1-기본-규칙)·[§8-1](#8-1-매물-스키마-v4-이행-예외1회))
+- [ ] 이 릴리스의 변경이 **호환(확장)** 이다 — 비호환이면 [§5 expand-contract](#5-expand-contract-패턴-무중단)로 분리했다. 점진 이행이 성립하지 않아 예외가 필요하면 [§8-1](#8-1-매물-스키마-v4-이행-예외1회)처럼 범위와 근거 ADR을 문서에 남겼다
 - [ ] `NOT NULL` 추가는 [§4 절차](#4-not-null-컬럼-추가-절차)(확장→백필→축소)를 따랐다
 - [ ] 대형 테이블 인덱스/타입 변경의 **락 영향**을 검토했다([§6](#6-인덱스-추가-시-락-주의))
 - [ ] 스키마가 [database-design](./database-design.md) 및 도메인 엔티티와 일치하고 JPA `validate`가 green이다
-- [ ] (MongoDB) 새 인덱스(`2dsphere`·UNIQUE·최신순 조회용 복합 인덱스 등)를 부트스트랩 스크립트에 **멱등** 추가했다
-- [ ] (MongoDB) 초기 시드(init changeUnit `0000`)·이미 적재된 컬렉션의 1회성 변경 모두 컬렉션 소유 모듈의 **Mongock `@ChangeUnit`**으로 처리했다(별도 `ApplicationRunner` 시더 금지 — [§8](#8-mongodb-변경-관리))
+- [ ] (MongoDB) 새 인덱스(`2dsphere`·UNIQUE·최신순 조회용 복합 인덱스 등)를 부트스트랩 스크립트에 **멱등** 추가했다. 기존 인덱스의 **키를 바꿀 때는 새 이름**으로 만들고(같은 이름·다른 키는 `IndexOptionsConflict`) 옛 인덱스 삭제만 changeUnit에 넣었다([§8-1](#8-1-매물-스키마-v4-이행-예외1회))
+- [ ] (MongoDB) 초기 시드(init changeUnit `0000`)·이미 적재된 컬렉션의 1회성 변경 모두 컬렉션 소유 모듈의 **Mongock `@ChangeUnit`**으로 처리했다(별도 `ApplicationRunner` 시더 금지 — [§8](#8-mongodb-변경-관리)). 수동 시드로 예외 처리했다면 [§8-1](#8-1-매물-스키마-v4-이행-예외1회)의 범위에 해당하고, `--drop` 없이 `deleteMany({})` 후 import했다
 - [ ] (Redis) 키 구조 변경 시 네임스페이스 버전/만료 교체 전략을 적었다
 - [ ] CI에서 빈 DB 전체 적용이 통과한다
 
 ## 관련 문서
 
-- [ADR-0008](../adr/0008-mysql-migration-flyway.md)(MySQL 마이그레이션 도구 결정) · [ADR-0032](../adr/0032-mongodb-migration-runner.md)(MongoDB=Mongock) · [ADR-0005](../adr/0005-polyglot-persistence.md)(폴리글랏) · [ADR-0006](../adr/0006-refresh-token-store-redis.md)(refresh=Redis)
+- [ADR-0008](../adr/0008-mysql-migration-flyway.md)(MySQL 마이그레이션 도구 결정) · [ADR-0032](../adr/0032-mongodb-migration-runner.md)(MongoDB=Mongock) · [ADR-0005](../adr/0005-polyglot-persistence.md)(폴리글랏) · [ADR-0006](../adr/0006-refresh-token-store-redis.md)(refresh=Redis) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)(매물 v4 재정의·1회 재시드 예외)
 - [database-design](./database-design.md)(스키마·인덱스 정본) · [system-overview §3-2·§1-3](../architecture/system-overview.md)(스택·배포)

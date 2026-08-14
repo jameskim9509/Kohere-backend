@@ -32,6 +32,7 @@ public record RecommendationCriteria(
     Set<String> conditions,
     Set<String> universityCodes,
     String district,
+    String arcStatus,
     int page,
     int size,
     String sort) {

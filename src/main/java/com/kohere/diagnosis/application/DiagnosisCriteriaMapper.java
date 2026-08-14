@@ -31,6 +31,7 @@ public class DiagnosisCriteriaMapper {
             : d.getConditions().stream().map(Enum::name).collect(Collectors.toSet()),
         d.getUniversity() == null ? Set.of() : d.getUniversity().memberCodes(),
         d.getDistrict() == null ? null : d.getDistrict().name(),
+        d.getArcStatus() == null ? null : d.getArcStatus().name(),
         page,
         size,
         sort == null || sort.isBlank() ? DEFAULT_RECOMMENDATION_SORT : sort);

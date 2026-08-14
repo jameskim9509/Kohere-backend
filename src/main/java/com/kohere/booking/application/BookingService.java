@@ -72,7 +72,7 @@ public class BookingService {
             .findPublishedRoomOffer(listingId, request.roomOfferId())
             .orElseThrow(ListingUnavailableException::new);
     LocalDate moveInDate = RequestDates.parse("moveInDate", request.moveInDate());
-    validateMoveInDate(moveInDate, offer.nextAvailableFrom());
+    validateMoveInDate(moveInDate);
     if (userBlockService.isBlockedBetween(tenantId, offer.landlordId())) {
       throw new CounterpartBlockedException();
     }
@@ -245,10 +245,8 @@ public class BookingService {
     }
   }
 
-  private void validateMoveInDate(LocalDate moveInDate, LocalDate nextAvailableFrom) {
-    LocalDate today = LocalDate.now();
-    if (moveInDate.isBefore(today)
-        || (nextAvailableFrom != null && moveInDate.isBefore(nextAvailableFrom))) {
+  private void validateMoveInDate(LocalDate moveInDate) {
+    if (moveInDate.isBefore(LocalDate.now())) {
       throw new InvalidMoveInDateException();
     }
   }

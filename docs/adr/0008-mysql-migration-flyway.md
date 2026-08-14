@@ -5,7 +5,7 @@
 | 번호 | ADR-0008 |
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-06-16 |
-| 관련 문서 | [ADR-0005](./0005-polyglot-persistence.md), [ADR-0006](./0006-refresh-token-store-redis.md), [migration-policy](../database/migration-policy.md), [database-design §3](../database/database-design.md), [system-overview §3-2](../architecture/system-overview.md), [build.gradle](../../build.gradle) |
+| 관련 문서 | [ADR-0005](./0005-polyglot-persistence.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0039](./0039-listing-schema-v4-registration-form.md), [migration-policy](../database/migration-policy.md), [database-design §3](../database/database-design.md), [system-overview §3-2](../architecture/system-overview.md), [build.gradle](../../build.gradle) |
 
 ## Status
 
@@ -28,7 +28,7 @@ Accepted
 
 1. **MySQL = Flyway** (`flyway-core` + `flyway-mysql`). **버전드 SQL 마이그레이션**(`V{버전}__{설명}.sql`)을 `src/main/resources/db/migration`에 두고, **forward-only·불변**(적용된 파일 수정 금지, 변경은 새 버전으로)으로 관리한다. 반복 실행 객체(뷰 등)는 `R__`. 기존 스키마는 **baseline**로 채택한다.
 2. **DDL 권한은 Flyway만.** Hibernate는 **`ddl-auto=validate`**(운영) — 스키마 생성/변경은 하지 않고 엔티티↔스키마 일치만 검증한다.
-3. **MongoDB = 스키마리스 + 명시적 관리.** 인덱스(`2dsphere`·TTL·unique)는 **부트스트랩/마이그레이션 스크립트**로 기동 시 **멱등 생성**한다. 문서 구조 진화는 **애플리케이션 레벨 `schemaVersion` 필드** + 점진(lazy/배치) 마이그레이션으로 처리하고, **파괴적 일괄 변경은 피한다**([ADR-0005](./0005-polyglot-persistence.md) D7).
+3. **MongoDB = 스키마리스 + 명시적 관리.** 인덱스(`2dsphere`·TTL·unique)는 **부트스트랩/마이그레이션 스크립트**로 기동 시 **멱등 생성**한다. 문서 구조 진화는 **애플리케이션 레벨 `schemaVersion` 필드** + 점진(lazy/배치) 마이그레이션으로 처리하고, **파괴적 일괄 변경은 피한다**([ADR-0005](./0005-polyglot-persistence.md) D7). 단 `listings` 스키마 v4 이행은 **1회 예외**로 v3 문서 폐기와 수동 재시드를 허용하며, listing 마이그레이션 체인을 baseline으로 리셋한다([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
 4. **Redis = 스키마 없음.** 키스페이스·TTL은 코드 상수([ADR-0006](./0006-refresh-token-store-redis.md))다. 키 구조를 바꿔야 하면 **키 네임스페이스 버전**(예: `refresh:v2:{...}`) 또는 **TTL 만료에 의한 자연 교체**로 이행한다(별도 DDL 없음).
 5. **무중단 배포 = expand-contract.** 호환(확장) 변경을 먼저 배포 → 데이터 이행 → 구 컬럼/인덱스 제거(축소)는 후속 릴리스로 분리한다(특히 MySQL `NOT NULL` 추가·컬럼 제거·rename).
 6. **세부 운영 규칙**(네이밍·되돌리기 분류·`NOT NULL` 추가 절차·인덱스 락·리뷰/배포 흐름·체크리스트)은 [migration-policy](../database/migration-policy.md)를 정본으로 한다.

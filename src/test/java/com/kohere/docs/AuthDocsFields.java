@@ -53,6 +53,7 @@ public final class AuthDocsFields {
       - provider별 자격이 다르다 — `GOOGLE`은 `idToken`, `APPLE`은 1회용 `authorizationCode`(약 5분 만료)다.
       - `email`·`name`은 최초 로그인에서만 캡처하고 재로그인 요청 값은 무시한다.
 
+
       **응답 주의사항**
 
       - 응답 `status`가 클라이언트 재개 지점을 정한다 — `PENDING`은 약관 동의, `TERMS_AGREED`는 온보딩, `ACTIVE`는 홈이다.
@@ -188,6 +189,7 @@ public final class AuthDocsFields {
       **요청 주의사항**
 
       - 이름·이메일은 소셜 로그인 시점에 확정돼 여기서 받지 않는다.
+
 
       **응답 주의사항**
 

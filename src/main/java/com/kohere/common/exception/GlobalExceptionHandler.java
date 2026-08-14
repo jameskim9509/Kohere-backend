@@ -16,6 +16,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -82,12 +84,32 @@ public class GlobalExceptionHandler {
         .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, ec.getDefaultMessage()), details));
   }
 
+  /**
+   * 요청을 해석조차 못 한 경우다.
+   *
+   * <p>{@code MissingServletRequestPartException}이 함께 있는 이유 — multipart 요청에 필수 part가 빠지면 Spring이 이
+   * 예외를 던지는데, 이 클래스의 {@code @ExceptionHandler(Exception.class)}가 {@code
+   * DefaultHandlerExceptionResolver}보다 먼저 잡아 <b>500 INTERNAL_ERROR</b>로 나가 버린다. 클라이언트가 part 이름을 틀린
+   * 것이지 서버 장애가 아니다.
+   */
   @ExceptionHandler({
     HttpMessageNotReadableException.class,
-    MethodArgumentTypeMismatchException.class
+    MethodArgumentTypeMismatchException.class,
+    MissingServletRequestPartException.class
   })
   public ResponseEntity<ApiResponse<Void>> handleMalformed(Exception e) {
     return errorResponse(ErrorCode.MALFORMED_REQUEST);
+  }
+
+  /**
+   * 요청 총량이 서블릿 상한을 넘었다.
+   *
+   * <p>multipart 해석은 핸들러를 찾기 전에 일어나므로 어느 엔드포인트인지 알 수 없다 — 도메인 코드 대신 공통 코드를 쓴다. 사진 한 장의 상한은 도메인이 따로
+   * 보고 {@code LISTING_IMAGE_TOO_LARGE}로 안내한다(ADR-0041).
+   */
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  public ResponseEntity<ApiResponse<Void>> handlePayloadTooLarge(MaxUploadSizeExceededException e) {
+    return errorResponse(ErrorCode.PAYLOAD_TOO_LARGE);
   }
 
   @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
