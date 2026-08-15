@@ -94,7 +94,11 @@ public class Listing {
   /** 공용 시설과 제공 물품 정보다. */
   private final Facilities facilities;
 
-  /** 지도 검색과 거리 계산에 사용하는 좌표다. 등록 직후에는 비어 있을 수 있다. */
+  /**
+   * 지도 검색과 거리 계산에 사용하는 좌표다.
+   *
+   * <p>등록은 주소 검색이 준 좌표를 요청으로 받아 채운다(ADR-0042). 저장 계약의 <b>필수</b> 필드이며 도메인·MongoDB validator가 함께 막는다.
+   */
   private final GeoPoint location;
 
   /** 가장 가까운 지하철역과 도보 시간이다. */

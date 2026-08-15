@@ -13,6 +13,7 @@ import static com.kohere.docs.ListingDocsFields.LISTING_REGISTER_SUMMARY;
 import static com.kohere.docs.ListingDocsFields.registerRequestFields;
 import static com.kohere.docs.ListingDocsFields.registerResponseFields;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -128,7 +129,9 @@ class ListingRegisterDocsTest {
         "blogUrl": "https://blog.naver.com/kohere-goshiwon",
         "address": {
           "fullAddress": "서울특별시 서대문구 신촌로 12",
-          "detail": "3층 305호"
+          "detail": "3층 305호",
+          "lat": 37.5559918,
+          "lng": 126.9368647
         },
         "building": {
           "type": "VILLA",
@@ -212,7 +215,7 @@ class ListingRegisterDocsTest {
 
   /** 임대인 등록 성공 — 서버가 채우는 값과 폼 1칸에서 나뉜 값, 주소에서 뽑은 행정구역을 함께 단정한다. */
   @Test
-  void 문서스니펫생성_매물등록_PENDING과빈좌표로저장() throws Exception {
+  void 문서스니펫생성_매물등록_PENDING과검색좌표로저장() throws Exception {
     mockMvc
         .perform(register(landlordToken(), REGISTER_BODY))
         .andExpect(status().isCreated())
@@ -226,10 +229,11 @@ class ListingRegisterDocsTest {
         .andExpect(jsonPath("$.data.roomOffers[0].roomOfferId").isString())
         .andExpect(jsonPath("$.data.roomOffers[0].status").value("ACTIVE"))
         .andExpect(jsonPath("$.data.roomOffers[0].pricing.currency").value("KRW"))
-        // 지오코딩 미구현 — location은 값이 null이 아니라 필드 자체가 생략된다. 기술자를 optional로
-        // 낮춘 대가를 여기서 되메운다.
-        .andExpect(jsonPath("$.data.location").doesNotExist())
-        .andExpect(jsonPath("$.data.location.lat").doesNotExist())
+        // 주소 검색이 준 좌표를 요청으로 되돌려 받아 저장한다(ADR-0042). address 안이 아니라 최상위
+        // location으로 옮겨 가는 것도 함께 못 박는다 — 상세 조회와 같은 구조여야 한다.
+        .andExpect(jsonPath("$.data.location.lat").value(37.5559918))
+        .andExpect(jsonPath("$.data.location.lng").value(126.9368647))
+        .andExpect(jsonPath("$.data.address.lat").doesNotExist())
         .andExpect(jsonPath("$.data.nearbyUniversityCodes").isEmpty())
         // 한국어 한 값으로 보낸 문구가 임대인 언어(ko)로 그대로 돌아온다.
         .andExpect(jsonPath("$.data.title").value("신촌 도보 5분 1인실 고시원"))
@@ -344,6 +348,31 @@ class ListingRegisterDocsTest {
                 LISTING_REGISTER_DESCRIPTION,
                 LISTING_REGISTER_400));
 
+    // 좌표를 빼면 필드를 특정할 수 있으므로 errors[]에 실린다.
+    mockMvc
+        .perform(register(landlordToken(), bodyWithoutCoordinates()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        // 두 좌표가 함께 빠지므로 순서를 가정하지 않는다 — Bean Validation의 위반 순서는 보장되지 않는다.
+        .andExpect(
+            jsonPath("$.error.errors[*].field")
+                .value(containsInAnyOrder("address.lat", "address.lng")))
+        .andDo(
+            errorSnippet(
+                "listing-register-missing-coordinates",
+                ApiDocsTags.LISTINGS,
+                LISTING_REGISTER_SUMMARY,
+                LISTING_REGISTER_DESCRIPTION,
+                LISTING_REGISTER_400));
+
+    // WGS84 범위를 벗어난 좌표. 검색 결과가 아닌 값을 만들어 보낸 경우다.
+    performError(
+        register(landlordToken(), bodyReplacing("37.5559918", "137.5559918")),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listing-register-invalid-coordinates",
+        LISTING_REGISTER_400);
+
     // 도로명 주소에서 시·도와 구·군을 뽑지 못하는 주소.
     performError(
         register(landlordToken(), bodyReplacing("\"서울특별시 서대문구 신촌로 12\"", "\"신촌로 12\"")),
@@ -416,6 +445,28 @@ class ListingRegisterDocsTest {
   /** 본문 없이 보내는 요청. 토큰 자체가 거절되는 401·403에는 본문이 필요 없다. */
   private MockHttpServletRequestBuilder emptyRegister() {
     return post("/api/v2/listings").contentType(MediaType.APPLICATION_JSON);
+  }
+
+  /** 좌표만 뺀 변형이다. 주소 검색을 건너뛰고 제출한 요청을 재현한다. */
+  private static String bodyWithoutCoordinates() {
+    String withCoordinates =
+        """
+        {
+            "fullAddress": "서울특별시 서대문구 신촌로 12",
+            "detail": "3층 305호",
+            "lat": 37.5559918,
+            "lng": 126.9368647
+          }""";
+    String withoutCoordinates =
+        """
+        {
+            "fullAddress": "서울특별시 서대문구 신촌로 12",
+            "detail": "3층 305호"
+          }""";
+    if (!REGISTER_BODY.contains(withCoordinates)) {
+      throw new IllegalStateException("등록 본문의 address 블록을 찾지 못했다");
+    }
+    return REGISTER_BODY.replace(withCoordinates, withoutCoordinates);
   }
 
   /** 정상 본문에서 한 값만 바꾼 변형이다. 본문에서 유일하게 지목할 수 있는 값만 바꾼다. */

@@ -10,8 +10,9 @@ import java.util.List;
  * <p>MongoDB는 스키마리스라 잘못된 모양의 문서도 저장 자체는 가능하다. 그래서 애플리케이션이 저장하기 직전에 v4 스키마의 필수 필드와 값 범위를 검증해, 조회 시점의
  * NullPointerException이나 잘못된 검색 결과를 미리 막는다.
  *
- * <p>{@code blogUrl}·{@code rejectionReason}·{@code serviceFeedback}·{@code location}은 값이 없을 수 있어
- * 필수로 보지 않는다. MongoDB validator의 {@code required} 목록도 같은 넷을 제외한다.
+ * <p>{@code blogUrl}·{@code rejectionReason}·{@code serviceFeedback}은 값이 없을 수 있어 필수로 보지 않는다.
+ * MongoDB validator의 {@code required} 목록도 같은 셋을 제외한다. {@code location}은 지오코딩이 없던 시절에 같은 예외였지만, 등록이
+ * 주소 검색이 준 좌표를 받게 되면서 필수로 조였다(ADR-0042 · changeUnit {@code 0116}).
  */
 public final class ListingValidator {
 
@@ -36,6 +37,7 @@ public final class ListingValidator {
     requireNonNull(listing.getCreatedAt(), "createdAt이 필요합니다.");
     requireNonNull(listing.getUpdatedAt(), "updatedAt이 필요합니다.");
     validateAddress(listing.getAddress());
+    requireNonNull(listing.getLocation(), "location이 필요합니다.");
     validateBuilding(listing.getBuilding());
     requireLocalizedText(listing.getDescription(), "description");
     requireLocalizedText(listing.getExtraNotes(), "extraNotes");

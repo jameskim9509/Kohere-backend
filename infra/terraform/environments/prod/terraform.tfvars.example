@@ -58,6 +58,12 @@ mail_from     = "noreply@kohere.app"
 # naver_search_client_id     = ""  # sensitive — SSM SecureString
 # naver_search_client_secret = ""  # sensitive — SSM SecureString
 
+# ----- NCP Maps Geocoding (도로명 주소 검색 — #223) -----
+# 매물 등록 폼의 주소 검색(GET /api/v1/listings/addresses)에 필요. 미설정 시 SSM에 REPLACE_ME가 저장되고 주소 검색만 502(UPSTREAM_ERROR).
+# 네이버 클라우드 플랫폼 콘솔에서 Maps Application 등록 후 발급받아 채운다 — 위 검색 API(네이버 Developers)와 다른 값이다:
+# naver_geocode_client_id     = ""  # sensitive — SSM SecureString
+# naver_geocode_client_secret = ""  # sensitive — SSM SecureString
+
 # ----- 알람 (이메일·Discord 병행 가능 — 둘 다 채우면 양쪽으로 통보) -----
 # alarm_email         = "ops@kohere.app"
 # discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda, ADR-0027)  # sensitive

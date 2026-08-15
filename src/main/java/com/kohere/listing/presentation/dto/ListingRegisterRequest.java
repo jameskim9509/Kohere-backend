@@ -14,6 +14,8 @@ import com.kohere.listing.domain.ProvidedSupply;
 import com.kohere.listing.domain.SecurityFeature;
 import com.kohere.listing.domain.SupportedLanguage;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -35,11 +37,15 @@ import java.util.Set;
  * imageKeys}(1~5개)·{@code roomOffers[].roomImageKeys}(방마다 2~5개)로 참조한다. 장수와 소유권은 {@code
  * ListingImageKeySet}이 확인하고, 서버가 확정 위치로 복사한 뒤 그 URL을 응답에 채운다(ADR-0041).
  *
+ * <p>주소도 미리 검색해 둔다 — {@code GET /api/v1/listings/addresses}가 준 후보의 도로명 주소와 좌표를 {@code
+ * address.fullAddress}·{@code address.lat}·{@code address.lng}에 그대로 담는다. 서버는 그 좌표로 매물의 {@code
+ * location}을 채우며 등록 시점에 지오코딩을 다시 하지 않는다(ADR-0042).
+ *
  * <p>요청에 없는 값은 서버가 채운다 — {@code _id}·{@code roomOffers[].roomOfferId}·{@code
  * schemaVersion}(4)·{@code status}({@code PENDING})·{@code favoriteCount}(0)·{@code
  * createdAt}/{@code updatedAt}·{@code rentalType}({@code MONTHLY_RENT})·{@code
  * pricing.currency}({@code KRW})·{@code roomOffers[].status}({@code ACTIVE}). {@code
- * location}·{@code nearbyUniversityCodes}는 지오코딩 미구현이라 각각 비어 있는 상태로 저장한다.
+ * nearbyUniversityCodes}는 좌표 기반 파생이 후속이라 빈 상태로 저장한다.
  *
  * <p>docs/api/specs/03-listings-favorites.md · 시퀀스 US-3-6.
  */
@@ -71,8 +77,17 @@ public record ListingRegisterRequest(
   public record ContactRequest(
       @NotBlank String managerName, @NotBlank String phone, @NotBlank String sms) {}
 
-  /** 도로명 주소는 입력값을 그대로 저장하고, 행정구역은 서버가 파싱해 채운다. */
-  public record AddressRequest(@NotBlank String fullAddress, String detail) {}
+  /**
+   * 주소는 {@code GET /api/v1/listings/addresses}가 준 값을 그대로 되돌려 받는다(ADR-0042).
+   *
+   * <p>도로명 주소는 받은 값을 그대로 저장하고 행정구역은 서버가 파싱해 채운다. 좌표는 매물의 {@code location}이 되며, 검색 결과가 아닌 값을 임의로 만들어
+   * 보내지 않는다 — 관리자 승인 심사가 주소와 좌표의 일치를 본다.
+   */
+  public record AddressRequest(
+      @NotBlank String fullAddress,
+      String detail,
+      @NotNull @DecimalMin("-90.0") @DecimalMax("90.0") Double lat,
+      @NotNull @DecimalMin("-180.0") @DecimalMax("180.0") Double lng) {}
 
   /** 지점 운영층은 {@code usedFloorRange}({@code min~max})로 받아 두 필드로 나눈다. */
   public record BuildingRequest(

@@ -42,6 +42,9 @@ locals {
     # 네이버 지역 검색 API 인증정보 — 미설정 시 REPLACE_ME 저장(운영 전 채울 것, #160/#162)
     NAVER_SEARCH_CLIENT_ID     = var.naver_search_client_id != "" ? var.naver_search_client_id : "REPLACE_ME"
     NAVER_SEARCH_CLIENT_SECRET = var.naver_search_client_secret != "" ? var.naver_search_client_secret : "REPLACE_ME"
+    # NCP Maps Geocoding 인증정보 — 도로명 주소 검색(#223, ADR-0042). 위 검색 API와 콘솔·키가 다르다.
+    NAVER_GEOCODE_CLIENT_ID     = var.naver_geocode_client_id != "" ? var.naver_geocode_client_id : "REPLACE_ME"
+    NAVER_GEOCODE_CLIENT_SECRET = var.naver_geocode_client_secret != "" ? var.naver_geocode_client_secret : "REPLACE_ME"
   }
 }
 

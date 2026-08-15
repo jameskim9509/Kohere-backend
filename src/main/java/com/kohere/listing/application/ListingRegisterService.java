@@ -166,6 +166,7 @@ public class ListingRegisterService {
         .createdAt(now)
         .updatedAt(now)
         .address(toAddress(request, catalog))
+        .location(toLocation(request))
         .building(
             new Listing.Building(
                 request.building().type(),
@@ -203,7 +204,7 @@ public class ListingRegisterService {
   /**
    * 도로명 주소에서 행정구역을 뽑는다.
    *
-   * <p>좌표({@code location})는 지오코딩이 없어 채우지 않는다. 좌표 없는 매물은 관리자 승인을 통과하지 못하므로 공개 매물은 항상 좌표를 갖는다.
+   * <p>좌표는 여기서 다루지 않는다 — 주소 검색이 준 값을 {@link #toLocation}이 그대로 옮긴다(ADR-0042).
    */
   private static Listing.Address toAddress(
       ListingRegisterRequest request, ListingCatalogCodes catalog) {
@@ -217,6 +218,19 @@ public class ListingRegisterService {
         district,
         bilingual(fullAddress),
         detail == null || detail.isBlank() ? null : bilingual(detail));
+  }
+
+  /**
+   * 요청의 좌표를 매물 좌표로 옮긴다.
+   *
+   * <p>값은 주소 검색({@code GET /api/v1/listings/addresses})이 준 것을 클라이언트가 되돌려 보낸 것이다 — 등록 시점에 지오코딩을 다시
+   * 하면 등록마다 외부 왕복과 502 경로가 생긴다(ADR-0042 §2). 좌표 위조는 {@code PENDING} 상태와 관리자 승인 심사가 흡수한다.
+   *
+   * <p>도메인·GeoJSON 순서가 {@code (longitude, latitude)}라 요청의 {@code lat}·{@code lng}와 자리가 뒤집힌다. 값 범위는
+   * 요청 검증과 {@code GeoPoint} 생성자가 이중으로 본다.
+   */
+  private static Listing.GeoPoint toLocation(ListingRegisterRequest request) {
+    return new Listing.GeoPoint(request.address().lng(), request.address().lat());
   }
 
   private static Listing.RoomOffer toRoomOffer(ListingRegisterRequest.RoomOfferRequest request) {

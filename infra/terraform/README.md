@@ -105,6 +105,7 @@ terraform apply
 앱 기동을 막지 않는 외부 연동 키다. 미설정이면 앱은 정상 기동하고 해당 기능 호출만 실패(폴백/에러)한다. 각 환경의 `terraform.tfvars.example` 에 주석으로 정리돼 있으며, 값은 `terraform.tfvars` 로 주입하거나 apply 후 SSM(`/<env>/*` SecureString)에서 직접 편집한다:
 
 - `naver_search_client_id`/`naver_search_client_secret` — 지도 장소 검색(네이버 지역 검색 API, `GET /api/v1/listings/places`, #160/#162). 미설정 시 장소 검색만 502(`UPSTREAM_ERROR`).
+- `naver_geocode_client_id`/`naver_geocode_client_secret` — 매물 등록 폼의 도로명 주소 검색(NCP Maps Geocoding, `GET /api/v1/listings/addresses`, #223 · [ADR-0042](../../docs/adr/0042-road-address-search-with-ncp-geocoding.md)). 미설정 시 주소 검색만 502(`UPSTREAM_ERROR`). **네이버 클라우드 플랫폼 콘솔에서 발급하며 위 검색 API(네이버 Developers)와 다른 값이다.**
 - `solapi_*` — 임대인 연락처 SMS 인증(ADR-0034). 미설정 시 로깅 폴백.
 - `bizno_*` — 임대인 사업자번호 검증(ADR-0033). 미설정 시 스텁 폴백.
 

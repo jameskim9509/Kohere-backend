@@ -97,6 +97,7 @@
 1. **listing 마이그레이션 체인을 v4 baseline으로 리셋한다.** `0099`~`0114` changeUnit을 **삭제**하고 `0115 listing-v4-baseline` 하나로 갈음한다 — [§1](#1-기본-규칙)이 인정하는 baseline 채택(`V1__baseline.sql` 대응)의 MongoDB 적용이다. v3 데이터를 폐기하는 이상 그 데이터를 v1→v2→v3로 옮기던 이력은 재현할 대상이 없다.
    - **존치: `0100`(`listing-search-place-seed`).** 유일하게 다른 컬렉션(`searchPlaces`)을 다루며 v4와 무관하다.
    - 기존 환경의 changelog에는 `0099`~`0114` 항목이 고아로 남지만, 대응 클래스가 없으면 실행 대상에서 빠질 뿐이라 무해하다.
+   - **`0116 listing-location-required`는 이 예외의 연장이 아니라 일반 개정이다.** `0115`가 지오코딩이 없어 선택으로 뒀던 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 시드 주입 전이라 백필 대상이 0건이어서 [§4](#4-not-null-컬럼-추가-절차)의 확장→백필→축소가 그대로 성립한다. `0115`는 동결이므로 수정하지 않고 새 유닛이 자기 스키마 사본을 든다.
    - `0115`는 **스키마만** 다룬다 — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. 데이터는 건드리지 않는다. v4 `$jsonSchema`는 `0115` 안에 **동결**하고 `ListingMongoIndexInitializer`의 정적 메서드를 호출하지 않는다(과거 `0105`가 그렇게 해서 `listingV2JsonSchema()` 죽은 사본이 생겼다).
 2. **시드(`listings` 2건 · `listingCatalog` 103건)는 운영자가 수동 주입한다.** 신규 필드(담당자 연락처·설문 3종 등)에 **대응하는 원본 값이 없어** 백필이 성립하지 않고, 시드를 코드가 소유하면 고칠 때마다 재빌드·재배포가 필요하다 — 위 "파괴적 일괄 변경 금지"의 1회 예외다.
 
