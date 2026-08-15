@@ -501,6 +501,87 @@ public final class ListingDocsFields {
 
   public static final String[] LISTING_ADDRESS_SEARCH_502 = {"UPSTREAM_ERROR"};
 
+  // ── §12 인근 역 검색 — GET /api/v1/listings/stations(+/nearby) ─────────────
+
+  public static final String LISTING_STATION_SEARCH_SUMMARY = "인근 역 검색(임대인)";
+
+  public static final String LISTING_STATION_SEARCH_DESCRIPTION =
+      """
+      매물 등록 폼의 인근 역 칸을 채울 표준 역 이름을 찾는다. 등록 전에 **먼저 호출하는 API**다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다.
+
+      **고른 값을 등록에 그대로 싣는다**
+
+      | 검색 응답 | 등록 요청 |
+      |---|---|
+      | `name` | `nearestTransit.name` |
+      | `suggestedWalkMinutes` | `nearestTransit.walkMinutes`의 **기본값**(임대인이 수정할 수 있다) |
+
+      **좌표는 선택이지만 함께 보내는 것을 권한다**
+
+      - `lat`·`lng`는 **둘 다 있거나 둘 다 없어야 한다.** 하나만 보내면 `400 INVALID_INPUT`이다.
+      - 좌표를 주면 거리순으로 정렬되고 `distanceMeters`·`suggestedWalkMinutes`가 채워진다. 없으면 정확도순이고 두 필드는 `null`이다.
+      - 주소를 먼저 검색하므로 좌표는 이미 손에 있다. 그래야 전국에 같은 이름이 있는 역(예: `시청역`)을 거리로 가려낼 수 있다.
+
+      **응답 주의사항**
+
+      - `suggestedWalkMinutes`는 **직선거리 기준 하한 제안**이다. 실제 보행 경로는 더 길다.
+      - 환승역은 노선별로 여러 건이 온다(`신촌역 2호선`·`신촌역 경의중앙선`). 서버가 합치지 않는다.
+      - 일치하는 역이 없으면 에러가 아니라 `data.items=[]`다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 키워드 누락·공백·길이(1~50자) 위반, 좌표를 하나만 보냄, 좌표가 WGS84 범위를 벗어남 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 502 | `UPSTREAM_ERROR` | 카카오 로컬 오류·타임아웃·REST 키 누락·응답 또는 좌표 형식 이상 |
+      """;
+
+  public static final String LISTING_NEARBY_STATION_SUMMARY = "인근 역 목록(임대인)";
+
+  public static final String LISTING_NEARBY_STATION_DESCRIPTION =
+      """
+      매물 좌표 주변의 지하철역을 가까운 순으로 반환한다. 임대인이 아무것도 입력하지 않아도 후보를 보여주기 위한 경로이며, 응답 구조와 사용법은 인근 역 검색과 같다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — **임대인**(`userType=LANDLORD`) 전용이다.
+
+      **서버가 고정하는 값**
+
+      - 반경 **2km**(도보 25분권) · 거리순 정렬 · 최대 15건. 프론트는 매물 좌표만 보낸다.
+      - 좌표가 항상 있으므로 `distanceMeters`·`suggestedWalkMinutes`가 늘 채워진다.
+      - 반경 안에 역이 없으면 에러가 아니라 `data.items=[]`다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `lat`·`lng` 누락 또는 WGS84 범위 위반 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 502 | `UPSTREAM_ERROR` | 카카오 로컬 오류·타임아웃·REST 키 누락·응답 또는 좌표 형식 이상 |
+      """;
+
+  public static final String[] LISTING_STATION_SEARCH_400 = {"INVALID_INPUT"};
+
+  public static final String[] LISTING_STATION_SEARCH_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+
+  public static final String[] LISTING_STATION_SEARCH_403 = {
+    "FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"
+  };
+
+  public static final String[] LISTING_STATION_SEARCH_502 = {"UPSTREAM_ERROR"};
+
   // ── 공통 실패 응답 문구 ────────────────────────────────────────────────────
 
   public static String errorDescription() {
@@ -509,6 +590,25 @@ public final class ListingDocsFields {
   }
 
   // ── 파라미터 기술자 ────────────────────────────────────────────────────────
+
+  /** 주소 검색 API가 프론트에서 받는 유일한 검색 조건을 문서화한다. */
+  public static ParameterDescriptor[] stationQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("keyword").description("등록 폼 역 칸 입력값(1~50자). 예: `신촌`"),
+      parameterWithName("lat")
+          .optional()
+          .description("매물 위도(WGS84). 주소 검색이 준 값을 그대로 넘긴다. lng와 함께 보내야 한다"),
+      parameterWithName("lng").optional().description("매물 경도(WGS84). lat와 함께 보내야 한다")
+    };
+  }
+
+  /** 좌표만으로 인근 역을 받는 API의 query parameter 문서 정의다. */
+  public static ParameterDescriptor[] nearbyStationQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("lat").description("매물 위도(WGS84, -90~90)"),
+      parameterWithName("lng").description("매물 경도(WGS84, -180~180)")
+    };
+  }
 
   /** 주소 검색 API가 프론트에서 받는 유일한 검색 조건을 문서화한다. */
   public static ParameterDescriptor[] addressQueryParameters() {
@@ -739,6 +839,32 @@ public final class ListingDocsFields {
   // ── 응답 필드 기술자 ───────────────────────────────────────────────────────
 
   /** 주소 검색 API 응답 필드 문서 정의다. 등록에 그대로 실리는 값과 보조 표시값을 설명에서 갈라 준다. */
+  public static List<FieldDescriptor> stationSearchResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.items[].name",
+            JsonFieldType.STRING,
+            "역 이름. 등록 요청의 nearestTransit.name에 그대로 담는다. 환승역은 노선별로 따로 오며 서버는 다듬지 않는다"),
+        field(
+            "data.items[].roadAddress",
+            JsonFieldType.STRING,
+            "역 출입구 도로명 주소. 후보를 구분해 보여줄 때만 쓴다. 제공되지 않으면 빈 문자열"),
+        field("data.items[].jibunAddress", JsonFieldType.STRING, "지번 주소. 보조 표시용. 제공되지 않으면 빈 문자열"),
+        field("data.items[].lat", JsonFieldType.NUMBER, "역의 WGS84 위도. 지도 핀 용도이며 등록에는 보내지 않는다"),
+        field("data.items[].lng", JsonFieldType.NUMBER, "역의 WGS84 경도"),
+        optField(
+            "data.items[].distanceMeters",
+            JsonFieldType.NUMBER,
+            "매물 좌표에서 역까지의 직선거리(m). 좌표를 주지 않은 요청이면 null"),
+        optField(
+            "data.items[].suggestedWalkMinutes",
+            JsonFieldType.NUMBER,
+            "도보 시간 제안값(분). 직선거리 ÷ 80m를 올림한 하한이며 임대인이 수정할 수 있다. 거리를 모르면 null"),
+        errorNull());
+  }
+
+  /** 주소 검색 성공 응답 필드 문서 정의다. */
   public static List<FieldDescriptor> addressSearchResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
