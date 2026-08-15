@@ -5,7 +5,6 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.v1.ListingDetailResponse;
-import com.kohere.listing.application.dto.v1.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.v1.ListingSummaryResponse;
 import com.kohere.listing.domain.ListingNotFoundException;
 import java.util.List;
@@ -60,13 +59,6 @@ public class ListingV1Controller {
   @GetMapping("/map")
   public ListingMapResponse getListingMap() {
     return new ListingMapResponse(List.of(), 0L);
-  }
-
-  /** 항상 빈 목록이다. 키워드는 보내도 무시하고, 일치한 장소({@code matchedPlace})도 내려주지 않는다. */
-  @GetMapping("/search")
-  public ListingKeywordSearchResponse searchListings(
-      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-    return new ListingKeywordSearchResponse(null, List.of(), emptyPage(page, size));
   }
 
   /** 항상 {@code 404 LISTING_NOT_FOUND}다. */

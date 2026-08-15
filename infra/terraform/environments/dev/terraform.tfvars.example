@@ -62,6 +62,12 @@ mail_from     = "noreply@kohere.app"
 # naver_geocode_client_id     = ""  # sensitive — SSM SecureString
 # naver_geocode_client_secret = ""  # sensitive — SSM SecureString
 
+# ----- 카카오 로컬 API (인근 역 검색 · 인근 대학 파생 — #224) -----
+# 매물 등록 폼의 역 검색(GET /api/v1/listings/stations)과 등록 시 nearbyUniversityCodes 파생에 필요.
+# 미설정 시 역 검색만 502(UPSTREAM_ERROR)이고 등록은 성공하되 인근 대학이 빈 배열이다.
+# 카카오 개발자 콘솔에서 앱 생성 → 로컬 API 활성화 후 REST API 키를 발급받아 채운다 — 네이버·NCP와 다른 콘솔이다:
+# kakao_rest_api_key = ""  # sensitive — SSM SecureString
+
 # ----- 테스트 마스터 계정/로그인 (dev·local 전용, 운영 미사용) -----
 # 기본 비활성. 우회 시크릿 TEST_LOGIN_SECRET 은 Terraform이 자동 생성한다(SSM SecureString) — 채우지 않는다.
 # 이 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다. 공유 EC2 백도어라 필요할 때만 켠다:

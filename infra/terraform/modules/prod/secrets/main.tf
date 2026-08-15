@@ -45,6 +45,8 @@ locals {
     # NCP Maps Geocoding 인증정보 — 도로명 주소 검색(#223, ADR-0042). 위 검색 API와 콘솔·키가 다르다.
     NAVER_GEOCODE_CLIENT_ID     = var.naver_geocode_client_id != "" ? var.naver_geocode_client_id : "REPLACE_ME"
     NAVER_GEOCODE_CLIENT_SECRET = var.naver_geocode_client_secret != "" ? var.naver_geocode_client_secret : "REPLACE_ME"
+    # 카카오 로컬 API 인증정보 — 인근 역 검색·인근 대학 파생(#224, ADR-0044). 키 하나만 쓴다(ID/Secret 쌍이 아니다).
+    KAKAO_REST_API_KEY = var.kakao_rest_api_key != "" ? var.kakao_rest_api_key : "REPLACE_ME"
   }
 }
 

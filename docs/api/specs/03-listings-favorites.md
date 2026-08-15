@@ -3,7 +3,7 @@
 > [api-design-guide](../api-design-guide.md) · [error-response-guide](../error-response-guide.md)를 따른다. 모든 응답은 공통 래퍼.
 > 관련 유저 스토리: [user-stories](../../requirements/user-stories.md)
 
-임대인의 매물 등록, 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 API의 정본은 `/api/v2`다** — 사진 업로드·등록(`POST /api/v2/listings/images`·`POST /api/v2/listings`)에 이어 조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겼고, 요청·응답 모두 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). **기존 `/api/v1` 조회 경로는 개정 전(v3) 응답 구조를 복원한 `deprecated` 스텁**이며 빈 결과나 `404 LISTING_NOT_FOUND`만 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md), 아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)). 장소 후보 검색(`GET /api/v1/listings/places`)과 도로명 주소 검색(`GET /api/v1/listings/addresses`)만 매물 데이터를 쓰지 않아 `/api/v1`에서 그대로 동작한다 — 둘 중 주소 검색은 등록 폼 전용이라 **임대인 인증이 필요하다**([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)).
+임대인의 매물 등록, 매물 리스트/지도 조회, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 API의 정본은 `/api/v2`다** — 사진 업로드·등록(`POST /api/v2/listings/images`·`POST /api/v2/listings`)에 이어 조회 계열 5종(목록·지도·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겼고, 요청·응답 모두 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). **기존 `/api/v1` 조회 경로는 개정 전(v3) 응답 구조를 복원한 `deprecated` 스텁**이며 빈 결과나 `404 LISTING_NOT_FOUND`만 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md), 아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)). 장소 후보 검색(`GET /api/v1/listings/places`)·도로명 주소 검색(`GET /api/v1/listings/addresses`)·인근 역 검색(`GET /api/v1/listings/stations`·`/stations/nearby`)만 매물 데이터를 쓰지 않아 `/api/v1`에서 그대로 동작한다 — 그중 주소 검색과 역 검색은 등록 폼 전용이라 **임대인 인증이 필요하다**([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md) · [ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)).
 
 > **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명·유의사항·환불 정책 문구는 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·`arcRequired`·행정구역(`address.city`·`address.district`)·`languagesSupported`·`nearbyFacilities`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다. 단 `status`(`ListingStatus`)는 임대인·관리자만 읽는 관리 상태라 번역 대상이 아니며 코드 문자열 그대로 내려간다.
 
@@ -15,7 +15,6 @@
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
 - `ConditionTag`(매물 옵션 필터 8종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음)
 - `ArcRequirement`(매물 루트 `arcRequired` 값): `REQUIRED`, `NOT_REQUIRED`. ARC 없이 입주할 수 있는지는 조건 태그가 아니라 이 필드로 표현한다
-- `SearchPlaceType`(기존 키워드 검색 매칭 분류): `UNIVERSITY`, `REGION`, `SUBWAY_STATION`
 
 > `ListingSort`는 api-design-guide §6의 일반 `?sort=field,(asc|desc)` 형식이 아닌 **이름 기반 정렬 프리셋**이다(추천 정렬 등 단일 필드로 표현되지 않는 정렬이 있어 enum으로 둔다). 찜 목록은 별도 정렬 파라미터 없이 `favoritedAt desc`로 고정된다.
 
@@ -24,12 +23,13 @@
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/listings/addresses` | 도로명 주소 검색(임대인) — 등록 폼의 주소 칸을 채우고 좌표를 함께 받는다 | 필수(임대인) | 200 |
+| GET | `/api/v1/listings/stations` | 인근 역 검색(임대인) — 역 이름으로 찾는다 | 필수(임대인) | 200 |
+| GET | `/api/v1/listings/stations/nearby` | 인근 역 목록(임대인) — 매물 좌표 주변을 가까운 순으로 | 필수(임대인) | 200 |
 | POST | `/api/v2/listings/images` | 매물 사진 업로드(임대인) — **한 장씩**, 저장 키를 돌려준다 | 필수(임대인) | 201 |
 | POST | `/api/v2/listings` | 매물 등록(임대인) — 올려 둔 사진 키를 참조해 승인 대기(`PENDING`) 상태로 저장 | 필수(임대인) | 201 |
 | GET | `/api/v2/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
 | GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) — **유일하게 `/api/v1`에 남는 경로** | 불필요 | 200 |
 | GET | `/api/v2/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
-| GET | `/api/v2/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
 | GET | `/api/v2/listings/{listingId}` | 매물 상세 조회(정식 로그인 시 최근 본 기록) | 선택 | 200 |
 | POST | `/api/v2/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
 | DELETE | `/api/v2/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
@@ -38,11 +38,11 @@
 
 > 위 표의 `/api/v2` 경로가 정본이다. 같은 경로의 `/api/v1` 버전은 빈 결과·404만 돌려주는 `deprecated` 스텁으로만 남아 있다(아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)).
 >
-> 주소 검색·사진 업로드·매물 등록만 임대인 전용이고 나머지는 세입자·비로그인 사용자를 위한 조회 API다. 세 경로는 `SecurityConfig`에 **`GET /api/v1/listings/addresses`·`POST /api/v2/listings`·`POST /api/v2/listings/images`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다([ADR-0010](../../adr/0010-jwt-authentication-filter.md)) — 주소 검색 매처는 공개 조회 매처(`GET /api/v1/listings/*` `permitAll`)보다 **먼저** 선언해야 한다. 먼저 매칭된 규칙이 이기므로 뒤에 두면 인증 규칙이 통째로 무시된다 — 명시하지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 임대인 여부(`userType=LANDLORD`)는 서비스가 다시 검사해 `403 FORBIDDEN`으로 거른다. 등록된 매물은 `PENDING`이라 아래 조회 API 어디에도 나오지 않는다 — 조회는 `PUBLISHED` 한정이다.
+> 주소 검색·역 검색·사진 업로드·매물 등록만 임대인 전용이고 나머지는 세입자·비로그인 사용자를 위한 조회 API다. 다섯 경로는 `SecurityConfig`에 **`GET /api/v1/listings/addresses`·`GET /api/v1/listings/stations`·`GET /api/v1/listings/stations/nearby`·`POST /api/v2/listings`·`POST /api/v2/listings/images`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다([ADR-0010](../../adr/0010-jwt-authentication-filter.md)) — 주소 검색과 `/stations` 매처는 공개 조회 매처(`GET /api/v1/listings/*` `permitAll`)보다 **먼저** 선언해야 한다(둘 다 한 세그먼트라 그 매처에 잡힌다). 먼저 매칭된 규칙이 이기므로 뒤에 두면 인증 규칙이 통째로 무시된다 — 명시하지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 임대인 여부(`userType=LANDLORD`)는 서비스가 다시 검사해 `403 FORBIDDEN`으로 거른다. 등록된 매물은 `PENDING`이라 아래 조회 API 어디에도 나오지 않는다 — 조회는 `PUBLISHED` 한정이다.
 >
 > 공개 조회도 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 넣지 않으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 된다(v1 공개 조회 매처와 같은 이유). 결국 `/api/v2/listings` 네임스페이스는 **GET은 공개, POST(등록)는 `hasRole("USER")`** 로 메서드별로 갈린다. 찜 토글(`POST`·`DELETE /api/v2/listings/*/favorite`)과 내 스코프(`GET /api/v2/users/me/favorites`·`/recent-listings`)는 v1과 동일하게 `hasRole("USER")` 매처를 유지한다.
 >
-> 목록·지도·검색·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다(경로는 v2 기준이고 장소 후보 검색만 `/api/v1`이다). 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어를 적용하고, 상세에서는 실제 찜 상태와 최근 본 기록도 적용한다. 목록·기존 키워드 검색의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`다. 비로그인·온보딩 미완료·위조/형식 오류 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지 않는다. 단, 만료 토큰은 공개 매물 조회에서도 `401 TOKEN_EXPIRED`다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이며, 토큰 없음·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`다.
+> 목록·지도·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다(경로는 v2 기준이고 장소 후보 검색만 `/api/v1`이다). 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어를 적용하고, 상세에서는 실제 찜 상태와 최근 본 기록도 적용한다. 목록의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`다. 비로그인·온보딩 미완료·위조/형식 오류 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지 않는다. 단, 만료 토큰은 공개 매물 조회에서도 `401 TOKEN_EXPIRED`다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이며, 토큰 없음·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`다.
 
 ## v1 조회 API 종료(deprecated)
 
@@ -62,7 +62,6 @@
 | --- | --- | --- |
 | GET | `/api/v1/listings` | **빈 페이지** — `content: []`, `page.totalElements: 0` |
 | GET | `/api/v1/listings/map` | **빈 결과** — `markers: []`, `total: 0` |
-| GET | `/api/v1/listings/search` | **빈 페이지** — `matchedPlace: null`, `content: []`, `page.totalElements: 0` |
 | GET | `/api/v1/listings/{listingId}` | **`404 LISTING_NOT_FOUND`** |
 | POST | `/api/v1/listings/{listingId}/favorite` | **`404 LISTING_NOT_FOUND`** |
 | DELETE | `/api/v1/listings/{listingId}/favorite` | **`404 LISTING_NOT_FOUND`** |
@@ -70,11 +69,12 @@
 | GET | `/api/v1/users/me/recent-listings` | **빈 결과** — `content: []` |
 | GET | `/api/v1/listings/places` | **그대로 동작** — 매물 데이터를 쓰지 않는다 |
 | GET | `/api/v1/listings/addresses` | **그대로 동작** — 매물 데이터를 쓰지 않는다(등록 폼 전용, 임대인 인증 필요) |
+| GET | `/api/v1/listings/stations` · `/stations/nearby` | **그대로 동작** — 매물 데이터를 쓰지 않는다(등록 폼 전용, 임대인 인증 필요) |
 
 - 빈 결과·404는 **DB에 닿지 않고** 만든다. 필터·bbox·키워드 값과 무관하게 같은 응답이며, 매물이 실제로 있는지도 확인하지 않는다.
 - 응답 래퍼(`{ success, data, error }`)와 페이지 구조(`page.number`·`size`·`totalElements`·`totalPages`·`hasNext`)는 v3 계약 그대로다 — 구버전 앱의 파싱이 깨지지 않아야 "매물 없음" 화면에 도달한다.
 - 인증 규칙도 v3 그대로다. 공개 조회는 비로그인도 `200`(빈 결과)이고, 찜 토글·내 스코프는 여전히 `ROLE_USER` 전용이라 토큰이 없으면 `404`가 아니라 `401 UNAUTHENTICATED`다. 즉 **인가 판정이 먼저**고 스텁 응답은 그 뒤다.
-- **`GET /api/v1/listings/places`와 `GET /api/v1/listings/addresses`만 예외**로 살아 있다. 외부 API(네이버 지역 검색 · NCP Geocoding)만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places`·`addresses` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
+- **`GET /api/v1/listings/places`·`/addresses`·`/stations`(+`/stations/nearby`)만 예외**로 살아 있다. 외부 API(네이버 지역 검색 · NCP Geocoding · 카카오 로컬)만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places`·`addresses`·`stations` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
 - **Swagger에서 v1 오퍼레이션은 `deprecated` 배지로 구분된다.** OpenAPI `deprecated: true`가 실려 Swagger UI가 취소선과 배지를 붙인다. summary에는 버전 표기를 두지 않는다 — 경로가 이미 `/api/v1`을 보여준다.
 - **제거 시점은 정하지 않았다.** 구버전 앱 사용 비중을 보고 별도로 결정하며, 그때까지 v1 스텁은 위 표대로 유지된다.
 - 진단 추천(`GET /api/v1/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 v4 개편 전후로 바뀌지 않았으므로 v1·v2 양쪽 모두 실데이터를 그대로 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
@@ -154,6 +154,112 @@ Request Body: 없음
 | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
 | 502 | `UPSTREAM_ERROR` | NCP HTTP 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
 
+### GET /api/v1/listings/stations — 인근 역 검색(임대인)
+
+- 설명: 등록 폼의 **인근 역 칸**을 채우기 위해 역 이름으로 후보를 찾는다. 임대인이 하나를 고르면 그 `name`을 등록(`POST /api/v2/listings`)의 `nearestTransit.name`에 그대로 담는다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)).
+- 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). 주소 검색과 같은 이유로 공개하지 않는다(공개로 두면 인증 없이 카카오 호출 쿼터를 소모하는 프록시가 된다).
+- 경로: 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않으므로 **`/api/v1`에 둔다**.
+- 외부 연동: 아웃바운드 포트 `NearbyPlaceSearchClient`(어댑터 `KakaoLocalPlaceClient` — 카카오 로컬 *키워드로 장소 검색*)로 **동기 호출**한다. 서버가 `category_group_code=SW8`(지하철역)을 고정하므로 카페·음식점이 섞이지 않는다. HTTP 오류·타임아웃·REST 키 누락·응답 형식 이상은 모두 `502 UPSTREAM_ERROR`다. 인증정보는 환경변수 `KAKAO_REST_API_KEY`(SSM SecureString)로 주입하며 **네이버·NCP와 콘솔도 값도 다르다.**
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `keyword` | string | 필수 | 검색할 역 이름. 앞뒤 공백 제거 후 1~50자 |
+| `lat` | number | 선택 | 매물 위도(WGS84). 주소 검색이 준 값을 그대로 넘긴다 |
+| `lng` | number | 선택 | 매물 경도(WGS84) |
+
+- **`lat`·`lng`는 둘 다 있거나 둘 다 없어야 한다.** 하나만 오면 `400 INVALID_INPUT`이다.
+- 좌표를 함께 보내면 **거리순 정렬**이 되고 `distanceMeters`·`suggestedWalkMinutes`가 채워진다. 없으면 정확도순이고 두 필드는 `null`이다.
+- **폼은 좌표를 넘기는 것을 권장한다** — 등록 순서상 주소를 먼저 검색하므로 좌표는 이미 손에 있고, 그래야 전국에 같은 이름이 있는 역(예: `시청역`)을 거리로 가려낼 수 있다.
+
+서버가 외부 호출에 고정하는 값:
+
+| 이름 | 값 | 설명 |
+| --- | --- | --- |
+| `category_group_code` | `SW8` | 지하철역만 남긴다 |
+| `size` | `10` | 한 번에 받을 최대 후보 수(카카오 상한 15) |
+| `page` | `1` | 첫 페이지 고정 |
+| `sort` | 좌표 있으면 `distance`, 없으면 `accuracy` | 거리순은 좌표가 있어야 의미가 있다 |
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "name": "신촌역 2호선",
+        "roadAddress": "서울 서대문구 신촌로 90",
+        "jibunAddress": "서울 서대문구 창천동 30-33",
+        "lat": 37.555134,
+        "lng": 126.936893,
+        "distanceMeters": 320,
+        "suggestedWalkMinutes": 4
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `name` | string | 역 이름. **등록 요청의 `nearestTransit.name`에 그대로 담는다.** 카카오 표기를 다듬지 않는다 |
+| `roadAddress` | string | 역 출입구 도로명 주소. 후보를 구분할 때 보조로 표시한다. 제공되지 않으면 빈 문자열 |
+| `jibunAddress` | string | 지번 주소. 보조 표시용 |
+| `lat` / `lng` | number | 역의 WGS84 좌표. 폼이 지도에 핀을 찍는 용도이며 **등록에는 보내지 않는다** |
+| `distanceMeters` | integer \| null | 매물 좌표에서 역까지의 **직선거리**. 좌표를 준 요청에만 채워진다 |
+| `suggestedWalkMinutes` | integer \| null | 도보 시간 **제안값**(`ceil(distanceMeters / 80)`, 최소 1). `distanceMeters`가 있을 때만 채워진다 |
+
+주의사항:
+
+- **`suggestedWalkMinutes`는 제안이지 정답이 아니다.** 직선거리 기준이라 실제 보행 경로(육교·지하도·블록)보다 짧게 나온다. 서버는 이 값을 강제하지 않는다 — 등록 요청의 `nearestTransit.walkMinutes`는 클라이언트가 보낸 값을 그대로 저장하며, 실제 도보 시간과 맞는지는 승인 심사가 본다.
+- **환승역은 노선별로 여러 건이 온다**(`신촌역 2호선`·`신촌역 경의중앙선`). 노선이 보이는 편이 선택에 도움이 되므로 서버가 합치지 않는다.
+- 정상적으로 결과가 없으면 `200 OK`와 `data.items=[]`다(장애가 아니다).
+- 외부 응답의 `id`·`place_url`·`phone`·`category_name`·`meta`는 공개하지 않는다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `keyword` 누락·공백·길이(1~50자) 위반 / `lat`·`lng`가 WGS84 범위를 벗어남 / 좌표를 하나만 보냄 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조·형식 오류 / 만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰(`ROLE_ONBOARDING`) |
+| 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+| 502 | `UPSTREAM_ERROR` | 카카오 HTTP 오류·타임아웃·REST 키 누락·응답 또는 좌표 형식 이상 |
+
+### GET /api/v1/listings/stations/nearby — 인근 역 목록(임대인)
+
+- 설명: 임대인이 아무것도 입력하지 않아도 **매물 좌표 주변의 역을 가까운 순으로** 보여준다. 응답 구조와 사용법은 위 역 검색과 같다.
+- 인증·경로·외부 연동: 위와 동일하다. 다만 카카오 로컬 *카테고리로 장소 검색*을 호출한다.
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `lat` | number | 필수 | 매물 위도(WGS84, -90~90) |
+| `lng` | number | 필수 | 매물 경도(WGS84, -180~180) |
+
+서버가 외부 호출에 고정하는 값:
+
+| 이름 | 값 | 설명 |
+| --- | --- | --- |
+| `category_group_code` | `SW8` | 지하철역 |
+| `radius` | `2000` | 반경 2km(도보 25분권). 카카오 허용 범위는 0~20,000m |
+| `sort` | `distance` | 가까운 순 |
+| `size` | `15` | 카카오 상한 |
+| `page` | `1` | 첫 페이지 고정 |
+
+성공 Response (200): 위 역 검색과 **같은 구조**다. 좌표가 항상 있으므로 `distanceMeters`·`suggestedWalkMinutes`가 늘 채워진다.
+
+주의사항:
+
+- 반경 2km 안에 역이 없으면 장애가 아니라 `200 OK`와 `data.items=[]`다.
+
+발생 가능한 에러: 위 역 검색과 같다. 다만 `400 INVALID_INPUT`의 조건은 **`lat`·`lng` 누락 또는 WGS84 범위 위반**이다.
+
 ### POST /api/v2/listings/images — 매물 사진 업로드(임대인)
 
 - 설명: 등록 폼에서 고른 사진을 **한 장씩** 올린다. 저장 위치(키)와 미리보기 URL을 돌려주며, 그 키를 모아 매물 등록(`POST /api/v2/listings`)에 보낸다. 매물을 만들지는 않는다.
@@ -214,7 +320,7 @@ Request Parts:
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). `landlordId`는 access 토큰에서 읽으며 요청 본문에 담지 않는다.
 - 경로: 매물 도메인의 첫 `/api/v2` 엔드포인트였고, 이제 조회 계열 6종도 같은 네임스페이스로 옮겨 왔다. `/api/v2/listings`는 **GET이면 공개 매물 조회, POST면 임대인 등록**으로 메서드에 따라 갈린다. 요청·응답이 모두 스키마 v4 구조라 `deprecated`된 `/api/v1` 조회 스텁과 섞이지 않는다.
 - Content-Type: **`application/json`**. 사진 파일은 이 요청에 싣지 않고 `POST /api/v2/listings/images`가 돌려준 **키**로 참조한다([ADR-0041](../../adr/0041-listing-image-upload-to-s3.md)).
-- 선행 호출: 주소는 **`GET /api/v1/listings/addresses`로 먼저 검색**해 고른 후보의 `roadAddress`·`lat`·`lng`를 그대로 담는다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)). 사진 키와 같은 방식이다 — 앞선 호출이 준 값을 되돌려 보낸다.
+- 선행 호출: 주소는 **`GET /api/v1/listings/addresses`로 먼저 검색**해 고른 후보의 `roadAddress`·`lat`·`lng`를 그대로 담는다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)). 인근 역도 **`GET /api/v1/listings/stations`(또는 `/stations/nearby`)로 먼저 검색**해 고른 후보의 `name`을 담는다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)). 사진 키와 같은 방식이다 — 앞선 호출이 준 값을 되돌려 보낸다.
 
 Path·Query 파라미터: 없음
 
@@ -325,8 +431,8 @@ Request Body:
 | `facilities.providedSupplies` | `ProvidedSupply[]` | 필수 | 제공비품(복수 선택). 카탈로그 `PROVIDED_SUPPLY` 대조 |
 | `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조 |
 | `nearestTransit.type` | `TransitType` | 필수 | 현재 허용값은 `SUBWAY` 하나다. 카탈로그 `TRANSIT_TYPE` 대조 |
-| `nearestTransit.name` | string | 필수 | 근처 지하철역명 |
-| `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상 |
+| `nearestTransit.name` | string | 필수 | 근처 지하철역명. **역 검색 응답의 `name`을 그대로** 보낸다 |
+| `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상. 역 검색이 준 `suggestedWalkMinutes`를 그대로 담으면 된다. **키를 생략하면 `400 INVALID_INPUT`이다** — 예전에는 조용히 `0`이 저장됐다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)) |
 | `description` | string | 필수 | 지점 소개글 |
 | `extraNotes` | string | 필수 | 이용 조건(생활 규칙)·유의사항 |
 | `refundPolicy` | string | 필수 | 환불정책 문구 |
@@ -353,7 +459,8 @@ Request Body:
 - **폼 1칸을 서버가 두 필드로 파싱한다.** `building.usedFloorRange`(`1~2`) → `usedFloorMin`·`usedFloorMax`, `ageRange`(`20~35`) → `ageMin`·`ageMax`. 형식 위반은 `400 INVALID_INPUT`이며, `min ≤ max`와 `usedFloorMax ≤ totalFloors`도 함께 검증한다. 원본 문자열은 저장하지 않는다.
 - **주소는 먼저 검색한다.** 주소 칸은 자유 입력이 아니다 — `GET /api/v1/listings/addresses`로 검색해 고른 후보의 `roadAddress`·`lat`·`lng`를 그대로 담는다. 서버는 이 API를 부른 적이 있는지 확인하지 않으므로 값을 보관했다 되돌려 보내는 것은 클라이언트의 몫이며, **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다**(승인 심사가 주소와 좌표의 일치를 본다).
 - **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 받은 값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 파싱해 `City`·`District` enum으로 확정한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`다 — 검색 응답의 `supported=false`가 이 실패를 미리 알려주므로, 폼이 그 값을 보면 여기까지 오지 않는다.
-- **좌표는 요청 값으로 채우고, 인근 대학은 아직 비운다.** `address.lat`·`lng`가 `location`으로 저장되어 지도·거리 정렬과 관리자 승인 조건(좌표 보유)을 만족한다. `nearbyUniversityCodes`는 여전히 빈 배열이며 좌표 기반 계산은 후속이다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md) 후속 작업). `location`은 **저장 계약의 필수 필드**다 — 좌표 없는 매물은 어차피 관리자 승인을 통과하지 못하므로 저장 단계에서 막는다.
+- **역도 먼저 검색한다.** `nearestTransit.name`도 자유 입력이 아니다 — `GET /api/v1/listings/stations`로 검색해 고른 후보의 `name`을 그대로 담는다. 서버는 이 API를 부른 적이 있는지 확인하지 않으므로 값을 보관했다 되돌려 보내는 것은 클라이언트의 몫이다.
+- **좌표는 요청 값으로 채우고, 인근 대학은 아직 비운다.** `address.lat`·`lng`가 `location`으로 저장되어 지도·거리 정렬과 관리자 승인 조건(좌표 보유)을 만족한다. `nearbyUniversityCodes`는 여전히 빈 배열이며 좌표 기반 파생은 후속이다. `location`은 **저장 계약의 필수 필드**다 — 좌표 없는 매물은 어차피 관리자 승인을 통과하지 못하므로 저장 단계에서 막는다.
 - **코드 필드는 `listingCatalog` 대조를 통과해야 한다.** 위 표의 각 코드 배열·단일 코드는 `(category, code)`가 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다. 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리한다 — 프론트는 입력 교정 대신 코드 카탈로그 재조회(또는 앱 갱신)를 안내한다.
 - **문자열 길이 제한은 두지 않는다.** 서버·DB 어느 계층도 자유 입력 문구의 길이를 강제하지 않는다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다.** 숫자 10자리 형식만 확인하고 원문을 매물 문서에 저장하며, 진위·영업 상태는 **관리자가 승인 심사에서 수동으로** 확인한다. 이 엔드포인트는 `POST /api/v1/auth/business/verify`(무상태 검증 — [01-auth-onboarding](./01-auth-onboarding.md))를 호출하지 않는다.
@@ -759,60 +866,6 @@ Request Body: 없음
 | 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
-| 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
-
-### GET /api/v2/listings/search — 키워드 검색
-
-- 설명: 검색창에서 학교명·지역명·지하철역명을 입력했을 때, 매칭된 장소와 주변 매물을 함께 반환한다.
-- 인증: 선택
-- 매칭된 장소가 있으면 `matchedPlace.lat/lng`로 지도를 이동하고, `content[]`를 검색 결과 리스트로 표시한다.
-
-Query 파라미터:
-
-| 이름 | 타입 | 필수 | 기본 | 설명 |
-| --- | --- | --- | --- | --- |
-| `keyword` | string | 필수 | — | 검색창 입력값(학교/지역/역). 1~50자 |
-| `sort` | `ListingSort` | 선택 | `DISTANCE` | 검색 결과 정렬. 기본은 검색된 장소에서 가까운 순 |
-| `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호 |
-| `size` | integer | 선택 | 20 | 한 번에 가져올 매물 수(최대 100) |
-
-Request Body: 없음
-
-성공 Response (200):
-
-```jsonc
-{
-  "success": true,
-  "data": {
-    "matchedPlace": {
-      "type": "UNIVERSITY",
-      "name": "연세대학교",
-      "lat": 37.565784,
-      "lng": 126.938572
-    },
-    "content": [ /* /api/v2/listings content[]와 같은 매물 카드 구조 */ ],
-    "page": {
-      "number": 0,
-      "size": 20,
-      "totalElements": 42,
-      "totalPages": 3,
-      "hasNext": true
-    }
-  },
-  "error": null
-}
-```
-
-- `matchedPlace`가 있으면 검색 결과 화면의 지도 중심과 장소 제목으로 사용한다.
-- `content[]`는 목록 API와 같은 카드 구조다. `distanceMeters`는 검색된 장소에서 매물까지의 거리 라벨로 표시하고, `favorited`는 현재 구현상 로그인 여부와 관계없이 `false`다.
-- `matchedPlace=null`이면 "검색된 장소가 없어요" 상태를 표시한다.
-- `matchedPlace`가 있고 `content=[]`이면 "이 주변에 매물이 없어요" 상태를 표시한다.
-
-발생 가능한 에러:
-
-| status | code | 시점 |
-| --- | --- | --- |
-| 400 | `INVALID_INPUT` | 키워드 누락/공백/길이(1~50자) 위반, `size` 범위 초과 |
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
 
 ### GET /api/v2/listings/{listingId} — 매물 상세

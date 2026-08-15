@@ -64,6 +64,12 @@ mail_from     = "noreply@kohere.app"
 # naver_geocode_client_id     = ""  # sensitive — SSM SecureString
 # naver_geocode_client_secret = ""  # sensitive — SSM SecureString
 
+# ----- 카카오 로컬 API (인근 역 검색 · 인근 대학 파생 — #224) -----
+# 매물 등록 폼의 역 검색(GET /api/v1/listings/stations)과 등록 시 nearbyUniversityCodes 파생에 필요.
+# 미설정 시 역 검색만 502(UPSTREAM_ERROR)이고 등록은 성공하되 인근 대학이 빈 배열이다.
+# 카카오 개발자 콘솔에서 앱 생성 → 로컬 API 활성화 후 REST API 키를 발급받아 채운다 — 네이버·NCP와 다른 콘솔이다:
+# kakao_rest_api_key = ""  # sensitive — SSM SecureString
+
 # ----- 알람 (이메일·Discord 병행 가능 — 둘 다 채우면 양쪽으로 통보) -----
 # alarm_email         = "ops@kohere.app"
 # discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda, ADR-0027)  # sensitive

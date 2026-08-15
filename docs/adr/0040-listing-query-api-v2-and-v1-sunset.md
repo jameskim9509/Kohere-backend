@@ -10,8 +10,10 @@
 
 ## Status
 
-Proposed
+Proposed · **Amended(2026-08-15)**
 
+> **Amended — 키워드 검색이 대상에서 빠졌다.** [ADR-0043](./0043-remove-seeded-poi-keyword-search.md)이 `GET /listings/search`를 **v1·v2 양쪽에서 제거**했다. 클라이언트가 호출하지 않는 것이 확인됐고, US-3-3은 이미 네이버 장소 검색(`GET /api/v1/listings/places`)으로 갈아탔기 때문이다. 아래 본문의 **"6종"은 이제 5종**이며, v1 스텁도 키워드 검색을 뺀 나머지만 남는다. 이력을 남기기 위해 본문은 작성 시점 그대로 두고 해당 줄에만 표시한다.
+>
 > **범위는 매물 조회 계열뿐이다.** 진단 추천(`GET /diagnoses/{id}/recommendations`)은 이 결정의 대상이 **아니다** — 추천 응답 `RecommendedListingView`는 v4 개편 전후로 **구조가 바뀌지 않았고**(`git diff 04913ea..HEAD`에 변경 없음), 바뀐 것은 값뿐이다(`conditions`에서 `NO_ARC` 배지가 빠졌다 — [ADR-0039](./0039-listing-schema-v4-registration-form.md)). 추천은 이미 v1·v2 양쪽에 있고([ADR-0036](./0036-diagnosis-v2-server-driven-flow.md) 결정 10) 앱은 v2를 쓴다. 진단 컨트롤러·진단 문서는 이 ADR로 바뀌지 않는다.
 
 ## Context
@@ -42,14 +44,14 @@ Proposed
 |---|---|---|
 | 목록 | `GET /api/v1/listings` | `GET /api/v2/listings` |
 | 지도 | `GET /api/v1/listings/map` | `GET /api/v2/listings/map` |
-| 키워드 검색 | `GET /api/v1/listings/search` | `GET /api/v2/listings/search` |
+| ~~키워드 검색~~ | ~~`GET /api/v1/listings/search`~~ | ~~`GET /api/v2/listings/search`~~ — **제거됨([ADR-0043](./0043-remove-seeded-poi-keyword-search.md))** |
 | 상세 | `GET /api/v1/listings/{id}` | `GET /api/v2/listings/{id}` |
 | 찜 토글 | `POST`·`DELETE /api/v1/listings/{id}/favorite` | `POST`·`DELETE /api/v2/listings/{id}/favorite` |
 | 내 스코프 | `GET /api/v1/users/me/favorites`·`/recent-listings` | `GET /api/v2/users/me/favorites`·`/recent-listings` |
 
 ### 2. v1 스텁 동작
 
-- 목록 · 키워드 검색 · 찜 목록 → **빈 페이지**(`content: []`, `page.totalElements: 0`).
+- 목록 · 찜 목록 → **빈 페이지**(`content: []`, `page.totalElements: 0`). (키워드 검색은 [ADR-0043](./0043-remove-seeded-poi-keyword-search.md)으로 제거)
 - 지도 → **빈 마커**(`markers: []`, `total: 0`) — 이 응답에는 `content`도 `page`도 없다.
 - 최근 본 → **빈 목록**(`content: []`) — 페이지네이션이 없어 `page` 객체가 없다.
 - 상세 → **`404 LISTING_NOT_FOUND`**.

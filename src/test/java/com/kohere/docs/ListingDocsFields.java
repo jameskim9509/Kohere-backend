@@ -35,11 +35,10 @@ import org.springframework.restdocs.request.ParameterDescriptor;
  * Listings 태그 오퍼레이션의 문서 자산(#151 후속 정리).
  *
  * <p>{@code ListingDocsTest}에 흩어져 있던 오퍼레이션 문구 상수(summary·description)와 파라미터·응답 필드 기술자를 태그 단위로 모은
- * 것이다. 매물 목록({@code GET /listings})·지도 마커({@code GET /listings/map})·키워드 검색({@code GET
- * /listings/search})·장소 후보({@code GET /listings/places})·상세({@code GET /listings/{listingId}})·찜
- * 등록/해제({@code POST·DELETE /listings/{listingId}/favorite})·내 찜 목록({@code GET
- * /users/me/favorites})·최근 본 매물({@code GET /users/me/recent-listings})에 매물 등록({@code POST
- * /api/v2/listings})을 더한 10개 오퍼레이션을 다룬다.
+ * 것이다. 매물 목록({@code GET /listings})·지도 마커({@code GET /listings/map})·장소 후보({@code GET
+ * /listings/places})·상세({@code GET /listings/{listingId}})·찜 등록/해제({@code POST·DELETE
+ * /listings/{listingId}/favorite})·내 찜 목록({@code GET /users/me/favorites})·최근 본 매물({@code GET
+ * /users/me/recent-listings})에 매물 등록({@code POST /api/v2/listings})을 더한 9개 오퍼레이션을 다룬다.
  *
  * <p>같은 {@code (path, method)} 오퍼레이션의 성공 스니펫과 에러 스니펫은 <b>같은 상수</b>를, 같은 {@code (path, method,
  * status)}의 스니펫은 <b>같은 기술자 헬퍼</b>를 써야 한다({@link ApiDocsFields} 클래스 주석 참조). 여기 한 벌만 두는 이유다.
@@ -140,32 +139,6 @@ public final class ListingDocsFields {
       | 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
       | 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
       | 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
-      | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
-      """;
-
-  // ── §3 키워드 장소 검색 — GET /api/v2/listings/search ──────────────────────
-
-  public static final String LISTINGS_SEARCH_SUMMARY = "키워드 장소 검색과 주변 매물 조회";
-
-  public static final String LISTINGS_SEARCH_DESCRIPTION =
-      """
-      학교명·지역명·지하철역명으로 장소를 찾고, 그 장소 주변의 매물을 함께 조회한다.
-
-      **헤더**
-
-      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
-
-      **응답 주의사항**
-
-      - `matchedPlace=null`, `content=[]`: 검색어와 일치하는 장소가 없음
-      - `matchedPlace` 존재, `content=[]`: 장소는 찾았지만 주변 매물이 없음
-      - 표시 문구의 언어 규칙은 매물 목록 API와 같다.
-
-      **에러 코드**
-
-      | status | `error.code` | 발생 조건 |
-      |---|---|---|
-      | 400 | `INVALID_INPUT` | 키워드 누락/공백/길이(1~50자) 위반, `size` 범위 초과 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
       """;
 
@@ -528,6 +501,87 @@ public final class ListingDocsFields {
 
   public static final String[] LISTING_ADDRESS_SEARCH_502 = {"UPSTREAM_ERROR"};
 
+  // ── §12 인근 역 검색 — GET /api/v1/listings/stations(+/nearby) ─────────────
+
+  public static final String LISTING_STATION_SEARCH_SUMMARY = "인근 역 검색(임대인)";
+
+  public static final String LISTING_STATION_SEARCH_DESCRIPTION =
+      """
+      매물 등록 폼의 인근 역 칸을 채울 표준 역 이름을 찾는다. 등록 전에 **먼저 호출하는 API**다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다.
+
+      **고른 값을 등록에 그대로 싣는다**
+
+      | 검색 응답 | 등록 요청 |
+      |---|---|
+      | `name` | `nearestTransit.name` |
+      | `suggestedWalkMinutes` | `nearestTransit.walkMinutes` |
+
+      **좌표는 선택이지만 함께 보내는 것을 권한다**
+
+      - `lat`·`lng`는 **둘 다 있거나 둘 다 없어야 한다.** 하나만 보내면 `400 INVALID_INPUT`이다.
+      - 좌표를 주면 거리순으로 정렬되고 `distanceMeters`·`suggestedWalkMinutes`가 채워진다. 없으면 정확도순이고 두 필드는 `null`이다.
+      - 주소를 먼저 검색하므로 좌표는 이미 손에 있다. 그래야 전국에 같은 이름이 있는 역(예: `시청역`)을 거리로 가려낼 수 있다.
+
+      **응답 주의사항**
+
+      - `suggestedWalkMinutes`는 **직선거리 기준 하한 제안**이다. 실제 보행 경로는 더 길다.
+      - 환승역은 노선별로 여러 건이 온다(`신촌역 2호선`·`신촌역 경의중앙선`). 서버가 합치지 않는다.
+      - 일치하는 역이 없으면 에러가 아니라 `data.items=[]`다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 키워드 누락·공백·길이(1~50자) 위반, 좌표를 하나만 보냄, 좌표가 WGS84 범위를 벗어남 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 502 | `UPSTREAM_ERROR` | 카카오 로컬 오류·타임아웃·REST 키 누락·응답 또는 좌표 형식 이상 |
+      """;
+
+  public static final String LISTING_NEARBY_STATION_SUMMARY = "인근 역 목록(임대인)";
+
+  public static final String LISTING_NEARBY_STATION_DESCRIPTION =
+      """
+      매물 좌표 주변의 지하철역을 가까운 순으로 반환한다. 임대인이 아무것도 입력하지 않아도 후보를 보여주기 위한 경로이며, 응답 구조와 사용법은 인근 역 검색과 같다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — **임대인**(`userType=LANDLORD`) 전용이다.
+
+      **서버가 고정하는 값**
+
+      - 반경 **2km**(도보 25분권) · 거리순 정렬 · 최대 15건. 프론트는 매물 좌표만 보낸다.
+      - 좌표가 항상 있으므로 `distanceMeters`·`suggestedWalkMinutes`가 늘 채워진다.
+      - 반경 안에 역이 없으면 에러가 아니라 `data.items=[]`다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `lat`·`lng` 누락 또는 WGS84 범위 위반 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 502 | `UPSTREAM_ERROR` | 카카오 로컬 오류·타임아웃·REST 키 누락·응답 또는 좌표 형식 이상 |
+      """;
+
+  public static final String[] LISTING_STATION_SEARCH_400 = {"INVALID_INPUT"};
+
+  public static final String[] LISTING_STATION_SEARCH_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+
+  public static final String[] LISTING_STATION_SEARCH_403 = {
+    "FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"
+  };
+
+  public static final String[] LISTING_STATION_SEARCH_502 = {"UPSTREAM_ERROR"};
+
   // ── 공통 실패 응답 문구 ────────────────────────────────────────────────────
 
   public static String errorDescription() {
@@ -536,6 +590,25 @@ public final class ListingDocsFields {
   }
 
   // ── 파라미터 기술자 ────────────────────────────────────────────────────────
+
+  /** 주소 검색 API가 프론트에서 받는 유일한 검색 조건을 문서화한다. */
+  public static ParameterDescriptor[] stationQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("keyword").description("등록 폼 역 칸 입력값(1~50자). 예: `신촌`"),
+      parameterWithName("lat")
+          .optional()
+          .description("매물 위도(WGS84). 주소 검색이 준 값을 그대로 넘긴다. lng와 함께 보내야 한다"),
+      parameterWithName("lng").optional().description("매물 경도(WGS84). lat와 함께 보내야 한다")
+    };
+  }
+
+  /** 좌표만으로 인근 역을 받는 API의 query parameter 문서 정의다. */
+  public static ParameterDescriptor[] nearbyStationQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("lat").description("매물 위도(WGS84, -90~90)"),
+      parameterWithName("lng").description("매물 경도(WGS84, -180~180)")
+    };
+  }
 
   /** 주소 검색 API가 프론트에서 받는 유일한 검색 조건을 문서화한다. */
   public static ParameterDescriptor[] addressQueryParameters() {
@@ -620,21 +693,6 @@ public final class ListingDocsFields {
               "옵션 필터 칩 코드 — "
                   + codeList(ConditionTag.class)
                   + ". 목록 API와 같은 필터를 보내면 지도 마커와 바텀시트 목록을 같은 조건으로 맞출 수 있음")
-    };
-  }
-
-  /** 키워드 검색 API의 query parameter 문서 정의다. */
-  public static ParameterDescriptor[] searchQueryParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("keyword")
-          .description(
-              "검색창 입력값(1~50자). 학교명·지역명·지하철역명 또는 별칭 일부를 보낼 수 있음. 예: 연세, 연세대, 서울대, 신촌, 홍대입구역"),
-      parameterWithName("sort")
-          .optional()
-          .description(
-              "검색 결과 정렬 방식. 기본 DISTANCE는 검색된 장소에서 가까운 순, PRICE_ASC는 조건에 맞는 방 타입 중 가장 낮은 월세순, RECOMMENDED는 추천순"),
-      parameterWithName("page").optional().description("0부터 시작하는 페이지 번호"),
-      parameterWithName("size").optional().description("한 번에 가져올 매물 수. 기본 20, 최대 100")
     };
   }
 
@@ -724,8 +782,17 @@ public final class ListingDocsFields {
     fields.add(enumArrayField("nearbyFacilities", NearbyFacility.class, "주변 편의시설. 1개 이상"));
     fields.add(field("nearestTransit", JsonFieldType.OBJECT, "가장 가까운 대중교통"));
     fields.add(enumField("nearestTransit.type", Listing.TransitType.class, "가까운 교통수단"));
-    fields.add(field("nearestTransit.name", JsonFieldType.STRING, "근처 지하철역명"));
-    fields.add(field("nearestTransit.walkMinutes", JsonFieldType.NUMBER, "역까지 도보 소요시간(분). 0 이상"));
+    fields.add(
+        field(
+            "nearestTransit.name",
+            JsonFieldType.STRING,
+            "근처 지하철역명. GET /api/v1/listings/stations 응답의 name을 그대로 보낸다"));
+    fields.add(
+        field(
+            "nearestTransit.walkMinutes",
+            JsonFieldType.NUMBER,
+            "역까지 도보 소요시간(분). 0 이상. 역 검색이 준 suggestedWalkMinutes를 그대로 담으면 된다."
+                + " 키를 생략하면 400 INVALID_INPUT이다"));
     fields.add(field("description", JsonFieldType.STRING, "지점 소개글"));
     fields.add(field("extraNotes", JsonFieldType.STRING, "생활 규칙과 유의사항"));
     fields.add(field("refundPolicy", JsonFieldType.STRING, "환불정책 문구"));
@@ -772,6 +839,32 @@ public final class ListingDocsFields {
   // ── 응답 필드 기술자 ───────────────────────────────────────────────────────
 
   /** 주소 검색 API 응답 필드 문서 정의다. 등록에 그대로 실리는 값과 보조 표시값을 설명에서 갈라 준다. */
+  public static List<FieldDescriptor> stationSearchResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.items[].name",
+            JsonFieldType.STRING,
+            "역 이름. 등록 요청의 nearestTransit.name에 그대로 담는다. 환승역은 노선별로 따로 오며 서버는 다듬지 않는다"),
+        field(
+            "data.items[].roadAddress",
+            JsonFieldType.STRING,
+            "역 출입구 도로명 주소. 후보를 구분해 보여줄 때만 쓴다. 제공되지 않으면 빈 문자열"),
+        field("data.items[].jibunAddress", JsonFieldType.STRING, "지번 주소. 보조 표시용. 제공되지 않으면 빈 문자열"),
+        field("data.items[].lat", JsonFieldType.NUMBER, "역의 WGS84 위도. 지도 핀 용도이며 등록에는 보내지 않는다"),
+        field("data.items[].lng", JsonFieldType.NUMBER, "역의 WGS84 경도"),
+        optField(
+            "data.items[].distanceMeters",
+            JsonFieldType.NUMBER,
+            "매물 좌표에서 역까지의 직선거리(m). 좌표를 주지 않은 요청이면 null"),
+        optField(
+            "data.items[].suggestedWalkMinutes",
+            JsonFieldType.NUMBER,
+            "도보 시간 제안값(분). 직선거리 ÷ 80m를 올림한 하한이다. 거리를 모르면 null"),
+        errorNull());
+  }
+
+  /** 주소 검색 성공 응답 필드 문서 정의다. */
   public static List<FieldDescriptor> addressSearchResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
@@ -860,42 +953,6 @@ public final class ListingDocsFields {
     fields.addAll(pageFields("필터와 지도 범위에 맞는 전체 매물 수"));
     fields.add(errorNull());
     return fields;
-  }
-
-  /** 키워드 검색 성공 응답 필드 문서 정의다. */
-  public static List<FieldDescriptor> searchResponseFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(
-        field(
-            "data.matchedPlace.type",
-            JsonFieldType.STRING,
-            "검색어로 매칭된 장소 종류. UNIVERSITY, SUBWAY_STATION, REGION 중 하나"));
-    fields.add(field("data.matchedPlace.name", JsonFieldType.STRING, "프론트에 표시할 공식 장소명"));
-    fields.add(field("data.matchedPlace.lat", JsonFieldType.NUMBER, "지도 중심 이동에 사용할 장소 위도(WGS84)"));
-    fields.add(field("data.matchedPlace.lng", JsonFieldType.NUMBER, "지도 중심 이동에 사용할 장소 경도(WGS84)"));
-    fields.addAll(
-        listingDocumentFields("data.content[]", "검색된 장소에서 매물까지의 직선거리(미터). 검색 결과 카드 거리 라벨에 사용"));
-    fields.addAll(pageFields("검색 장소 3km 이내에 있는 전체 매물 수"));
-    fields.add(errorNull());
-    return fields;
-  }
-
-  /** POI 매칭이 없는 키워드 검색 응답 필드 문서 정의다. */
-  public static List<FieldDescriptor> searchEmptyPlaceResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        optField(
-            "data.matchedPlace",
-            JsonFieldType.OBJECT,
-            "검색어와 일치하는 장소가 없으면 null. '검색된 장소가 없어요' 상태를 표시하면 됨"),
-        field("data.content", JsonFieldType.ARRAY, "장소를 찾지 못했으므로 빈 배열"),
-        field("data.page.number", JsonFieldType.NUMBER, "요청한 페이지 번호"),
-        field("data.page.size", JsonFieldType.NUMBER, "요청한 페이지 크기"),
-        field("data.page.totalElements", JsonFieldType.NUMBER, "항상 0"),
-        field("data.page.totalPages", JsonFieldType.NUMBER, "항상 0"),
-        field("data.page.hasNext", JsonFieldType.BOOLEAN, "항상 false"),
-        errorNull());
   }
 
   /**

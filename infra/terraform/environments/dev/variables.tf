@@ -260,6 +260,13 @@ variable "naver_geocode_client_secret" {
   sensitive   = true
 }
 
+variable "kakao_rest_api_key" {
+  description = "카카오 로컬 API REST API 키 — SSM SecureString으로 저장·주입. 미설정 시 앱은 기동하고 인근 역 검색만 502, 등록의 인근 대학은 빈 배열"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # ----- 테스트 마스터 계정/로그인 (dev·local 전용, 운영 미사용) -----
 variable "test_login_enabled" {
   description = "dev 테스트 마스터 로그인 기능(앱 app.auth.test-login.enabled) — 마스터 계정 시드 + 우회 로그인을 함께 켠다. 공유 EC2 백도어라 기본 false"

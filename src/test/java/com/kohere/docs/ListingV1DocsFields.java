@@ -2,7 +2,6 @@ package com.kohere.docs;
 
 import static com.kohere.docs.ApiDocsFields.errorNull;
 import static com.kohere.docs.ApiDocsFields.field;
-import static com.kohere.docs.ApiDocsFields.optField;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
 import java.util.ArrayList;
@@ -85,28 +84,6 @@ public final class ListingV1DocsFields {
       **에러 코드**
 
       - 없다. 이 경로는 어떤 요청에도 `200`을 반환한다.
-      """;
-
-  // ── §3 키워드 검색 — GET /api/v1/listings/search ───────────────────────────
-
-  public static final String V1_LISTINGS_SEARCH_SUMMARY = "키워드 매물 검색";
-
-  public static final String V1_LISTINGS_SEARCH_DESCRIPTION =
-      MOVED_NOTICE
-          + " 키워드 검색은 `GET /api/v2/listings/search`다.\n\n"
-          + AUTH_OPTIONAL_HEADER
-          + """
-
-      **응답 주의사항**
-
-      - 어떤 키워드를 보내도 `content`는 항상 빈 배열이고 `matchedPlace`는 항상 null이다.
-      - 키워드를 검사하지 않는다. 비우거나 길이를 넘겨도 오류가 아니라 빈 결과다.
-
-      **에러 코드**
-
-      | status | `error.code` | 발생 조건 |
-      |---|---|---|
-      | 400 | `MALFORMED_REQUEST` | `page`·`size`가 숫자가 아님 |
       """;
 
   // ── §4 매물 상세 — GET /api/v1/listings/{listingId} ────────────────────────
@@ -243,34 +220,12 @@ public final class ListingV1DocsFields {
     };
   }
 
-  /** v1 키워드 검색의 파라미터다. {@code keyword}는 읽지 않지만 구버전 앱이 보내므로 문서에는 남긴다. */
-  public static ParameterDescriptor[] searchQueryParameters() {
-    List<ParameterDescriptor> params = new ArrayList<>();
-    params.add(
-        parameterWithName("keyword").optional().description("검색어. **읽지 않는다** — 무엇을 보내도 결과가 없다"));
-    for (ParameterDescriptor descriptor : pageQueryParameters()) {
-      params.add(descriptor);
-    }
-    return params.toArray(new ParameterDescriptor[0]);
-  }
-
   // ── 응답 필드 ──────────────────────────────────────────────────────────────
 
   /** 빈 페이지 응답 필드다. 목록·내 찜 목록이 함께 쓴다 — 둘 다 같은 껍데기다. */
   public static List<FieldDescriptor> emptyPageResponseFields() {
     List<FieldDescriptor> fields = new ArrayList<>();
     fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(field("data.content", JsonFieldType.ARRAY, "항상 빈 배열"));
-    fields.addAll(emptyPageFields());
-    fields.add(errorNull());
-    return List.copyOf(fields);
-  }
-
-  /** 빈 키워드 검색 응답 필드다. 일치 장소도 내려주지 않아 {@code matchedPlace}가 null이다. */
-  public static List<FieldDescriptor> emptySearchResponseFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(optField("data.matchedPlace", JsonFieldType.OBJECT, "항상 null"));
     fields.add(field("data.content", JsonFieldType.ARRAY, "항상 빈 배열"));
     fields.addAll(emptyPageFields());
     fields.add(errorNull());
