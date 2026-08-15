@@ -136,9 +136,9 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 > | `SNU_CAU_SOONGSIL` | 서울대·중앙대·숭실대 | Seoul National · Chung-Ang · Soongsil | `SNU`, `CAU`, `SOONGSIL` |
 > | `HONGIK_YONSEI_EWHA` | 홍익대·연세대·이화여대 | Hongik · Yonsei · Ewha Womans | `HONGIK`, `YONSEI`, `EWHA` |
 > | `KONKUK_SEJONG_HYU` | 건국대·세종대·한양대 | Konkuk · Sejong · Hanyang | `KONKUK`, `SEJONG`, `HYU` |
-> | `ETC` | 기타 | Other | (없음 — 빈 집합) |
+> | `ETC` | 기타 | Other | (없음 — 목록 14곳의 **여집합**으로 매칭) |
 >
-> `ETC`는 소속 대학이 없는 빈 집합이라 대학 필터를 적용하지 않고 지역 기반 매칭으로만 폴백한다. 추천 매칭은 진단이 선택된 그룹을 소속 대학 코드 집합으로 펼쳐 `listing`에 넘기고, `listing`은 `nearbyUniversityCodes`를 그 코드 집합으로 `$in`(ANY member) 매칭한다(소속 대학 어느 하나라도 인근이면 매칭). 그룹 코드는 선택지 `options[].code`와 1:1 동일 출처다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)).
+> `ETC`는 "내 학교가 이 목록에 없다"는 답이므로 **목록 14곳의 여집합**으로 매칭한다 — 그 14곳 중 어느 곳도 인근이 아닌 매물만 남으며(대학 코드가 빈 매물 포함), 진단이 목록 전체를 제외 코드로 넘기고 `listing`이 `$nin`으로 거른다(지역 `ETC`가 명시 5구의 여집합인 것과 같은 규칙). 추천 매칭은 진단이 선택된 그룹을 소속 대학 코드 집합으로 펼쳐 `listing`에 넘기고, `listing`은 `nearbyUniversityCodes`를 그 코드 집합으로 `$in`(ANY member) 매칭한다(소속 대학 어느 하나라도 인근이면 매칭). 그룹 코드는 선택지 `options[].code`와 1:1 동일 출처다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)).
 
 ## 엔드포인트 요약
 
@@ -508,7 +508,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 
 - **인증**: 필수(회원 전용). **본인 소유가 아니면 `403 FORBIDDEN`.** 소유권 규칙은 §6과 같다(신원 종류·값이 모두 일치할 때만 통과 — 회원 토큰으로 게스트 진단을 조회하면 403). 게스트의 추천 조회는 v2-3(`GET /api/v2/diagnoses/{id}/recommendations`)이 담당한다([게스트 접근](#게스트-접근--비회원-진단-issue-181)).
 - **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다.
-- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.universityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — `RecommendationCriteria`는 ⑥ `arcStatus`를 그대로 싣고, `listing`은 `NO_ARC`를 매물 루트 `arcRequired=NOT_REQUIRED`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 현재 매칭된 방 상품만이 아니라 해당 매물의 전체 ACTIVE `roomOffers`를 기준으로 계산한다. `conditions`에는 ACTIVE 방 상품 태그 합집합이 담긴다.
+- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.universityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 펼칠 멤버가 없어 대신 목록 전체를 `excludedUniversityCodes`로 넘겨 여집합 매칭)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — `RecommendationCriteria`는 ⑥ `arcStatus`를 그대로 싣고, `listing`은 `NO_ARC`를 매물 루트 `arcRequired=NOT_REQUIRED`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 현재 매칭된 방 상품만이 아니라 해당 매물의 전체 ACTIVE `roomOffers`를 기준으로 계산한다. `conditions`에는 ACTIVE 방 상품 태그 합집합이 담긴다.
 
 #### Path 파라미터
 

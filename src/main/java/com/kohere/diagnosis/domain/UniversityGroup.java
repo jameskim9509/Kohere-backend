@@ -1,6 +1,8 @@
 package com.kohere.diagnosis.domain;
 
+import java.util.Arrays;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 진단 ③ 대학 그룹 선택(단일). 개별 대학 15개를 지리적으로 가까운 6개 그룹으로 묶은 enum이며, 입국 목적이 {@code STUDY}일 때만 필수다. 사용자는 그룹
@@ -24,8 +26,20 @@ public enum UniversityGroup {
     this.memberCodes = memberCodes;
   }
 
-  /** 그룹에 속한 개별 대학 코드(추천 매칭용). {@code ETC}는 빈 집합 — 대학 필터를 적용하지 않는다. */
+  /** 그룹에 속한 개별 대학 코드(추천 매칭용). {@code ETC}는 빈 집합 — 고른 대학이 목록 밖이라 포함할 코드가 없다. */
   public Set<String> memberCodes() {
     return memberCodes;
+  }
+
+  /**
+   * 목록이 아는 개별 대학 코드 전부다.
+   *
+   * <p>{@code ETC}("그 외 대학")를 고른 사용자에게 필요한 값이다 — 그 사용자의 학교는 목록에 없으므로, <b>이 집합 중 어느 것도 인근이 아닌</b>
+   * 매물이 답이다(여집합 매칭). 매물이 저장하는 코드가 이 집합으로 닫혀 있어 여집합이 곧 "목록 밖 대학 근처이거나 대학가가 아닌 매물"이 된다.
+   */
+  public static Set<String> allMemberCodes() {
+    return Arrays.stream(values())
+        .flatMap(group -> group.memberCodes.stream())
+        .collect(Collectors.toUnmodifiableSet());
   }
 }

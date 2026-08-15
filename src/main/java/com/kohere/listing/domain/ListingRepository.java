@@ -42,6 +42,7 @@ public interface ListingRepository {
       Integer monthlyRentMax,
       Set<ConditionTag> conditions,
       Set<String> universityCodes,
+      Set<String> excludedUniversityCodes,
       String district,
       String arcStatus,
       int page,

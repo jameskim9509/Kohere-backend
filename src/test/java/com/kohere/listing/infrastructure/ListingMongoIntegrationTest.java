@@ -1220,6 +1220,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1255,6 +1256,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1275,7 +1277,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> matchedByGroupMember =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of("CAU"), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                500000,
+                Set.of("FEMALE_ONLY"),
+                Set.of("CAU"),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
     PageResponse<RecommendedListingView> notMatchedByDifferentUniversity =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
@@ -1284,6 +1296,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("FEMALE_ONLY"),
                 Set.of("KOREA"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1292,7 +1305,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> noUniversityFilter =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of(), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                500000,
+                Set.of("FEMALE_ONLY"),
+                Set.of(),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
 
     assertThat(matchedByGroupMember.content())
         .extracting(RecommendedListingView::listingId)
@@ -1316,6 +1339,7 @@ class ListingMongoIntegrationTest {
                 400000,
                 Set.of("FEMALE_ONLY"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1329,6 +1353,7 @@ class ListingMongoIntegrationTest {
                 600000,
                 Set.of("FEMALE_ONLY"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1337,7 +1362,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> aboveMaximum =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 379999, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                379999,
+                Set.of("FEMALE_ONLY"),
+                Set.of("SNU"),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
 
     assertThat(inRange.content())
         .extracting(RecommendedListingView::listingId)
@@ -1354,7 +1389,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> moveInNow =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("MOVE_IN_NOW"), Set.of("SNU"), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                500000,
+                Set.of("MOVE_IN_NOW"),
+                Set.of("SNU"),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
     PageResponse<RecommendedListingView> notTagged =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
@@ -1363,6 +1408,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("MEALS_INCLUDED"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1375,18 +1421,59 @@ class ListingMongoIntegrationTest {
     assertThat(notTagged.content()).isEmpty();
   }
 
+  /**
+   * 진단 ③에서 "그 외 대학"({@code ETC})을 고르면 목록에 든 대학 근처 매물이 빠진다(ADR-0045).
+   *
+   * <p>{@code ETC}는 "대학 조건 없음"이 아니라 <b>목록 14곳의 여집합</b>이다 — 진단 지역의 {@code ETC}가 명시 5구의 여집합인 것과 같다.
+   * 시드 매물 둘은 각각 서울대·홍익대 인근이라 둘 다 빠지고, 대학 코드가 없는 매물만 남는다.
+   */
+  @Test
+  void recommend_ETC는_목록대학_인근매물을_제외한다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+    listingRepository.save(
+        sampleListing().toBuilder()
+            .id(null)
+            .status(Listing.ListingStatus.PUBLISHED)
+            .nearbyUniversityCodes(Set.of())
+            .build());
+    Set<String> allUniversityCodes = Set.of("SNU", "CAU", "SOONGSIL", "HONGIK", "YONSEI", "EWHA");
+
+    PageResponse<RecommendedListingView> etc =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL",
+                null,
+                null,
+                Set.of(),
+                Set.of(),
+                allUniversityCodes,
+                null,
+                null,
+                0,
+                20,
+                null));
+    PageResponse<RecommendedListingView> noUniversityCondition =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", null, null, Set.of(), Set.of(), Set.of(), null, null, 0, 20, null));
+
+    // 대학 코드를 가진 시드 매물 둘은 빠지고, 빈 배열 매물만 남는다.
+    assertThat(etc.content()).hasSize(1);
+    assertThat(noUniversityCondition.content()).hasSizeGreaterThan(etc.content().size());
+  }
+
   /** 진단 ⑥ arcStatus만 바꿔 추천 결과를 비교하기 위한 요청 헬퍼다. */
   private PageResponse<RecommendedListingView> recommendWithArcStatus(String arcStatus) {
     return listingRecommendationService.recommendByCriteria(
         new RecommendationCriteria(
-            "SEOUL", null, null, Set.of(), Set.of(), null, arcStatus, 0, 20, null));
+            "SEOUL", null, null, Set.of(), Set.of(), Set.of(), null, arcStatus, 0, 20, null));
   }
 
   /** 진단 ③ 지역구만 바꿔 추천 결과를 비교하기 위한 요청 헬퍼다. */
   private PageResponse<RecommendedListingView> recommendWithDistrict(String district) {
     return listingRecommendationService.recommendByCriteria(
         new RecommendationCriteria(
-            "SEOUL", null, null, Set.of(), Set.of(), district, null, 0, 20, null));
+            "SEOUL", null, null, Set.of(), Set.of(), Set.of(), district, null, 0, 20, null));
   }
 
   /** 저장·조회 테스트에서 사용할 대표 매물 도메인 객체를 만든다. */
