@@ -388,7 +388,7 @@ public final class ListingDocsFields {
       | `lat` | `address.lat` | 위도. 매물의 `location`이 된다 |
       | `lng` | `address.lng` | 경도 |
 
-      검색 결과는 모두 고를 수 있다 — 서버가 아는 지역이 아니어도 등록되며 행정구역은 `ETC`로 저장된다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다** — 승인 심사가 주소와 좌표의 일치를 본다.
+      검색 결과는 모두 고를 수 있다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다** — 승인 심사가 주소와 좌표의 일치를 본다.
 
       **사진을 먼저 올린다**
 
@@ -413,7 +413,7 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - 본문은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
-      - `location`은 요청의 `address.lat`·`address.lng`를 옮긴 값이고, `nearbyUniversityCodes`는 **그 좌표에서 서버가 파생한다** — 반경 2km 안의 대학 코드를 모두 담는다. 요청에 대학 칸이 없는 이유이며, 대학가 밖 매물은 정상적으로 빈 배열이다.
+      - `location`은 요청의 `address.lat`·`address.lng`를 옮긴 값이고, `nearbyUniversityCodes`는 **서버가 채운다**(요청 필드가 아니다). 인근 대학이 없으면 빈 배열이다.
       - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다(임대인은 한국어).
 
       **에러 코드**
@@ -456,7 +456,9 @@ public final class ListingDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다.
 
-      **고른 값을 등록에 그대로 싣는다**
+      **고른 후보의 값을 등록 요청에 그대로 옮긴다**
+
+      서버는 이 검색을 호출했는지 확인하지 않는다. 사용자가 고른 후보 **한 건**을 클라이언트가 보관했다가, 등록 요청의 아래 자리에 **가공 없이 값 그대로** 실어 보낸다.
 
       | 검색 응답 | 등록 요청 |
       |---|---|
@@ -471,7 +473,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - **모든 후보를 고를 수 있다.** 서버 코드표가 모르는 지역이면 등록 시 `address.city`·`district`가 `ETC`로 저장되고 승인 심사가 확정한다. 그대로 등록하면 `400 LISTING_INVALID_ADDRESS`다.
+      - **모든 후보를 고를 수 있다.** 지원 지역을 미리 거르지 않으므로 어느 후보를 골라도 등록된다.
       - `roadAddress`에는 건물명이 붙어 올 수 있다. 서버가 다듬지 않으므로 **보이는 그대로** 등록에 실으면 된다.
       - 일치하는 주소가 없으면 `200`과 `data.items=[]`다(에러가 아니다). 도로명이 없는 결과는 서버가 제외한다.
 
@@ -509,7 +511,9 @@ public final class ListingDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다.
 
-      **고른 값을 등록에 그대로 싣는다**
+      **고른 후보의 값을 등록 요청에 그대로 옮긴다**
+
+      서버는 이 검색을 호출했는지 확인하지 않는다. 사용자가 고른 후보 **한 건**을 클라이언트가 보관했다가, 등록 요청의 아래 자리에 **가공 없이 값 그대로** 실어 보낸다.
 
       | 검색 응답 | 등록 요청 |
       |---|---|
@@ -1041,14 +1045,14 @@ public final class ListingDocsFields {
         field(
             prefix + ".address.city.code",
             JsonFieldType.STRING,
-            "지역 필터에 사용할 시·도 서버 코드(listingCatalog CITY). 주소에서 못 찾으면 ETC"));
+            "지역 필터에 사용할 시·도 서버 코드. 서버가 주소에서 판별하며, 아는 지역이 아니면 ETC다"));
     fields.add(
         field(prefix + ".address.city.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 시·도 이름"));
     fields.add(
         field(
             prefix + ".address.district.code",
             JsonFieldType.STRING,
-            "지역 필터에 사용할 구·군 서버 코드(listingCatalog DISTRICT). 주소에서 못 찾으면 ETC"));
+            "지역 필터에 사용할 구·군 서버 코드. 서버가 주소에서 판별하며, 아는 지역이 아니면 ETC다"));
     fields.add(
         field(
             prefix + ".address.district.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 구·군 이름"));
@@ -1089,7 +1093,7 @@ public final class ListingDocsFields {
         codeArrayField(
             prefix + ".nearbyUniversityCodes",
             UNIVERSITY_CODES,
-            "학교 주변 배지나 학교 필터 매칭에 사용할 학교 코드 목록"));
+            "학교 주변 배지나 학교 필터 매칭에 사용할 학교 코드 목록. 서버가 채우며 요청으로는 보내지 않는다"));
     fields.add(
         enumField(
             prefix + ".building.type.code", Listing.BuildingType.class, "건물 유형 서버 코드. 요청/비교용"));
