@@ -122,9 +122,9 @@ public class ListingRepositoryImpl implements ListingRepository {
    * 진단 조건을 지역·학교·예산·방 태그 조건으로 조합해 추천 매물을 조회한다.
    *
    * <p>진단의 대학 그룹은 이 메서드에 도달하기 전에 개별 대학 코드 집합으로 펼쳐져 있다. 따라서 listing은 그룹 이름을 해석하지 않고, 저장된 {@code
-   * nearbyUniversityCodes}가 전달받은 코드 중 하나라도 포함하는지({@code universityCodes}) 또는 하나도 포함하지 않는지({@code
-   * excludedUniversityCodes} — "그 외 대학")만 확인한다. 후자는 진단 지역의 {@code ETC}를 명시 5구의 여집합으로 푸는 {@link
-   * #addDistrictCriteria}와 같은 규칙이다.
+   * nearbyUniversityCodes}가 전달받은 코드 중 하나라도 포함하는지({@code includedUniversityCodes}) 또는 하나도 포함하지
+   * 않는지({@code excludedUniversityCodes} — "그 외 대학")만 확인한다. 후자는 진단 지역의 {@code ETC}를 명시 5구의 여집합으로 푸는
+   * {@link #addDistrictCriteria}와 같은 규칙이다.
    *
    * <p>월세와 방 태그, 즉시 입주 재고 조건은 모두 같은 {@code roomOffers[]} 원소가 만족해야 한다. 서로 다른 방 상품의 가격과 태그가 섞여 매칭되는
    * 것을 막기 위해 기존 추천 조회와 동일하게 {@code $elemMatch} 안에서 월세 하한/상한과 roomOffer 태그 조건을 함께 묶는다.
@@ -135,7 +135,7 @@ public class ListingRepositoryImpl implements ListingRepository {
       Integer monthlyRentMin,
       Integer monthlyRentMax,
       Set<ConditionTag> conditions,
-      Set<String> universityCodes,
+      Set<String> includedUniversityCodes,
       Set<String> excludedUniversityCodes,
       String district,
       String arcStatus,
@@ -147,8 +147,8 @@ public class ListingRepositoryImpl implements ListingRepository {
     if (region != null && !region.isBlank()) {
       rootCriteria.add(Criteria.where("address.city").is(region));
     }
-    if (universityCodes != null && !universityCodes.isEmpty()) {
-      rootCriteria.add(Criteria.where("nearbyUniversityCodes").in(universityCodes));
+    if (includedUniversityCodes != null && !includedUniversityCodes.isEmpty()) {
+      rootCriteria.add(Criteria.where("nearbyUniversityCodes").in(includedUniversityCodes));
     }
     if (excludedUniversityCodes != null && !excludedUniversityCodes.isEmpty()) {
       // "그 외 대학"은 목록에 든 대학 어느 곳과도 인접하지 않은 매물이다. 배열 필드의 $nin은

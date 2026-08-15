@@ -49,7 +49,7 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
             criteria.monthlyRentMin(),
             criteria.monthlyRentMax(),
             parseConditionTags(criteria.conditions()),
-            criteria.universityCodes(),
+            criteria.includedUniversityCodes(),
             criteria.excludedUniversityCodes(),
             criteria.district(),
             criteria.arcStatus(),

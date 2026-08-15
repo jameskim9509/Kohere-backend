@@ -41,7 +41,7 @@ public interface ListingRepository {
       Integer monthlyRentMin,
       Integer monthlyRentMax,
       Set<ConditionTag> conditions,
-      Set<String> universityCodes,
+      Set<String> includedUniversityCodes,
       Set<String> excludedUniversityCodes,
       String district,
       String arcStatus,
