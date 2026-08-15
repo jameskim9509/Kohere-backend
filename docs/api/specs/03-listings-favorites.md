@@ -460,7 +460,7 @@ Request Body:
 - **주소는 먼저 검색한다.** 주소 칸은 자유 입력이 아니다 — `GET /api/v1/listings/addresses`로 검색해 고른 후보의 `roadAddress`·`lat`·`lng`를 그대로 담는다. 서버는 이 API를 부른 적이 있는지 확인하지 않으므로 값을 보관했다 되돌려 보내는 것은 클라이언트의 몫이며, **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다**(승인 심사가 주소와 좌표의 일치를 본다).
 - **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 받은 값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 파싱해 `City`·`District` enum으로 확정한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`다 — 검색 응답의 `supported=false`가 이 실패를 미리 알려주므로, 폼이 그 값을 보면 여기까지 오지 않는다.
 - **역도 먼저 검색한다.** `nearestTransit.name`도 자유 입력이 아니다 — `GET /api/v1/listings/stations`로 검색해 고른 후보의 `name`을 그대로 담는다. 서버는 이 API를 부른 적이 있는지 확인하지 않으므로 값을 보관했다 되돌려 보내는 것은 클라이언트의 몫이다.
-- **좌표는 요청 값으로 채우고, 인근 대학은 서버가 파생한다.** `address.lat`·`lng`가 `location`으로 저장되어 지도·거리 정렬과 관리자 승인 조건(좌표 보유)을 만족한다. **`nearbyUniversityCodes`는 서버가 그 좌표로 카카오 로컬을 호출해 채운다** — 요청에 담지 않는다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)). `location`은 **저장 계약의 필수 필드**다 — 좌표 없는 매물은 어차피 관리자 승인을 통과하지 못하므로 저장 단계에서 막는다.
+- **좌표는 요청 값으로 채우고, 인근 대학은 아직 비운다.** `address.lat`·`lng`가 `location`으로 저장되어 지도·거리 정렬과 관리자 승인 조건(좌표 보유)을 만족한다. `nearbyUniversityCodes`는 여전히 빈 배열이며 좌표 기반 파생은 후속이다. `location`은 **저장 계약의 필수 필드**다 — 좌표 없는 매물은 어차피 관리자 승인을 통과하지 못하므로 저장 단계에서 막는다.
 - **코드 필드는 `listingCatalog` 대조를 통과해야 한다.** 위 표의 각 코드 배열·단일 코드는 `(category, code)`가 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다. 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리한다 — 프론트는 입력 교정 대신 코드 카탈로그 재조회(또는 앱 갱신)를 안내한다.
 - **문자열 길이 제한은 두지 않는다.** 서버·DB 어느 계층도 자유 입력 문구의 길이를 강제하지 않는다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다.** 숫자 10자리 형식만 확인하고 원문을 매물 문서에 저장하며, 진위·영업 상태는 **관리자가 승인 심사에서 수동으로** 확인한다. 이 엔드포인트는 `POST /api/v1/auth/business/verify`(무상태 검증 — [01-auth-onboarding](./01-auth-onboarding.md))를 호출하지 않는다.
@@ -588,7 +588,7 @@ Request Body:
 - 응답은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 v4 구조다. 등록 직후라 `favorited=false`, `favoriteCount=0`이다.
 - **`imageUrls`·`roomOffers[].roomImageUrls`는 확정 위치의 URL이며, `imageKeys`·`roomImageKeys`에 보낸 순서를 그대로 유지한다.** 파일명(`{uuid}.{ext}`)은 업로드 때 받은 키의 것을 그대로 쓰므로 두 값을 눈으로 대조할 수 있다. 업로드 때 받은 임시 URL과 다르다 — 이쪽이 만료 없이 계속 쓰는 주소다.
 - `status`는 `PENDING`이며 **코드 문자열 그대로** 내려간다. 임대인·관리자만 읽는 관리 상태라 카탈로그 번역 대상이 아니다.
-- **`location`은 요청의 `address.lat`·`address.lng`를 그대로 옮긴 값이고, `nearbyUniversityCodes`는 서버가 그 좌표로 파생한 값이다.** 반경 2km 안에서 카탈로그가 아는 대학을 전부 담으며, 카카오 연동이 실패하거나 반경 내 대학이 없으면 **빈 배열이되 등록은 성공한다**([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)).
+- **`location`은 요청의 `address.lat`·`address.lng`를 그대로 옮긴 값이고, `nearbyUniversityCodes`는 빈 배열이다.** 좌표는 주소 검색이 준 것을 되돌려 받은 것이며, 주변 대학 파생은 후속이다.
 - `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로이고, 요청의 `lat`·`lng`는 `address` 안이 아니라 **최상위 `location`** 으로 옮겨 간다(상세 조회와 같은 구조).
 - 상위 `conditions`는 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이다. 등록 요청에는 없고 서버가 계산한다.
 - `contact`(담당자명·전화문의·문자문의)는 **세입자에게 그대로 공개**하는 매물별 담당 연락처이므로 응답에 포함한다. 반면 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 **응답에 포함하지 않는다**([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).

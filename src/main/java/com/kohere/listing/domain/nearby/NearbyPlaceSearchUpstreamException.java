@@ -9,9 +9,6 @@ import com.kohere.common.exception.ErrorCode;
  * <p>결과가 없는 정상 응답({@code documents=[]})과 외부 장애를 구분하기 위한 예외다. 전역 예외 처리기가 {@code 502 UPSTREAM_ERROR}로
  * 변환하므로 프론트는 빈 결과 화면 대신 재시도 가능한 장애 상태를 보여줄 수 있다.
  *
- * <p><b>등록 중 인근 대학 파생은 이 예외를 밖으로 내보내지 않는다</b> — 파생값은 빈 집합이 이미 유효한 상태라 등록을 실패시키지 않고 흡수한다({@code
- * NearbyUniversityResolver}).
- *
  * <p>장소·주소 검색의 같은 모양 예외와 타입을 나누는 이유는 제공자·자격증명이 서로 달라 로그에서 어느 연동이 죽었는지 구분되어야 하기 때문이다.
  */
 public class NearbyPlaceSearchUpstreamException extends BusinessException {

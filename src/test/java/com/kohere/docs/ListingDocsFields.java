@@ -415,7 +415,7 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - 본문은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
-      - `location`은 요청의 `address.lat`·`address.lng`를 옮긴 값이다. **`nearbyUniversityCodes`는 서버가 그 좌표로 파생한 값**이며 요청에 담지 않는다 — 반경 2km 안에서 카탈로그가 아는 대학을 전부 담고, 외부 연동이 실패하거나 반경 내 대학이 없으면 빈 배열이되 등록은 성공한다.
+      - `location`은 요청의 `address.lat`·`address.lng`를 옮긴 값이다. `nearbyUniversityCodes`는 아직 빈 배열이다(좌표 기반 파생은 후속).
       - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다(임대인은 한국어).
 
       **에러 코드**
@@ -1090,7 +1090,7 @@ public final class ListingDocsFields {
         codeArrayField(
             prefix + ".nearbyUniversityCodes",
             UNIVERSITY_CODES,
-            "학교 주변 배지나 학교 필터 매칭에 사용할 학교 코드 목록. 등록 요청에는 없고 서버가 매물 좌표로 파생한다"));
+            "학교 주변 배지나 학교 필터 매칭에 사용할 학교 코드 목록"));
     fields.add(
         enumField(
             prefix + ".building.type.code", Listing.BuildingType.class, "건물 유형 서버 코드. 요청/비교용"));

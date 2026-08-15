@@ -98,7 +98,7 @@ app:
   kakao:
     local:
       # 카카오 개발자 콘솔에서 발급한 REST API 키다 — 위 naver(Developers·NCP)와 다른 값이니 섞어 넣지 않는다.
-      # 빈 값이면 역 검색만 502이고, 등록은 성공하되 nearbyUniversityCodes가 빈 배열이다.
+      # 빈 값이면 다른 기능은 기동되고 역 검색 호출만 502로 실패한다.
       rest-api-key: ${KAKAO_REST_API_KEY:}
   images:
     # 매물 사진 저장소(ADR-0041) — docker compose의 MinIO를 쓴다. S3와 같은 API라 배포 환경과 같은 어댑터가 돌아간다.

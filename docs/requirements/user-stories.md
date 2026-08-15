@@ -1020,7 +1020,7 @@
 - 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드에서 빈 파일은 `400` + `LISTING_IMAGE_REQUIRED`, 10MB 초과는 `413` + `LISTING_IMAGE_TOO_LARGE`, 허용 형식(JPEG·PNG·WebP·HEIC) 밖은 `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`이다. 등록에서 키 개수 위반은 `400` + `LISTING_IMAGE_REQUIRED`, 남의 키·없는 키·만료된 키는 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`(셋을 구분해 알려주면 남의 키 존재 여부가 새어 나간다)다.
 - 사업자등록번호 관점: 등록 API는 사업자등록번호를 **형식(숫자 10자리)만 검증해 원문 저장**하고 **진위를 자동 검증하지 않는다** — 무상태 검증 API `POST /api/v1/auth/business/verify`(US-1-8)를 **호출하지 않으며**, 진위 확인은 **관리자가 승인 심사에서 수동으로** 한다(해당 엔드포인트 자체는 임대인이 직접 확인용으로 호출하도록 그대로 둔다). 원문은 매물 문서에만 저장하고 `user.businessRegistrationNumberHash`에는 쓰지 않는다(US-1-9와 일관, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) §3, [ADR-0033](../adr/0033-business-registry-verification.md)의 매물 문서 한정 개정).
 - 응답 관점: `201 Created` + 생성된 매물의 **상세 응답 구조(v4)** 를 반환한다. `contact`(담당자명·전화·문자)는 세입자에게도 공개하므로 포함하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 US-3-4와 동일하게 **응답에서 제외**한다. `status`는 카탈로그 번역 대상이 아니라 **코드 문자열 그대로**(`"PENDING"`) 내려간다.
-- 후속(이번 범위 아님): 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API(**`nearbyUniversityCodes` 편집 포함** — 서버 파생값을 심사가 보정한다) · 임대인 매물 수정 · 등록 가능 지역 확대(`DISTRICT` 카탈로그와 enum을 함께 늘린다) · 재고.
+- 후속(이번 범위 아님): 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API · 임대인 매물 수정 · 좌표로 `nearbyUniversityCodes` 파생 · 등록 가능 지역 확대(`DISTRICT` 카탈로그와 enum을 함께 늘린다) · 재고.
 - 시퀀스: [US-3-6 다이어그램](../architecture/sequence-diagrams/03-listings-favorites/us-3-6-listing-registration.md), API: [03-listings-favorites](../api/specs/03-listings-favorites.md).
 
 **AC (Given / When / Then)**
@@ -1052,7 +1052,7 @@
 - 시나리오: 검색으로 받은 좌표가 그대로 저장된다
   Given 임대인이 검색 결과의 `roadAddress`·`lat`·`lng`를 담아 등록에 성공했고
   When 저장된 매물 문서를 확인하면
-  Then `address.fullAddress`는 보낸 값 그대로이고 `address.city`·`district`는 파싱된 `City`·`District` 코드이며, **`location`은 요청의 좌표(`{ type: "Point", coordinates: [lng, lat] }`)로 채워진다**. `nearbyUniversityCodes`는 **서버가 그 좌표로 카카오 로컬을 불러 채운 코드 집합**이다
+  Then `address.fullAddress`는 보낸 값 그대로이고 `address.city`·`district`는 파싱된 `City`·`District` 코드이며, **`location`은 요청의 좌표(`{ type: "Point", coordinates: [lng, lat] }`)로 채워진다**. `nearbyUniversityCodes`는 빈 배열이다(좌표 기반 파생은 후속)
 - 시나리오: 입력 검증 실패(좌표 누락·범위 위반)
   Given `address.lat`·`address.lng`를 빠뜨렸거나 WGS84 범위 밖의 값을 보내고
   When `POST /api/v2/listings`를 호출하면
@@ -1137,14 +1137,6 @@
   Given 세입자(`userType=TENANT`) 정식 토큰이거나 토큰이 없고
   When 역 검색 API를 호출하면
   Then 세입자는 `403 FORBIDDEN`, 토큰 없음·위조는 `401 UNAUTHENTICATED`다 — 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다
-- 시나리오: 등록 시 인근 대학 자동 매핑
-  Given 임대인이 신촌 좌표로 매물을 등록하면
-  When 서버가 그 좌표로 카카오 로컬(`SC4`)을 호출하고 `category_name`에서 대학교만 추리면
-  Then 저장·응답의 `nearbyUniversityCodes`가 `["YONSEI","EWHA"]`처럼 **반경 내 대학 코드 전부**이고 초·중·고 코드는 섞이지 않는다. 요청에는 이 필드가 없다
-- 시나리오: 대학 매핑 실패는 등록을 막지 않는다
-  Given 카카오가 오류·타임아웃을 내거나 `KAKAO_REST_API_KEY`가 주입되지 않았고
-  When 매물을 등록하면
-  Then 등록은 그대로 `201`이고 `nearbyUniversityCodes`만 `[]`다(서버는 `WARN` 로그를 남기며, 정확도는 관리자 승인 심사가 보정한다)
 - 시나리오: `walkMinutes` 누락은 400이다
   Given 등록 요청의 `nearestTransit`에서 `walkMinutes` 키를 빼고
   When `POST /api/v2/listings`를 호출하면

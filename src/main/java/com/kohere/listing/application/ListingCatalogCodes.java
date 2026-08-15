@@ -63,31 +63,6 @@ final class ListingCatalogCodes {
     return findByLabel(ListingCatalogCategory.DISTRICT, fullAddress, District::valueOf);
   }
 
-  /**
-   * 외부에서 받은 장소 이름에서 대학 코드를 찾는다(ADR-0044).
-   *
-   * <p>{@code City}·{@code District}와 같은 {@code contains} 매칭이다 — 카카오는 {@code 연세대학교 신촌캠퍼스 제1공학관}처럼
-   * 캠퍼스·건물이 붙은 이름을 주므로 접두사 일치만 요구하지 않는다. 카탈로그 14종은 서로의 부분 문자열이 아니라 모호성이 없다.
-   *
-   * <p>{@code City}·{@code District}와 달리 도메인 enum이 없어 카탈로그 코드 문자열을 그대로 돌려준다 — {@code
-   * nearbyUniversityCodes}가 {@code Set<String>}이기 때문이다.
-   *
-   * @param placeName 제공자가 준 장소 이름
-   * @return 카탈로그가 아는 대학이면 그 코드, 아니면 빈 값
-   */
-  Optional<String> findUniversityCode(String placeName) {
-    if (placeName == null || placeName.isBlank()) {
-      return Optional.empty();
-    }
-    return koLabelsByCategory
-        .getOrDefault(ListingCatalogCategory.UNIVERSITY, Map.of())
-        .entrySet()
-        .stream()
-        .filter(entry -> placeName.contains(entry.getValue()))
-        .map(Map.Entry::getKey)
-        .findFirst();
-  }
-
   private <E extends Enum<E>> Optional<E> findByLabel(
       ListingCatalogCategory category,
       String fullAddress,

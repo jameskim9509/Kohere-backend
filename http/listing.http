@@ -2,7 +2,7 @@
 # 스펙: docs/api/specs/03-listings-favorites.md · 유저스토리 US-3-1~US-3-6
 # 결정: ADR-0039(v4 스키마·등록 폼) · ADR-0040(조회 v2 이관 · v1 빈 결과 종료) · ADR-0041(사진 S3 업로드)
 #       · ADR-0042(도로명 주소 검색 · 등록이 그 좌표를 받는다) · ADR-0043(키워드 검색 종료)
-#       · ADR-0044(인근 역 검색 · 등록 시 인근 대학 자동 매핑)
+#       · ADR-0044(인근 역 검색)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
@@ -46,7 +46,7 @@
 #
 # 인근 역도 **먼저 검색한다**(12-1/12-2, ADR-0044). 카카오 로컬이 표준 역 이름·좌표·도보 시간 제안을 주고,
 # 그 name을 13번 등록의 nearestTransit.name에 담는다. suggestedWalkMinutes는 제안값이라 고쳐서 보내도 된다.
-#   · KAKAO_REST_API_KEY(.env)가 없으면 12-1/12-2만 502이고, 13번 등록은 정상이되 nearbyUniversityCodes가 []다.
+#   · KAKAO_REST_API_KEY(.env)가 없으면 12-1/12-2만 502 UPSTREAM_ERROR다 — 다른 요청은 정상이다.
 #
 # 사진은 **한 장씩** `POST /api/v2/listings/images`로 올린다(ADR-0041). 요청이 파일마다 갈려야 브라우저가
 # 파일별 진행률·전송 속도를 줄 수 있고, 실패한 파일만 다시 올릴 수 있다.
@@ -146,7 +146,7 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 #   서버가 채우는 값이라 요청에 없는 것: listingId · roomOffers[].roomOfferId · status(PENDING) ·
 #   rentalType(MONTHLY_RENT) · pricing.currency(KRW) · roomOffers[].status(ACTIVE) · favoriteCount(0) · 생성/수정 시각.
 #   좌표(location)는 12-0이 준 값을 그대로 저장하고, 인근 역 이름은 12-1/12-2가 준 값을 담는다.
-#   주변 대학(nearbyUniversityCodes)은 **요청에 없다** — 서버가 그 좌표로 카카오를 불러 채운다(응답에서 확인).
+#   주변 대학(nearbyUniversityCodes)은 여전히 빈 배열이다 — 좌표 기반 파생은 후속이다.
 #   코드값은 전부 listingCatalog와 대조한다 — 카탈로그에 없는 코드는 400이다(29-b번).
 #   사진 URL도 요청에 없다 — 서버가 확정 위치로 옮긴 뒤 응답에 담아 준다(업로드 때 받은 url과 다르다).
 

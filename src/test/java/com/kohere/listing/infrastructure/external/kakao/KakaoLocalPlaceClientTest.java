@@ -26,9 +26,6 @@ import org.springframework.web.client.RestClient;
  *
  * <p>{@link MockRestServiceServer}로 요청 URL·고정 파라미터·인증 헤더를 확인하고, 카카오 원본 좌표({@code x}·{@code y} 문자열)
  * 변환과 외부 오류의 502 예외 매핑을 고정한다. 테스트에는 운영 인증정보 대신 명시적인 더미 값만 사용한다.
- *
- * <p><b>대학 판별 규칙을 여기서 못 박는다</b> — {@code category_name} 파싱·이름 정규화·중복 제거는 카카오 응답 모양에 붙어 있는 규칙이라 어댑터가
- * 소유하고, 그 경계가 흔들리면 초·중·고가 진단 추천의 조인 키로 새어 들어간다.
  */
 class KakaoLocalPlaceClientTest {
 
@@ -46,9 +43,7 @@ class KakaoLocalPlaceClientTest {
   void setUp() {
     RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
     server = MockRestServiceServer.bindTo(builder).build();
-    RestClient restClient = builder.build();
-    // 검색용·등록용 클라이언트를 같은 목으로 묶어 두 경로의 요청을 한 서버에서 단정한다.
-    client = new KakaoLocalPlaceClient(configuredProperties(), restClient, restClient);
+    client = new KakaoLocalPlaceClient(configuredProperties(), builder.build());
   }
 
   // ── 역 검색(키워드) ────────────────────────────────────────────────────────
@@ -116,41 +111,6 @@ class KakaoLocalPlaceClientTest {
     server.verify();
   }
 
-  // ── 대학 파생 ─────────────────────────────────────────────────────────────
-
-  /**
-   * {@code SC4}에는 초·중·고가 함께 오므로 {@code category_name}으로 대학만 남긴다.
-   *
-   * <p>같은 대학의 캠퍼스·건물은 본명으로 합치고, 가장 가까운 문서의 좌표·거리를 남긴다.
-   */
-  @Test
-  void 인근대학검색_대학만남기고_캠퍼스를본명으로합친다() {
-    server
-        .expect(requestTo(Matchers.containsString("/v2/local/search/category.json")))
-        .andExpect(queryParam("category_group_code", "SC4"))
-        .andExpect(queryParam("radius", "2000"))
-        .andRespond(withSuccess(schoolBody(), MediaType.APPLICATION_JSON));
-
-    List<NearbyPlace> places = client.searchNearbyUniversities(SINCHON);
-
-    // 연세대 3건이 1건으로 합쳐지고, 이화여대가 뒤따르며, 초·중·고·대학원은 빠진다.
-    assertThat(places).extracting(NearbyPlace::name).containsExactly("연세대학교", "이화여자대학교");
-    // 합쳐진 뒤 남는 것은 가장 가까운 문서다(응답이 이미 거리순이다).
-    assertThat(places.getFirst().distanceMeters()).isEqualTo(780);
-    server.verify();
-  }
-
-  /** 반경 내 대학이 하나도 없으면 장애가 아니라 빈 목록이다. */
-  @Test
-  void 인근대학검색_초중고만있으면_빈목록이다() {
-    server
-        .expect(requestTo(Matchers.containsString("/v2/local/search/category.json")))
-        .andRespond(withSuccess(schoolOnlyBody(), MediaType.APPLICATION_JSON));
-
-    assertThat(client.searchNearbyUniversities(SINCHON)).isEmpty();
-    server.verify();
-  }
-
   // ── 정상 빈 결과와 장애의 구분 ────────────────────────────────────────────
 
   /** 카카오가 정상 200과 빈 documents를 반환하면 장애가 아닌 빈 검색 결과로 유지한다. */
@@ -207,7 +167,7 @@ class KakaoLocalPlaceClientTest {
     RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
     MockRestServiceServer strict = MockRestServiceServer.bindTo(builder).build();
     RestClient restClient = builder.build();
-    KakaoLocalPlaceClient unconfigured = new KakaoLocalPlaceClient(empty, restClient, restClient);
+    KakaoLocalPlaceClient unconfigured = new KakaoLocalPlaceClient(empty, restClient);
 
     assertThatThrownBy(() -> unconfigured.searchStationsByKeyword("신촌", null))
         .isInstanceOf(NearbyPlaceSearchUpstreamException.class);
@@ -250,83 +210,6 @@ class KakaoLocalPlaceClientTest {
               "category_group_code": "SW8",
               "x": "126.936893",
               "y": "37.555134"
-            }
-          ]
-        }
-        """;
-  }
-
-  /** 학교 카테고리 원본 — 대학 캠퍼스·건물과 초·중·고·대학원이 섞여 온다. */
-  private static String schoolBody() {
-    return """
-        {
-          "documents": [
-            {
-              "place_name": "연세대학교",
-              "category_name": "교육,학문 > 학교 > 대학교",
-              "category_group_code": "SC4",
-              "road_address_name": "서울 서대문구 연세로 50",
-              "address_name": "서울 서대문구 신촌동 134",
-              "x": "126.938572", "y": "37.565784", "distance": "780"
-            },
-            {
-              "place_name": "창천초등학교",
-              "category_name": "교육,학문 > 학교 > 초등학교",
-              "category_group_code": "SC4",
-              "x": "126.937", "y": "37.556", "distance": "820"
-            },
-            {
-              "place_name": "연세대학교 신촌캠퍼스 제1공학관",
-              "category_name": "교육,학문 > 학교 > 대학교",
-              "category_group_code": "SC4",
-              "x": "126.939", "y": "37.566", "distance": "860"
-            },
-            {
-              "place_name": "이화여자대학교 대현캠퍼스",
-              "category_name": "교육,학문 > 학교 > 대학교",
-              "category_group_code": "SC4",
-              "road_address_name": "서울 서대문구 이화여대길 52",
-              "address_name": "서울 서대문구 대현동 11-1",
-              "x": "126.946900", "y": "37.561800", "distance": "950"
-            },
-            {
-              "place_name": "연세대학교 학생회관",
-              "category_name": "교육,학문 > 학교 > 대학교",
-              "category_group_code": "SC4",
-              "x": "126.940", "y": "37.567", "distance": "980"
-            },
-            {
-              "place_name": "고려대학교사범대학부속고등학교",
-              "category_name": "교육,학문 > 학교 > 고등학교",
-              "category_group_code": "SC4",
-              "x": "126.941", "y": "37.568", "distance": "1100"
-            },
-            {
-              "place_name": "연세대학교 대학원",
-              "category_name": "교육,학문 > 학교 > 대학원",
-              "category_group_code": "SC4",
-              "x": "126.942", "y": "37.569", "distance": "1200"
-            }
-          ]
-        }
-        """;
-  }
-
-  private static String schoolOnlyBody() {
-    return """
-        {
-          "documents": [
-            {
-              "place_name": "창천초등학교",
-              "category_name": "교육,학문 > 학교 > 초등학교",
-              "category_group_code": "SC4",
-              "x": "126.937", "y": "37.556", "distance": "820"
-            },
-            {
-              "place_name": "신촌중학교",
-              "category_name": "교육,학문 > 학교 > 중학교",
-              "category_group_code": "SC4",
-              "x": "126.938", "y": "37.557", "distance": "900"
             }
           ]
         }

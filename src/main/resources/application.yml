@@ -116,14 +116,11 @@ app:
       read-timeout-millis: 5000
   kakao:
     local:
-      # 카카오 로컬 API(인근 역 검색·등록 시 인근 대학 파생, ADR-0044)의 비밀이 아닌 기본값.
+      # 카카오 로컬 API(인근 역 검색, ADR-0044)의 비밀이 아닌 기본값.
       # REST API 키는 환경별 프로파일에서만 주입한다 — 네이버·NCP와 콘솔이 달라 값을 공유하지 않는다.
       base-url: https://dapi.kakao.com
       connect-timeout-millis: 3000
-      read-timeout-millis: 5000 # 역 검색 — 임대인이 화면에서 기다리는 호출
-      # 등록 중 대학 파생 전용. 등록은 폼을 다 채운 뒤의 마지막 단계라 더 짧게 자른다.
-      # 실패해도 nearbyUniversityCodes가 빈 배열이 될 뿐 등록은 성공한다.
-      register-read-timeout-millis: 2000
+      read-timeout-millis: 5000
   images:
     # 매물 사진 저장소(ADR-0041). 버킷·CDN 도메인은 비밀이 아니지만 환경마다 달라 프로파일에서 주입한다.
     # enabled=false면 실제 저장소 대신 스텁이 등록돼 업로드 없이 URL만 만든다 — base는 안전한 쪽을 기본으로 둔다.

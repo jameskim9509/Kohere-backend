@@ -45,7 +45,6 @@ public class ListingRegisterService {
   private final ListingImageConfirmer listingImageConfirmer;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
-  private final NearbyUniversityResolver nearbyUniversityResolver;
 
   /**
    * 등록 요청을 저장하고 생성된 매물을 상세 응답 구조로 돌려준다.
@@ -163,11 +162,7 @@ public class ListingRegisterService {
         .languagesSupported(request.languagesSupported())
         .favoriteCount(0)
         .imageUrls(List.of())
-        // 요청에 없는 파생값이다 — 좌표에서 서버가 정한다(ADR-0044). 클라이언트에 대학 선택 폼이 없고,
-        // 이 값은 진단 추천이 매물을 찾는 조인 키라 임대인이 주장할 자리가 아니다.
-        // 외부 실패는 resolver가 빈 집합으로 흡수한다 — 파생값 때문에 등록이 죽지 않는다.
-        .nearbyUniversityCodes(
-            nearbyUniversityResolver.resolve(request.address().lat(), request.address().lng()))
+        .nearbyUniversityCodes(Set.of())
         .createdAt(now)
         .updatedAt(now)
         .address(toAddress(request, catalog))

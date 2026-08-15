@@ -4,10 +4,7 @@ import com.kohere.listing.domain.nearby.Coordinate;
 import com.kohere.listing.domain.nearby.NearbyPlace;
 import com.kohere.listing.domain.nearby.NearbyPlaceSearchClient;
 import com.kohere.listing.domain.nearby.NearbyPlaceSearchUpstreamException;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,12 +19,9 @@ import org.springframework.web.util.UriBuilder;
 /**
  * 카카오 로컬 API를 {@link NearbyPlaceSearchClient} 포트에 연결하는 HTTP 어댑터다(ADR-0044).
  *
- * <p>요청 파라미터는 카카오 계약과 Kohere UX에 맞춰 서버가 고정한다 — 역은 {@code category_group_code=SW8}, 대학은 {@code SC4}에
- * 반경 2km다. 프론트에는 제공자 필드명을 노출하지 않고 WGS84 십진수 좌표({@code x}→{@code lng}, {@code y}→{@code lat})로 변환해
+ * <p>요청 파라미터는 카카오 계약과 Kohere UX에 맞춰 서버가 고정한다 — {@code category_group_code=SW8}(지하철역), 좌표 검색은 반경
+ * 2km다. 프론트에는 제공자 필드명을 노출하지 않고 WGS84 십진수 좌표({@code x}→{@code lng}, {@code y}→{@code lat})로 변환해
  * 전달한다. 외부 HTTP 오류, 키 누락, 본문·좌표 계약 위반은 모두 {@link NearbyPlaceSearchUpstreamException}으로 통일한다.
- *
- * <p><b>대학은 카테고리 코드만으로 걸러지지 않는다.</b> 카카오에 대학 전용 코드가 없어 {@code SC4}(학교)가 초·중·고를 함께 담는다. 그래서 {@code
- * category_name} 계층 문자열을 파싱해 대학만 남긴다(§{@link #isUniversity}).
  */
 @Component
 public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
@@ -39,15 +33,6 @@ public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
   /** 지하철역 카테고리 그룹 코드. */
   private static final String SUBWAY_STATION_CODE = "SW8";
 
-  /** 학교 카테고리 그룹 코드 — 초·중·고가 함께 들어 있어 {@code category_name}으로 한 번 더 거른다. */
-  private static final String SCHOOL_CODE = "SC4";
-
-  /** {@code category_name}의 계층 구분자. */
-  private static final String CATEGORY_DEPTH_DELIMITER = ">";
-
-  /** 대학 판별과 이름 정규화의 기준이 되는 토막이다. */
-  private static final String UNIVERSITY_SEGMENT = "대학교";
-
   private static final int KEYWORD_SEARCH_SIZE = 10;
   private static final int CATEGORY_SEARCH_SIZE = 15;
   private static final int FIRST_PAGE = 1;
@@ -56,23 +41,18 @@ public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
   private static final String SORT_ACCURACY = "accuracy";
 
   private final KakaoLocalProperties properties;
-  private final RestClient searchRestClient;
-  private final RestClient registerRestClient;
+  private final RestClient restClient;
 
   /**
-   * 인증정보 설정과 용도별 HTTP 클라이언트를 명시적으로 주입받는다.
+   * 인증정보 설정과 카카오 로컬 전용 HTTP 클라이언트를 명시적으로 주입받는다.
    *
    * @param properties URL·REST 키·타임아웃 설정
-   * @param searchRestClient 역 검색용 클라이언트
-   * @param registerRestClient 등록 중 대학 파생용 클라이언트(read 타임아웃이 더 짧다)
+   * @param restClient 카카오 로컬 전용 HTTP 클라이언트
    */
   public KakaoLocalPlaceClient(
-      KakaoLocalProperties properties,
-      @Qualifier("kakaoLocalRestClient") RestClient searchRestClient,
-      @Qualifier("kakaoLocalRegisterRestClient") RestClient registerRestClient) {
+      KakaoLocalProperties properties, @Qualifier("kakaoLocalRestClient") RestClient restClient) {
     this.properties = properties;
-    this.searchRestClient = searchRestClient;
-    this.registerRestClient = registerRestClient;
+    this.restClient = restClient;
   }
 
   /**
@@ -85,7 +65,6 @@ public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
   public List<NearbyPlace> searchStationsByKeyword(String keyword, Coordinate origin) {
     List<KakaoLocalSearchResponse.Document> documents =
         get(
-            searchRestClient,
             uriBuilder -> {
               uriBuilder
                   .path(KEYWORD_SEARCH_PATH)
@@ -102,42 +81,12 @@ public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
   /** 좌표 주변 반경 2km의 지하철역을 가까운 순으로 찾는다. */
   @Override
   public List<NearbyPlace> searchNearbyStations(Coordinate origin) {
-    return toPlaces(
-        categorySearch(searchRestClient, SUBWAY_STATION_CODE, origin), SUBWAY_STATION_CODE);
-  }
-
-  /**
-   * 좌표 주변 반경 2km의 대학을 가까운 순으로 찾는다.
-   *
-   * <p>{@code SC4}에서 {@code category_name}으로 대학만 남긴 뒤, 캠퍼스·건물이 별도 문서로 오는 것을 <b>본명으로 정규화해 하나로
-   * 합친다</b>. 응답이 이미 거리순이므로 각 대학의 첫 문서가 곧 매물에서 가장 가까운 지점이다.
-   */
-  @Override
-  public List<NearbyPlace> searchNearbyUniversities(Coordinate origin) {
-    List<KakaoLocalSearchResponse.Document> documents =
-        categorySearch(registerRestClient, SCHOOL_CODE, origin);
-
-    Map<String, NearbyPlace> byName = new LinkedHashMap<>();
-    try {
-      for (KakaoLocalSearchResponse.Document document : documents) {
-        if (!isExpectedGroup(document, SCHOOL_CODE) || !isUniversity(document.categoryName())) {
-          continue;
-        }
-        NearbyPlace place = toPlace(document);
-        byName.putIfAbsent(toUniversityName(place.name()), place);
-      }
-    } catch (IllegalArgumentException e) {
-      throw new NearbyPlaceSearchUpstreamException(e);
-    }
-    return byName.entrySet().stream()
-        .map(entry -> withName(entry.getValue(), entry.getKey()))
-        .toList();
+    return toPlaces(categorySearch(SUBWAY_STATION_CODE, origin), SUBWAY_STATION_CODE);
   }
 
   private List<KakaoLocalSearchResponse.Document> categorySearch(
-      RestClient restClient, String categoryGroupCode, Coordinate origin) {
+      String categoryGroupCode, Coordinate origin) {
     return get(
-        restClient,
         uriBuilder -> {
           uriBuilder
               .path(CATEGORY_SEARCH_PATH)
@@ -169,8 +118,7 @@ public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
    * 결과와 구분해 상류 계약 위반으로 처리한다. 카카오가 내려주는 에러 코드({@code -401}·{@code -5}·{@code -10} 등)는 구분하지 않는다 —
    * 프론트가 할 수 있는 대응이 "잠시 후 재시도" 하나로 같다.
    */
-  private List<KakaoLocalSearchResponse.Document> get(
-      RestClient restClient, Consumer<UriBuilder> uriCustomizer) {
+  private List<KakaoLocalSearchResponse.Document> get(Consumer<UriBuilder> uriCustomizer) {
     requireConfiguredCredentials();
 
     KakaoLocalSearchResponse response;
@@ -232,38 +180,6 @@ public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
   }
 
   /**
-   * {@code "교육,학문 > 학교 > 대학교"}를 깊이별로 쪼개 어느 한 단계가 대학교인지 본다.
-   *
-   * <p><b>{@code equals}가 아니라 {@code contains}인 이유</b>: 카카오가 하위 단계({@code … > 대학교 > 사립대학교})를 추가해도
-   * 계속 걸린다. {@code 고등학교}·{@code 중학교}·{@code 초등학교}는 {@code 대학교}를 부분 문자열로 포함하지 않아 오탐이 없다.
-   *
-   * <p><b>전체 문자열이 아니라 세그먼트 단위인 이유</b>: 상위 분류에 우연히 {@code 대학교}가 섞인 경우를 걸러 낸다.
-   *
-   * <p>{@code … > 대학원}·{@code … > 전문대학}은 이 규칙에서 빠진다 — 조건을 {@code 대학}으로 넓히면 2년제와 함께 대학원도 들어오기 때문이다.
-   * 파생 정확도는 관리자 승인 심사가 보정한다(ADR-0044 §6).
-   */
-  private static boolean isUniversity(String categoryName) {
-    if (!StringUtils.hasText(categoryName)) {
-      return false;
-    }
-    return Arrays.stream(categoryName.split(CATEGORY_DEPTH_DELIMITER))
-        .map(String::trim)
-        .anyMatch(segment -> segment.contains(UNIVERSITY_SEGMENT));
-  }
-
-  /**
-   * 캠퍼스·건물 이름을 대학 본명으로 줄인다 — {@code 연세대학교 신촌캠퍼스 제1공학관} → {@code 연세대학교}.
-   *
-   * <p>{@code 대학교}를 포함하지 않는 이름({@code 한국과학기술원})은 그대로 둔다.
-   */
-  private static String toUniversityName(String placeName) {
-    int end = placeName.indexOf(UNIVERSITY_SEGMENT);
-    return end < 0
-        ? placeName.trim()
-        : placeName.substring(0, end + UNIVERSITY_SEGMENT.length()).trim();
-  }
-
-  /**
    * 카카오 원본 항목의 좌표를 검증한 뒤 프론트 친화적인 WGS84 값으로 변환한다.
    *
    * <p>주소는 보조 표시용이라 비어 있어도 후보를 버리지 않고 빈 문자열로 채운다(주소 검색과 반대다 — 등록에 실리는 것은 이름이지 주소가 아니다). 반면 좌표가 어긋난
@@ -287,17 +203,6 @@ public class KakaoLocalPlaceClient implements NearbyPlaceSearchClient {
         lat,
         lng,
         parseDistance(document.distance()));
-  }
-
-  /** 이름만 바꾼 사본을 만든다(대학 본명 정규화 결과를 싣는다). */
-  private static NearbyPlace withName(NearbyPlace place, String name) {
-    return new NearbyPlace(
-        name,
-        place.roadAddress(),
-        place.jibunAddress(),
-        place.lat(),
-        place.lng(),
-        place.distanceMeters());
   }
 
   /** 카카오가 문자열로 주는 십진수 좌표를 숫자로 되돌린다. 배율 변환은 없다(네이버 지역 검색과 다른 점). */

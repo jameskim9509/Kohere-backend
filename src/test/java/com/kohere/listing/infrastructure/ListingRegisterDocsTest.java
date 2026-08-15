@@ -14,7 +14,6 @@ import static com.kohere.docs.ListingDocsFields.registerRequestFields;
 import static com.kohere.docs.ListingDocsFields.registerResponseFields;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -30,13 +29,10 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsTags;
-import com.kohere.listing.domain.nearby.NearbyPlace;
-import com.kohere.listing.domain.nearby.NearbyPlaceSearchClient;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -198,10 +194,6 @@ class ListingRegisterDocsTest {
 
   @MockitoBean private UserAccountService userAccountService;
 
-  // 등록이 좌표로 인근 대학을 파생하므로(ADR-0044) 포트를 목으로 대체해 네트워크 없이 돌린다.
-  // HTTP 계약 자체는 KakaoLocalPlaceClientTest가 검증한다.
-  @MockitoBean private NearbyPlaceSearchClient nearbyPlaceSearchClient;
-
   private final ObjectMapper objectMapper = new ObjectMapper();
   private MockMvc mockMvc;
 
@@ -219,20 +211,6 @@ class ListingRegisterDocsTest {
     given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
     given(userAccountService.getLanguage(LANDLORD_ID)).willReturn("ko");
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
-    // 신촌 좌표 주변 — 연세대와 이화여대가 함께 잡힌다. 캠퍼스 표기가 붙어도 카탈로그 매칭이 되어야 한다.
-    given(nearbyPlaceSearchClient.searchNearbyUniversities(any()))
-        .willReturn(List.of(yonsei(), ewha()));
-  }
-
-  /** 신촌 좌표의 인근 대학 — 카탈로그가 아는 코드로 바뀐다. */
-  private static NearbyPlace yonsei() {
-    return new NearbyPlace(
-        "연세대학교", "서울 서대문구 연세로 50", "서울 서대문구 신촌동 134", 37.565784, 126.938572, 780);
-  }
-
-  private static NearbyPlace ewha() {
-    return new NearbyPlace(
-        "이화여자대학교 대현캠퍼스", "서울 서대문구 이화여대길 52", "서울 서대문구 대현동 11-1", 37.5618, 126.9469, 950);
   }
 
   /** 임대인 등록 성공 — 서버가 채우는 값과 폼 1칸에서 나뉜 값, 주소에서 뽑은 행정구역을 함께 단정한다. */
@@ -256,10 +234,7 @@ class ListingRegisterDocsTest {
         .andExpect(jsonPath("$.data.location.lat").value(37.5559918))
         .andExpect(jsonPath("$.data.location.lng").value(126.9368647))
         .andExpect(jsonPath("$.data.address.lat").doesNotExist())
-        // 요청에 없는 파생값이다 — 서버가 좌표로 카카오를 불러 채운다(ADR-0044).
-        // 캠퍼스 표기가 붙은 이름도 카탈로그 label.ko contains 매칭으로 코드가 된다.
-        .andExpect(jsonPath("$.data.nearbyUniversityCodes.length()").value(2))
-        .andExpect(jsonPath("$.data.nearbyUniversityCodes", containsInAnyOrder("YONSEI", "EWHA")))
+        .andExpect(jsonPath("$.data.nearbyUniversityCodes").isEmpty())
         // 한국어 한 값으로 보낸 문구가 임대인 언어(ko)로 그대로 돌아온다.
         .andExpect(jsonPath("$.data.title").value("신촌 도보 5분 1인실 고시원"))
         .andExpect(jsonPath("$.data.nearestTransit.name").value("신촌역"))

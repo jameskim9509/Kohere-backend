@@ -30,15 +30,4 @@ public interface NearbyPlaceSearchClient {
    * @throws NearbyPlaceSearchUpstreamException 외부 장애 또는 응답 계약 위반
    */
   List<NearbyPlace> searchNearbyStations(Coordinate origin);
-
-  /**
-   * 좌표 주변의 대학을 가까운 순으로 찾는다.
-   *
-   * <p>제공자에 대학 전용 카테고리가 없어 학교 카테고리에서 대학만 걸러 낸다 — 그 판별 규칙은 어댑터가 소유한다.
-   *
-   * @param origin 매물 좌표
-   * @return 반경 내 대학 목록(같은 대학은 가장 가까운 지점 하나로 합친다). 없으면 빈 목록
-   * @throws NearbyPlaceSearchUpstreamException 외부 장애 또는 응답 계약 위반
-   */
-  List<NearbyPlace> searchNearbyUniversities(Coordinate origin);
 }
