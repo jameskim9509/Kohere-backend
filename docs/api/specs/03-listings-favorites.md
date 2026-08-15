@@ -215,7 +215,7 @@ Query 파라미터:
 
 주의사항:
 
-- **`suggestedWalkMinutes`는 제안이지 정답이 아니다.** 직선거리 기준이라 실제 보행 경로(육교·지하도·블록)보다 짧게 나온다. 폼은 이 값을 입력칸 **기본값으로 채우고 수정 가능하게** 두며, 최종 값의 책임은 임대인에게 있다(승인 심사가 본다).
+- **`suggestedWalkMinutes`는 제안이지 정답이 아니다.** 직선거리 기준이라 실제 보행 경로(육교·지하도·블록)보다 짧게 나온다. 서버는 이 값을 강제하지 않는다 — 등록 요청의 `nearestTransit.walkMinutes`는 클라이언트가 보낸 값을 그대로 저장하며, 실제 도보 시간과 맞는지는 승인 심사가 본다.
 - **환승역은 노선별로 여러 건이 온다**(`신촌역 2호선`·`신촌역 경의중앙선`). 노선이 보이는 편이 선택에 도움이 되므로 서버가 합치지 않는다.
 - 정상적으로 결과가 없으면 `200 OK`와 `data.items=[]`다(장애가 아니다).
 - 외부 응답의 `id`·`place_url`·`phone`·`category_name`·`meta`는 공개하지 않는다.
@@ -432,7 +432,7 @@ Request Body:
 | `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조 |
 | `nearestTransit.type` | `TransitType` | 필수 | 현재 허용값은 `SUBWAY` 하나다. 카탈로그 `TRANSIT_TYPE` 대조 |
 | `nearestTransit.name` | string | 필수 | 근처 지하철역명. **역 검색 응답의 `name`을 그대로** 보낸다 |
-| `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상. 역 검색이 준 `suggestedWalkMinutes`를 기본값으로 쓰되 임대인이 고칠 수 있다. **키를 생략하면 `400 INVALID_INPUT`이다** — 예전에는 조용히 `0`이 저장됐다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)) |
+| `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상. 역 검색이 준 `suggestedWalkMinutes`를 그대로 담으면 된다. **키를 생략하면 `400 INVALID_INPUT`이다** — 예전에는 조용히 `0`이 저장됐다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)) |
 | `description` | string | 필수 | 지점 소개글 |
 | `extraNotes` | string | 필수 | 이용 조건(생활 규칙)·유의사항 |
 | `refundPolicy` | string | 필수 | 환불정책 문구 |

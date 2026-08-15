@@ -142,7 +142,7 @@ class ListingStationSearchDocsTest {
         .andExpect(jsonPath("$.data.items[0].lat").value(37.555134))
         .andExpect(jsonPath("$.data.items[0].lng").value(126.936893))
         .andExpect(jsonPath("$.data.items[0].distanceMeters").value(320))
-        // ceil(320 / 80) = 4. 직선거리 기준이라 하한 제안이며 임대인이 고칠 수 있다.
+        // ceil(320 / 80) = 4. 직선거리 기준이라 하한 제안이다 — 서버가 등록 값으로 강제하지 않는다.
         .andExpect(jsonPath("$.data.items[0].suggestedWalkMinutes").value(4))
         .andDo(
             document(

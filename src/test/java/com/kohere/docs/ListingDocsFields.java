@@ -518,7 +518,7 @@ public final class ListingDocsFields {
       | 검색 응답 | 등록 요청 |
       |---|---|
       | `name` | `nearestTransit.name` |
-      | `suggestedWalkMinutes` | `nearestTransit.walkMinutes`의 **기본값**(임대인이 수정할 수 있다) |
+      | `suggestedWalkMinutes` | `nearestTransit.walkMinutes` |
 
       **좌표는 선택이지만 함께 보내는 것을 권한다**
 
@@ -791,7 +791,7 @@ public final class ListingDocsFields {
         field(
             "nearestTransit.walkMinutes",
             JsonFieldType.NUMBER,
-            "역까지 도보 소요시간(분). 0 이상. 역 검색이 준 suggestedWalkMinutes를 기본값으로 쓰되 수정할 수 있다."
+            "역까지 도보 소요시간(분). 0 이상. 역 검색이 준 suggestedWalkMinutes를 그대로 담으면 된다."
                 + " 키를 생략하면 400 INVALID_INPUT이다"));
     fields.add(field("description", JsonFieldType.STRING, "지점 소개글"));
     fields.add(field("extraNotes", JsonFieldType.STRING, "생활 규칙과 유의사항"));
@@ -860,7 +860,7 @@ public final class ListingDocsFields {
         optField(
             "data.items[].suggestedWalkMinutes",
             JsonFieldType.NUMBER,
-            "도보 시간 제안값(분). 직선거리 ÷ 80m를 올림한 하한이며 임대인이 수정할 수 있다. 거리를 모르면 null"),
+            "도보 시간 제안값(분). 직선거리 ÷ 80m를 올림한 하한이다. 거리를 모르면 null"),
         errorNull());
   }
 

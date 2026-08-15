@@ -65,7 +65,7 @@ sequenceDiagram
             KAKAO-->>LIST: documents[] (place_name · x · y · distance)
             Note over LIST: x/y → lng/lat · distance → distanceMeters<br/>suggestedWalkMinutes = ceil(distance / 80), 최소 1
             LIST-->>C: 200 { items[]: name · lat · lng · distanceMeters · suggestedWalkMinutes }
-            C-->>U: 후보 표시(도보 시간은 기본값으로 채우고 수정 가능)
+            C-->>U: 후보 표시(도보 시간 제안값을 함께 준다)
         end
     end
 

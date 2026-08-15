@@ -45,7 +45,8 @@
 #   · supported=false면 등록에서 400 LISTING_INVALID_ADDRESS다(현재 카탈로그는 서울 9개 구만 안다).
 #
 # 인근 역도 **먼저 검색한다**(12-1/12-2, ADR-0044). 카카오 로컬이 표준 역 이름·좌표·도보 시간 제안을 주고,
-# 그 name을 13번 등록의 nearestTransit.name에 담는다. suggestedWalkMinutes는 제안값이라 고쳐서 보내도 된다.
+# 그 name을 13번 등록의 nearestTransit.name에 담는다. suggestedWalkMinutes는 직선거리 기준 하한 제안이라
+# 서버가 등록 값으로 강제하지 않는다 — nearestTransit.walkMinutes는 요청이 보낸 값을 그대로 저장한다.
 #   · KAKAO_REST_API_KEY(.env)가 없으면 12-1/12-2만 502 UPSTREAM_ERROR다 — 다른 요청은 정상이다.
 #
 # 사진은 **한 장씩** `POST /api/v2/listings/images`로 올린다(ADR-0041). 요청이 파일마다 갈려야 브라우저가
