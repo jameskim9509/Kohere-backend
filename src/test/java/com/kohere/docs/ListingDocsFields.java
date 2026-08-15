@@ -308,15 +308,16 @@ public final class ListingDocsFields {
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
       - `Content-Type: multipart/form-data` — 파일 part `file` 하나뿐이다.
 
-      **요청 part**
+      **요청 주의사항**
+
+      - **`file` part 하나만 싣는다**
 
       | part | Content-Type | 개수 | 제한 |
       |---|---|---|---|
       | `file` | `image/jpeg` · `image/png` · `image/webp` · `image/heic` | 1 | 장당 **10MB** 이하 |
 
-      **왜 한 장씩인가**
-
-      요청이 파일마다 갈려야 브라우저가 **파일별 진행률·전송 속도**를 줄 수 있고, 실패한 파일만 다시 올릴 수 있다. 한 요청에 몰아 실으면 진행 이벤트가 요청 전체 하나뿐이라 그 화면을 만들 수 없다.
+      - **왜 한 장씩인가**
+        - 요청이 파일마다 갈려야 브라우저가 **파일별 진행률·전송 속도**를 줄 수 있고, 실패한 파일만 다시 올릴 수 있다. 한 요청에 몰아 실으면 진행 이벤트가 요청 전체 하나뿐이라 그 화면을 만들 수 없다.
 
       **응답 주의사항**
 
@@ -378,9 +379,11 @@ public final class ListingDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
 
-      **주소를 먼저 검색한다**
+      **요청 주의사항**
 
-      주소 칸은 자유 입력이 아니다. `GET /api/v1/listings/addresses`로 검색해 고른 후보의 값을 아래 세 필드에 그대로 담는다.
+      - **주소를 먼저 검색한다**
+        - 주소 칸은 자유 입력이 아니다. `GET /api/v1/listings/addresses`로 검색해 고른 후보의 값을 아래 세 필드에 그대로 담는다.
+        - 검색 결과는 모두 고를 수 있다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다** — 승인 심사가 주소와 좌표의 일치를 본다.
 
       | 검색 응답 | 등록 요청 | 내용 |
       |---|---|---|
@@ -388,18 +391,13 @@ public final class ListingDocsFields {
       | `lat` | `address.lat` | 위도. 매물의 `location`이 된다 |
       | `lng` | `address.lng` | 경도 |
 
-      검색 결과는 모두 고를 수 있다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다** — 승인 심사가 주소와 좌표의 일치를 본다.
-
-      **사진을 먼저 올린다**
-
-      사진 파일은 이 요청에 싣지 않는다. `POST /api/v2/listings/images`로 **한 장씩** 올려 받은 `key`를 아래 두 필드에 담는다.
+      - **사진을 먼저 올린다**
+        - 사진 파일은 이 요청에 싣지 않는다. `POST /api/v2/listings/images`로 **한 장씩** 올려 받은 `key`를 아래 두 필드에 담는다.
 
       | 필드 | 개수 | 내용 |
       |---|---|---|
       | `imageKeys` | 1~5 | 지점 대표사진. 첫 값이 카드·상세의 대표 이미지가 된다 |
       | `roomOffers[].roomImageKeys` | 방마다 2~5 | 그 객실의 사진 |
-
-      **요청 주의사항**
 
       - `building.usedFloorRange`·`ageRange`는 **요청과 응답의 모양이 다르다.** 보낼 때는 `min~max` 문자열 한 칸이지만 응답은 `building.usedFloorMin`/`usedFloorMax`, `ageMin`/`ageMax`로 갈라져 돌아온다.
       - **주소와 좌표는 검색 응답 그대로 보낸다.** `address.fullAddress`는 정규화 없이 저장되고, `address.lat`·`lng`는 응답의 최상위 `location`으로 옮겨 간다. 건물명이 붙은 도로명 주소도 그대로 두면 된다.
@@ -456,7 +454,10 @@ public final class ListingDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다.
 
-      **고른 후보의 값을 등록 요청에 그대로 옮긴다**
+      **요청 주의사항**
+
+      - **고른 후보의 값을 등록 요청에 그대로 옮긴다**
+        - 서버는 이 검색을 호출했는지 확인하지 않는다. 사용자가 고른 후보 **한 건**을 클라이언트가 보관했다가 **가공 없이 값 그대로** 실어 보낸다.
 
       | 검색 응답 | 등록 요청 |
       |---|---|
@@ -464,9 +465,6 @@ public final class ListingDocsFields {
       | `lat` | `address.lat` |
       | `lng` | `address.lng` |
 
-      **요청 주의사항**
-
-      - **서버는 이 검색을 호출했는지 확인하지 않는다.** 사용자가 고른 후보 **한 건**을 클라이언트가 보관했다가, 위 표의 자리에 **가공 없이 값 그대로** 실어 보낸다.
       - **도로명 + 건물번호까지 넣어야 결과가 나온다.** `신촌`처럼 일부만 보내면 후보가 비고, `신촌로 12`면 나온다. 폼에서 그렇게 안내한다.
       - 서버가 외부 호출 조건(최대 5건·첫 페이지·한국어)을 고정하므로 프론트는 `keyword`만 보낸다.
 
@@ -510,22 +508,20 @@ public final class ListingDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다.
 
-      **고른 후보의 값을 등록 요청에 그대로 옮긴다**
+      **요청 주의사항**
+
+      - **고른 후보의 값을 등록 요청에 그대로 옮긴다**
+        - 서버는 이 검색을 호출했는지 확인하지 않는다. 사용자가 고른 후보 **한 건**을 클라이언트가 보관했다가 **가공 없이 값 그대로** 실어 보낸다.
 
       | 검색 응답 | 등록 요청 |
       |---|---|
       | `name` | `nearestTransit.name` |
       | `suggestedWalkMinutes` | `nearestTransit.walkMinutes` |
 
-      **요청 주의사항**
-
-      - **서버는 이 검색을 호출했는지 확인하지 않는다.** 사용자가 고른 후보 **한 건**을 클라이언트가 보관했다가, 위 표의 자리에 **가공 없이 값 그대로** 실어 보낸다.
-
-      **좌표는 선택이지만 함께 보내는 것을 권한다**
-
-      - `lat`·`lng`는 **둘 다 있거나 둘 다 없어야 한다.** 하나만 보내면 `400 INVALID_INPUT`이다.
-      - 좌표를 주면 거리순으로 정렬되고 `distanceMeters`·`suggestedWalkMinutes`가 채워진다. 없으면 정확도순이고 두 필드는 `null`이다.
-      - 주소를 먼저 검색하므로 좌표는 이미 손에 있다. 그래야 전국에 같은 이름이 있는 역(예: `시청역`)을 거리로 가려낼 수 있다.
+      - **좌표는 선택이지만 함께 보내는 것을 권한다**
+        - `lat`·`lng`는 **둘 다 있거나 둘 다 없어야 한다.** 하나만 보내면 `400 INVALID_INPUT`이다.
+        - 좌표를 주면 거리순으로 정렬되고 `distanceMeters`·`suggestedWalkMinutes`가 채워진다. 없으면 정확도순이고 두 필드는 `null`이다.
+        - 주소를 먼저 검색하므로 좌표는 이미 손에 있다. 그래야 전국에 같은 이름이 있는 역(예: `시청역`)을 거리로 가려낼 수 있다.
 
       **응답 주의사항**
 
@@ -555,9 +551,13 @@ public final class ListingDocsFields {
 
       - `Authorization: Bearer <accessToken>` — **임대인**(`userType=LANDLORD`) 전용이다.
 
-      **서버가 고정하는 값**
+      **요청 주의사항**
 
-      - 반경 **2km**(도보 25분권) · 거리순 정렬 · 최대 15건. 프론트는 매물 좌표만 보낸다.
+      - **서버가 고정하는 값**
+        - 반경 **2km**(도보 25분권) · 거리순 정렬 · 최대 15건이다. 프론트는 매물 좌표만 보낸다.
+
+      **응답 주의사항**
+
       - 좌표가 항상 있으므로 `distanceMeters`·`suggestedWalkMinutes`가 늘 채워진다.
       - 반경 안에 역이 없으면 에러가 아니라 `data.items=[]`다.
 
