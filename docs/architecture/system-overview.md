@@ -41,6 +41,7 @@ flowchart LR
       MAIL["Gmail SMTP<br/>(세입자 이메일 인증번호)"]
       NAVER["네이버 지역 검색 API<br/>(매물 장소 키워드 검색 · listing places)"]
       NCPGEO["NCP Maps Geocoding<br/>(도로명 주소 검색 · 등록 폼 좌표)"]
+      KAKAOLOCAL["카카오 로컬 API<br/>(인근 역 검색 · 등록 시 인근 대학 파생)"]
     end
 
     subgraph Cloud["AWS — 백엔드"]
@@ -64,6 +65,7 @@ flowchart LR
     SRV -- "세입자 이메일 인증번호 발송(SMTP)" --> MAIL
     SRV -- "장소 키워드 검색(네이버 지역검색)" --> NAVER
     SRV -- "도로명 주소 검색(NCP Geocoding · 임대인 등록 폼)" --> NCPGEO
+    SRV -- "인근 역 검색 · 인근 대학 파생(카카오 로컬 · 임대인 등록 폼)" --> KAKAOLOCAL
     SRV --> MYSQL
     SRV --> MONGO
     SRV --> REDIS
@@ -166,7 +168,7 @@ flowchart TB
       MAILHOG["mailhog · :1025 SMTP / :8025 UI<br/>인증번호 메일 수신함"]
     end
 
-    EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · 네이버(장소검색) · NCP(주소검색)"]
+    EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · 네이버(장소검색) · NCP(주소검색) · 카카오(역·대학)"]
 
     DEV -- "REST /api/v1 · /api/v2<br/>localhost:8080" --> APP
     CFG -. "DB 접속·시크릿 주입" .-> APP
@@ -212,7 +214,7 @@ AWS 배포 토폴로지 — GitHub Actions가 빌드한 **동일 이미지**가 
 ```mermaid
 flowchart TB
     APP["모바일 앱<br/>(iOS / Android · 클라이언트)"]
-    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색) · NCP(주소검색)"]
+    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색) · NCP(주소검색) · 카카오(역·대학)"]
     DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
@@ -252,7 +254,7 @@ flowchart TB
     R53 --> IGW
     IGW --> ALB
     ALB --> FARGATE
-    FARGATE -- "outbound(ECR·OIDC·Apple·비즈노·SOLAPI·SMTP·네이버·NCP)" --> NAT
+    FARGATE -- "outbound(ECR·OIDC·Apple·비즈노·SOLAPI·SMTP·네이버·NCP·카카오)" --> NAT
     NAT -- "egress" --> IGW
     SSM -. "시크릿 주입(태스크 시작 시·task exec role)" .-> FARGATE
     FARGATE -- "JDBC :3306" --> RDS
@@ -295,7 +297,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     DEV["개발자 / 테스터"]
-    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색) · NCP(주소검색)"]
+    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색) · NCP(주소검색) · 카카오(역·대학)"]
     DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
@@ -334,7 +336,7 @@ flowchart TB
     DEV -- "HTTPS 443" --> R53
     R53 --> IGW
     IGW -- "공인 IP(EIP)" --> CADDY
-    EC2 -- "egress(ECR·ACME·OIDC·비즈노·SOLAPI·SMTP·네이버·NCP)" --> IGW
+    EC2 -- "egress(ECR·ACME·OIDC·비즈노·SOLAPI·SMTP·네이버·NCP·카카오)" --> IGW
     CADDY -- "내부 :8080" --> APP
     APP --> MYSQL
     APP --> MONGO
@@ -363,7 +365,7 @@ flowchart TB
 | application         | 유스케이스 조율, 트랜잭션 경계, 이벤트 발행                                                               | —                              | `@Service`, `@Transactional`                       |
 | domain              | Aggregate·VO·도메인 규칙,**Repository 인터페이스**                                                | —                              | POJO, enum                                             |
 | infrastructure      | **Repository 구현**, 외부 어댑터(OIDC·SMS·사업자검증·장소검색·주소검색·**오브젝트 스토리지**)                | 모듈별 저장소 + S3(사진 원본)   | Spring Data JPA / Data MongoDB / Data Redis / AWS SDK v2 |
-| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본(**조회 계열 6종의 정본은 `/api/v2`** — `SecurityConfig`에 `GET /api/v2/listings`·`/api/v2/listings/*` `permitAll` 매처 필요. `/api/v1` 조회는 개정 전(v3) 구조를 복원한 `deprecated` 스텁이라 DB에 닿지 않고 빈 결과·`404 LISTING_NOT_FOUND`만 반환 — [ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)),**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태)과 **도로명 주소 검색**(`AddressSearchClient`→NCP Geocoding·임대인 전용, [ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 둘 다 매물 데이터를 안 써서 **`/api/v1`에 남는 매물 경로**, **임대인 매물 등록**(`POST /api/v2/listings` — 매물 v2의 첫 엔드포인트. 사진은 `POST /api/v2/listings/images`로 **한 장씩 먼저 올려** 받은 저장 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)로 참조하고 등록 요청 자체는 JSON이다 — 브라우저가 요청 단위로만 진행률을 주기 때문이며, 확정 시 `uploads/`에서 `listings/`로 복사한다, [ADR-0041](../adr/0041-listing-image-upload-to-s3.md). 등록 폼 기준 v4 스키마·`status=PENDING`으로 저장, `SecurityConfig` 명시 매처 `hasRole("USER")` + 서비스의 `userType=LANDLORD` 재검사 2단 인가([ADR-0010](../adr/0010-jwt-authentication-filter.md)), `landlordId`는 토큰에서 취득, 사업자등록번호는 형식 검증만 하고 진위는 관리자 승인 심사에서 수동 확인) — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`) + **매물 사진 저장 어댑터**(포트 `ListingImageStorage` → `S3ListingImageStorage`, 로컬은 MinIO). 등록은 **키 검사 → 확정 위치로 복사 → 단일 도큐먼트 원자 쓰기 → 임시본 삭제** 순서이며 복사·저장이 실패하면 복사본만 보상 삭제하고 임시본은 남긴다(임시 prefix는 7일 만료)(좌표는 주소 검색 결과를 요청으로 되돌려 받아 채우고 주변 대학 파생은 후속, 관리자 승인·임대인 수정도 후속)                          |
+| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본(**조회 계열 5종의 정본은 `/api/v2`** — `SecurityConfig`에 `GET /api/v2/listings`·`/api/v2/listings/*` `permitAll` 매처 필요. `/api/v1` 조회는 개정 전(v3) 구조를 복원한 `deprecated` 스텁이라 DB에 닿지 않고 빈 결과·`404 LISTING_NOT_FOUND`만 반환 — [ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)),**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태)과 **도로명 주소 검색**(`AddressSearchClient`→NCP Geocoding·임대인 전용, [ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md))·**인근 역 검색**(`NearbyPlaceSearchClient`→카카오 로컬·임대인 전용, [ADR-0044](../adr/0044-nearby-station-search-with-kakao-local.md)) — 셋 다 매물 데이터를 안 써서 **`/api/v1`에 남는 매물 경로**, **임대인 매물 등록**(`POST /api/v2/listings` — 매물 v2의 첫 엔드포인트. 사진은 `POST /api/v2/listings/images`로 **한 장씩 먼저 올려** 받은 저장 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)로 참조하고 등록 요청 자체는 JSON이다 — 브라우저가 요청 단위로만 진행률을 주기 때문이며, 확정 시 `uploads/`에서 `listings/`로 복사한다, [ADR-0041](../adr/0041-listing-image-upload-to-s3.md). 등록 폼 기준 v4 스키마·`status=PENDING`으로 저장, `SecurityConfig` 명시 매처 `hasRole("USER")` + 서비스의 `userType=LANDLORD` 재검사 2단 인가([ADR-0010](../adr/0010-jwt-authentication-filter.md)), `landlordId`는 토큰에서 취득, 사업자등록번호는 형식 검증만 하고 진위는 관리자 승인 심사에서 수동 확인) — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`) + **매물 사진 저장 어댑터**(포트 `ListingImageStorage` → `S3ListingImageStorage`, 로컬은 MinIO). 등록은 **키 검사 → 확정 위치로 복사 → 단일 도큐먼트 원자 쓰기 → 임시본 삭제** 순서이며 복사·저장이 실패하면 복사본만 보상 삭제하고 임시본은 남긴다(임시 prefix는 7일 만료)(좌표는 주소 검색 결과를 요청으로 되돌려 받아 채우고, **주변 대학은 그 좌표로 카카오 로컬을 불러 서버가 파생한다** — 실패·미발견은 빈 배열로 흡수하고 등록은 성공시킨다. 관리자 승인·임대인 수정은 후속)                          |
 | diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학(그룹, 6개)/지역선택·주거조건·월세 범위(min/max)·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 표시 언어 기반 번역; ③ 대학은 6개 그룹 단일선택, ⑤ 월세는 NUMBER_RANGE 자유입력), 결과 생성, 추천 criteria 발행(③ 그룹→멤버 대학코드 집합, ⑤ monthlyRentMin/Max), **v2 서버 주도 흐름**(`POST /api/v2/diagnoses/start` + `POST /api/v2/diagnoses/next` + `GET /api/v2/diagnoses/{id}/recommendations` — 서버는 다음 질문·분기·확정 시점만 판단하고 시작·매물 조회 시점은 클라가 결정, ① 지역 0건이면 카탈로그의 `regionRetry` 문항을 일반 질문으로 내고 예=`RESTART`/아니오=`TERMINATED`, 확정은 매칭을 조회하지 않고 `diagnosisId`만 반환하며 0건은 추천 조회의 빈 목록으로 드러남(제안 없음), 진행 세션 `diagnosisFlowSessions` 별도 저장, issue #157·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
 | booking(매물 예약)  | 매물 예약(신청) 저장 + 내 예약 목록·상세 조회(독립). 조회 시 `listing`·`user` 공개 쿼리 실시간 조인. `BookingCreatedEvent` 발행은 (후속·이연) | (저장소 추후 결정)              | REST 조회 조인 / Application Events(후속)              |
 | chat(채팅)          | (후속·이연, 1차 MVP 제외) F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                      | (저장소 추후 결정)              | 이벤트 리스너                                          |

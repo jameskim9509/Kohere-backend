@@ -1,7 +1,8 @@
 # Kohere — 매물 조회·찜·등록 로컬 수동 테스트 (`/api/v2` 정본 + `/api/v1` 종료 확인)
 # 스펙: docs/api/specs/03-listings-favorites.md · 유저스토리 US-3-1~US-3-6
 # 결정: ADR-0039(v4 스키마·등록 폼) · ADR-0040(조회 v2 이관 · v1 빈 결과 종료) · ADR-0041(사진 S3 업로드)
-#       · ADR-0042(도로명 주소 검색 · 등록이 그 좌표를 받는다)
+#       · ADR-0042(도로명 주소 검색 · 등록이 그 좌표를 받는다) · ADR-0043(키워드 검색 종료)
+#       · ADR-0044(인근 역 검색 · 등록 시 인근 대학 자동 매핑)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
@@ -33,15 +34,19 @@
 #
 # 참고:
 #   - 응답 봉투는 `{ success, data, error }`라서 값 경로는 `response.body.$.data.*`다.
-#   - 장소 후보 검색(6)과 도로명 주소 검색(12-0)만 `/api/v1`이다. 외부 API만 부르고 매물 스키마와 무관해 v1에 남겼다.
-#     둘 중 주소 검색은 등록 폼 전용이라 **임대인 토큰이 필요**하다(ADR-0042).
+#   - 장소 후보 검색(7)·도로명 주소 검색(12-0)·인근 역 검색(12-1·12-2)만 `/api/v1`이다. 외부 API만 부르고 매물 스키마와 무관해 v1에 남겼다.
+#     그중 주소 검색과 역 검색은 등록 폼 전용이라 **임대인 토큰이 필요**하다(ADR-0042·ADR-0044).
 #   - 등록한 매물은 `status=PENDING`이라 **조회·검색·상세 어디에도 나오지 않는다**(14·15에서 확인).
 #
-# ─────────────────────────────── 주소 검색 · 사진 업로드 (12-0 ~ 13) ───────────────────────────────
+# ─────────────────────────── 주소·역 검색 · 사진 업로드 (12-0 ~ 13) ───────────────────────────
 # 주소는 **먼저 검색한다**(12-0, ADR-0042). NCP Geocoding이 표준 도로명 주소·좌표·supported를 주고,
 # 그 값을 13번 등록의 address.fullAddress·address.lat·address.lng에 그대로 담는다.
 #   · NAVER_GEOCODE_CLIENT_ID/SECRET(.env)이 없으면 12-0만 502 UPSTREAM_ERROR다 — 다른 요청은 정상이다.
 #   · supported=false면 등록에서 400 LISTING_INVALID_ADDRESS다(현재 카탈로그는 서울 9개 구만 안다).
+#
+# 인근 역도 **먼저 검색한다**(12-1/12-2, ADR-0044). 카카오 로컬이 표준 역 이름·좌표·도보 시간 제안을 주고,
+# 그 name을 13번 등록의 nearestTransit.name에 담는다. suggestedWalkMinutes는 제안값이라 고쳐서 보내도 된다.
+#   · KAKAO_REST_API_KEY(.env)가 없으면 12-1/12-2만 502이고, 13번 등록은 정상이되 nearbyUniversityCodes가 []다.
 #
 # 사진은 **한 장씩** `POST /api/v2/listings/images`로 올린다(ADR-0041). 요청이 파일마다 갈려야 브라우저가
 # 파일별 진행률·전송 속도를 줄 수 있고, 실패한 파일만 다시 올릴 수 있다.
@@ -140,7 +145,8 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 #   다국어 문구는 **한국어 한 값만** 보낸다. 서버가 en에 같은 값을 복사하고 영어 번역은 관리자가 승인 심사에서 채운다.
 #   서버가 채우는 값이라 요청에 없는 것: listingId · roomOffers[].roomOfferId · status(PENDING) ·
 #   rentalType(MONTHLY_RENT) · pricing.currency(KRW) · roomOffers[].status(ACTIVE) · favoriteCount(0) · 생성/수정 시각.
-#   좌표(location)는 12-0이 준 값을 그대로 저장한다. 주변 대학(nearbyUniversityCodes)만 아직 빈 배열이다.
+#   좌표(location)는 12-0이 준 값을 그대로 저장하고, 인근 역 이름은 12-1/12-2가 준 값을 담는다.
+#   주변 대학(nearbyUniversityCodes)은 **요청에 없다** — 서버가 그 좌표로 카카오를 불러 채운다(응답에서 확인).
 #   코드값은 전부 listingCatalog와 대조한다 — 카탈로그에 없는 코드는 400이다(29-b번).
 #   사진 URL도 요청에 없다 — 서버가 확정 위치로 옮긴 뒤 응답에 담아 준다(업로드 때 받은 url과 다르다).
 
@@ -158,6 +164,32 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 
 ### 12-0-b. 401 UNAUTHENTICATED — 토큰 없이 주소 검색(같은 v1이어도 공개 조회와 다르다)
 GET {{baseUrl}}/api/v1/listings/addresses?keyword=신촌로 12
+
+### 12-1. 인근 역 검색 — 이름으로 찾는다(임대인 전용). 좌표를 함께 주면 거리순 + 도보 시간 제안
+#    KAKAO_REST_API_KEY(.env)가 없으면 12-1/12-2만 502 UPSTREAM_ERROR다 — 다른 요청은 정상이다.
+#    좌표는 12-0 응답을 그대로 넘긴다. lat·lng는 **둘 다 보내거나 둘 다 빼야** 한다(하나만 보내면 400).
+# @name stationSearch
+GET {{baseUrl}}/api/v1/listings/stations?keyword=신촌&lat={{addressSearch.response.body.$.data.items[0].lat}}&lng={{addressSearch.response.body.$.data.items[0].lng}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 12-1-a. 좌표 없이 역 검색 → 정확도순 · distanceMeters와 suggestedWalkMinutes가 null이다
+GET {{baseUrl}}/api/v1/listings/stations?keyword=신촌
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 12-1-b. 400 INVALID_INPUT — 좌표를 하나만 보냄
+GET {{baseUrl}}/api/v1/listings/stations?keyword=신촌&lat=37.5559918
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 12-1-c. 403 FORBIDDEN — 세입자 토큰으로 역 검색(등록 폼 전용 API다)
+GET {{baseUrl}}/api/v1/listings/stations?keyword=신촌
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 12-1-d. 401 UNAUTHENTICATED — 토큰 없이 역 검색
+GET {{baseUrl}}/api/v1/listings/stations?keyword=신촌
+
+### 12-2. 인근 역 목록 — 좌표만으로 주변 역을 가까운 순(반경 2km)
+GET {{baseUrl}}/api/v1/listings/stations/nearby?lat=37.5559918&lng=126.9368647
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
 ### 12-a. 사진 업로드 ① 지점 대표 → 201 { key, url }. key를 13번이 참조한다
 # @name upload1

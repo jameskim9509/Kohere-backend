@@ -2,7 +2,7 @@
 
 > 모듈: 매물 등록 · 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 >
-> 온보딩을 마친 임대인(`ROLE_USER`, `ACTIVE`, `userType=LANDLORD`)이 주소를 찾고 사진을 올려 등록 폼으로 매물을 만드는 흐름이다. **요청이 셋으로 나뉜다** — 주소는 `GET /api/v1/listings/addresses`로 검색해 표준 도로명 주소와 좌표를 받고([ADR-0042](../../../adr/0042-road-address-search-with-ncp-geocoding.md)), 사진은 `POST /api/v2/listings/images`로 **한 장씩** 올려 키를 받고, 등록(`POST /api/v2/listings`)은 그 주소·좌표·키를 담은 JSON이다([ADR-0041](../../../adr/0041-listing-image-upload-to-s3.md)). 앞선 두 호출이 준 값을 클라이언트가 되돌려 보내는 모양이 같다. 요청을 파일마다 가르는 이유는 브라우저가 요청 단위로만 진행률을 주기 때문이다 — 한 요청에 몰아 실으면 파일별 진행률·속도를 만들 수 없고 실패한 파일만 다시 올릴 수도 없다. **매물 도메인의 첫 `/api/v2` 엔드포인트**였고, 이어서 조회 계열 6종도 `/api/v2`로 이관돼 같은 네임스페이스가 **GET은 공개 조회, POST는 임대인 등록**으로 갈린다([ADR-0040](../../../adr/0040-listing-query-api-v2-and-v1-sunset.md) — `/api/v1` 조회는 빈 결과·`404`만 내는 `deprecated` 스텁이다). 저장 스키마는 등록 폼 기준 v4([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md))이고, 등록된 매물은 `status=PENDING`으로 저장돼 **관리자 승인 전까지 탐색·상세에 노출되지 않는다**(US-3-1·US-3-4는 `PUBLISHED`만 조회한다).
+> 온보딩을 마친 임대인(`ROLE_USER`, `ACTIVE`, `userType=LANDLORD`)이 주소를 찾고 사진을 올려 등록 폼으로 매물을 만드는 흐름이다. **요청이 넷으로 나뉜다** — 주소는 `GET /api/v1/listings/addresses`로 검색해 표준 도로명 주소와 좌표를 받고([ADR-0042](../../../adr/0042-road-address-search-with-ncp-geocoding.md)), 인근 역은 `GET /api/v1/listings/stations`로 검색해 표준 역 이름과 도보 시간 제안을 받고([ADR-0044](../../../adr/0044-nearby-station-search-with-kakao-local.md)), 사진은 `POST /api/v2/listings/images`로 **한 장씩** 올려 키를 받고, 등록(`POST /api/v2/listings`)은 그 값들을 담은 JSON이다([ADR-0041](../../../adr/0041-listing-image-upload-to-s3.md)). **인근 대학만 예외로 요청에 없다** — 클라이언트에 대학 선택 폼이 없고 그 값은 진단 추천의 조인 키라, 등록 처리 중 서버가 좌표로 직접 파생한다. 앞선 두 호출이 준 값을 클라이언트가 되돌려 보내는 모양이 같다. 요청을 파일마다 가르는 이유는 브라우저가 요청 단위로만 진행률을 주기 때문이다 — 한 요청에 몰아 실으면 파일별 진행률·속도를 만들 수 없고 실패한 파일만 다시 올릴 수도 없다. **매물 도메인의 첫 `/api/v2` 엔드포인트**였고, 이어서 조회 계열 5종도 `/api/v2`로 이관돼 같은 네임스페이스가 **GET은 공개 조회, POST는 임대인 등록**으로 갈린다([ADR-0040](../../../adr/0040-listing-query-api-v2-and-v1-sunset.md) — `/api/v1` 조회는 빈 결과·`404`만 내는 `deprecated` 스텁이다). 저장 스키마는 등록 폼 기준 v4([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md))이고, 등록된 매물은 `status=PENDING`으로 저장돼 **관리자 승인 전까지 탐색·상세에 노출되지 않는다**(US-3-1·US-3-4는 `PUBLISHED`만 조회한다).
 
 ```mermaid
 sequenceDiagram
@@ -13,6 +13,7 @@ sequenceDiagram
     participant USER as user 공개 API
     participant S3 as 이미지 저장소(S3)
     participant NCP as NCP Geocoding
+    participant KAKAO as 카카오 로컬 API
     participant DB as MongoDB
 
     Note over U,C: ⓪ 도로명 주소 검색 — 주소 칸을 채울 때<br/>등록이 받는 주소·좌표의 출처다. 자유 입력이 아니다
@@ -40,6 +41,31 @@ sequenceDiagram
             Note over LIST: 도로명 없는 결과 제외 · x/y → lng/lat<br/>City·District가 둘 다 잡히면 supported=true
             LIST-->>C: 200 { items[]: roadAddress · lat · lng · supported }
             C-->>U: 후보 표시(supported=false는 선택 불가 안내)
+        end
+    end
+
+    Note over U,C: ⓪-b 인근 역 검색 — 역 칸을 채울 때<br/>역 이름도 자유 입력이 아니다. 좌표를 함께 보내면 거리순 + 도보 시간 제안을 받는다
+
+    U->>C: 역 이름 입력("신촌")
+    C->>SEC: GET /api/v1/listings/stations?keyword=신촌&lat=…&lng=…<br/>Authorization: Bearer 정식 토큰
+    Note over SEC: hasRole("USER") 명시 매처<br/>/stations도 한 세그먼트라 공개 조회 매처보다 먼저 선언해야 한다
+    SEC->>LIST: 인증된 요청 전달 (userId)
+    LIST->>USER: getUserType(userId)
+    USER-->>LIST: userType
+
+    alt 임대인 아님 (userType=TENANT)
+        LIST-->>C: 403 FORBIDDEN
+    else 임대인 (userType=LANDLORD)
+        LIST->>KAKAO: GET /v2/local/search/keyword.json<br/>query=신촌 & category_group_code=SW8 & x/y & sort=distance
+
+        alt 외부 오류·타임아웃·REST 키 누락
+            KAKAO-->>LIST: 오류
+            LIST-->>C: 502 UPSTREAM_ERROR
+        else 정상
+            KAKAO-->>LIST: documents[] (place_name · x · y · distance)
+            Note over LIST: x/y → lng/lat · distance → distanceMeters<br/>suggestedWalkMinutes = ceil(distance / 80), 최소 1
+            LIST-->>C: 200 { items[]: name · lat · lng · distanceMeters · suggestedWalkMinutes }
+            C-->>U: 후보 표시(도보 시간은 기본값으로 채우고 수정 가능)
         end
     end
 
@@ -98,7 +124,17 @@ sequenceDiagram
                 LIST-->>C: 400 INVALID_INPUT / LISTING_INVALID_ADDRESS<br/>LISTING_UNKNOWN_CATALOG_CODE / LISTING_IMAGE_REQUIRED / LISTING_IMAGE_KEY_NOT_FOUND
                 Note over U,DB: ↑ 복사도 저장도 없다
             else 검증 통과
-                Note over LIST: 서버가 채우는 값<br/>schemaVersion=4 · status=PENDING · favoriteCount=0<br/>rentalType=MONTHLY_RENT · pricing.currency=KRW · roomOffers[].status=ACTIVE<br/>다국어 8종은 {ko, en} 양쪽에 같은 값<br/>location은 요청의 address.lat·lng를 옮긴 값 · nearbyUniversityCodes는 아직 빈 배열
+                Note over LIST: 서버가 채우는 값<br/>schemaVersion=4 · status=PENDING · favoriteCount=0<br/>rentalType=MONTHLY_RENT · pricing.currency=KRW · roomOffers[].status=ACTIVE<br/>다국어 8종은 {ko, en} 양쪽에 같은 값<br/>location은 요청의 address.lat·lng를 옮긴 값
+                LIST->>KAKAO: GET /v2/local/search/category.json<br/>category_group_code=SC4 & x/y & radius=2000 & page=1
+
+                alt 카카오 오류·타임아웃·REST 키 누락
+                    KAKAO--xLIST: 오류
+                    Note over LIST: nearbyUniversityCodes = [] 로 흡수하고 WARN 로그<br/>등록을 실패시키지 않는다 — 파생값은 best-effort다
+                else 정상
+                    KAKAO-->>LIST: documents[] (place_name · category_name)
+                    Note over LIST: category_name을 ">"로 쪼개 "대학교" 세그먼트만 남긴다<br/>(초·중·고 제외) → 이름 정규화 → 중복 제거<br/>→ listingCatalog UNIVERSITY label.ko와 contains 매칭 → 코드
+                end
+
                 Note over LIST: 확정 키가 식별자를 포함하므로 저장 전에 발급한다<br/>listingId · roomOffers[].roomOfferId
                 LIST->>S3: CopyObject × N<br/>uploads/… → listings/{listingId}/cover/… · /rooms/{roomOfferId}/…
 
@@ -156,4 +192,4 @@ sequenceDiagram
 - **코드 필드는 `listingCatalog` 대조로 검증한다** — 요청의 각 코드가 `(category, code)`로 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../../../api/error-response-guide.md); 카탈로그 19개 카테고리는 [ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)·[ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md)). 구조 검증은 `roomOffers` 최소 1개이며, **문자열 길이 제한은 두지 않는다**(정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드 API가 형식·크기로 `LISTING_IMAGE_TOO_LARGE`·`LISTING_IMAGE_UNSUPPORTED_TYPE`을, 등록이 키로 `LISTING_IMAGE_KEY_NOT_FOUND`를 쓰고, 장수 규칙인 `LISTING_IMAGE_REQUIRED`는 두 곳이 함께 쓴다(업로드는 빈 파일, 등록은 `imageKeys` 1~5·방마다 `roomImageKeys` 2~5 위반). 검증 실패 분기에는 `listings` 저장도 S3 복사도 없다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다** — 형식만 확인하고 원문을 매물 문서에 저장한다([ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md) §3). `auth`의 무상태 검증 `POST /api/v1/auth/business/verify`([US-1-8](../01-auth-onboarding/us-1-8-business-verification.md))를 **호출하지 않으며**, 진위 확인은 관리자가 승인 심사에서 수동으로 한다(엔드포인트 자체는 그대로 둔다).
 - **응답 노출 범위는 상세 조회(US-3-4)와 같다** — 매물별 담당 연락처 `contact`(담당자명·전화·문자)는 임대인 개인 연락처와 별개 값이라 **세입자에게 공개**하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에서 제외한다. `status`는 카탈로그 번역 대상이 아니므로 **코드 문자열 그대로** 내려간다.
-- **후속(이번 범위 아님)**: 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`, 승인 조건에 `location` 보유 포함 — 이제 등록이 좌표를 채우므로 자동 충족된다)·임대인 매물 수정·좌표로 `nearbyUniversityCodes` 파생·등록 가능 지역 확대(`DISTRICT` 카탈로그 + enum)·재고 관리.
+- **후속(이번 범위 아님)**: 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`, 승인 조건에 `location` 보유 포함 — 이제 등록이 좌표를 채우므로 자동 충족된다. **`nearbyUniversityCodes` 편집이 요구사항에 추가된다** — 서버 파생값의 누락·부정확을 심사가 보정하기로 했기 때문이다, [ADR-0044](../../../adr/0044-nearby-station-search-with-kakao-local.md))·임대인 매물 수정·등록 가능 지역 확대(`DISTRICT` 카탈로그 + enum)·재고 관리.
