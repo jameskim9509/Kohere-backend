@@ -233,6 +233,11 @@ naver_search_client_secret = "..."   # sensitive
 naver_geocode_client_id     = "..."   # sensitive
 naver_geocode_client_secret = "..."   # sensitive
 
+# --- 카카오 로컬 API (인근 역 검색 · 인근 대학 파생, 옵션 — SSM SecureString) ---
+# 미설정 시 앱은 정상 기동하되 역 검색(GET /api/v1/listings/stations)만 502이고 등록의 인근 대학이 빈 배열.
+# 카카오 개발자 콘솔에서 앱 생성 → 로컬 API 활성화 후 REST API 키 발급(네이버·NCP와 다른 콘솔).
+kakao_rest_api_key = "..."   # sensitive
+
 # --- CI/CD (모두 default 있음) ---
 github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"

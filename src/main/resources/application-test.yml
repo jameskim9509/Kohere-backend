@@ -38,6 +38,11 @@ app:
       # 주소 검색(ADR-0042)도 같은 이유의 더미 값이다. 문서 테스트는 AddressSearchClient를 목으로 대체한다.
       client-id: test-ncp-geocode-client-id
       client-secret: test-ncp-geocode-client-secret
+  kakao:
+    local:
+      # 역 검색·대학 파생(ADR-0044)도 같은 이유의 더미 값이다.
+      # 어댑터 테스트는 MockRestServiceServer로, 문서 테스트는 포트 목으로 네트워크를 막는다.
+      rest-api-key: test-kakao-rest-api-key
   images:
     # enabled=false → StubListingImageStorage 폴백. 문서·컨트롤러 테스트가 저장소 없이 등록 흐름을 그대로 탄다.
     # 어댑터 자체는 MinIO 컨테이너를 띄우는 통합 테스트가 검증한다.

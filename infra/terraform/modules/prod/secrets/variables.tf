@@ -108,6 +108,13 @@ variable "naver_geocode_client_secret" {
   sensitive   = true
 }
 
+variable "kakao_rest_api_key" {
+  description = "카카오 로컬 API REST API 키(인근 역 검색 · 등록 시 인근 대학 파생)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "recovery_window_days" {
   description = "Secrets Manager 삭제 복구 대기일"
   type        = number

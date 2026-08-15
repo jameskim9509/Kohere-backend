@@ -106,6 +106,7 @@ terraform apply
 
 - `naver_search_client_id`/`naver_search_client_secret` — 지도 장소 검색(네이버 지역 검색 API, `GET /api/v1/listings/places`, #160/#162). 미설정 시 장소 검색만 502(`UPSTREAM_ERROR`).
 - `naver_geocode_client_id`/`naver_geocode_client_secret` — 매물 등록 폼의 도로명 주소 검색(NCP Maps Geocoding, `GET /api/v1/listings/addresses`, #223 · [ADR-0042](../../docs/adr/0042-road-address-search-with-ncp-geocoding.md)). 미설정 시 주소 검색만 502(`UPSTREAM_ERROR`). **네이버 클라우드 플랫폼 콘솔에서 발급하며 위 검색 API(네이버 Developers)와 다른 값이다.**
+- `kakao_rest_api_key` — 매물 등록 폼의 인근 역 검색(`GET /api/v1/listings/stations`)과 등록 시 `nearbyUniversityCodes` 파생(카카오 로컬 API, #224 · [ADR-0044](../../docs/adr/0044-nearby-station-search-with-kakao-local.md)). 미설정 시 역 검색만 502(`UPSTREAM_ERROR`)이고 등록은 성공하되 인근 대학이 빈 배열이다. **카카오 개발자 콘솔에서 앱 생성 → 로컬 API 활성화 후 발급하며, 키 하나만 쓴다(ID/Secret 쌍이 아니다).**
 - `solapi_*` — 임대인 연락처 SMS 인증(ADR-0034). 미설정 시 로깅 폴백.
 - `bizno_*` — 임대인 사업자번호 검증(ADR-0033). 미설정 시 스텁 폴백.
 
