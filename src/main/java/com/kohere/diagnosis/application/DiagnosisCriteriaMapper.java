@@ -56,6 +56,6 @@ public class DiagnosisCriteriaMapper {
    * <p>두 메서드는 배타적이다. 한쪽이 값을 주면 다른 쪽은 반드시 빈 집합이며, 어기면 {@link RecommendationCriteria} 생성자가 막는다.
    */
   private static Set<String> excludedUniversityCodes(UniversityGroup group) {
-    return group == UniversityGroup.ETC ? UniversityGroup.allMemberCodes() : Set.of();
+    return group == UniversityGroup.ETC ? UniversityGroup.selectableMemberCodes() : Set.of();
   }
 }
