@@ -36,11 +36,9 @@ sequenceDiagram
             Note over U,DB: ↑ 키가 없으면 요청 자체를 보내지 않고 502다
         else 정상
             NCP-->>LIST: addresses[] (roadAddress · x · y)
-            LIST->>DB: listingCatalog에서 CITY·DISTRICT 라벨 조회
-            DB-->>LIST: 카탈로그 엔트리
-            Note over LIST: 도로명 없는 결과 제외 · x/y → lng/lat<br/>City·District가 둘 다 잡히면 supported=true
-            LIST-->>C: 200 { items[]: roadAddress · lat · lng · supported }
-            C-->>U: 후보 표시(supported=false는 선택 불가 안내)
+            Note over LIST: 도로명 없는 결과 제외 · x/y → lng/lat<br/>후보를 거르지 않는다 — 카탈로그를 보지 않는다
+            LIST-->>C: 200 { items[]: roadAddress · lat · lng }
+            C-->>U: 후보 표시(모두 선택 가능)
         end
     end
 
@@ -116,12 +114,12 @@ sequenceDiagram
             Note over U,DB: ↑ 역할 재검사 실패 — 저장소 접근 없음
         else 임대인 (userType=LANDLORD)
             Note over LIST: 사진 키 검사 — S3를 부르기 전에 끝난다<br/>개수: imageKeys 1~5 · roomImageKeys 방마다 2~5 → 위반 400 LISTING_IMAGE_REQUIRED<br/>소유권: uploads/{내 landlordId}/ 로 시작하는가 → 아니면 400 LISTING_IMAGE_KEY_NOT_FOUND
-            Note over LIST: 폼 1칸 → 스키마 2필드 파싱("1~2" · "20~35")<br/>주소에서 City · District 파싱 → 실패 400 LISTING_INVALID_ADDRESS<br/>사업자등록번호는 형식만 검증(진위는 관리자 승인 심사)
+            Note over LIST: 폼 1칸 → 스키마 2필드 파싱("1~2" · "20~35")<br/>주소 토큰에서 city · district 파싱 → 못 찾으면 ETC<br/>사업자등록번호는 형식만 검증(진위는 관리자 승인 심사)
             LIST->>DB: listingCatalog에서 코드 필드 대조
             DB-->>LIST: 카탈로그 엔트리
 
             alt 입력 검증 실패
-                LIST-->>C: 400 INVALID_INPUT / LISTING_INVALID_ADDRESS<br/>LISTING_UNKNOWN_CATALOG_CODE / LISTING_IMAGE_REQUIRED / LISTING_IMAGE_KEY_NOT_FOUND
+                LIST-->>C: 400 INVALID_INPUT<br/>LISTING_UNKNOWN_CATALOG_CODE / LISTING_IMAGE_REQUIRED / LISTING_IMAGE_KEY_NOT_FOUND
                 Note over U,DB: ↑ 복사도 저장도 없다
             else 검증 통과
                 LIST->>DB: universities에서 location 반경 2km 조회 ($geoWithin)
@@ -179,7 +177,7 @@ sequenceDiagram
 - **다국어 문구는 한국어 한 값만 받는다.** 서버가 `{ko, en}` 양쪽에 같은 값을 넣는다(`en = ko`). 대상 8종 — `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name`. 저장 계약(`LocalizedText`)이 두 언어를 모두 요구하므로 영어가 빈 문서는 만들 수 없고, 실제 번역은 관리자가 승인 심사에서 채운다. 등록 직후는 `PENDING`이라 세입자 조회에 노출되지 않는다.
 - **서버가 채우는 값은 요청 본문에 없다**: `_id`·`roomOffers[].roomOfferId`(저장 어댑터가 ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). 등록 직후 상태가 `PENDING`이므로 목록·지도·상세(`PUBLISHED`만 조회)에는 아직 나오지 않는다.
 - **폼 1칸이 스키마 2필드로 갈라지는 입력은 서버가 파싱한다** — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. 형식이 어긋나면 `400 INVALID_INPUT`이고, `min ≤ max`와 `usedFloorMax ≤ totalFloors`는 `ListingValidator.validateForSave`가 저장 직전에 다시 확인한다.
-- **주소는 검색으로 받고, 서버는 정규화하지 않는다** — `address.fullAddress`는 받은 그대로 저장하고 도로명 주소를 파싱해 `address.city`(`City`)·`district`(`District`) enum만 파생한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`이며, ⓪에서 그 후보는 이미 `supported=false`로 표시된다 — **검색 응답을 보고 고르면 이 실패에 도달하지 않는다**(검색은 전국을 돌려주지만 등록은 카탈로그가 가진 시·도와 구·군만 통과한다).
+- **주소는 검색으로 받고, 서버는 정규화하지 않는다** — `address.fullAddress`는 받은 그대로 저장하고, 주소를 공백으로 끊어 카탈로그 라벨과 완전히 같은 토큰을 찾아 `address.city`·`district` 코드를 파생한다. **못 찾아도 거절하지 않는다** — `ETC`로 저장하고 관리자 승인 심사가 확정한다(지원 지역은 영업 범위 정책이지 저장 계약이 아니다, [ADR-0046](../../../adr/0046-administrative-region-as-catalog-data.md)).
 - **좌표는 검색 결과를 되돌려 받아 저장한다** — 요청의 `address.lat`·`lng`가 `location`이 된다. 서버는 등록 시점에 지오코딩을 다시 하지 않는다(등록마다 외부 왕복과 502 경로가 생기는 것을 피한다 — [ADR-0042](../../../adr/0042-road-address-search-with-ncp-geocoding.md) §2). 좌표 위조는 관리자 승인 심사가 흡수한다. 좌표는 저장 계약의 **필수** 필드라 좌표 없는 매물은 아예 저장되지 않는다(changeUnit `0116`).
 - **인근 대학은 그 좌표에서 파생한다** — 서버가 대학 좌표 원장(`universities`, 시드 14건)을 `$geoWithin`으로 훑어 **반경 2km 안의 코드를 모두** `nearbyUniversityCodes`에 담는다([ADR-0045](../../../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). 이 값이 진단 추천의 대학 매칭 키라, 비어 있으면 그 매물은 유학 목적 진단 결과에 나오지 않는다. 그럼에도 **빈 결과가 등록을 막지는 않는다** — 대학가 밖 매물과 원장 미시드를 구분할 수 없어 막으면 정상 매물이 함께 걸린다. 서버는 경고 로그로만 알린다. 임대인에게 대학을 묻지 않는 이유는 노출을 노린 과다 선택을 막기 위해서다.
 - **코드 필드는 `listingCatalog` 대조로 검증한다** — 요청의 각 코드가 `(category, code)`로 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../../../api/error-response-guide.md); 카탈로그 19개 카테고리는 [ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)·[ADR-0039](../../../adr/0039-listing-schema-v4-registration-form.md)). 구조 검증은 `roomOffers` 최소 1개이며, **문자열 길이 제한은 두지 않는다**(정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드 API가 형식·크기로 `LISTING_IMAGE_TOO_LARGE`·`LISTING_IMAGE_UNSUPPORTED_TYPE`을, 등록이 키로 `LISTING_IMAGE_KEY_NOT_FOUND`를 쓰고, 장수 규칙인 `LISTING_IMAGE_REQUIRED`는 두 곳이 함께 쓴다(업로드는 빈 파일, 등록은 `imageKeys` 1~5·방마다 `roomImageKeys` 2~5 위반). 검증 실패 분기에는 `listings` 저장도 S3 복사도 없다.

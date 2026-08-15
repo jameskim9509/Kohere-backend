@@ -350,8 +350,8 @@
 | --- | --- | --- | --- |
 | `GeoPoint` | `longitude` | double | 경도(WGS84). MongoDB GeoJSON 좌표 배열의 첫 번째 값 |
 | | `latitude` | double | 위도(WGS84). API 응답에서는 `lat`으로 변환 |
-| `Address` | `city` | enum `City` | 도시/광역 단위 |
-| | `district` | enum `District` | 구/군 단위 |
+| `Address` | `city` | string | 도시/광역 단위 · 정본은 `listingCatalog`의 `CITY`(주소 토큰에서 파생, 못 찾으면 `ETC`) |
+| | `district` | string | 구/군 단위 · 정본은 `listingCatalog`의 `DISTRICT`([ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)) |
 | | `fullAddress` | VO `LocalizedText` | 표시 주소 `{ko,en}` |
 | | `detail` | VO `LocalizedText` | 상세주소 `{ko,en}`, nullable |
 | `NearestTransit` | `type` | enum `TransitType` | 가까운 교통수단 유형 |

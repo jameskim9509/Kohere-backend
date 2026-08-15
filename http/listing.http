@@ -42,7 +42,7 @@
 # 주소는 **먼저 검색한다**(12-0, ADR-0042). NCP Geocoding이 표준 도로명 주소·좌표·supported를 주고,
 # 그 값을 13번 등록의 address.fullAddress·address.lat·address.lng에 그대로 담는다.
 #   · NAVER_GEOCODE_CLIENT_ID/SECRET(.env)이 없으면 12-0만 502 UPSTREAM_ERROR다 — 다른 요청은 정상이다.
-#   · supported=false면 등록에서 400 LISTING_INVALID_ADDRESS다(현재 카탈로그는 서울 9개 구만 안다).
+#   · 카탈로그가 모르는 지역(현재 DISTRICT는 서울 9개 구)도 그대로 등록된다 — city·district가 ETC로 저장된다.
 #
 # 인근 역도 **먼저 검색한다**(12-1/12-2, ADR-0044). 카카오 로컬이 표준 역 이름·좌표·도보 시간 제안을 주고,
 # 그 name을 13번 등록의 nearestTransit.name에 담는다. suggestedWalkMinutes는 직선거리 기준 하한 제안이라
@@ -154,7 +154,7 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 ### 12-0. 도로명 주소 검색 — 등록에 실을 주소·좌표를 얻는다(임대인 전용)
 #    도로명 + 건물번호까지 넣어야 결과가 나온다("신촌"만으로는 비어 있다).
 #    13번이 이 응답의 items[0]을 그대로 참조하므로 **13번보다 먼저 보내야 한다.**
-#    supported=false인 후보를 고르면 등록이 400 LISTING_INVALID_ADDRESS다(현재 카탈로그는 서울 9개 구만 안다).
+#    카탈로그가 모르는 지역을 고르면 등록은 되고 city·district가 ETC로 저장된다(현재 DISTRICT는 서울 9개 구).
 # @name addressSearch
 GET {{baseUrl}}/api/v1/listings/addresses?keyword=신촌로 12
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}

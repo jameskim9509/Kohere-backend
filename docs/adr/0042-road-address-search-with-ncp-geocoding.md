@@ -32,7 +32,7 @@ Proposed
 | 주소 검색 | `GET /api/v1/listings/addresses` | 임대인 | 폼에서 필요한 만큼 |
 | 등록 | `POST /api/v2/listings` | 임대인 | 1회 |
 
-검색 응답 항목은 `{ roadAddress, jibunAddress, englishAddress, lat, lng, supported }`이고, 등록은 그중 `roadAddress`·`lat`·`lng`를 `address.fullAddress`·`address.lat`·`address.lng`에 담아 되돌려 보낸다. **사진 키와 같은 패턴이다** — 앞선 호출이 준 값을 클라이언트가 보관했다가 그대로 실어 보낸다.
+검색 응답 항목은 `{ roadAddress, jibunAddress, englishAddress, lat, lng }`이고([ADR-0046](./0046-administrative-region-as-catalog-data.md)으로 `supported`가 빠졌다), 등록은 그중 `roadAddress`·`lat`·`lng`를 `address.fullAddress`·`address.lat`·`address.lng`에 담아 되돌려 보낸다. **사진 키와 같은 패턴이다** — 앞선 호출이 준 값을 클라이언트가 보관했다가 그대로 실어 보낸다.
 
 **경로는 `/api/v1`이다.** 신규 계약이라 깨질 하위 호환이 없고(api-design-guide §2-1), 매물 스키마와 무관해 v4 개편의 영향을 받지 않는다 — 같은 이유로 `/api/v1`에 남은 장소 후보 검색(`/listings/places`)과 같은 자리다([ADR-0040](./0040-listing-query-api-v2-and-v1-sunset.md)).
 
@@ -48,7 +48,9 @@ Proposed
 
 검색은 전국을 돌려주지만 등록은 카탈로그(서울 9개 구)만 통과한다. 알려주지 않으면 임대인이 부산 주소를 골라 폼을 다 채운 뒤에야 `400 LISTING_INVALID_ADDRESS`를 본다.
 
-그래서 각 항목에 **`supported`**(카탈로그에서 `City`·`District`가 둘 다 잡히면 `true`)를 싣는다. `city`·`district` 코드를 내보내지 않는 이유는 **클라이언트가 판단할 것이 "고를 수 있는가" 하나**이기 때문이다 — 코드를 노출하면 지원 지역을 넓힐 때(카탈로그 + `District` enum 추가) 클라이언트도 따라 바뀌어야 한다. 불리언은 서버 안에서 규칙이 바뀌어도 계약이 그대로다.
+그래서 각 항목에 **`supported`**(카탈로그에서 시·도와 구·군이 둘 다 잡히면 `true`)를 실었다. `city`·`district` 코드를 내보내지 않은 이유는 **클라이언트가 판단할 것이 "고를 수 있는가" 하나**였기 때문이다.
+
+> 이 필드는 [ADR-0046](./0046-administrative-region-as-catalog-data.md)으로 **사라졌다** — 카탈로그가 모르는 지역도 등록받기로 하면서 "고를 수 없는 후보"라는 개념 자체가 없어졌다.
 
 판정은 등록이 쓰는 것과 **같은 코드**(`ListingCatalogCodes.findCity`/`findDistrict`)로 한다. 별도 사전을 두면 검색과 등록의 판정이 갈라진다.
 
@@ -87,7 +89,7 @@ NCP의 `roadAddress`에는 건물명이 붙어 올 수 있다(`… 불정로 6 N
 
 ## Consequences
 
-- **긍정**: 등록 매물이 좌표를 갖는다 — 지도·거리 정렬·관리자 승인 조건이 자동으로 충족된다. 주소 표기가 표준화돼 `LISTING_INVALID_ADDRESS`가 줄고, 남는 실패는 "지원하지 않는 지역"으로 좁혀져 `supported`로 미리 안내된다. 인프라는 기존 시크릿 주입 경로를 그대로 쓴다.
+- **긍정**: 등록 매물이 좌표를 갖는다 — 지도·거리 정렬·관리자 승인 조건이 자동으로 충족된다. 주소 표기가 표준화돼 파싱 실패가 줄고, 남는 실패는 "지원하지 않는 지역"으로 좁혀진다(→ 그 지역도 받기로 하면서 `supported`와 `LISTING_INVALID_ADDRESS`는 [ADR-0046](./0046-administrative-region-as-catalog-data.md)으로 사라졌다). 인프라는 기존 시크릿 주입 경로를 그대로 쓴다.
 - **부정/트레이드오프**
   - **등록 요청 계약이 깨진다.** `address.lat`·`lng` 필수화는 기존 요청을 `400`으로 만든다 — 프론트 배포 순서 합의가 필요하다.
   - **외부 의존이 하나 는다.** NCP가 죽으면 주소를 새로 검색할 수 없어 **등록을 시작할 수 없다**(진행 중인 폼은 이미 받은 좌표로 제출할 수 있다).
@@ -103,7 +105,7 @@ NCP의 `roadAddress`에는 건물명이 붙어 올 수 있다(`… 불정로 6 N
 ## Validation
 
 - 주소 검색에 `신촌로 12`를 보내면 `roadAddress`·`lat`·`lng`가 오고, 그 좌표를 지도에 찍으면 실제 위치와 맞는다.
-- 서울 9개 구 밖의 주소(예: `분당구 불정로 6`)는 결과에 포함되되 **`supported=false`** 이며, 그 값을 그대로 등록에 보내면 `400 LISTING_INVALID_ADDRESS`다.
+- 서울 9개 구 밖의 주소(예: `분당구 불정로 6`)도 결과에 포함되며 그대로 등록할 수 있다 — 행정구역이 `ETC`로 저장된다([ADR-0046](./0046-administrative-region-as-catalog-data.md)으로 개정. 본 ADR 시점에는 `supported=false`로 표시하고 등록에서 거절했다).
 - 검색 결과의 주소·좌표로 등록하면 `201`이고, 저장된 문서의 `location`이 `{ type: "Point", coordinates: [lng, lat] }`다.
 - 좌표를 빼고 등록하면 `400 INVALID_INPUT`이고 `errors[]`에 `address.lat`·`address.lng`가 실린다. 좌표 없는 문서를 강제로 넣으려 해도 도메인 검증과 MongoDB validator(`0116` 적용 후)가 각각 막는다 — `mongosh`에서 `db.listings.insertOne({...location 없이...})`가 `DocumentValidationFailure`다.
 - 자격증명을 비우면 주소 검색만 `502 UPSTREAM_ERROR`이고 다른 기능은 정상이다. 이때 **NCP로 나가는 요청 자체가 없다.**

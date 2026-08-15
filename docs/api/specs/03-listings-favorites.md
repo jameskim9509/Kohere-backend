@@ -119,8 +119,7 @@ Request Body: 없음
         "jibunAddress": "서울특별시 서대문구 창천동 1-1",
         "englishAddress": "12, Sinchon-ro, Seodaemun-gu, Seoul, Republic of Korea",
         "lat": 37.5559918,
-        "lng": 126.9368647,
-        "supported": true
+        "lng": 126.9368647
       }
     ]
   },
@@ -134,11 +133,10 @@ Request Body: 없음
 | `jibunAddress` | string | 지번 주소. 사용자가 후보를 구분할 때 보조로 표시한다(등록에는 보내지 않는다) |
 | `englishAddress` | string | 영문 표기. 외국인 세입자 화면의 참고용이며 등록에는 보내지 않는다 |
 | `lat` / `lng` | number | WGS84 십진수 좌표. **등록 요청의 `address.lat`·`address.lng`에 그대로 담는다** |
-| `supported` | boolean | **이 주소로 매물을 등록할 수 있는지.** 서버 카탈로그에서 시·도와 구·군이 모두 판별될 때만 `true`다 |
 
 주의사항:
 
-- **`supported=false`인 후보를 고르면 등록에서 `400 LISTING_INVALID_ADDRESS`가 된다.** 검색은 전국을 돌려주지만 등록 가능한 지역은 카탈로그(`CITY`·`DISTRICT`)가 정하며 현재는 서울 일부 자치구뿐이다. **폼은 이 값으로 선택을 막거나 안내한다** — `city`·`district` 코드는 내려주지 않으므로 지원 지역이 늘어도 클라이언트는 그대로 둔다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md) §3).
+- **모든 후보를 고를 수 있다.** 검색은 전국을 돌려주고 등록도 전국을 받는다 — 카탈로그(`CITY`·`DISTRICT`)가 모르는 지역이면 매물의 `address.city`·`district`가 `ETC`로 저장되고 관리자 승인 심사가 확정한다([ADR-0046](../../adr/0046-administrative-region-as-catalog-data.md)). 응답에 `city`·`district` 코드를 내려주지 않으므로 지원 지역이 늘어도 클라이언트는 그대로 둔다.
 - **부분 키워드에는 약하다.** `신촌`처럼 도로명 일부만 보내면 결과가 비고, `신촌로 12`처럼 도로명 + 건물번호를 넣어야 후보가 나온다. 폼에서 그렇게 안내한다.
 - 정상적으로 결과가 없으면 `200 OK`와 `data.items=[]`다(장애가 아니다).
 - 도로명이 없는 결과(지번만 있는 주소)는 응답에서 제외한다 — 등록이 받는 것은 도로명 주소다.
@@ -458,7 +456,7 @@ Request Body:
 - **등록에 성공하면 사진이 확정 위치로 옮겨 간다.** 업로드 때 받은 `uploads/…` URL은 무효가 되므로 **등록 응답의 URL을 쓴다.**
 - **폼 1칸을 서버가 두 필드로 파싱한다.** `building.usedFloorRange`(`1~2`) → `usedFloorMin`·`usedFloorMax`, `ageRange`(`20~35`) → `ageMin`·`ageMax`. 형식 위반은 `400 INVALID_INPUT`이며, `min ≤ max`와 `usedFloorMax ≤ totalFloors`도 함께 검증한다. 원본 문자열은 저장하지 않는다.
 - **주소는 먼저 검색한다.** 주소 칸은 자유 입력이 아니다 — `GET /api/v1/listings/addresses`로 검색해 고른 후보의 `roadAddress`·`lat`·`lng`를 그대로 담는다. 서버는 이 API를 부른 적이 있는지 확인하지 않으므로 값을 보관했다 되돌려 보내는 것은 클라이언트의 몫이며, **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다**(승인 심사가 주소와 좌표의 일치를 본다).
-- **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 받은 값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 파싱해 `City`·`District` enum으로 확정한다. 판별할 수 없는 주소는 `400 LISTING_INVALID_ADDRESS`다 — 검색 응답의 `supported=false`가 이 실패를 미리 알려주므로, 폼이 그 값을 보면 여기까지 오지 않는다.
+- **주소는 파싱해 행정구역만 채운다.** `address.fullAddress`는 받은 값 그대로 저장하고(정규화 없음), `address.city`·`address.district`는 도로명 주소를 **공백으로 끊어** 카탈로그(`CITY`·`DISTRICT`)의 한국어 라벨과 **완전히 같은 토큰**을 찾아 그 코드로 채운다. 못 찾으면 `ETC`로 저장하며 **등록은 성공한다** — 지원 지역 판단은 관리자 승인 심사가 한다([ADR-0046](../../adr/0046-administrative-region-as-catalog-data.md)).
 - **역도 먼저 검색한다.** `nearestTransit.name`도 자유 입력이 아니다 — `GET /api/v1/listings/stations`로 검색해 고른 후보의 `name`을 그대로 담는다. 서버는 이 API를 부른 적이 있는지 확인하지 않으므로 값을 보관했다 되돌려 보내는 것은 클라이언트의 몫이다.
 - **좌표는 요청 값으로 채우고, 인근 대학은 그 좌표에서 파생한다.** `address.lat`·`lng`가 `location`으로 저장되어 지도·거리 정렬과 관리자 승인 조건(좌표 보유)을 만족한다. 서버는 이어서 대학 좌표 원장과 대조해 **반경 2km 안의 대학 코드를 모두** `nearbyUniversityCodes`에 담는다 — 요청에 대학 칸이 없는 이유이며, 이 값이 진단 추천의 대학 매칭 키다([ADR-0045](../../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). 대학가 밖 매물은 정상적으로 빈 배열이고 등록은 그대로 성공한다. `location`은 **저장 계약의 필수 필드**다 — 좌표 없는 매물은 어차피 관리자 승인을 통과하지 못하므로 저장 단계에서 막는다.
 - **코드 필드는 `listingCatalog` 대조를 통과해야 한다.** 위 표의 각 코드 배열·단일 코드는 `(category, code)`가 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다. 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리한다 — 프론트는 입력 교정 대신 코드 카탈로그 재조회(또는 앱 갱신)를 안내한다.
@@ -600,7 +598,6 @@ Request Body:
 | status | code | 시점 |
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액, `address.lat`·`address.lng`가 WGS84 범위 밖), `address.lat`·`address.lng` 누락, `roomOffers` 0개. 위반 필드는 `errors[]`에 실린다 |
-| 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구 — 주소 검색 응답의 `supported=false`가 그 후보다) |
 | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
 | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -1317,10 +1314,9 @@ Request Body: 없음
 | `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 bbox 네 좌표가 누락됨 |
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
-| `LISTING_INVALID_ADDRESS` | 400 | 매물 등록 시 `address.fullAddress`에서 `City`·`District`를 파싱하지 못함(도로명 주소 형태가 아니거나 카탈로그에 없는 시·구) |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다. **deprecated된 v1 상세·찜 토글 스텁도 이 코드를 쓴다** — 매물을 찾지 못해서가 아니라 조회하지 않기 때문이며, 새 코드를 만들지 않아 구버전 앱이 이미 처리하던 에러 그대로 받는다(위 [v1 스텁 동작](#v1-스텁-동작)).
 > 뒤 두 코드는 매물 등록(`POST /api/v2/listings`) 전용이다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
-> **주소 검색(`GET /api/v1/listings/addresses`)도 전용 코드를 두지 않는다** — 키워드 검증은 `INVALID_INPUT`, 외부 연동 실패는 `UPSTREAM_ERROR`(502)이며 둘 다 공통 코드다. 지원하지 않는 지역은 검색 단계에서 에러가 아니라 `supported=false`로 알리고, 실제 거절은 등록의 `LISTING_INVALID_ADDRESS`가 맡는다([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)).
+> **주소 검색(`GET /api/v1/listings/addresses`)도 전용 코드를 두지 않는다** — 키워드 검증은 `INVALID_INPUT`, 외부 연동 실패는 `UPSTREAM_ERROR`(502)이며 둘 다 공통 코드다. 지원하지 않는 지역이라고 거절하지 않는다 — 검색도 등록도 통과시키고, 행정구역만 `ETC`로 저장한다([ADR-0046](../../adr/0046-administrative-region-as-catalog-data.md)).
 > 하트 토글은 이미 찜/미찜 상태여도 에러로 보지 않고 현재 하트 상태와 찜 수를 반환한다. 프론트는 응답 body의 `favorited`, `favoriteCount`만 보고 UI를 맞추면 된다.

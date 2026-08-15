@@ -99,7 +99,7 @@
 
 | 컬렉션 | 정본 파일 | 건수 |
 | --- | --- | --- |
-| `listingCatalog` | `listing-catalog-v4.json` | 103 |
+| `listingCatalog` | `listing-catalog-v4.json` | 105 |
 | `listings` | `listings-v4.json` | 2 |
 | `universities` | `universities.json` | 14 |
 | `diagnosisQuestions` | `diagnosis-questions.json` | 8 |

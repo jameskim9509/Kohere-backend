@@ -133,7 +133,6 @@
 | `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 bbox 네 좌표가 누락됨 |
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
-| `LISTING_INVALID_ADDRESS` | 400 | 매물 등록 시 지점 주소에서 `City`·`District`를 파싱하지 못함 — 도로명 주소 형태가 아니거나 카탈로그에 없는 시·구 |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 | `LISTING_IMAGE_REQUIRED` | 400 | 업로드에 파일이 없거나 비었음. 등록에서는 사진 키 개수가 규칙을 벗어남 — 지점 1~5개, 방마다 2~5개 |
 | `LISTING_IMAGE_KEY_NOT_FOUND` | 400 | 등록 요청의 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -142,7 +141,7 @@
 
 > 조회 계열 네 코드의 상세·발생 지점은 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이며 **경로는 `/api/v2/listings*`다** — deprecated된 `/api/v1` 목록·지도는 매물을 조회하지 않아 정상 호출이 빈 페이지(200)로 끝나고, 매물 데이터를 쓰지 않는 `GET /api/v1/listings/places`만 v1에 남아 종전 코드를 그대로 낸다. 나머지 여섯 코드는 사진 업로드(`POST /api/v2/listings/images`)와 매물 등록(`POST /api/v2/listings`)이 추가한다.
 >
-> - `LISTING_INVALID_ADDRESS`는 **좌표와 무관하다.** 등록이 `location`을 요청의 `address.lat`·`lng`로 채우게 된 뒤에도 그렇다 — 좌표가 정상이어도 `address.fullAddress`에서 `City`·`District`를 뽑지 못하면 이 코드다. 주소 검색(`GET /api/v1/listings/addresses`)이 그런 후보를 미리 `supported=false`로 알리므로, 폼이 그 값을 보면 여기까지 오지 않는다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). 주소 검색 자체는 전용 코드를 두지 않는다 — 키워드 검증은 `INVALID_INPUT`, 외부 연동 실패는 `UPSTREAM_ERROR`다. **인근 역 검색(`GET /api/v1/listings/stations`·`/stations/nearby`)도 같다**([ADR-0044](../adr/0044-nearby-station-search-with-kakao-local.md)) — 키워드·좌표 검증은 `INVALID_INPUT`, 카카오 연동 실패는 `UPSTREAM_ERROR`다.
+> - **주소 때문에 등록이 거절되는 경로는 없다.** 도로명 주소에서 행정구역을 뽑지 못하면 `address.city`·`district`를 `ETC`로 저장하고 관리자 승인 심사가 확정한다 — 지원 지역 목록은 영업 범위 정책이지 저장 계약이 아니다([ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)). 주소 검색 자체도 전용 코드를 두지 않는다 — 키워드 검증은 `INVALID_INPUT`, 외부 연동 실패는 `UPSTREAM_ERROR`다. **인근 역 검색(`GET /api/v1/listings/stations`·`/stations/nearby`)도 같다**([ADR-0044](../adr/0044-nearby-station-search-with-kakao-local.md)) — 키워드·좌표 검증은 `INVALID_INPUT`, 카카오 연동 실패는 `UPSTREAM_ERROR`다.
 > - `LISTING_UNKNOWN_CATALOG_CODE`는 사용자가 오타를 낸 것이 아니라 **앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다**는 신호라 `INVALID_INPUT`과 분리한다 — 사용자는 앱이 준 선택지에서 골랐을 뿐이라 입력 교정을 요구할 자리가 아니다(§7).
 > - **사진 4종을 별도 코드로 두는 이유.** 업로드(`POST /api/v2/listings/images`)의 셋(`REQUIRED`·`TOO_LARGE`·`UNSUPPORTED_TYPE`)은 위반 대상이 JSON 필드가 아니라 **파일 part**라 `INVALID_INPUT`의 `errors[]` 구조에 담기지 않고, 사용자에게 요구할 행동도 각각 다르다 — 파일을 고르거나, 줄이거나, 형식을 바꾸는 것이다. `LISTING_IMAGE_KEY_NOT_FOUND`는 등록에서만 나며 **남의 키·없는 키·만료된 키를 한 코드로 묶는다** — 구분해 알려주면 남의 키가 있는지 없는지가 새어 나간다. 클라이언트가 할 일은 셋 다 같다(사진을 다시 올린다).
 > - **사진 저장소 실패는 공통 `UPSTREAM_ERROR`(502)** 다 — 외부 연동 실패라 매물 전용 코드를 두지 않는다. 등록 중 복사가 실패하면 매물은 저장되지 않고 이미 복사한 사진은 서버가 지우지만, **임시 사진은 그대로 남아** 사용자가 다시 제출할 수 있다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)).
@@ -236,7 +235,7 @@ public class GlobalExceptionHandler {
 - 먼저 **HTTP status**로 큰 분기(2xx/4xx/5xx), 다음 **`error.code`** 로 세부 분기한다. **`message` 문자열로 분기하지 않는다.**
 - `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로.
 - `400 INVALID_INPUT` → `errors[]`의 `field`를 입력 폼에 매핑해 표시.
-- 매물 등록(`POST /api/v2/listings`)의 코드들은 사용자에게 요구할 행동이 서로 다르다: `400 LISTING_INVALID_ADDRESS`는 **도로명 주소 재입력**을 유도하고, `400 LISTING_UNKNOWN_CATALOG_CODE`는 입력 교정이 아니라 **코드 카탈로그 재조회(또는 앱 갱신)** 를 안내한다 — 사용자가 앱이 준 선택지에서 골랐는데도 거절됐다는 뜻이기 때문이다. 사진 관련 `400 LISTING_IMAGE_REQUIRED`는 **장수 조정**, `413 LISTING_IMAGE_TOO_LARGE`는 **더 작은 파일**, `415 LISTING_IMAGE_UNSUPPORTED_TYPE`은 **지원 형식으로 변환**을 안내한다. `400 LISTING_IMAGE_KEY_NOT_FOUND`는 임시 사진이 사라졌다는 뜻이므로 **사진을 다시 올리게** 한다.
+- 매물 등록(`POST /api/v2/listings`)의 코드들은 사용자에게 요구할 행동이 서로 다르다: `400 LISTING_UNKNOWN_CATALOG_CODE`는 입력 교정이 아니라 **코드 카탈로그 재조회(또는 앱 갱신)** 를 안내한다 — 사용자가 앱이 준 선택지에서 골랐는데도 거절됐다는 뜻이기 때문이다. 사진 관련 `400 LISTING_IMAGE_REQUIRED`는 **장수 조정**, `413 LISTING_IMAGE_TOO_LARGE`는 **더 작은 파일**, `415 LISTING_IMAGE_UNSUPPORTED_TYPE`은 **지원 형식으로 변환**을 안내한다. `400 LISTING_IMAGE_KEY_NOT_FOUND`는 임시 사진이 사라졌다는 뜻이므로 **사진을 다시 올리게** 한다.
 - **`/api/v1` 매물 조회가 주는 404·빈 목록은 데이터 상태가 아니다** — 그 경로가 끝났다는 뜻이므로 "삭제된 매물"로 안내하지 말고 앱 업데이트를 유도한다. 매물 데이터는 `/api/v2/listings*`에서 조회한다(§3).
 - **게스트(비로그인)로 퀴즈·생활 팁·진단을 부를 땐 `Authorization` 헤더를 아예 보내지 않는다** — 만료된 토큰을 그대로 붙여 보내면 게스트로 처리되지 않고 `401 TOKEN_EXPIRED`다(재발급하거나 헤더를 떼고 재시도). 진단 v2는 `POST /api/v2/diagnoses/start` 응답의 게스트 세션 키를 보관했다가 이후 요청에 `X-Guest-Session-Id`로 에코해야 하며, 잃어버리면 `400 DIAGNOSIS_SESSION_NOT_FOUND`이므로 `/start`부터 다시 한다(#181).
 - `5xx` → 사용자에게 일반 메시지 + 재시도 버튼. 자동 재시도는 멱등 요청에만.

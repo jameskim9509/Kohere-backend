@@ -69,6 +69,7 @@
 | [0043](./0043-remove-seeded-poi-keyword-search.md) | 시드 POI 키워드 검색을 종료하고 `searchPlaces`를 버린다 | Proposed | 2026-08-15 |
 | [0044](./0044-nearby-station-search-with-kakao-local.md) | 인근 역은 카카오 로컬로 검색한다 | Proposed | 2026-08-15 |
 | [0045](./0045-nearby-university-mapping-from-seeded-coordinates.md) | 인근 대학은 시드된 좌표 원장으로 매핑한다 | Proposed | 2026-08-15 |
+| [0046](./0046-administrative-region-as-catalog-data.md) | 행정구역은 카탈로그 데이터로 두고, 모르는 지역은 ETC로 받는다 | Proposed | 2026-08-16 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
