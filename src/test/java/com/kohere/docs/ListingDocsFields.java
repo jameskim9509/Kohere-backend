@@ -11,10 +11,8 @@ import static com.kohere.docs.ApiDocsFields.optField;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
 import com.kohere.listing.domain.ArcRequirement;
-import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.ContractDifficulty;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
@@ -390,7 +388,7 @@ public final class ListingDocsFields {
       | `lat` | `address.lat` | 위도. 매물의 `location`이 된다 |
       | `lng` | `address.lng` | 경도 |
 
-      검색 응답의 `supported=false`인 후보는 등록에서 `400 LISTING_INVALID_ADDRESS`이므로 폼에서 고르게 하지 않는다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다** — 승인 심사가 주소와 좌표의 일치를 본다.
+      검색 결과는 모두 고를 수 있다 — 서버가 아는 지역이 아니어도 등록되며 행정구역은 `ETC`로 저장된다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다** — 승인 심사가 주소와 좌표의 일치를 본다.
 
       **사진을 먼저 올린다**
 
@@ -423,7 +421,6 @@ public final class ListingDocsFields {
       | status | `error.code` | 발생 조건 |
       |---|---|---|
       | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
-      | 400 | `LISTING_INVALID_ADDRESS` | `address.fullAddress`에서 시·도 또는 구·군을 뽑지 못함. 주소 검색의 `supported=false`가 그 후보다 — 지원 지역의 주소를 다시 고르게 한다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
       | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -437,7 +434,6 @@ public final class ListingDocsFields {
 
   public static final String[] LISTING_REGISTER_400 = {
     "INVALID_INPUT",
-    "LISTING_INVALID_ADDRESS",
     "LISTING_UNKNOWN_CATALOG_CODE",
     "LISTING_IMAGE_REQUIRED",
     "LISTING_IMAGE_KEY_NOT_FOUND",
@@ -475,7 +471,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
-      - **`supported=false`인 후보는 고르게 하지 않는다.** 등록 가능한 지역은 서버 코드표가 정하며, 그대로 등록하면 `400 LISTING_INVALID_ADDRESS`다.
+      - **모든 후보를 고를 수 있다.** 서버 코드표가 모르는 지역이면 등록 시 `address.city`·`district`가 `ETC`로 저장되고 승인 심사가 확정한다. 그대로 등록하면 `400 LISTING_INVALID_ADDRESS`다.
       - `roadAddress`에는 건물명이 붙어 올 수 있다. 서버가 다듬지 않으므로 **보이는 그대로** 등록에 실으면 된다.
       - 일치하는 주소가 없으면 `200`과 `data.items=[]`다(에러가 아니다). 도로명이 없는 결과는 서버가 제외한다.
 
@@ -882,10 +878,6 @@ public final class ListingDocsFields {
             "영문 표기. 보조 표시용이며 등록에는 보내지 않는다. 제공되지 않으면 빈 문자열"),
         field("data.items[].lat", JsonFieldType.NUMBER, "WGS84 위도. 등록 요청의 address.lat에 그대로 담는다"),
         field("data.items[].lng", JsonFieldType.NUMBER, "WGS84 경도. 등록 요청의 address.lng에 그대로 담는다"),
-        field(
-            "data.items[].supported",
-            JsonFieldType.BOOLEAN,
-            "이 주소로 매물을 등록할 수 있는지. false면 등록에서 400 LISTING_INVALID_ADDRESS이므로 폼에서 선택을 막는다"),
         errorNull());
   }
 
@@ -1045,11 +1037,18 @@ public final class ListingDocsFields {
             JsonFieldType.STRING,
             "매물 홍보용 블로그 주소. 임대인이 입력하지 않으면 값이 null이 아니라 필드 자체가 생략된다"));
     fields.addAll(locationFields(prefix));
-    fields.add(enumField(prefix + ".address.city.code", City.class, "지역 필터에 사용할 시·도 서버 코드"));
+    fields.add(
+        field(
+            prefix + ".address.city.code",
+            JsonFieldType.STRING,
+            "지역 필터에 사용할 시·도 서버 코드(listingCatalog CITY). 주소에서 못 찾으면 ETC"));
     fields.add(
         field(prefix + ".address.city.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 시·도 이름"));
     fields.add(
-        enumField(prefix + ".address.district.code", District.class, "지역 필터에 사용할 구·군 서버 코드"));
+        field(
+            prefix + ".address.district.code",
+            JsonFieldType.STRING,
+            "지역 필터에 사용할 구·군 서버 코드(listingCatalog DISTRICT). 주소에서 못 찾으면 ETC"));
     fields.add(
         field(
             prefix + ".address.district.label", JsonFieldType.STRING, "주소 보조 표시에 쓸 현재 언어의 구·군 이름"));

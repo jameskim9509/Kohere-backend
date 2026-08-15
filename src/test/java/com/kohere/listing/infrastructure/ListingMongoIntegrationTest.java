@@ -20,10 +20,8 @@ import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.application.dto.RecentListingsResponse;
 import com.kohere.listing.domain.ArcRequirement;
-import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.ContractDifficulty;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
@@ -1556,9 +1554,7 @@ class ListingMongoIntegrationTest {
         .nearbyUniversityCodes(Set.of("SNU"))
         .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
         .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
-        .address(
-            new Listing.Address(
-                City.SEOUL, District.GWANAK_GU, localized("서울특별시 관악구 테스트로 1"), null))
+        .address(new Listing.Address("SEOUL", "GWANAK_GU", localized("서울특별시 관악구 테스트로 1"), null))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .description(localized("테스트 설명"))
         .extraNotes(localized("테스트 주의사항"))

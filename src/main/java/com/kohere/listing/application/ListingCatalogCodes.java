@@ -1,9 +1,8 @@
 package com.kohere.listing.application;
 
-import com.kohere.listing.domain.City;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
 import com.kohere.listing.domain.catalog.ListingCatalogEntry;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +18,7 @@ import java.util.stream.Collectors;
  * 값이 나가므로 등록 경로에서 차단한다.
  *
  * <p>행정구역도 같은 카탈로그를 쓴다. 별도 주소 사전을 두면 카탈로그와 갈라지므로, {@code CITY}·{@code DISTRICT}의 한국어 라벨을 그대로 매칭한다.
+ * 매칭은 주소를 공백으로 끊은 <b>토큰과의 완전 일치</b>다 — 부분 문자열로 보면 {@code 성북구} 주소가 부산 {@code 북구}에 걸린다.
  */
 final class ListingCatalogCodes {
 
@@ -52,38 +52,36 @@ final class ListingCatalogCodes {
   /**
    * 도로명 주소에서 광역 행정구역을 찾는다.
    *
-   * <p>카탈로그의 한국어 라벨(예 {@code 서울특별시})이 주소에 포함되는지로 판정한다. 등록 폼이 도로명 주소를 자유 입력으로 받으므로 접두사 일치만 요구하지 않는다.
+   * <p>카탈로그의 한국어 라벨(예 {@code 서울특별시})과 같은 토큰이 주소에 있는지로 판정한다. 위치는 보지 않는다 — 도(道)는 {@code 경기도 수원시 장안구
+   * …}처럼 한 단계 더 들어가고, 주소 앞에 {@code 대한민국} 같은 말이 붙기도 한다.
    */
-  Optional<City> findCity(String fullAddress) {
-    return findByLabel(ListingCatalogCategory.CITY, fullAddress, City::valueOf);
+  Optional<String> findCity(String fullAddress) {
+    return findByLabel(ListingCatalogCategory.CITY, fullAddress);
   }
 
   /** 도로명 주소에서 기초 행정구역을 찾는다. */
-  Optional<District> findDistrict(String fullAddress) {
-    return findByLabel(ListingCatalogCategory.DISTRICT, fullAddress, District::valueOf);
+  Optional<String> findDistrict(String fullAddress) {
+    return findByLabel(ListingCatalogCategory.DISTRICT, fullAddress);
   }
 
-  private <E extends Enum<E>> Optional<E> findByLabel(
-      ListingCatalogCategory category,
-      String fullAddress,
-      java.util.function.Function<String, E> toEnum) {
+  private Optional<String> findByLabel(ListingCatalogCategory category, String fullAddress) {
     if (fullAddress == null || fullAddress.isBlank()) {
       return Optional.empty();
     }
+    Set<String> tokens = tokenize(fullAddress);
     return koLabelsByCategory.getOrDefault(category, Map.of()).entrySet().stream()
-        .filter(entry -> fullAddress.contains(entry.getValue()))
+        .filter(entry -> tokens.contains(entry.getValue()))
         .map(Map.Entry::getKey)
-        .flatMap(code -> toEnumOrEmpty(code, toEnum).stream())
         .findFirst();
   }
 
-  /** 카탈로그에는 있으나 도메인 enum에 없는 코드는 매칭 대상에서 조용히 제외한다. */
-  private static <E extends Enum<E>> Optional<E> toEnumOrEmpty(
-      String code, java.util.function.Function<String, E> toEnum) {
-    try {
-      return Optional.of(toEnum.apply(code));
-    } catch (IllegalArgumentException e) {
-      return Optional.empty();
-    }
+  /**
+   * 주소를 공백으로 끊는다.
+   *
+   * <p>라벨과 <b>완전히 같은 토큰</b>만 매칭하기 위해서다. 부분 문자열로 보면 카탈로그가 서울 밖으로 넓어지는 순간 {@code "서울특별시 성북구 …"}가 부산
+   * {@code 북구}에 걸리고, 어느 쪽이 이길지는 카탈로그 순서가 정하게 된다.
+   */
+  private static Set<String> tokenize(String fullAddress) {
+    return Arrays.stream(fullAddress.trim().split("\s+")).collect(Collectors.toUnmodifiableSet());
   }
 }

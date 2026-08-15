@@ -59,8 +59,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 도로명 주소 검색({@code GET /api/v1/listings/addresses})의 REST Docs 스니펫 생성 테스트다(ADR-0042).
  *
  * <p>외부 지오코딩은 {@link AddressSearchClient} 포트를 목으로 대체해 네트워크 없이 돌린다 — HTTP 계약 자체는 {@code
- * NcpGeocodeClientTest}가 검증한다. 반면 {@code supported} 판정은 <b>실제 코드 카탈로그</b>로 확인해야 등록의 판정과 갈라지지 않으므로
- * 자기 MongoDB 컨테이너에 정본 카탈로그를 시드한다.
+ * NcpGeocodeClientTest}가 검증한다. 응답은 제공자가 준 후보를 그대로 옮길 뿐이라 코드 카탈로그를 보지 않는다.
  *
  * <p>문구·필드 기술자는 {@code ListingDocsFields}에 한 벌만 두고 여기서는 흐름만 만든다(ADR-0017).
  */
@@ -120,7 +119,7 @@ class ListingAddressSearchDocsTest {
 
   /** 임대인 검색 성공 — 등록에 그대로 실을 주소·좌표와 등록 가능 여부를 함께 단정한다. */
   @Test
-  void 문서스니펫생성_주소검색_등록가능여부까지반환() throws Exception {
+  void 문서스니펫생성_주소검색_후보를_그대로_반환() throws Exception {
     given(addressSearchClient.search("신촌로 12")).willReturn(List.of(seodaemun(), bundang()));
 
     mockMvc
@@ -133,10 +132,9 @@ class ListingAddressSearchDocsTest {
         .andExpect(jsonPath("$.data.items[0].jibunAddress").value("서울특별시 서대문구 창천동 1-1"))
         .andExpect(jsonPath("$.data.items[0].lat").value(37.5559918))
         .andExpect(jsonPath("$.data.items[0].lng").value(126.9368647))
-        // 카탈로그가 시·도와 구·군을 모두 아는 주소라 등록까지 갈 수 있다.
-        .andExpect(jsonPath("$.data.items[0].supported").value(true))
-        // 시·도만 잡히는 주소는 등록에서 400이므로 검색이 미리 알려준다.
-        .andExpect(jsonPath("$.data.items[1].supported").value(false))
+        // 카탈로그가 모르는 지역도 거르지 않는다 — 등록이 받고 행정구역을 ETC로 저장한다.
+        .andExpect(jsonPath("$.data.items[1].roadAddress").value("경기도 성남시 분당구 불정로 6 NAVER그린팩토리"))
+        .andExpect(jsonPath("$.data.items[0].supported").doesNotExist())
         .andDo(
             document(
                 "listing-addresses",
@@ -265,7 +263,7 @@ class ListingAddressSearchDocsTest {
         126.9368647);
   }
 
-  /** 경기도 성남시 분당구 — 시·도는 카탈로그에 있지만 구·군이 없어 등록할 수 없는 주소다. */
+  /** 경기도 성남시 분당구 — 카탈로그가 구·군을 모르는 지역이다. 등록되면 district가 ETC가 된다. */
   private static AddressSearchResult bundang() {
     return new AddressSearchResult(
         "경기도 성남시 분당구 불정로 6 NAVER그린팩토리",

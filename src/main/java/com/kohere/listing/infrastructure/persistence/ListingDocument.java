@@ -1,10 +1,8 @@
 package com.kohere.listing.infrastructure.persistence;
 
 import com.kohere.listing.domain.ArcRequirement;
-import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.ContractDifficulty;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
@@ -82,8 +80,8 @@ class ListingDocument {
 
   /** MongoDB에 저장되는 주소 하위 문서다. 검색 코드는 enum, 표시 주소는 다국어 문서로 보관한다. */
   record AddressDocument(
-      City city,
-      District district,
+      String city,
+      String district,
       LocalizedTextDocument fullAddress,
       LocalizedTextDocument detail) {}
 

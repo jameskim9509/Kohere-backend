@@ -2,11 +2,8 @@ package com.kohere.listing.application;
 
 import com.kohere.listing.application.ListingImageConfirmer.ConfirmedListingImages;
 import com.kohere.listing.application.dto.ListingDetailResponse;
-import com.kohere.listing.domain.City;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.LandlordOnlyListingException;
 import com.kohere.listing.domain.Listing;
-import com.kohere.listing.domain.ListingInvalidAddressException;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingUnknownCatalogCodeException;
 import com.kohere.listing.domain.LocalizedText;
@@ -51,6 +48,17 @@ public class ListingRegisterService {
    * 추천에서 통째로 빠진다.
    */
   private static final int NEARBY_UNIVERSITY_RADIUS_METERS = 2_000;
+
+  /**
+   * 카탈로그가 모르는 지역에 쓰는 코드다.
+   *
+   * <p>등록을 막지 않는다 — 9개 구 목록은 데이터 무결성이 아니라 영업 범위 정책이고, 그 정책 게이트는 이미 뒤에 있다(등록은 {@code PENDING}이고 관리자
+   * 승인이 반려한다). 심사에서 관리자가 실제 코드로 확정하고 카탈로그에 그 지역을 추가한다.
+   *
+   * <p>진단 지역의 {@code ETC}("그 외 지역")와 같은 값으로 만난다 — 코드로 못 잡았다는 건 곧 명시 목록 밖 지역이라는 뜻이라, 그 사용자에게 노출되는 것이
+   * 맞다.
+   */
+  private static final String UNMAPPED_REGION_CODE = "ETC";
 
   private final ListingRepository listingRepository;
   private final ListingCatalogRepository listingCatalogRepository;
@@ -223,9 +231,8 @@ public class ListingRegisterService {
   private static Listing.Address toAddress(
       ListingRegisterRequest request, ListingCatalogCodes catalog) {
     String fullAddress = request.address().fullAddress();
-    City city = catalog.findCity(fullAddress).orElseThrow(ListingInvalidAddressException::new);
-    District district =
-        catalog.findDistrict(fullAddress).orElseThrow(ListingInvalidAddressException::new);
+    String city = catalog.findCity(fullAddress).orElse(UNMAPPED_REGION_CODE);
+    String district = catalog.findDistrict(fullAddress).orElse(UNMAPPED_REGION_CODE);
     String detail = request.address().detail();
     return new Listing.Address(
         city,

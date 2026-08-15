@@ -272,6 +272,24 @@ class ListingRegisterDocsTest {
                 responseFields(registerResponseFields())));
   }
 
+  /**
+   * 카탈로그가 모르는 지역도 등록된다 — 행정구역은 {@code ETC}로 저장한다.
+   *
+   * <p>9개 구 목록은 데이터 무결성이 아니라 영업 범위 정책이라, 그 판단은 등록이 아니라 관리자 승인 심사가 한다. 예전에는 여기서 {@code 400
+   * LISTING_INVALID_ADDRESS}가 났고 성북구·동작구처럼 대학이 있는 지역의 매물이 아예 들어오지 못했다.
+   */
+  @Test
+  void 등록_카탈로그가_모르는_지역은_ETC로_저장한다() throws Exception {
+    mockMvc
+        .perform(
+            register(
+                landlordToken(), bodyReplacing("\"서울특별시 서대문구 신촌로 12\"", "\"서울특별시 성북구 안암로 145\"")))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.address.city.code").value("SEOUL"))
+        .andExpect(jsonPath("$.data.address.district.code").value("ETC"))
+        .andExpect(jsonPath("$.data.address.district.label").value("기타"));
+  }
+
   /** 등록 응답에는 사업자등록번호와 임대인 설문 3종이 없다. 저장은 하되 세입자에게 나가지 않는 값이라 응답 필드 기술자에도 없고, 없음을 여기서 못 박는다. */
   @Test
   void 등록응답_사업자등록번호와설문_응답에포함하지않는다() throws Exception {
@@ -379,14 +397,6 @@ class ListingRegisterDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "listing-register-invalid-coordinates",
-        LISTING_REGISTER_400);
-
-    // 도로명 주소에서 시·도와 구·군을 뽑지 못하는 주소.
-    performError(
-        register(landlordToken(), bodyReplacing("\"서울특별시 서대문구 신촌로 12\"", "\"신촌로 12\"")),
-        status().isBadRequest(),
-        "LISTING_INVALID_ADDRESS",
-        "listing-register-invalid-address",
         LISTING_REGISTER_400);
 
     // 앱이 아는 코드가 서버 코드표에는 아직 없는 상황을 카탈로그에서 한 행을 지워 재현한다.

@@ -468,6 +468,12 @@
     "label": { "ko": "경기도", "en": "Gyeonggi-do" }
   },
   {
+    "_id": "CITY:ETC",
+    "category": "CITY",
+    "code": "ETC",
+    "label": { "ko": "기타", "en": "Other" }
+  },
+  {
     "_id": "DISTRICT:GWANAK_GU",
     "category": "DISTRICT",
     "code": "GWANAK_GU",
@@ -520,6 +526,12 @@
     "category": "DISTRICT",
     "code": "GEUMCHEON_GU",
     "label": { "ko": "금천구", "en": "Geumcheon-gu" }
+  },
+  {
+    "_id": "DISTRICT:ETC",
+    "category": "DISTRICT",
+    "code": "ETC",
+    "label": { "ko": "기타", "en": "Other" }
   },
   {
     "_id": "UNIVERSITY:SNU",
