@@ -107,9 +107,20 @@ public record ListingRegisterRequest(
       @NotEmpty Set<Listing.CommonSpaceType> commonSpaces,
       @NotEmpty Set<ProvidedSupply> providedSupplies) {}
 
-  /** 근처 지하철역 정보다. 현재 {@code type}의 허용값은 {@code SUBWAY} 하나다. */
+  /**
+   * 근처 지하철역 정보다. 현재 {@code type}의 허용값은 {@code SUBWAY} 하나다.
+   *
+   * <p>{@code name}은 {@code GET /api/v1/listings/stations}가 준 값을 그대로 담고, {@code walkMinutes}는 그 응답의
+   * {@code suggestedWalkMinutes}를 기본값으로 쓰되 임대인이 고칠 수 있다(ADR-0044).
+   *
+   * <p><b>{@code walkMinutes}가 {@code Integer}인 이유</b>: primitive {@code int}이면 JSON에 키가 없을 때
+   * Jackson이 {@code 0}을 넣고 {@code @Min(0)}을 통과해 <b>"도보 0분" 매물이 조용히 저장된다</b>. 도메인 검증도 Mongo
+   * validator도 이미 채워진 값을 보므로 여기서 막지 않으면 어디서도 걸리지 않는다.
+   */
   public record NearestTransitRequest(
-      @NotNull Listing.TransitType type, @NotBlank String name, @Min(0) int walkMinutes) {}
+      @NotNull Listing.TransitType type,
+      @NotBlank String name,
+      @NotNull @Min(0) Integer walkMinutes) {}
 
   /** 개별 객실 타입이다. 사진은 미리 올려 둔 키로 참조한다. */
   public record RoomOfferRequest(
