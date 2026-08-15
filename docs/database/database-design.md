@@ -416,12 +416,26 @@
 
 저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 예시 몇 건이 아니라 Listing UI가 사용하는 전체 공통 코드 **19종 카테고리·103건**이다 — `ARC_REQUIREMENT`(2)·`BUILDING_TYPE`(7)·`CITY`(3)·`COMMON_SPACE`(7)·`CONDITION_TAG`(8)·`DISTRICT`(9)·`GENDER_POLICY`(4)·`HEATING_SYSTEM`(2)·`KITCHEN`(9)·`LAUNDRY`(4)·`LISTING_TYPE`(3)·`LIVING_AMENITY`(8)·`NEARBY_FACILITY`(5)·`PROVIDED_SUPPLY`(6)·`RENTAL_TYPE`(1)·`SECURITY_FEATURE`(6)·`SUPPORTED_LANGUAGE`(4)·`TRANSIT_TYPE`(1)·`UNIVERSITY`(14). `status`(`ListingStatus`)는 임대인에게만 보이는 관리 상태라 번역 대상이 아니고, 대응하는 카탈로그 카테고리도 없다.
 
+`universities`
+
+매물 등록이 좌표에서 인근 대학을 파생할 때 대조하는 **대학 좌표 원장**이다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). `listingCatalog`가 코드→라벨을 맡고 이 컬렉션이 코드→좌표를 맡으며, 둘은 `code`로 조인한다 — 같은 라벨을 두 곳에 두지 않기 위해 여기에는 표시 이름이 없다.
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | string | PK · 코드값 그대로(`SNU`). 재시드가 같은 문서를 덮어쓴다 |
+| `code` | string | NOT NULL · `listingCatalog`의 `UNIVERSITY` code·매물 `nearbyUniversityCodes`와 같은 값(조인 키) |
+| `location` | GeoJSON `Point` | **NOT NULL** · `[lng,lat]` · `2dsphere` · 캠퍼스 대표 좌표 |
+
+**인덱스**: `universities_location_2dsphere`(부트스트랩이 멱등 생성). 좌표 없는 문서는 반경 조회에서 영영 잡히지 않으므로 `location`을 validator가 `required`로 막는다.
+
+**시드는 14건**이며 `listingCatalog`의 `UNIVERSITY` 카테고리와 코드가 1:1이다. 좌표 출처는 교육부 학교개황(20241007 기준)의 도로명 주소를 주소 검색 API(NCP Geocoding)로 변환한 값이고, 조인은 학교명이 아니라 학교개황의 **학교코드**로 했다(이름 매칭은 부속고교를 오탐한다). 정본은 [`universities.json`](../../src/test/resources/fixtures/universities.json)이며 운영자가 주입한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). 스키마는 changeUnit `0118 listing-university-collection`이 세운다.
+
 **MVP 구현 메모**
 
 - 주변 시설은 자유 텍스트가 아니라 `nearbyFacilities`의 `NearbyFacility` 코드 배열이다. API 응답에서도 `nearbyFacilities`로 내려주며 다른 공통 코드와 같이 카탈로그 label과 조합한다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
 - **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. 이어 `0118 listing-university-collection`이 `universities` validator를 세운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)) — 넷 다 스키마만 다루고 문서를 넣지 않는다. 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
-- **시드(`listings` 2건 · `listingCatalog` 103건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`는 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되므로, 배포 절차에 시드 단계를 포함한다.
+- **시드(`listings` 2건 · `listingCatalog` 103건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
 - seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
 
 > **장소 후보 검색(`GET /api/v1/listings/places`) — 무상태, 컬렉션 없음**: 지도 검색창 키워드는 네이버 지역 검색 API로 조회한다(아웃바운드 포트 `PlaceSearchClient`, 인프라 어댑터 `NaverPlaceSearchClient`, 설정 `NaverSearchProperties`(prefix `app.naver.search`)). 결과(최대 5개 장소 후보)를 서버에 저장하지 않으므로 이 절엔 관련 스키마가 없다. **경로가 `/api/v1`인 이유**: 매물 조회 계열은 `/api/v2`로 이관되고 `/api/v1` 조회는 DB에 닿지 않는 `deprecated` 스텁이 됐지만, 이 엔드포인트만은 매물 데이터를 쓰지 않아 영향을 받지 않으므로 `/api/v1`에 그대로 둔다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md) · [03-listings-favorites](../api/specs/03-listings-favorites.md)).

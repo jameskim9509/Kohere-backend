@@ -1,0 +1,72 @@
+[
+  {
+    "_id": "SNU",
+    "code": "SNU",
+    "location": { "type": "Point", "coordinates": [126.952239, 37.464007] }
+  },
+  {
+    "_id": "CAU",
+    "code": "CAU",
+    "location": { "type": "Point", "coordinates": [126.957378, 37.504888] }
+  },
+  {
+    "_id": "SOONGSIL",
+    "code": "SOONGSIL",
+    "location": { "type": "Point", "coordinates": [126.957504, 37.496690] }
+  },
+  {
+    "_id": "KHU",
+    "code": "KHU",
+    "location": { "type": "Point", "coordinates": [127.052501, 37.596449] }
+  },
+  {
+    "_id": "HUFS",
+    "code": "HUFS",
+    "location": { "type": "Point", "coordinates": [127.058288, 37.597308] }
+  },
+  {
+    "_id": "KOREA",
+    "code": "KOREA",
+    "location": { "type": "Point", "coordinates": [127.031812, 37.589910] }
+  },
+  {
+    "_id": "SKKU",
+    "code": "SKKU",
+    "location": { "type": "Point", "coordinates": [126.992159, 37.587953] }
+  },
+  {
+    "_id": "SUNGSHIN",
+    "code": "SUNGSHIN",
+    "location": { "type": "Point", "coordinates": [127.022883, 37.591517] }
+  },
+  {
+    "_id": "KONKUK",
+    "code": "KONKUK",
+    "location": { "type": "Point", "coordinates": [127.075955, 37.543888] }
+  },
+  {
+    "_id": "SEJONG",
+    "code": "SEJONG",
+    "location": { "type": "Point", "coordinates": [127.073884, 37.551471] }
+  },
+  {
+    "_id": "HYU",
+    "code": "HYU",
+    "location": { "type": "Point", "coordinates": [127.046690, 37.557575] }
+  },
+  {
+    "_id": "YONSEI",
+    "code": "YONSEI",
+    "location": { "type": "Point", "coordinates": [126.939029, 37.567113] }
+  },
+  {
+    "_id": "EWHA",
+    "code": "EWHA",
+    "location": { "type": "Point", "coordinates": [126.947245, 37.561740] }
+  },
+  {
+    "_id": "HONGIK",
+    "code": "HONGIK",
+    "location": { "type": "Point", "coordinates": [126.925539, 37.551224] }
+  }
+]

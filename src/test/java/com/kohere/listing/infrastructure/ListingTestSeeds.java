@@ -34,12 +34,18 @@ final class ListingTestSeeds {
 
   private static final String CATALOG_RESOURCE = "fixtures/listing-catalog-v4.json";
   private static final String LISTINGS_RESOURCE = "fixtures/listings-v4.json";
+  private static final String UNIVERSITIES_RESOURCE = "fixtures/universities.json";
 
   private ListingTestSeeds() {}
 
   /** 번역 사전 103건을 심는다. 없으면 응답 라벨 자리에 코드값이 그대로 나가 단언이 흔들린다. */
   static void seedCatalog(MongoTemplate mongo, String collection) {
     insertAll(mongo, collection, read(CATALOG_RESOURCE));
+  }
+
+  /** 대학 좌표 원장 14건을 심는다. 없으면 등록이 인근 대학을 찾지 못해 빈 배열을 저장한다(ADR-0045). */
+  static void seedUniversities(MongoTemplate mongo, String collection) {
+    insertAll(mongo, collection, read(UNIVERSITIES_RESOURCE));
   }
 
   /** v4 매물 2건을 심는다. */

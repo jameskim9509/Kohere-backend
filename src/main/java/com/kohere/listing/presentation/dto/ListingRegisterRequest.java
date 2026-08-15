@@ -45,7 +45,7 @@ import java.util.Set;
  * schemaVersion}(4)·{@code status}({@code PENDING})·{@code favoriteCount}(0)·{@code
  * createdAt}/{@code updatedAt}·{@code rentalType}({@code MONTHLY_RENT})·{@code
  * pricing.currency}({@code KRW})·{@code roomOffers[].status}({@code ACTIVE}). {@code
- * nearbyUniversityCodes}는 좌표 기반 파생이 후속이라 빈 상태로 저장한다.
+ * nearbyUniversityCodes}도 그중 하나다 — 서버가 {@code location} 반경 2km 안의 대학을 원장에서 찾아 채운다(ADR-0045).
  *
  * <p>docs/api/specs/03-listings-favorites.md · 시퀀스 US-3-6.
  */

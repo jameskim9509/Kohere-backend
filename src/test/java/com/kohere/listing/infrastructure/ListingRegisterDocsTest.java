@@ -86,6 +86,7 @@ class ListingRegisterDocsTest {
 
   private static final String LISTINGS_COLLECTION = "listings";
   private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
+  private static final String UNIVERSITIES_COLLECTION = "universities";
 
   /** 코드표 불일치를 재현하려고 지우는 카탈로그 항목의 문서 id다(`category:code`). */
   private static final String NO_MAINT_FEE_CATALOG_ID = "CONDITION_TAG:NO_MAINT_FEE";
@@ -197,7 +198,7 @@ class ListingRegisterDocsTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
   private MockMvc mockMvc;
 
-  /** REST Docs용 MockMvc를 만들고 매물 컬렉션을 비운 뒤 코드 카탈로그(번역 사전)만 시드한다. */
+  /** REST Docs용 MockMvc를 만들고 매물 컬렉션을 비운 뒤 코드 카탈로그(번역 사전)와 대학 좌표 원장을 시드한다. */
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) {
     mockMvc =
@@ -207,7 +208,10 @@ class ListingRegisterDocsTest {
             .build();
     mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(UNIVERSITIES_COLLECTION).deleteMany(new Document());
     ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
+    // 등록이 좌표로 인근 대학을 파생하므로 운영과 같은 정본 원장을 심는다(ADR-0045).
+    ListingTestSeeds.seedUniversities(mongoTemplate, UNIVERSITIES_COLLECTION);
     given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
     given(userAccountService.getLanguage(LANDLORD_ID)).willReturn("ko");
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
@@ -234,7 +238,11 @@ class ListingRegisterDocsTest {
         .andExpect(jsonPath("$.data.location.lat").value(37.5559918))
         .andExpect(jsonPath("$.data.location.lng").value(126.9368647))
         .andExpect(jsonPath("$.data.address.lat").doesNotExist())
-        .andExpect(jsonPath("$.data.nearbyUniversityCodes").isEmpty())
+        // 그 좌표에서 반경 2km 안의 대학을 서버가 파생한다(ADR-0045). 신촌로 12는 세 대학이 모두 도보권이라
+        // 진단 그룹 HONGIK_YONSEI_EWHA와 그대로 맞물린다 — 요청에는 대학 칸이 없다.
+        .andExpect(
+            jsonPath("$.data.nearbyUniversityCodes")
+                .value(containsInAnyOrder("YONSEI", "EWHA", "HONGIK")))
         // 한국어 한 값으로 보낸 문구가 임대인 언어(ko)로 그대로 돌아온다.
         .andExpect(jsonPath("$.data.title").value("신촌 도보 5분 1인실 고시원"))
         .andExpect(jsonPath("$.data.nearestTransit.name").value("신촌역"))

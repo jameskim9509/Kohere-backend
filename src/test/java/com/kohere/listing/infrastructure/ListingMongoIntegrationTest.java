@@ -44,7 +44,9 @@ import com.kohere.listing.domain.SecurityFeature;
 import com.kohere.listing.domain.SupportedLanguage;
 import com.kohere.listing.domain.favorite.Favorite;
 import com.kohere.listing.domain.favorite.FavoriteRepository;
+import com.kohere.listing.domain.nearby.Coordinate;
 import com.kohere.listing.domain.recent.RecentListingRepository;
+import com.kohere.listing.domain.university.UniversityRepository;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
@@ -79,6 +81,10 @@ class ListingMongoIntegrationTest {
   private static final String FAVORITES_COLLECTION = "favorites";
   private static final String RECENT_LISTINGS_COLLECTION = "recentListings";
   private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
+  private static final String UNIVERSITIES_COLLECTION = "universities";
+
+  /** 등록이 인근 대학을 고르는 반경이다({@code ListingRegisterService}와 같은 값). */
+  private static final int UNIVERSITY_RADIUS_METERS = 2_000;
 
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
@@ -87,6 +93,7 @@ class ListingMongoIntegrationTest {
   @Autowired private RecentListingRepository recentListingRepository;
   @Autowired private ListingService listingService;
   @Autowired private ListingRecommendationService listingRecommendationService;
+  @Autowired private UniversityRepository universityRepository;
   @Autowired private MongoTemplate mongoTemplate;
   @MockitoBean private UserAccountService userAccountService;
 
@@ -98,6 +105,7 @@ class ListingMongoIntegrationTest {
     mongoTemplate.getCollection(FAVORITES_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(UNIVERSITIES_COLLECTION).deleteMany(new Document());
     // 응답의 label 자리가 코드값으로 새지 않도록 운영과 같은 정본 카탈로그를 심는다.
     ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
   }
@@ -185,6 +193,13 @@ class ListingMongoIntegrationTest {
 
     assertThat(recentListingIndexNames)
         .contains("recentListings_user_listing", "recentListings_user_viewedAt");
+
+    Set<String> universityIndexNames =
+        mongoTemplate.indexOps(UNIVERSITIES_COLLECTION).getIndexInfo().stream()
+            .map(index -> index.getName())
+            .collect(java.util.stream.Collectors.toSet());
+
+    assertThat(universityIndexNames).contains("universities_location_2dsphere");
   }
 
   /** 가격과 태그 조건이 같은 roomOffer 안에서 함께 만족될 때만 매칭되는지 확인한다. */
@@ -215,6 +230,51 @@ class ListingMongoIntegrationTest {
     Document found = mongoTemplate.getCollection(LISTINGS_COLLECTION).find(query).first();
     assertThat(found).isNotNull();
     assertThat(found.get("title", Document.class).getString("ko")).isEqualTo("신림 스테이");
+  }
+
+  /**
+   * 대학이 밀집한 좌표에서 반경 안의 코드를 모두 찾는지 확인한다(ADR-0045).
+   *
+   * <p>신촌로 12는 연세·이화·홍익이 모두 2km 안이다 — 진단의 {@code HONGIK_YONSEI_EWHA} 그룹과 그대로 맞물리는 자리라, 최근접 하나만 고르면
+   * 매칭이 줄어든다는 결정 근거를 여기서 못 박는다.
+   */
+  @Test
+  void findCodesWithin_반경안의_대학코드를_모두_반환한다() {
+    ListingTestSeeds.seedUniversities(mongoTemplate, UNIVERSITIES_COLLECTION);
+
+    Set<String> codes =
+        universityRepository.findCodesWithin(
+            new Coordinate(37.5559918, 126.9368647), UNIVERSITY_RADIUS_METERS);
+
+    assertThat(codes).containsExactlyInAnyOrder("YONSEI", "EWHA", "HONGIK");
+  }
+
+  /** 반경이 경계다 — 서울대 남쪽 약 1.9km는 잡히고 약 2.1km는 빠진다. */
+  @Test
+  void findCodesWithin_반경_경계를_지킨다() {
+    ListingTestSeeds.seedUniversities(mongoTemplate, UNIVERSITIES_COLLECTION);
+    double snuLng = 126.952239;
+    double snuLat = 37.464007;
+
+    Set<String> inside =
+        universityRepository.findCodesWithin(
+            new Coordinate(snuLat - 0.01708, snuLng), UNIVERSITY_RADIUS_METERS);
+    Set<String> outside =
+        universityRepository.findCodesWithin(
+            new Coordinate(snuLat - 0.01889, snuLng), UNIVERSITY_RADIUS_METERS);
+
+    assertThat(inside).containsExactly("SNU");
+    assertThat(outside).isEmpty();
+  }
+
+  /** 원장이 비어 있어도(시드 전 신규 환경) 조회는 빈 집합이다 — 등록이 예외로 멈추지 않는다. */
+  @Test
+  void findCodesWithin_원장이_비어있으면_빈집합이다() {
+    Set<String> codes =
+        universityRepository.findCodesWithin(
+            new Coordinate(37.5559918, 126.9368647), UNIVERSITY_RADIUS_METERS);
+
+    assertThat(codes).isEmpty();
   }
 
   /** 목록 검색은 지도 범위와 필터를 모두 만족하는 방 상품을 가진 매물 카드를 반환한다. */

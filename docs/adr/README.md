@@ -68,6 +68,7 @@
 | [0042](./0042-road-address-search-with-ncp-geocoding.md) | 도로명 주소는 NCP Geocoding으로 검색하고, 등록이 그 좌표를 받는다 | Proposed | 2026-08-14 |
 | [0043](./0043-remove-seeded-poi-keyword-search.md) | 시드 POI 키워드 검색을 종료하고 `searchPlaces`를 버린다 | Proposed | 2026-08-15 |
 | [0044](./0044-nearby-station-search-with-kakao-local.md) | 인근 역은 카카오 로컬로 검색한다 | Proposed | 2026-08-15 |
+| [0045](./0045-nearby-university-mapping-from-seeded-coordinates.md) | 인근 대학은 시드된 좌표 원장으로 매핑한다 | Proposed | 2026-08-15 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

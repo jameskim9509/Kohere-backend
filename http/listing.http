@@ -257,6 +257,9 @@ Content-Type: image/jpeg
 --KohereBoundary--
 
 ### 13. 매물 등록 → 201 Created. 응답 status는 PENDING이다
+#    응답의 nearbyUniversityCodes는 요청에 없던 값이다 — 서버가 location 반경 2km 안의 대학을
+#    universities 원장에서 찾아 채운다(ADR-0045). 아래 신촌 좌표면 YONSEI·EWHA·HONGIK 셋이 온다.
+#    빈 배열이면 대학가 밖이거나 universities 시드가 안 들어간 것이다(서버 로그에 경고가 남는다).
 # @name register
 POST {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}

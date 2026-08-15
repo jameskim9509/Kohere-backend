@@ -415,7 +415,7 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - 본문은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이고 `status`는 항상 `PENDING`이다. **등록 직후 매물은 목록·지도·검색·상세·찜 어디에도 나오지 않으며** 그 상세를 조회하면 404다. 공개 전환은 후속 관리자 승인이 한다.
-      - `location`은 요청의 `address.lat`·`address.lng`를 옮긴 값이다. `nearbyUniversityCodes`는 아직 빈 배열이다(좌표 기반 파생은 후속).
+      - `location`은 요청의 `address.lat`·`address.lng`를 옮긴 값이고, `nearbyUniversityCodes`는 **그 좌표에서 서버가 파생한다** — 반경 2km 안의 대학 코드를 모두 담는다. 요청에 대학 칸이 없는 이유이며, 대학가 밖 매물은 정상적으로 빈 배열이다.
       - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다(임대인은 한국어).
 
       **에러 코드**

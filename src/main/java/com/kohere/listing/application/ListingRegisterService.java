@@ -13,6 +13,8 @@ import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
 import com.kohere.listing.domain.catalog.ListingCatalogRepository;
 import com.kohere.listing.domain.image.ListingImageKeySet;
+import com.kohere.listing.domain.nearby.Coordinate;
+import com.kohere.listing.domain.university.UniversityRepository;
 import com.kohere.listing.presentation.dto.ListingRegisterRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
@@ -20,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,14 +37,24 @@ import org.springframework.stereotype.Service;
  * <p>docs/api/specs/03-listings-favorites.md · 시퀀스 US-3-6.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class ListingRegisterService {
 
   /** {@code user::api}가 문자열로 주는 임대인 구분값이다. */
   private static final String USER_TYPE_LANDLORD = "LANDLORD";
 
+  /**
+   * 인근 대학으로 볼 반경이다(ADR-0045).
+   *
+   * <p>도보~버스 한두 정거장 생활권이다. 더 넓히면 신촌·홍대처럼 대학이 밀집한 지역에서 실제로는 무관한 대학까지 붙고, 좁히면 대학가 매물이 빈 배열로 남아 진단
+   * 추천에서 통째로 빠진다.
+   */
+  private static final int NEARBY_UNIVERSITY_RADIUS_METERS = 2_000;
+
   private final ListingRepository listingRepository;
   private final ListingCatalogRepository listingCatalogRepository;
+  private final UniversityRepository universityRepository;
   private final ListingImageConfirmer listingImageConfirmer;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
@@ -128,8 +141,8 @@ public class ListingRegisterService {
   /**
    * 요청을 도메인 애그리거트로 조립한다.
    *
-   * <p>서버가 채우는 값(상태·통화·시각 등)과 폼 1칸에서 나눈 값(운영층·연령대), 주소에서 뽑은 행정구역이 여기서 결정된다. 값 범위 불변식은 {@code
-   * ListingValidator}가 저장 직전에 다시 본다.
+   * <p>서버가 채우는 값(상태·통화·시각 등)과 폼 1칸에서 나눈 값(운영층·연령대), 주소에서 뽑은 행정구역, 좌표에서 파생한 인근 대학이 여기서 결정된다. 값 범위
+   * 불변식은 {@code ListingValidator}가 저장 직전에 다시 본다.
    *
    * <p>식별자와 사진 URL은 아직 비어 있다 — 저장 키가 식별자를 포함하고 URL은 업로드가 끝나야 정해지므로, 그 둘만 {@link #withStoredImages}가
    * 마지막에 얹는다.
@@ -141,6 +154,7 @@ public class ListingRegisterService {
         RangeInput.parse("building.usedFloorRange", request.building().usedFloorRange());
     RangeInput age = RangeInput.parse("ageRange", request.ageRange());
     Instant now = Instant.now();
+    Listing.GeoPoint location = toLocation(request);
 
     return Listing.builder()
         .schemaVersion(4)
@@ -162,11 +176,11 @@ public class ListingRegisterService {
         .languagesSupported(request.languagesSupported())
         .favoriteCount(0)
         .imageUrls(List.of())
-        .nearbyUniversityCodes(Set.of())
+        .nearbyUniversityCodes(findNearbyUniversityCodes(location))
         .createdAt(now)
         .updatedAt(now)
         .address(toAddress(request, catalog))
-        .location(toLocation(request))
+        .location(location)
         .building(
             new Listing.Building(
                 request.building().type(),
@@ -231,6 +245,29 @@ public class ListingRegisterService {
    */
   private static Listing.GeoPoint toLocation(ListingRegisterRequest request) {
     return new Listing.GeoPoint(request.address().lng(), request.address().lat());
+  }
+
+  /**
+   * 매물 좌표에서 반경 {@value #NEARBY_UNIVERSITY_RADIUS_METERS}m 안의 대학 코드를 찾는다(ADR-0045).
+   *
+   * <p>등록 폼은 대학을 묻지 않는다 — 임대인이 고르게 하면 자기 매물을 띄우려고 먼 대학까지 넣는다. 대신 서버가 시드된 좌표 원장과 대조해 파생한다. 진단 추천은 이
+   * 집합을 대학 그룹의 멤버 코드와 대조한다.
+   *
+   * <p>비어 있어도 등록을 막지 않는다. 대학가 밖 매물은 정상적으로 빈 집합이고, 원장이 비어 있어도(시드 전 신규 환경) 같은 결과라 둘을 구분할 수 없다. 등록을
+   * 세우는 대신 경고를 남긴다 — 배포 절차의 시드 단계가 빠졌다는 유일한 신호다.
+   */
+  private Set<String> findNearbyUniversityCodes(Listing.GeoPoint location) {
+    Set<String> codes =
+        universityRepository.findCodesWithin(
+            new Coordinate(location.latitude(), location.longitude()),
+            NEARBY_UNIVERSITY_RADIUS_METERS);
+    if (codes.isEmpty()) {
+      log.warn(
+          "인근 대학을 찾지 못했다 — 대학가 밖이거나 universities 시드가 비어 있다. lat={}, lng={}",
+          location.latitude(),
+          location.longitude());
+    }
+    return codes;
   }
 
   private static Listing.RoomOffer toRoomOffer(ListingRegisterRequest.RoomOfferRequest request) {
