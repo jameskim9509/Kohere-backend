@@ -3,7 +3,7 @@
 > [api-design-guide](../api-design-guide.md) · [error-response-guide](../error-response-guide.md)를 따른다. 모든 응답은 공통 래퍼.
 > 관련 유저 스토리: [user-stories](../../requirements/user-stories.md)
 
-임대인의 매물 등록, 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 API의 정본은 `/api/v2`다** — 사진 업로드·등록(`POST /api/v2/listings/images`·`POST /api/v2/listings`)에 이어 조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겼고, 요청·응답 모두 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). **기존 `/api/v1` 조회 경로는 개정 전(v3) 응답 구조를 복원한 `deprecated` 스텁**이며 빈 결과나 `404 LISTING_NOT_FOUND`만 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md), 아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)). 장소 후보 검색(`GET /api/v1/listings/places`)과 도로명 주소 검색(`GET /api/v1/listings/addresses`)만 매물 데이터를 쓰지 않아 `/api/v1`에서 그대로 동작한다 — 둘 중 주소 검색은 등록 폼 전용이라 **임대인 인증이 필요하다**([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)).
+임대인의 매물 등록, 매물 리스트/지도 조회, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다. **매물 API의 정본은 `/api/v2`다** — 사진 업로드·등록(`POST /api/v2/listings/images`·`POST /api/v2/listings`)에 이어 조회 계열 5종(목록·지도·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겼고, 요청·응답 모두 스키마 v4 구조를 쓴다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)). **기존 `/api/v1` 조회 경로는 개정 전(v3) 응답 구조를 복원한 `deprecated` 스텁**이며 빈 결과나 `404 LISTING_NOT_FOUND`만 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md), 아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)). 장소 후보 검색(`GET /api/v1/listings/places`)과 도로명 주소 검색(`GET /api/v1/listings/addresses`)만 매물 데이터를 쓰지 않아 `/api/v1`에서 그대로 동작한다 — 둘 중 주소 검색은 등록 폼 전용이라 **임대인 인증이 필요하다**([ADR-0042](../../adr/0042-road-address-search-with-ncp-geocoding.md)).
 
 > **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명·유의사항·환불 정책 문구는 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·`arcRequired`·행정구역(`address.city`·`address.district`)·`languagesSupported`·`nearbyFacilities`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다. 단 `status`(`ListingStatus`)는 임대인·관리자만 읽는 관리 상태라 번역 대상이 아니며 코드 문자열 그대로 내려간다.
 
@@ -15,7 +15,6 @@
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
 - `ConditionTag`(매물 옵션 필터 8종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음)
 - `ArcRequirement`(매물 루트 `arcRequired` 값): `REQUIRED`, `NOT_REQUIRED`. ARC 없이 입주할 수 있는지는 조건 태그가 아니라 이 필드로 표현한다
-- `SearchPlaceType`(기존 키워드 검색 매칭 분류): `UNIVERSITY`, `REGION`, `SUBWAY_STATION`
 
 > `ListingSort`는 api-design-guide §6의 일반 `?sort=field,(asc|desc)` 형식이 아닌 **이름 기반 정렬 프리셋**이다(추천 정렬 등 단일 필드로 표현되지 않는 정렬이 있어 enum으로 둔다). 찜 목록은 별도 정렬 파라미터 없이 `favoritedAt desc`로 고정된다.
 
@@ -29,7 +28,6 @@
 | GET | `/api/v2/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
 | GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) — **유일하게 `/api/v1`에 남는 경로** | 불필요 | 200 |
 | GET | `/api/v2/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
-| GET | `/api/v2/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
 | GET | `/api/v2/listings/{listingId}` | 매물 상세 조회(정식 로그인 시 최근 본 기록) | 선택 | 200 |
 | POST | `/api/v2/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
 | DELETE | `/api/v2/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
@@ -42,7 +40,7 @@
 >
 > 공개 조회도 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 넣지 않으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 된다(v1 공개 조회 매처와 같은 이유). 결국 `/api/v2/listings` 네임스페이스는 **GET은 공개, POST(등록)는 `hasRole("USER")`** 로 메서드별로 갈린다. 찜 토글(`POST`·`DELETE /api/v2/listings/*/favorite`)과 내 스코프(`GET /api/v2/users/me/favorites`·`/recent-listings`)는 v1과 동일하게 `hasRole("USER")` 매처를 유지한다.
 >
-> 목록·지도·검색·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다(경로는 v2 기준이고 장소 후보 검색만 `/api/v1`이다). 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어를 적용하고, 상세에서는 실제 찜 상태와 최근 본 기록도 적용한다. 목록·기존 키워드 검색의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`다. 비로그인·온보딩 미완료·위조/형식 오류 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지 않는다. 단, 만료 토큰은 공개 매물 조회에서도 `401 TOKEN_EXPIRED`다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이며, 토큰 없음·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`다.
+> 목록·지도·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다(경로는 v2 기준이고 장소 후보 검색만 `/api/v1`이다). 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어를 적용하고, 상세에서는 실제 찜 상태와 최근 본 기록도 적용한다. 목록의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`다. 비로그인·온보딩 미완료·위조/형식 오류 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지 않는다. 단, 만료 토큰은 공개 매물 조회에서도 `401 TOKEN_EXPIRED`다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이며, 토큰 없음·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`다.
 
 ## v1 조회 API 종료(deprecated)
 
@@ -62,7 +60,6 @@
 | --- | --- | --- |
 | GET | `/api/v1/listings` | **빈 페이지** — `content: []`, `page.totalElements: 0` |
 | GET | `/api/v1/listings/map` | **빈 결과** — `markers: []`, `total: 0` |
-| GET | `/api/v1/listings/search` | **빈 페이지** — `matchedPlace: null`, `content: []`, `page.totalElements: 0` |
 | GET | `/api/v1/listings/{listingId}` | **`404 LISTING_NOT_FOUND`** |
 | POST | `/api/v1/listings/{listingId}/favorite` | **`404 LISTING_NOT_FOUND`** |
 | DELETE | `/api/v1/listings/{listingId}/favorite` | **`404 LISTING_NOT_FOUND`** |
@@ -759,60 +756,6 @@ Request Body: 없음
 | 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
-| 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
-
-### GET /api/v2/listings/search — 키워드 검색
-
-- 설명: 검색창에서 학교명·지역명·지하철역명을 입력했을 때, 매칭된 장소와 주변 매물을 함께 반환한다.
-- 인증: 선택
-- 매칭된 장소가 있으면 `matchedPlace.lat/lng`로 지도를 이동하고, `content[]`를 검색 결과 리스트로 표시한다.
-
-Query 파라미터:
-
-| 이름 | 타입 | 필수 | 기본 | 설명 |
-| --- | --- | --- | --- | --- |
-| `keyword` | string | 필수 | — | 검색창 입력값(학교/지역/역). 1~50자 |
-| `sort` | `ListingSort` | 선택 | `DISTANCE` | 검색 결과 정렬. 기본은 검색된 장소에서 가까운 순 |
-| `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호 |
-| `size` | integer | 선택 | 20 | 한 번에 가져올 매물 수(최대 100) |
-
-Request Body: 없음
-
-성공 Response (200):
-
-```jsonc
-{
-  "success": true,
-  "data": {
-    "matchedPlace": {
-      "type": "UNIVERSITY",
-      "name": "연세대학교",
-      "lat": 37.565784,
-      "lng": 126.938572
-    },
-    "content": [ /* /api/v2/listings content[]와 같은 매물 카드 구조 */ ],
-    "page": {
-      "number": 0,
-      "size": 20,
-      "totalElements": 42,
-      "totalPages": 3,
-      "hasNext": true
-    }
-  },
-  "error": null
-}
-```
-
-- `matchedPlace`가 있으면 검색 결과 화면의 지도 중심과 장소 제목으로 사용한다.
-- `content[]`는 목록 API와 같은 카드 구조다. `distanceMeters`는 검색된 장소에서 매물까지의 거리 라벨로 표시하고, `favorited`는 현재 구현상 로그인 여부와 관계없이 `false`다.
-- `matchedPlace=null`이면 "검색된 장소가 없어요" 상태를 표시한다.
-- `matchedPlace`가 있고 `content=[]`이면 "이 주변에 매물이 없어요" 상태를 표시한다.
-
-발생 가능한 에러:
-
-| status | code | 시점 |
-| --- | --- | --- |
-| 400 | `INVALID_INPUT` | 키워드 누락/공백/길이(1~50자) 위반, `size` 범위 초과 |
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
 
 ### GET /api/v2/listings/{listingId} — 매물 상세

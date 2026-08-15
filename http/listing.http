@@ -107,10 +107,6 @@ Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 ### 5. 지도 마커 — 좌표만 내려준다(카드 정보는 상세에서 가져간다)
 GET {{baseUrl}}/api/v2/listings/map?swLat={{swLat}}&swLng={{swLng}}&neLat={{neLat}}&neLng={{neLng}}&type=GOSHIWON
 
-### 6. 키워드 매물 검색 — 일치한 장소가 있으면 matchedPlace로 함께 내려주고 3km 이내 매물을 거리순으로 준다
-#    searchPlaces는 Mongock(SearchPlaceSeedChangeUnit)이 자동으로 넣으므로 따로 시드하지 않아도 된다.
-GET {{baseUrl}}/api/v2/listings/search?keyword=서울대&sort=DISTANCE&page=0&size=20
-
 ### 7. 장소 후보 검색 — **이것만 `/api/v1`이다**. 네이버 지역 검색 결과라 매물 데이터를 쓰지 않는다
 #    네이버 자격증명(NAVER_SEARCH_CLIENT_ID/SECRET)이 없으면 502 UPSTREAM_ERROR가 정상이다.
 GET {{baseUrl}}/api/v1/listings/places?keyword=경희대
@@ -325,9 +321,6 @@ GET {{baseUrl}}/api/v1/listings?type=OTHER&conditions=NO_ARC&size=500
 
 ### 18. v1 지도 → 200 · markers [] · total 0. bbox를 아예 빼도 400이 아니다
 GET {{baseUrl}}/api/v1/listings/map
-
-### 19. v1 키워드 검색 → 200 · matchedPlace null · content []
-GET {{baseUrl}}/api/v1/listings/search?keyword=서울대
 
 ### 20. v1 상세 → **404 LISTING_NOT_FOUND**. 실제로 존재하는 시드 매물 id인데도 그렇다
 GET {{baseUrl}}/api/v1/listings/{{listingId}}

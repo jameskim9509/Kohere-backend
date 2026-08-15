@@ -379,10 +379,6 @@
 | | `currency` | enum `Currency` | 통화(현재 `KRW`) |
 | `Contract` | `minStayMonths` | int | 최소 계약 개월(`RoomOffer` 소유) |
 | | `maxStayMonths` | int | 최대 계약 개월(`RoomOffer` 소유) |
-| `MatchedPlace` | `type` | enum `SearchPlaceType` | 매칭된 POI 유형(학교·지역·역). 키워드 검색 입력어가 매칭된 위치를 표현하는 조회 결과 값(매칭 없으면 부재) |
-| | `name` | String | POI 이름 |
-| | `lat` | double | 위도 |
-| | `lng` | double | 경도 |
 
 **상태(enum):**
 
@@ -504,9 +500,6 @@
 | | `CONTRACT_FULFILLMENT` | 손해배상·위약금(계약 이행) |
 | | `COMMUNICATION_CHANNEL` | 외국인과의 소통 채널 부족 |
 | | `OTHER` | 기타 |
-| `SearchPlaceType` | `UNIVERSITY` | 학교 |
-| | `REGION` | 지역 |
-| | `SUBWAY_STATION` | 지하철역 |
 
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox·마커 결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 요청 bbox의 중심 좌표를 기준으로 하며, bbox 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 

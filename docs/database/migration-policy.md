@@ -95,7 +95,7 @@
 [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)가 정한 **명시적 예외**다. 범위는 `listings`·`listingCatalog` 두 컬렉션의 v4 이행 **1회**로 한정하며, 다른 컬렉션·다른 변경에 확장 적용하지 않는다.
 
 1. **listing 마이그레이션 체인을 v4 baseline으로 리셋한다.** `0099`~`0114` changeUnit을 **삭제**하고 `0115 listing-v4-baseline` 하나로 갈음한다 — [§1](#1-기본-규칙)이 인정하는 baseline 채택(`V1__baseline.sql` 대응)의 MongoDB 적용이다. v3 데이터를 폐기하는 이상 그 데이터를 v1→v2→v3로 옮기던 이력은 재현할 대상이 없다.
-   - **존치: `0100`(`listing-search-place-seed`).** 유일하게 다른 컬렉션(`searchPlaces`)을 다루며 v4와 무관하다.
+   - ~~**존치: `0100`(`listing-search-place-seed`).**~~ → **삭제됐다.** 유일하게 다른 컬렉션(`searchPlaces`)을 다뤄 v4와 무관했으나, 그 컬렉션을 쓰던 키워드 검색 API가 종료되면서 시드 유닛도 함께 지웠다. 컬렉션 드롭은 **`0117 listing-search-place-drop`** 이 맡는다([ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)).
    - 기존 환경의 changelog에는 `0099`~`0114` 항목이 고아로 남지만, 대응 클래스가 없으면 실행 대상에서 빠질 뿐이라 무해하다.
    - **`0116 listing-location-required`는 이 예외의 연장이 아니라 일반 개정이다.** `0115`가 지오코딩이 없어 선택으로 뒀던 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 시드 주입 전이라 백필 대상이 0건이어서 [§4](#4-not-null-컬럼-추가-절차)의 확장→백필→축소가 그대로 성립한다. `0115`는 동결이므로 수정하지 않고 새 유닛이 자기 스키마 사본을 든다.
    - `0115`는 **스키마만** 다룬다 — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. 데이터는 건드리지 않는다. v4 `$jsonSchema`는 `0115` 안에 **동결**하고 `ListingMongoIndexInitializer`의 정적 메서드를 호출하지 않는다(과거 `0105`가 그렇게 해서 `listingV2JsonSchema()` 죽은 사본이 생겼다).
