@@ -37,7 +37,6 @@ import com.kohere.listing.domain.catalog.ListingCatalogCategory;
 import com.kohere.listing.domain.catalog.ListingCatalogEntry;
 import com.kohere.listing.domain.catalog.ListingCatalogRepository;
 import com.kohere.listing.domain.favorite.FavoriteRepository;
-import com.kohere.listing.domain.place.SearchPlaceRepository;
 import com.kohere.listing.domain.recent.RecentListingRepository;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
@@ -68,7 +67,6 @@ class ListingServiceTest {
   @Mock private ListingRepository listingRepository;
   @Mock private FavoriteRepository favoriteRepository;
   @Mock private RecentListingRepository recentListingRepository;
-  @Mock private SearchPlaceRepository searchPlaceRepository;
   @Mock private UserAccountService userAccountService;
 
   private ListingService listingService;
@@ -81,7 +79,6 @@ class ListingServiceTest {
             listingRepository,
             favoriteRepository,
             recentListingRepository,
-            searchPlaceRepository,
             new ListingLocalizationService(catalogRepository),
             userAccountService);
   }

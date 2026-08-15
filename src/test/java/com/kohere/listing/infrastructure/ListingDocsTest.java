@@ -14,8 +14,6 @@ import static com.kohere.docs.ListingDocsFields.LISTINGS_LIST_DESCRIPTION;
 import static com.kohere.docs.ListingDocsFields.LISTINGS_LIST_SUMMARY;
 import static com.kohere.docs.ListingDocsFields.LISTINGS_MAP_DESCRIPTION;
 import static com.kohere.docs.ListingDocsFields.LISTINGS_MAP_SUMMARY;
-import static com.kohere.docs.ListingDocsFields.LISTINGS_SEARCH_DESCRIPTION;
-import static com.kohere.docs.ListingDocsFields.LISTINGS_SEARCH_SUMMARY;
 import static com.kohere.docs.ListingDocsFields.LISTING_DETAIL_DESCRIPTION;
 import static com.kohere.docs.ListingDocsFields.LISTING_DETAIL_SUMMARY;
 import static com.kohere.docs.ListingDocsFields.LISTING_PLACES_DESCRIPTION;
@@ -35,9 +33,6 @@ import static com.kohere.docs.ListingDocsFields.mapResponseFields;
 import static com.kohere.docs.ListingDocsFields.placeQueryParameters;
 import static com.kohere.docs.ListingDocsFields.placeResponseFields;
 import static com.kohere.docs.ListingDocsFields.recentListingsResponseFields;
-import static com.kohere.docs.ListingDocsFields.searchEmptyPlaceResponseFields;
-import static com.kohere.docs.ListingDocsFields.searchQueryParameters;
-import static com.kohere.docs.ListingDocsFields.searchResponseFields;
 import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITES_LIST_DESCRIPTION;
 import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITES_LIST_SUMMARY;
 import static com.kohere.docs.ListingV1DocsFields.V1_FAVORITE_ADD_DESCRIPTION;
@@ -48,8 +43,6 @@ import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_LIST_DESCRIPTION;
 import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_LIST_SUMMARY;
 import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_MAP_DESCRIPTION;
 import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_MAP_SUMMARY;
-import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_SEARCH_DESCRIPTION;
-import static com.kohere.docs.ListingV1DocsFields.V1_LISTINGS_SEARCH_SUMMARY;
 import static com.kohere.docs.ListingV1DocsFields.V1_LISTING_DETAIL_DESCRIPTION;
 import static com.kohere.docs.ListingV1DocsFields.V1_LISTING_DETAIL_SUMMARY;
 import static com.kohere.docs.ListingV1DocsFields.V1_RECENT_LISTINGS_DESCRIPTION;
@@ -57,7 +50,6 @@ import static com.kohere.docs.ListingV1DocsFields.V1_RECENT_LISTINGS_SUMMARY;
 import static com.kohere.docs.ListingV1DocsFields.emptyMapResponseFields;
 import static com.kohere.docs.ListingV1DocsFields.emptyPageResponseFields;
 import static com.kohere.docs.ListingV1DocsFields.emptyRecentListingsResponseFields;
-import static com.kohere.docs.ListingV1DocsFields.emptySearchResponseFields;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
@@ -83,7 +75,6 @@ import com.kohere.docs.ListingV1DocsFields;
 import com.kohere.listing.domain.place.PlaceSearchClient;
 import com.kohere.listing.domain.place.PlaceSearchResult;
 import com.kohere.listing.domain.place.PlaceSearchUpstreamException;
-import com.kohere.listing.infrastructure.migration.SearchPlaceSeedChangeUnit;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -136,7 +127,6 @@ class ListingDocsTest {
   private static final String LISTINGS_COLLECTION = "listings";
   private static final String FAVORITES_COLLECTION = "favorites";
   private static final String RECENT_LISTINGS_COLLECTION = "recentListings";
-  private static final String SEARCH_PLACES_COLLECTION = "searchPlaces";
   private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
 
   /** 시드 매물이 있는 신림 일대를 감싸는 지도 화면 bbox다. 두 번째 시드 매물(홍대)은 이 범위 밖이다. */
@@ -180,11 +170,9 @@ class ListingDocsTest {
     mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(FAVORITES_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());
-    mongoTemplate.getCollection(SEARCH_PLACES_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
     ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
     ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
-    new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
     when(userAccountService.getLanguage(1L)).thenReturn("en");
   }
 
@@ -245,55 +233,6 @@ class ListingDocsTest {
                     .description(LISTINGS_LIST_DESCRIPTION),
                 queryParameters(listQueryParameters()),
                 responseFields(listResponseFields())));
-
-    mockMvc
-        .perform(
-            get("/api/v2/listings/search")
-                .param("keyword", "서울대")
-                .param("sort", "DISTANCE")
-                .param("page", "0")
-                .param("size", "20"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.matchedPlace.name").value("서울대학교"))
-        // 홍대 시드 매물은 서울대에서 3km 밖이라 검색 반경에서 빠진다.
-        .andExpect(jsonPath("$.data.page.totalElements").value(1))
-        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
-        .andExpect(jsonPath("$.data.content[0].rentalType.code").value("MONTHLY_RENT"))
-        .andExpect(jsonPath("$.data.content[0].nearestTransit.type.code").value("SUBWAY"))
-        .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
-        .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0].code").value("CENTRAL"))
-        // 필터가 없으므로 ACTIVE 방 타입 2개가 모두 실린다.
-        .andExpect(jsonPath("$.data.content[0].roomOffers.length()").value(2))
-        .andExpect(jsonPath("$.data.content[0].roomOffers[0].pricing.monthlyRent").value(380000))
-        .andExpect(jsonPath("$.data.content[0].roomOffers[0].rentalType").doesNotExist())
-        .andDo(
-            document(
-                "listings-search",
-                resourceDetails()
-                    .tag(ApiDocsTags.LISTINGS)
-                    .summary(LISTINGS_SEARCH_SUMMARY)
-                    .description(LISTINGS_SEARCH_DESCRIPTION),
-                queryParameters(searchQueryParameters()),
-                responseFields(searchResponseFields())));
-
-    mockMvc
-        .perform(
-            get("/api/v2/listings/search")
-                .param("keyword", "없는장소")
-                .param("page", "0")
-                .param("size", "20"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.matchedPlace").value(nullValue()))
-        .andExpect(jsonPath("$.data.content").isEmpty())
-        .andDo(
-            document(
-                "listings-search-empty-place",
-                resourceDetails()
-                    .tag(ApiDocsTags.LISTINGS)
-                    .summary(LISTINGS_SEARCH_SUMMARY)
-                    .description(LISTINGS_SEARCH_DESCRIPTION),
-                queryParameters(searchQueryParameters()),
-                responseFields(searchEmptyPlaceResponseFields())));
 
     mockMvc
         .perform(
@@ -547,24 +486,6 @@ class ListingDocsTest {
                     .description(V1_LISTINGS_MAP_DESCRIPTION)
                     .deprecated(true),
                 responseFields(emptyMapResponseFields())));
-
-    // v2에서는 매칭되는 장소 키워드인데도 matchedPlace가 null이다.
-    mockMvc
-        .perform(get("/api/v1/listings/search").param("keyword", "서울대"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.matchedPlace").value(nullValue()))
-        .andExpect(jsonPath("$.data.content").isEmpty())
-        .andExpect(jsonPath("$.data.page.totalElements").value(0))
-        .andDo(
-            document(
-                "v1-listings-search",
-                resourceDetails()
-                    .tag(ApiDocsTags.LISTINGS)
-                    .summary(V1_LISTINGS_SEARCH_SUMMARY)
-                    .description(V1_LISTINGS_SEARCH_DESCRIPTION)
-                    .deprecated(true),
-                queryParameters(ListingV1DocsFields.searchQueryParameters()),
-                responseFields(emptySearchResponseFields())));
 
     // 실제로 존재하는 시드 매물 ID인데도 404다.
     perform(
@@ -889,39 +810,6 @@ class ListingDocsTest {
         "listings-list-invalid-distance-sort",
         LISTINGS_LIST_SUMMARY,
         LISTINGS_LIST_DESCRIPTION);
-
-    // ===== GET /listings/search =====
-    perform(
-        get("/api/v2/listings/search"),
-        status().isBadRequest(),
-        "INVALID_INPUT",
-        "listings-search-invalid-keyword-missing",
-        LISTINGS_SEARCH_SUMMARY,
-        LISTINGS_SEARCH_DESCRIPTION);
-
-    perform(
-        get("/api/v2/listings/search").param("keyword", "   "),
-        status().isBadRequest(),
-        "INVALID_INPUT",
-        "listings-search-invalid-keyword-blank",
-        LISTINGS_SEARCH_SUMMARY,
-        LISTINGS_SEARCH_DESCRIPTION);
-
-    perform(
-        get("/api/v2/listings/search").param("keyword", "가".repeat(51)),
-        status().isBadRequest(),
-        "INVALID_INPUT",
-        "listings-search-invalid-keyword-too-long",
-        LISTINGS_SEARCH_SUMMARY,
-        LISTINGS_SEARCH_DESCRIPTION);
-
-    perform(
-        get("/api/v2/listings/search").param("keyword", "서울대").param("size", "101"),
-        status().isBadRequest(),
-        "INVALID_INPUT",
-        "listings-search-invalid-page-size",
-        LISTINGS_SEARCH_SUMMARY,
-        LISTINGS_SEARCH_DESCRIPTION);
 
     // ===== GET /listings/map =====
     perform(

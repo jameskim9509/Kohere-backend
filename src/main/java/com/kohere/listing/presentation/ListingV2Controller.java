@@ -10,11 +10,9 @@ import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingImageUploadResponse;
-import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.image.PendingListingImage;
-import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingRegisterRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
@@ -72,14 +70,6 @@ public class ListingV2Controller {
   @GetMapping("/map")
   public ListingMapResponse getListingMap(@ModelAttribute ListingMapRequest request) {
     return listingService.getListingMap(request);
-  }
-
-  /** 키워드로 매물을 검색한다. 장소명이 일치하면 {@code matchedPlace}로 함께 내려준다. */
-  @GetMapping("/search")
-  public ListingKeywordSearchResponse searchListings(
-      @AuthenticationPrincipal AuthPrincipal principal,
-      @ModelAttribute ListingKeywordSearchRequest request) {
-    return listingService.searchListings(userIdOrNull(principal), request);
   }
 
   /** 매물 상세를 조회한다. 로그인 상태면 최근 본 매물에 기록된다. */

@@ -35,11 +35,10 @@ import org.springframework.restdocs.request.ParameterDescriptor;
  * Listings 태그 오퍼레이션의 문서 자산(#151 후속 정리).
  *
  * <p>{@code ListingDocsTest}에 흩어져 있던 오퍼레이션 문구 상수(summary·description)와 파라미터·응답 필드 기술자를 태그 단위로 모은
- * 것이다. 매물 목록({@code GET /listings})·지도 마커({@code GET /listings/map})·키워드 검색({@code GET
- * /listings/search})·장소 후보({@code GET /listings/places})·상세({@code GET /listings/{listingId}})·찜
- * 등록/해제({@code POST·DELETE /listings/{listingId}/favorite})·내 찜 목록({@code GET
- * /users/me/favorites})·최근 본 매물({@code GET /users/me/recent-listings})에 매물 등록({@code POST
- * /api/v2/listings})을 더한 10개 오퍼레이션을 다룬다.
+ * 것이다. 매물 목록({@code GET /listings})·지도 마커({@code GET /listings/map})·장소 후보({@code GET
+ * /listings/places})·상세({@code GET /listings/{listingId}})·찜 등록/해제({@code POST·DELETE
+ * /listings/{listingId}/favorite})·내 찜 목록({@code GET /users/me/favorites})·최근 본 매물({@code GET
+ * /users/me/recent-listings})에 매물 등록({@code POST /api/v2/listings})을 더한 9개 오퍼레이션을 다룬다.
  *
  * <p>같은 {@code (path, method)} 오퍼레이션의 성공 스니펫과 에러 스니펫은 <b>같은 상수</b>를, 같은 {@code (path, method,
  * status)}의 스니펫은 <b>같은 기술자 헬퍼</b>를 써야 한다({@link ApiDocsFields} 클래스 주석 참조). 여기 한 벌만 두는 이유다.
@@ -140,32 +139,6 @@ public final class ListingDocsFields {
       | 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
       | 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
       | 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
-      | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
-      """;
-
-  // ── §3 키워드 장소 검색 — GET /api/v2/listings/search ──────────────────────
-
-  public static final String LISTINGS_SEARCH_SUMMARY = "키워드 장소 검색과 주변 매물 조회";
-
-  public static final String LISTINGS_SEARCH_DESCRIPTION =
-      """
-      학교명·지역명·지하철역명으로 장소를 찾고, 그 장소 주변의 매물을 함께 조회한다.
-
-      **헤더**
-
-      - `Authorization: Bearer <accessToken>` — 선택. 없으면 게스트로 응답한다.
-
-      **응답 주의사항**
-
-      - `matchedPlace=null`, `content=[]`: 검색어와 일치하는 장소가 없음
-      - `matchedPlace` 존재, `content=[]`: 장소는 찾았지만 주변 매물이 없음
-      - 표시 문구의 언어 규칙은 매물 목록 API와 같다.
-
-      **에러 코드**
-
-      | status | `error.code` | 발생 조건 |
-      |---|---|---|
-      | 400 | `INVALID_INPUT` | 키워드 누락/공백/길이(1~50자) 위반, `size` 범위 초과 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
       """;
 
@@ -623,21 +596,6 @@ public final class ListingDocsFields {
     };
   }
 
-  /** 키워드 검색 API의 query parameter 문서 정의다. */
-  public static ParameterDescriptor[] searchQueryParameters() {
-    return new ParameterDescriptor[] {
-      parameterWithName("keyword")
-          .description(
-              "검색창 입력값(1~50자). 학교명·지역명·지하철역명 또는 별칭 일부를 보낼 수 있음. 예: 연세, 연세대, 서울대, 신촌, 홍대입구역"),
-      parameterWithName("sort")
-          .optional()
-          .description(
-              "검색 결과 정렬 방식. 기본 DISTANCE는 검색된 장소에서 가까운 순, PRICE_ASC는 조건에 맞는 방 타입 중 가장 낮은 월세순, RECOMMENDED는 추천순"),
-      parameterWithName("page").optional().description("0부터 시작하는 페이지 번호"),
-      parameterWithName("size").optional().description("한 번에 가져올 매물 수. 기본 20, 최대 100")
-    };
-  }
-
   /** 찜 등록/해제 API의 path parameter 문서 정의다. */
   public static ParameterDescriptor[] favoritePathParameters() {
     return new ParameterDescriptor[] {
@@ -860,42 +818,6 @@ public final class ListingDocsFields {
     fields.addAll(pageFields("필터와 지도 범위에 맞는 전체 매물 수"));
     fields.add(errorNull());
     return fields;
-  }
-
-  /** 키워드 검색 성공 응답 필드 문서 정의다. */
-  public static List<FieldDescriptor> searchResponseFields() {
-    List<FieldDescriptor> fields = new ArrayList<>();
-    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
-    fields.add(
-        field(
-            "data.matchedPlace.type",
-            JsonFieldType.STRING,
-            "검색어로 매칭된 장소 종류. UNIVERSITY, SUBWAY_STATION, REGION 중 하나"));
-    fields.add(field("data.matchedPlace.name", JsonFieldType.STRING, "프론트에 표시할 공식 장소명"));
-    fields.add(field("data.matchedPlace.lat", JsonFieldType.NUMBER, "지도 중심 이동에 사용할 장소 위도(WGS84)"));
-    fields.add(field("data.matchedPlace.lng", JsonFieldType.NUMBER, "지도 중심 이동에 사용할 장소 경도(WGS84)"));
-    fields.addAll(
-        listingDocumentFields("data.content[]", "검색된 장소에서 매물까지의 직선거리(미터). 검색 결과 카드 거리 라벨에 사용"));
-    fields.addAll(pageFields("검색 장소 3km 이내에 있는 전체 매물 수"));
-    fields.add(errorNull());
-    return fields;
-  }
-
-  /** POI 매칭이 없는 키워드 검색 응답 필드 문서 정의다. */
-  public static List<FieldDescriptor> searchEmptyPlaceResponseFields() {
-    return List.of(
-        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        optField(
-            "data.matchedPlace",
-            JsonFieldType.OBJECT,
-            "검색어와 일치하는 장소가 없으면 null. '검색된 장소가 없어요' 상태를 표시하면 됨"),
-        field("data.content", JsonFieldType.ARRAY, "장소를 찾지 못했으므로 빈 배열"),
-        field("data.page.number", JsonFieldType.NUMBER, "요청한 페이지 번호"),
-        field("data.page.size", JsonFieldType.NUMBER, "요청한 페이지 크기"),
-        field("data.page.totalElements", JsonFieldType.NUMBER, "항상 0"),
-        field("data.page.totalPages", JsonFieldType.NUMBER, "항상 0"),
-        field("data.page.hasNext", JsonFieldType.BOOLEAN, "항상 false"),
-        errorNull());
   }
 
   /**
