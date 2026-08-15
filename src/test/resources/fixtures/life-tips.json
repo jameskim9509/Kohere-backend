@@ -1,0 +1,107 @@
+[
+  {
+    "_id": {
+      "$oid": "6858e2000000000000000101"
+    },
+    "topicCode": "MOVING_IN",
+    "title": {
+      "en": "Resident registration",
+      "ko": "전입신고 하기",
+      "ja": "転入届の手続き"
+    },
+    "content": {
+      "en": "File your resident registration at the local community center within 14 days of moving in. Bring your passport, ARC, and lease contract.",
+      "ko": "입주 후 14일 이내에 거주지 관할 주민센터에서 전입신고를 합니다. 여권·외국인등록증·임대차계약서가 필요합니다.",
+      "ja": "入居後14日以内に、お住まいの地域の住民センターで転入届を提出します。パスポート・在留カード・賃貸借契約書が必要です。"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/moving-in/resident-registration.png",
+    "order": 1
+  },
+  {
+    "_id": {
+      "$oid": "6858e2000000000000000102"
+    },
+    "topicCode": "MOVING_IN",
+    "title": {
+      "en": "Setting up utilities",
+      "ko": "공과금 개통·명의 변경",
+      "ja": "公共料金の開通・名義変更"
+    },
+    "content": {
+      "en": "Contact the management office or each provider to set up electricity, water, and gas. Some are bundled into the maintenance fee — check your contract.",
+      "ko": "전기·수도·가스는 관리사무소 또는 각 공급회사에 연락해 개통·명의 변경합니다. 관리비에 포함되는 경우도 있으니 계약 내용을 확인하세요.",
+      "ja": "電気・ガス・水道は管理事務所または各供給会社に連絡して開通・名義変更します。管理費に含まれる場合もあるため契約内容を確認してください。"
+    },
+    "order": 2
+  },
+  {
+    "_id": {
+      "$oid": "6858e2000000000000000103"
+    },
+    "topicCode": "ADMINISTRATION",
+    "title": {
+      "en": "Getting your ARC",
+      "ko": "외국인등록증(ARC) 발급",
+      "ja": "外国人登録証（ARC）の発給"
+    },
+    "content": {
+      "en": "Apply for foreigner registration at the immigration office within 90 days of arrival. A prior reservation via HiKorea is required.",
+      "ko": "입국 후 90일 이내에 출입국·외국인청에서 외국인등록을 신청합니다. 하이코리아 사전 예약이 필요합니다.",
+      "ja": "入国後90日以内に、出入国・外国人庁で外国人登録を申請します。HiKoreaでの事前予約が必要です。"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/administration/arc.png",
+    "order": 1
+  },
+  {
+    "_id": {
+      "$oid": "6858e2000000000000000104"
+    },
+    "topicCode": "TRANSPORT",
+    "title": {
+      "en": "Get a T-money card",
+      "ko": "교통카드(T-money) 준비",
+      "ja": "交通カード（T-money）の準備"
+    },
+    "content": {
+      "en": "Buy and top up a T-money card at any convenience store to ride the subway and buses with transfer discounts.",
+      "ko": "편의점에서 티머니 카드를 구입해 충전하면 지하철·버스를 환승 할인과 함께 이용할 수 있습니다.",
+      "ja": "コンビニでT-moneyカードを購入・チャージすれば、地下鉄・バスを乗り換え割引付きで利用できます。"
+    },
+    "order": 1
+  },
+  {
+    "_id": {
+      "$oid": "6858e2000000000000000105"
+    },
+    "topicCode": "FINANCE",
+    "title": {
+      "en": "Opening a bank account",
+      "ko": "은행 계좌 개설",
+      "ja": "銀行口座の開設"
+    },
+    "content": {
+      "en": "Visit a bank branch with your ARC and passport to open an account. Some banks offer English-speaking service.",
+      "ko": "외국인등록증과 여권을 지참해 은행 지점을 방문하면 계좌를 개설할 수 있습니다. 일부 은행은 영어 상담이 가능합니다.",
+      "ja": "在留カードとパスポートを持って銀行の支店を訪れると口座を開設できます。一部の銀行では英語対応が可能です。"
+    },
+    "order": 1
+  },
+  {
+    "_id": {
+      "$oid": "6858e2000000000000000106"
+    },
+    "topicCode": "HOUSING",
+    "title": {
+      "en": "Waste separation rules",
+      "ko": "쓰레기 분리배출",
+      "ja": "ゴミの分別ルール"
+    },
+    "content": {
+      "en": "In Korea, volume-rate garbage bags and food-waste separation are mandatory. Collection days vary by area — check the notice board.",
+      "ko": "한국은 종량제봉투와 음식물 쓰레기 분리배출이 필수입니다. 지역마다 수거 요일이 다르니 게시판을 확인하세요.",
+      "ja": "韓国では従量制ごみ袋と食品ごみの分別が必須です。地域ごとに収集日が異なるので掲示を確認してください。"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/housing/waste-separation.png",
+    "order": 1
+  }
+]

@@ -975,7 +975,7 @@
 | | `C` | 세 번째 보기 |
 | | `D` | 네 번째 보기 |
 
-> 퀴즈 콘텐츠는 `Quiz` 애그리거트를 **MongoDB `quizzes` 컬렉션**(`diagnosisQuestions`와 동종의 문서 카탈로그, ADR-0005 폴리글랏 — 퀴즈=콘텐츠/문서 → MongoDB)에 보유한다. 표시 문자열(`question`·`choices[].text`·`explanation`)은 분리 컬렉션 없이 **같은 도큐먼트 안에 인라인 언어-키 맵으로 임베드**하고(언어 코드 키), 보기 키 `A`~`D`(`ChoiceKey`)는 언어 무관 불변으로 채점 기준이다. `active` 불리언이 랜덤 풀을 게이트하며, 시드는 Mongock `@ChangeUnit`으로 적재한다. 제출 테이블·포인트 테이블은 없다(무상태 채점).
+> 퀴즈 콘텐츠는 `Quiz` 애그리거트를 **MongoDB `quizzes` 컬렉션**(`diagnosisQuestions`와 동종의 문서 카탈로그, ADR-0005 폴리글랏 — 퀴즈=콘텐츠/문서 → MongoDB)에 보유한다. 표시 문자열(`question`·`choices[].text`·`explanation`)은 분리 컬렉션 없이 **같은 도큐먼트 안에 인라인 언어-키 맵으로 임베드**하고(언어 코드 키), 보기 키 `A`~`D`(`ChoiceKey`)는 언어 무관 불변으로 채점 기준이다. `active` 불리언이 랜덤 풀을 게이트하며, 시드는 정본 시드 JSON 주입으로 적재한다. 제출 테이블·포인트 테이블은 없다(무상태 채점).
 
 **협력 / 이벤트:** 채점 귀속 주체는 `user`를 식별자(`userId`)로만 참조한다(ADR-0002). 번역에 쓸 **표시 언어는 `user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`으로 회신 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(ADR-0002 Decision 5). 이로써 **모듈 의존 `gamification → user`를 추가**한다(위 `allowedDependencies` 항목). 퀴즈 콘텐츠는 **MongoDB 문서 카탈로그**(`diagnosisQuestions`와 동종, ADR-0005)로 제공하며, 채점은 **무상태**라 제출·적립·이벤트를 남기지 않는다.
 
@@ -1067,7 +1067,7 @@
 
 **불변식:** `topicCode`는 실재하는 `LifeTipTopic.code`를 가리켜야 한다(참조 무결성 — 없는 주제 코드로 조회 시 `404 LIFE_TIP_TOPIC_NOT_FOUND`); 한 주제의 팁 목록은 `(topicCode, order)`로 노출 순서를 정하며, 주제당 팁 수가 제한적이라 페이지네이션 없이 전체 리스트를 한 번에 반환한다(비페이지 — "해당 주제에 맞는 제목-내용-사진의 모든 리스트"); `title`·`content`는 표시 문자열만 언어별이고 `id`·`imageUrl`은 언어 무관 불변; `imageUrl`이 없는 팁은 `null`로 두되 나머지 필드(`title`·`content`)는 정상 노출한다; 응답 스키마는 언어와 무관하게 동일하고 서버가 언어 문자열만 채운다.
 
-> `LifeTipTopic`·`LifeTip` 모두 운영이 시드로 적재하는 큐레이션 카탈로그다(사용자 생성 콘텐츠 아님). 시드는 진단 카탈로그와 동일하게 Mongock `@ChangeUnit`(모듈별)로 `lifeTipTopics`/`lifeTips` 컬렉션에 적재한다([ADR-0032](../adr/0032-mongodb-migration-runner.md)). 컬렉션·인덱스 등 영속 매핑(`lifeTipTopics { order: 1 }`, `lifeTips { topicCode: 1, order: 1 }` 복합)은 [database-design](../database/database-design.md) 소관이라 여기서 다루지 않는다.
+> `LifeTipTopic`·`LifeTip` 모두 운영이 시드로 적재하는 큐레이션 카탈로그다(사용자 생성 콘텐츠 아님). 시드는 진단 카탈로그와 동일하게 운영자가 정본 JSON을 `lifeTipTopics`/`lifeTips` 컬렉션에 주입한다([ADR-0032](../adr/0032-mongodb-migration-runner.md) §4). 컬렉션·인덱스 등 영속 매핑(`lifeTipTopics { order: 1 }`, `lifeTips { topicCode: 1, order: 1 }` 복합)은 [database-design](../database/database-design.md) 소관이라 여기서 다루지 않는다.
 
 **i18n(진단과 동일 전략):** 번역 기준은 **사용자 표시 언어**이고, `user` 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`으로 회신 — `lifetip`은 그 규칙을 알지 못한다; `Accept-Language`·토큰 클레임 미사용; [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6 일관). 표시 문자열(`name`/`title`/`content`)은 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하고, 서버가 사용자 언어 키로 문자열을 고르되 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)·`imageUrl`은 언어 무관 불변이라 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다). 진단 문항 라벨(`diagnosisQuestions`의 인라인 언어-키 맵)과 같은 부류로, 새 i18n 메커니즘을 만들지 않는다.
 
