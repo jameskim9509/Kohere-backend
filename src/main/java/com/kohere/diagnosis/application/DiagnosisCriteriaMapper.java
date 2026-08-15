@@ -24,6 +24,7 @@ public class DiagnosisCriteriaMapper {
   private static final String DEFAULT_RECOMMENDATION_SORT = "recommended,desc";
 
   RecommendationCriteria toCriteria(Diagnosis d, int page, int size, String sort) {
+    UniversityGroup university = d.getUniversity();
     return new RecommendationCriteria(
         d.getRegion() == null ? null : d.getRegion().name(),
         d.getMonthlyRentMin(),
@@ -31,12 +32,30 @@ public class DiagnosisCriteriaMapper {
         d.getConditions() == null
             ? Set.of()
             : d.getConditions().stream().map(Enum::name).collect(Collectors.toSet()),
-        d.getUniversity() == null ? Set.of() : d.getUniversity().memberCodes(),
-        d.getUniversity() == UniversityGroup.ETC ? UniversityGroup.allMemberCodes() : Set.of(),
+        includedUniversityCodes(university),
+        excludedUniversityCodes(university),
         d.getDistrict() == null ? null : d.getDistrict().name(),
         d.getArcStatus() == null ? null : d.getArcStatus().name(),
         page,
         size,
         sort == null || sort.isBlank() ? DEFAULT_RECOMMENDATION_SORT : sort);
+  }
+
+  /**
+   * 고른 그룹의 멤버 대학 코드다 — 이 중 하나라도 인근이면 매칭된다.
+   *
+   * <p>{@code ETC}는 고른 학교가 목록 밖이라는 답이라 포함할 코드가 없다. {@link #excludedUniversityCodes}가 대신 답한다.
+   */
+  private static Set<String> includedUniversityCodes(UniversityGroup group) {
+    return group == null || group == UniversityGroup.ETC ? Set.of() : group.memberCodes();
+  }
+
+  /**
+   * {@code ETC}("그 외 대학")일 때만 목록 전체를 제외 조건으로 넘긴다 — 목록에 든 대학 근처 매물은 답이 될 수 없다(여집합 매칭).
+   *
+   * <p>두 메서드는 배타적이다. 한쪽이 값을 주면 다른 쪽은 반드시 빈 집합이며, 어기면 {@link RecommendationCriteria} 생성자가 막는다.
+   */
+  private static Set<String> excludedUniversityCodes(UniversityGroup group) {
+    return group == UniversityGroup.ETC ? UniversityGroup.allMemberCodes() : Set.of();
   }
 }
