@@ -37,7 +37,7 @@ Accepted
 7. **의존성·호환.** [build.gradle](../../build.gradle)에 Spring Boot 3.5(Framework 6.2)·`spring-data-mongodb` 호환 Mongock 버전을 추가하고 ADR 주석을 단다(Flyway 주석과 대칭). 버전 호환은 **추가 전 검증**한다([ADR-0016](./0016-downgrade-to-spring-boot-3.md) 원칙 — 미성숙 도구가 Boot 호환을 막는 사례 회피).
 8. **애플리케이션 데이터 로더보다 먼저 실행.** Mongock의 Spring runner는 `InitializingBean`으로 설정한다. 기본 `ApplicationRunner` 방식은 인덱스 초기화기와 실행 순서가 보장되지 않아, 신 스키마 객체가 구 validator에 먼저 저장될 수 있다. 따라서 모든 미적용 changeUnit을 완료한 뒤 `ApplicationRunner`가 실행되게 한다.
 
-현재 체인은 `listing`의 `0115`~`0118`이다 — v4 저장 계약(validator)·좌표 필수화·폐기 컬렉션 드롭·대학 좌표 원장 스키마([ADR-0045](./0045-nearby-university-mapping-from-seeded-coordinates.md)). 넷 다 스키마만 다루고 문서를 넣지 않는다.
+현재 체인은 `listing`의 `0115`~`0119`이다 — v4 저장 계약(validator)·좌표 필수화·폐기 컬렉션 드롭·대학 좌표 원장 스키마([ADR-0045](./0045-nearby-university-mapping-from-seeded-coordinates.md))·담당자 연락처 `sms` 제거([ADR-0039](./0039-listing-schema-v4-registration-form.md) Amended — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제). 다섯 다 스키마만 다루고 문서를 넣지 않는다.
 
 ## Alternatives
 

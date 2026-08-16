@@ -330,8 +330,7 @@ Request Body:
   "type": "GOSHIWON",
   "contact": {
     "managerName": "Kim Woon-yeong",
-    "phone": "+82) 10-1234-5678",
-    "sms": "+82) 10-1234-5679"
+    "phone": "+82) 10-1234-5678"
   },
   "businessRegistrationNumber": "1234567890",
   "blogUrl": "https://blog.naver.com/kohere-goshiwon",
@@ -403,8 +402,7 @@ Request Body:
 | `title` | string | 필수 | 지점명(한국어). 공백 불가 |
 | `type` | `ListingType` | 필수 | 공간 유형. 카탈로그 `LISTING_TYPE` 대조 |
 | `contact.managerName` | string | 필수 | 지점 운영자명 |
-| `contact.phone` | string | 필수 | 전화문의 수신 연락처. `+82) 10-1234-5678` 형식 |
-| `contact.sms` | string | 필수 | 문자문의 수신 연락처. 형식은 `phone`과 동일 |
+| `contact.phone` | string | 필수 | 지점 대표 전화(문의 수신). `+82) 10-1234-5678` 형식 |
 | `businessRegistrationNumber` | string | 필수 | 숫자 10자리. **형식만 검증하고 그대로 저장**한다(아래 요청 주의사항) |
 | `blogUrl` | string | 선택 | 지점 블로그. 값이 있으면 URL 형식 |
 | `address.fullAddress` | string | 필수 | 도로명 주소. **주소 검색 응답의 `roadAddress`를 그대로** 보낸다. 서버는 받은 값을 정규화 없이 저장한다 |
@@ -462,6 +460,7 @@ Request Body:
 - **코드 필드는 `listingCatalog` 대조를 통과해야 한다.** 위 표의 각 코드 배열·단일 코드는 `(category, code)`가 카탈로그에 존재해야 하며, 없는 코드는 `400 LISTING_UNKNOWN_CATALOG_CODE`다. 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리한다 — 프론트는 입력 교정 대신 코드 카탈로그 재조회(또는 앱 갱신)를 안내한다.
 - **문자열 길이 제한은 두지 않는다.** 서버·DB 어느 계층도 자유 입력 문구의 길이를 강제하지 않는다.
 - **사업자등록번호는 등록 시점에 자동 검증하지 않는다.** 숫자 10자리 형식만 확인하고 원문을 매물 문서에 저장하며, 진위·영업 상태는 **관리자가 승인 심사에서 수동으로** 확인한다. 이 엔드포인트는 `POST /api/v1/auth/business/verify`(무상태 검증 — [01-auth-onboarding](./01-auth-onboarding.md))를 호출하지 않는다.
+- **담당자 연락처는 두 칸뿐이다.** `contact`는 `managerName`·`phone`이며 `phone`은 **지점 대표 전화**다. 문자문의 칸(`contact.sms`)은 **받지 않는다** — 임대인이 거기 적게 되는 값은 온보딩에서 인증한 개인 번호(`users.phone_number`)라 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 마스킹 대상 PII를 매물 응답으로 평문 공개하는 통로가 되고, 계정 단위 값을 매물마다 복제하게 된다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md) Amended). 임대인 개인 연락처는 매물 문서에 복사하지 않으며, 필요해지면 저장이 아니라 조회 시점에 `user` 모듈에서 가져와 **마스킹해** 내보낸다.
 - **다국어 문구는 한국어 한 값만 받는다.** 서버가 저장 시 `{ko, en}`의 **양쪽에 같은 값을 넣는다**(`en = ko`). 대상은 `title`·`address.fullAddress`·`address.detail`·`nearestTransit.name`·`description`·`extraNotes`·`refundPolicy`·`roomOffers[].name` 8종이다. 저장 계약이 두 언어를 모두 요구하므로(`LocalizedText`) 영어 문구가 비어 있는 문서는 만들 수 없다. **영어 번역은 관리자가 승인 심사에서 채운다** — 등록 직후 매물은 `PENDING`이라 세입자 조회에 노출되지 않으므로, 번역 없이 승인하지 않는 한 외국인 화면에 한국어가 나가지 않는다.
 
 성공 Response (201):
@@ -566,8 +565,7 @@ Request Body:
     "extraNotes": "객실 내 취사 금지. 오후 11시 이후 정숙.",
     "contact": {
       "managerName": "Kim Woon-yeong",
-      "phone": "+82) 10-1234-5678",
-      "sms": "+82) 10-1234-5679"
+      "phone": "+82) 10-1234-5678"
     },
     "blogUrl": "https://blog.naver.com/kohere-goshiwon",
     "imageUrls": [
@@ -589,7 +587,7 @@ Request Body:
 - **`location`은 요청의 `address.lat`·`address.lng`를 그대로 옮긴 값이고, `nearbyUniversityCodes`는 그 좌표에서 서버가 파생한 값이다.** 좌표는 주소 검색이 준 것을 되돌려 받은 것이고, 대학은 반경 2km 안에 있는 것을 모두 담는다 — 위 예시의 신촌 좌표는 `YONSEI`·`EWHA`·`HONGIK` 셋이 모두 도보권이라 셋 다 들어간다([ADR-0045](../../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)).
 - `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로이고, 요청의 `lat`·`lng`는 `address` 안이 아니라 **최상위 `location`** 으로 옮겨 간다(상세 조회와 같은 구조).
 - 상위 `conditions`는 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이다. 등록 요청에는 없고 서버가 계산한다.
-- `contact`(담당자명·전화문의·문자문의)는 **세입자에게 그대로 공개**하는 매물별 담당 연락처이므로 응답에 포함한다. 반면 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 **응답에 포함하지 않는다**([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
+- `contact`(담당자명·지점 대표 전화)는 **세입자에게 그대로 공개**하는 매물별 담당 연락처이므로 응답에 포함한다. 반면 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 **응답에 포함하지 않는다**([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
 - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다. 임대인은 `lang="ko"`로 고정이라 위 예시처럼 한국어 라벨이 내려간다.
 - 등록된 매물은 `PENDING`이라 목록·지도·검색·상세·찜 어디에도 나오지 않는다. 공개 전환(`PENDING → PUBLISHED`/`REJECTED`), 임대인 수정, 주변 대학 파생, 재고 관리는 모두 **후속 작업**이다.
 
@@ -715,8 +713,7 @@ Request Body: 없음
         "extraNotes": "No cooking inside rooms. Quiet hours after 11 PM.",
         "contact": {
           "managerName": "Kim Woon-yeong",
-          "phone": "+82) 10-1234-5678",
-          "sms": "+82) 10-1234-5679"
+          "phone": "+82) 10-1234-5678"
         },
         "blogUrl": "https://blog.naver.com/kohere-goshiwon",
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
@@ -746,7 +743,7 @@ Request Body: 없음
 - 필터가 있으면 `roomOffers[]`에는 조건을 통과한 방 타입만 들어온다. 필터가 없으면 노출 가능한 ACTIVE 방 타입 전체가 들어온다.
 - 방 타입별 세부 조건 배지가 필요하면 각 `roomOffers[].filterTags`를 사용한다.
 - 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
-- `contact`는 매물별 담당 연락처(담당자명·전화문의·문자문의)이며 세입자에게 그대로 공개한다. 임대인 개인 연락처와는 별개 값이다. `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에 포함하지 않는다.
+- `contact`는 매물별 담당 연락처(담당자명·지점 대표 전화)이며 세입자에게 그대로 공개한다. 임대인 개인 연락처와는 별개 값이다. `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에 포함하지 않는다.
 - `distanceMeters`가 있으면 거리 라벨로 표시하고, 없으면 숨긴다.
 - `favoriteCount`는 찜 수 표시값이다. 목록의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`이므로, 실제 하트 상태가 필요한 화면은 상세 또는 사용자 전용 목록의 값을 사용해야 한다.
 
@@ -964,8 +961,7 @@ Request Body: 없음
     "extraNotes": "No cooking inside rooms. Quiet hours after 11 PM.",
     "contact": {
       "managerName": "Kim Woon-yeong",
-      "phone": "+82) 10-1234-5678",
-      "sms": "+82) 10-1234-5679"
+      "phone": "+82) 10-1234-5678"
     },
     "blogUrl": "https://blog.naver.com/kohere-goshiwon",
     "imageUrls": [
@@ -988,7 +984,7 @@ Request Body: 없음
 - Property Details의 features/조건 배지는 상위 `conditions`를 사용한다. 방 타입별 조건은 `roomOffers[].filterTags`를 사용한다.
 - 시설 섹션은 `building`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다. ARC 필요 여부는 `arcRequired`, 지원 언어는 `languagesSupported`, 주변 시설은 `nearbyFacilities`로 표시한다.
 - `roomOffers[]`는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.
-- 문의 영역은 `contact.managerName`·`contact.phone`·`contact.sms`를 그대로 표시한다. 임대인이 `POST /api/v2/listings`에서 입력한 매물별 담당 연락처라 임대인 개인 연락처와 별개 값이며 마스킹하지 않는다. 같은 등록 요청이 담은 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 응답에 포함하지 않는다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
+- 문의 영역은 `contact.managerName`·`contact.phone` 두 값을 그대로 표시한다. 임대인이 `POST /api/v2/listings`에서 입력한 **지점 대표 전화**라 임대인 개인 연락처와 별개 값이며 마스킹하지 않는다. 문자문의 번호는 **응답에 없다** — 개인 번호를 매물 문서에 복사하지 않기로 했다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md) Amended). 같은 등록 요청이 담은 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 응답에 포함하지 않는다([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
 - `blogUrl`은 있을 때만 지점 블로그 링크로 노출하고 `null`이면 숨긴다. 이용 연령대는 `ageMin`~`ageMax`로 표시한다.
 - 상세는 `PUBLISHED` 매물만 반환한다. 등록 직후의 `PENDING`(승인 대기) 매물은 `listingId`를 알아도 `404 LISTING_NOT_FOUND`이며, 관리자 승인을 거쳐 `PUBLISHED`가 된 뒤에야 조회된다. 승인 조건에 `location` 보유가 들어가므로 상세에 오는 매물은 항상 좌표를 가진다.
 - 온보딩 완료 사용자의 상세 조회가 성공하면 최근 본 목록이 자동 갱신된다. 프론트에서 최근 본 저장 API를 따로 호출할 필요는 없다.
@@ -1156,8 +1152,7 @@ Request Body: 없음
         "extraNotes": "No cooking inside rooms. Quiet hours after 11 PM.",
         "contact": {
           "managerName": "Kim Woon-yeong",
-          "phone": "+82) 10-1234-5678",
-          "sms": "+82) 10-1234-5679"
+          "phone": "+82) 10-1234-5678"
         },
         "blogUrl": "https://blog.naver.com/kohere-goshiwon",
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
@@ -1275,8 +1270,7 @@ Request Body: 없음
         "extraNotes": "The shared lounge is open to all residents.",
         "contact": {
           "managerName": "Lee Ha-eun",
-          "phone": "+82) 10-2222-3333",
-          "sms": "+82) 10-2222-3333"
+          "phone": "+82) 10-2222-3333"
         },
         "blogUrl": null,
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],

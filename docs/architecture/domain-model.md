@@ -266,7 +266,7 @@
 | `id` | 식별자 | 애그리거트 식별자 |
 | `schemaVersion` | int | 문서 구조 버전(v4 = `4`) |
 | `landlordId` | 식별자 | 매물을 등록한 임대인 → `userType=LANDLORD`인 `User` 식별자 참조 |
-| `contact` | VO `Contact` | 매물 담당 연락처(담당자명·전화문의·문자문의). 세입자 응답에 공개 |
+| `contact` | VO `Contact` | 매물 담당 연락처(담당자명·지점 대표 전화). 세입자 응답에 공개. 임대인 개인 연락처는 담지 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended) |
 | `businessRegistrationNumber` | String | 등록 확인용 사업자등록번호 **원문**(숫자 10자리). 민감정보 — 응답 비노출 |
 | `blogUrl` | String, nullable | 지점 블로그 링크(있을 때만) |
 | `title` | VO `LocalizedText` | 매물 제목 `{ko,en}` |
@@ -358,8 +358,7 @@
 | | `name` | VO `LocalizedText` | 역 이름 `{ko,en}` |
 | | `walkMinutes` | int | 도보 시간(분) |
 | `Contact` | `managerName` | String | 매물 담당자(지점 운영자)명 |
-| | `phone` | String | 전화문의 수신 연락처 |
-| | `sms` | String | 문자문의 수신 연락처 |
+| | `phone` | String | 지점 대표 전화(문의 수신). 매물마다 다른 값이라 임대인 개인 연락처(`users.phone_number`)와 별개다 |
 | `Building` | `type` | enum `BuildingType` | 건물 형태 |
 | | `usedFloorMin` | int | 사용 층 최소값 |
 | | `usedFloorMax` | int | 사용 층 최대값 |

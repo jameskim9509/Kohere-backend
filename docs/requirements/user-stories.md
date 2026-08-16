@@ -1207,7 +1207,7 @@
 **So that** 매물을 충분히 검토하고 다시 쉽게 찾아올 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 최근 본 매물 DB 보관 사용자별 최대 30개·조회 응답 최대 10개
-- 데이터 관점: 매물 담당 연락처(`contact`: 담당자명·전화·문자)는 상세 응답에 공개하고, 임대인 개인 연락처(`users.phone_number`)는 노출하지 않고 채팅으로만 연결한다(둘은 별개 값 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 응답에서 제외하는 값은 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)이다. 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 상세 조회 성공 후 30개 초과 오래된 기록 삭제
+- 데이터 관점: 매물 담당 연락처(`contact`: 담당자명·지점 대표 전화)는 상세 응답에 공개하고, 임대인 개인 연락처(`users.phone_number`)는 노출하지 않고 채팅으로만 연결한다(둘은 별개 값이며, 개인 번호를 매물 문서에 복사하지 않는다 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended). 응답에서 제외하는 값은 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)이다. 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 상세 조회 성공 후 30개 초과 오래된 기록 삭제
 
 **AC (Given / When / Then)**
 
@@ -1283,7 +1283,8 @@
 - 파생·미구현 관점: 폼 한 칸이 스키마 두 필드로 갈라지는 값은 서버가 파싱한다 — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. `min ≤ max`와 `usedFloorMax ≤ totalFloors`를 함께 검증한다. 주소는 `address.fullAddress`에 **받은 값 그대로**(정규화 없음) 저장하고, `address.city`·`district`는 도로명 주소를 공백으로 끊어 카탈로그(`CITY`·`DISTRICT`) 한국어 라벨과 완전히 같은 토큰을 찾아 그 코드로 채운다 — 못 찾으면 `ETC`이고 등록은 성공한다(지원 지역 판단은 관리자 승인 심사, [ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)). **`location`(좌표)은 요청의 `address.lat`·`lng`로 채운다**([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 저장 계약에서도 **필수**이며 도메인 검증과 MongoDB validator가 함께 막는다(changeUnit `0116`). **`nearbyUniversityCodes`는 그 좌표에서 파생한다** — 서버가 대학 좌표 원장(`universities`, 14건)과 대조해 **반경 2km 안의 개별 대학 코드를 모두** 담는다(요청에 대학 칸은 없다). 대학가 밖이면 빈 배열이고 원장이 비어 있어도 등록은 성공한다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)).
 - 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드에서 빈 파일은 `400` + `LISTING_IMAGE_REQUIRED`, 10MB 초과는 `413` + `LISTING_IMAGE_TOO_LARGE`, 허용 형식(JPEG·PNG·WebP·HEIC) 밖은 `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`이다. 등록에서 키 개수 위반은 `400` + `LISTING_IMAGE_REQUIRED`, 남의 키·없는 키·만료된 키는 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`(셋을 구분해 알려주면 남의 키 존재 여부가 새어 나간다)다.
 - 사업자등록번호 관점: 등록 API는 사업자등록번호를 **형식(숫자 10자리)만 검증해 원문 저장**하고 **진위를 자동 검증하지 않는다** — 무상태 검증 API `POST /api/v1/auth/business/verify`(US-1-8)를 **호출하지 않으며**, 진위 확인은 **관리자가 승인 심사에서 수동으로** 한다(해당 엔드포인트 자체는 임대인이 직접 확인용으로 호출하도록 그대로 둔다). 원문은 매물 문서에만 저장하고 `user.businessRegistrationNumberHash`에는 쓰지 않는다(US-1-9와 일관, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) §3, [ADR-0033](../adr/0033-business-registry-verification.md)의 매물 문서 한정 개정).
-- 응답 관점: `201 Created` + 생성된 매물의 **상세 응답 구조(v4)** 를 반환한다. `contact`(담당자명·전화·문자)는 세입자에게도 공개하므로 포함하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 US-3-4와 동일하게 **응답에서 제외**한다. `status`는 카탈로그 번역 대상이 아니라 **코드 문자열 그대로**(`"PENDING"`) 내려간다.
+- 연락처 관점: 등록 폼이 받는 담당자 연락처는 **`contact`(담당자명·지점 대표 전화) 둘뿐**이다. 문자문의 칸은 받지 않는다 — 임대인이 거기 적게 되는 값은 온보딩에서 인증한 개인 번호(`users.phone_number`)라 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 마스킹 대상 PII가 매물 응답으로 평문 공개되고, 계정 단위 값이 매물마다 복제되며, 임대인 웹 로그인이 그 번호를 계정 매칭 키로 쓰기 시작하면(US-1-11·[ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) 사본이 늘수록 위험만 커진다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended). **임대인 개인 연락처는 매물 문서에 복사하지 않는다** — 필요해지면 저장이 아니라 조회 시점에 `user` 모듈에서 가져오고(booking이 신청자 프로필을 실시간 조인하는 방식), 가져온 번호는 여전히 마스킹 대상이라 세입자에게 평문으로 나가지 않는다.
+- 응답 관점: `201 Created` + 생성된 매물의 **상세 응답 구조(v4)** 를 반환한다. `contact`(담당자명·지점 대표 전화)는 세입자에게도 공개하므로 포함하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 US-3-4와 동일하게 **응답에서 제외**한다. `status`는 카탈로그 번역 대상이 아니라 **코드 문자열 그대로**(`"PENDING"`) 내려간다.
 - 후속(이번 범위 아님): 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API · 임대인 매물 수정(좌표가 바뀌면 `nearbyUniversityCodes`도 다시 파생해야 한다) · 등록 가능 지역 확대(`DISTRICT` 카탈로그와 enum을 함께 늘린다) · 재고.
 - 시퀀스: [US-3-6 다이어그램](../architecture/sequence-diagrams/03-listings-favorites/us-3-6-listing-registration.md), API: [03-listings-favorites](../api/specs/03-listings-favorites.md).
 
@@ -1384,7 +1385,7 @@
 - 시나리오: 응답 노출 범위
   Given 등록이 성공했고
   When `201` 응답 본문을 보면
-  Then `contact`(담당자명·전화·문자)는 포함되고(세입자에게도 공개하는 값 — US-3-4), `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 제외되며, `status`는 `{code,label}`이 아니라 코드 문자열 `"PENDING"` 그대로다
+  Then `contact`(담당자명·지점 대표 전화)는 포함되고(세입자에게도 공개하는 값 — US-3-4), 문자문의 번호는 요청·응답 어디에도 없으며, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 제외되며, `status`는 `{code,label}`이 아니라 코드 문자열 `"PENDING"` 그대로다
 - 시나리오: 역 이름으로 인근 역 검색
   Given 임대인이 등록 폼의 역 칸에 "신촌"을 입력하고 주소 검색이 준 좌표를 함께 보내면
   When `GET /api/v1/listings/stations?keyword=신촌&lat=…&lng=…`를 호출하면

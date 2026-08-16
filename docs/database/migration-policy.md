@@ -43,6 +43,15 @@
 
 원칙: **한 릴리스에서는 호환 변경만**. 비호환 변경은 §5 절차로 여러 릴리스에 나눈다.
 
+> **적용된 예외 — `V23__users_phone_number_unique.sql`(제약 강화).** 임대인 웹 로그인·회원가입([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md))이 들어오면서 MySQL 체인에 둘이 추가됐다 — `V22__create_local_accounts.sql`은 **새 테이블이라 위 표의 호환(확장)**이지만, `V23__users_phone_number_unique.sql`의 `users.phone_number` UNIQUE(`uq_users_phone_number`)는 **제약 강화라 비호환**이다. 그럼에도 [§5](#5-expand-contract-패턴-무중단)로 나누지 않고 한 릴리스에 넣는다. 근거는 둘이다 — ① 임대인 계정에 **중복 번호를 만들 경로가 아직 없어** 정리 대상 행이 0건이라 expand-contract가 옮길 데이터가 없고, ② 이 제약이 웹 가입과 앱 임대인 온보딩의 동시 제출로 **같은 사람의 계정이 갈라지는 것을 막는 유일한 수단**이라(애플리케이션 조회는 아직 없는 행을 잠글 수 없다) 뒤로 미루면 그 사이 배포가 경쟁을 열어 둔 채로 남는다. 적용 전 아래로 중복 0건을 확인한다 — 있으면 제약 추가 자체가 실패한다.
+>
+> ```sql
+> SELECT phone_number, COUNT(*) FROM users
+>  WHERE phone_number IS NOT NULL GROUP BY phone_number HAVING COUNT(*) > 1;
+> ```
+>
+> 번호 정규화(숫자만 남김)는 **입력 경로에만** 넣고 기존 행은 백필하지 않으므로 V23에 `UPDATE`가 없다 — 하이픈으로 저장된 기존 번호가 매칭에서 누락될 수 있다는 **수용된 제약**이며, 두 테이블의 컬럼·제약 정본은 [database-design §4-1](./database-design.md#4-1-auth)(`local_accounts`)·[§4-2](./database-design.md#4-2-user)(`users.phone_number`)다.
+
 ### 4. NOT NULL 컬럼 추가 절차
 
 기존 데이터를 깨지 않도록 **3단계**로 나눈다.
@@ -135,6 +144,7 @@ mongoimport --db kohere --collection universities   --jsonArray --file universit
    - **`0116 listing-location-required`**: `0115`가 지오코딩이 없어 선택으로 뒀던 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 시드 주입 전이라 백필 대상이 0건이어서 [§4](#4-not-null-컬럼-추가-절차)의 확장→백필→축소가 그대로 성립한다. `0115`는 동결이므로 수정하지 않고 새 유닛이 자기 스키마 사본을 든다.
    - **`0117 listing-search-place-drop`**: 키워드 검색 API 종료로 쓰이지 않게 된 `searchPlaces`를 드롭한다([ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)).
    - **`0118 listing-university-collection`**: 대학 좌표 원장 `universities`의 validator를 세운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). 시드 14건은 [§8-1](#8-1-시드-주입-절차)로 주입한다.
+   - **`0119 listing-contact-sms-drop`**: 담당자 연락처에서 `contact.sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended) — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제한다. `0115`가 동결이라 `0116`과 같은 방식으로 **자기 스키마 사본**을 들고 `collMod`한다. 시드 주입 전이라 이행 대상 문서가 0건이므로 필드 삭제 배치도 없다.
 2. **인덱스 키를 바꿀 때는 새 이름으로 만든다.** 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다 — `listings_status_arc_required`(키 `status, propertyPolicies.arcRequired`)는 새 이름 `listings_status_arc_requirement`(키 `status, arcRequired`)로 만든다.
 3. **인덱스 소유는 부트스트랩이 유지**한다(`ListingMongoIndexInitializer`의 멱등 생성). changeUnit이 하는 일은 **옛 인덱스 2건**(`listings_status_arc_required`·`listings_status_room_available_count`)의 **삭제뿐**이며 `0115`가 1회 수행한다.
 
