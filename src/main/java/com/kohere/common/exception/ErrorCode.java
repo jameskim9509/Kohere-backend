@@ -39,6 +39,11 @@ public enum ErrorCode {
   AUTH_ONBOARDING_REQUIRED(HttpStatus.FORBIDDEN, "온보딩을 완료해야 합니다."),
   AUTH_ONBOARDING_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 온보딩을 완료했습니다."),
   AUTH_INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."),
+  // 임대인 웹 로컬 자격증명(ADR-0047). 로그인 실패는 이메일 미존재와 비밀번호 불일치를 한 코드로 묶는다(계정 존재 여부 비노출).
+  AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),
+  AUTH_ACCOUNT_LOCKED(HttpStatus.LOCKED, "비밀번호를 여러 번 틀려 계정이 잠겼습니다."),
+  AUTH_EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
+  AUTH_WEB_ACCOUNT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 웹 계정이 존재합니다. 로그인해 주세요."),
   USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
   USER_ALREADY_WITHDRAWN(HttpStatus.CONFLICT, "이미 탈퇴한 사용자입니다."),
 
