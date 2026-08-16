@@ -426,7 +426,8 @@ class AuthOnboardingDocsTest {
                         .summary(REISSUE_SUMMARY)
                         .description(REISSUE_DESCRIPTION),
                     requestFields(
-                        refreshTokenRequestField("서버가 발급·보관(해시) 중인 불투명 refresh 토큰(빈값 불가)")),
+                        refreshTokenRequestField(
+                            "서버가 발급·보관(해시) 중인 불투명 refresh 토큰(선택 — 쿠키 refreshToken이 있으면 쿠키 값을 쓰고 본문은 보지 않는다). 쿠키·본문 어느 쪽에도 값이 없거나 공백이면 400 INVALID_INPUT")),
                     responseFields(reissueResponseFields())))
             .andReturn()
             .getResponse()
@@ -464,7 +465,9 @@ class AuthOnboardingDocsTest {
                     .tag(ApiDocsTags.AUTH)
                     .summary(LOGOUT_SUMMARY)
                     .description(LOGOUT_DESCRIPTION),
-                requestFields(refreshTokenRequestField("무효화할 refresh 토큰(빈값 불가)"))));
+                requestFields(
+                    refreshTokenRequestField(
+                        "무효화할 refresh 토큰(선택 — 쿠키 refreshToken이 있으면 쿠키 값을 쓰고 본문은 보지 않는다). 쿠키로 온 요청에는 Max-Age=0 삭제 쿠키를 함께 내린다"))));
 
     // 탈퇴
     mockMvc
@@ -1017,15 +1020,19 @@ class AuthOnboardingDocsTest {
         REISSUE_DESCRIPTION,
         REISSUE_401);
 
+    // 본문 없는 요청은 더 이상 "깨진 요청"이 아니다 — 쿠키 경로(웹)의 정상 모양이라 본문 부재 자체는 오류가 아니고,
+    // 쿠키에도 값이 없을 때 비로소 "값이 빠졌다"는 뜻의 INVALID_INPUT이 된다(#229 D12 · ADR-0048 §3).
+    // 스니펫은 만들지 않는다 — 같은 (오퍼레이션, status, code)를 auth-reissue-invalid-input이 이미 문서화한다.
     assertError(
         mockMvc,
+        post("/api/v1/auth/reissue").contentType(MediaType.APPLICATION_JSON),
+        status().isBadRequest(),
+        "INVALID_INPUT");
+    // 반면 보낸 본문이 JSON으로 해석되지 않으면 종전대로 MALFORMED_REQUEST다 — 값이 빠진 게 아니라 요청 자체가 깨졌다.
+    perform(
         post("/api/v1/auth/reissue")
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
-        status().isBadRequest(),
-        "MALFORMED_REQUEST");
-    perform(
-        post("/api/v1/auth/reissue").contentType(MediaType.APPLICATION_JSON),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-reissue-malformed",
@@ -1072,18 +1079,19 @@ class AuthOnboardingDocsTest {
         LOGOUT_DESCRIPTION,
         LOGOUT_400);
 
+    // 재발급과 같다 — 본문 없는 요청은 쿠키 경로의 정상 모양이라, 쿠키에도 값이 없을 때 INVALID_INPUT이다(#229 D12).
     assertError(
         mockMvc,
         post("/api/v1/auth/logout")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(MALFORMED_BODY),
+            .contentType(MediaType.APPLICATION_JSON),
         status().isBadRequest(),
-        "MALFORMED_REQUEST");
+        "INVALID_INPUT");
     perform(
         post("/api/v1/auth/logout")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
-            .contentType(MediaType.APPLICATION_JSON),
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(MALFORMED_BODY),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-logout-malformed",

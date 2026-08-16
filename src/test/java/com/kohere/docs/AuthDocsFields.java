@@ -218,26 +218,35 @@ public final class AuthDocsFields {
 
   public static final String REISSUE_DESCRIPTION =
       """
-      본문의 refresh 토큰으로 access 토큰을 재발급한다. refresh 토큰은 항상 회전한다.
+      refresh 토큰으로 access 토큰을 재발급한다. refresh 토큰은 항상 회전한다.
 
       **헤더**
 
       - 인증 불필요 — 토큰 없이 호출한다.
       - 만료된 access 토큰이 붙어 있어도 401로 막지 않는다 — 모든 요청에 토큰을 붙이는 클라이언트가 이 호출만 헤더를 벗길 필요가 없다.
 
+      **요청 주의사항**
+
+      - refresh 토큰은 **쿠키(`refreshToken`) 우선 · 요청 본문 fallback**으로 읽는다 — 쿠키가 있으면 본문은 보지 않는다.
+      - 웹(브라우저)은 HttpOnly 쿠키가 자동으로 실리므로 **본문 없이** 호출한다. 앱은 종전대로 본문에 담아 보내며 동작이 바뀌지 않는다.
+      - 본문을 아예 보내지 않는 것은 오류가 아니다 — 쿠키·본문 어느 쪽에도 값이 없거나 공백일 때만 400 `INVALID_INPUT`이다.
+
       **응답 주의사항**
 
-      - 응답의 새 refresh 토큰으로 반드시 교체한다. 이전 토큰은 즉시 무효가 되고, 다시 쓰면 탈취로 간주해 그 사용자의 모든 세션이 끊긴다.
+      - **응답 채널이 요청 채널을 따른다** — 쿠키로 보냈으면 회전된 refresh가 `Set-Cookie`로만 오고 본문 `refreshToken`은 null이다. 본문으로 보냈으면 종전대로 본문에 담겨 오고 `Set-Cookie`는 붙지 않는다.
+      - 응답의 새 refresh 토큰으로 반드시 교체한다(쿠키 경로는 브라우저가 교체한다). 이전 토큰은 즉시 무효가 되고, 다시 쓰면 탈취로 간주해 그 사용자의 모든 세션이 끊긴다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `refreshToken` 누락·빈값 |
-      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 400 | `INVALID_INPUT` | 쿠키·본문 어느 쪽에도 `refreshToken`이 없거나 공백 |
+      | 400 | `MALFORMED_REQUEST` | 보낸 요청 본문을 JSON으로 해석할 수 없음(본문을 보내지 않는 것은 오류가 아니다) |
       | 401 | `AUTH_INVALID_REFRESH_TOKEN` | 제출한 refresh 토큰의 만료·위조·무효화·재사용 탐지 — 넷을 구분하지 않고 이 코드 하나로 응답한다 |
       """;
 
+  // 400의 두 코드가 가리키는 상황이 갈렸다(#229 D12) — 값을 못 찾은 것은 INVALID_INPUT, 본문이 깨진 것은
+  // MALFORMED_REQUEST다. 본문 없는 요청은 이제 어느 쪽도 아니다(쿠키 경로의 정상 모양).
   public static final String[] REISSUE_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
   public static final String[] REISSUE_401 = {"AUTH_INVALID_REFRESH_TOKEN"};
 
@@ -253,16 +262,22 @@ public final class AuthDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
+      **요청 주의사항**
+
+      - refresh 토큰을 읽는 규칙은 재발급과 같다 — **쿠키(`refreshToken`) 우선 · 요청 본문 fallback**이며 쿠키가 있으면 본문은 보지 않는다.
+      - 본문을 아예 보내지 않는 것은 오류가 아니다 — 쿠키·본문 어느 쪽에도 값이 없거나 공백일 때만 400 `INVALID_INPUT`이다.
+
       **응답 주의사항**
 
+      - 쿠키로 보낸 요청에는 `Max-Age=0` 삭제 쿠키를 함께 내려 브라우저에 남은 refresh까지 지운다. 본문으로 보낸 요청에는 쿠키를 내리지 않는다.
       - 로그아웃해도 access 토큰은 무효화되지 않는다 — 남은 만료 시간까지 그대로 API가 호출되므로 클라이언트가 직접 지운다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `refreshToken` 누락·빈값 |
-      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 400 | `INVALID_INPUT` | 쿠키·본문 어느 쪽에도 `refreshToken`이 없거나 공백 |
+      | 400 | `MALFORMED_REQUEST` | 보낸 요청 본문을 JSON으로 해석할 수 없음(본문을 보내지 않는 것은 오류가 아니다) |
       | 401 | `UNAUTHENTICATED` | access token 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 토큰으로 접근 |
@@ -522,8 +537,13 @@ public final class AuthDocsFields {
         optCodeField("lang", LANG_CODES, "표시 언어 ISO 639-1 소문자(선택 — 보내지 않으면 설정하지 않고 표시는 en으로 폴백)"));
   }
 
+  /**
+   * 재발급·로그아웃 요청 본문의 {@code refreshToken}. <b>선택 필드다</b> — 서버가 쿠키({@code refreshToken}) 우선 · 본문
+   * fallback으로 읽으므로 브라우저는 본문 자체를 보내지 않는다(#229 D12 · ADR-0048 §3). 채널별 차이는 호출부가 {@code
+   * description}으로 적는다.
+   */
   public static List<FieldDescriptor> refreshTokenRequestField(String description) {
-    return List.of(field("refreshToken", JsonFieldType.STRING, description));
+    return List.of(optField("refreshToken", JsonFieldType.STRING, description));
   }
 
   public static List<FieldDescriptor> reissueResponseFields() {
@@ -531,10 +551,10 @@ public final class AuthDocsFields {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"),
         field("data.accessToken", JsonFieldType.STRING, "새 access 토큰(JWT)"),
-        field(
+        optField(
             "data.refreshToken",
             JsonFieldType.STRING,
-            "새 refresh 토큰. 이 값으로 교체해야 하며 제출한 토큰은 즉시 무효가 된다"),
+            "새 refresh 토큰. 이 값으로 교체해야 하며 제출한 토큰은 즉시 무효가 된다. 쿠키로 제출한 요청(웹)에서는 null이고 회전된 값이 Set-Cookie로만 내려간다"),
         field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
         errorNull());
   }

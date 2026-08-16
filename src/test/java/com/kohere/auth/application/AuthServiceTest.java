@@ -41,11 +41,9 @@ import com.kohere.auth.presentation.dto.BusinessVerifyRequest;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LandlordOnboardingRequest;
-import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
 import com.kohere.auth.presentation.dto.PhoneVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
-import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.security.JwtTokenService;
@@ -428,7 +426,7 @@ class AuthServiceTest {
     when(jwtTokenService.issueAccessToken(50L)).thenReturn("new-access");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
 
-    TokenResponse response = authService.reissue(new ReissueRequest("raw-refresh"));
+    TokenResponse response = authService.reissue("raw-refresh");
 
     assertThat(response.accessToken()).isEqualTo("new-access");
     assertThat(response.refreshToken()).isNotNull();
@@ -443,7 +441,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(rotated));
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     verify(refreshTokenRepository).revokeAllByUserId(60L);
@@ -456,7 +454,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(revoked));
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
@@ -467,7 +465,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
@@ -479,7 +477,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(expired));
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
@@ -490,7 +488,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(active));
 
-    authService.logout(new LogoutRequest("raw-refresh"));
+    authService.logout("raw-refresh");
 
     verify(refreshTokenRepository).save(any(RefreshToken.class));
   }
@@ -500,7 +498,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.empty());
 
-    authService.logout(new LogoutRequest("raw-refresh"));
+    authService.logout("raw-refresh");
 
     verify(refreshTokenRepository, never()).save(any());
   }

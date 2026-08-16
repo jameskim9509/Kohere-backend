@@ -31,11 +31,9 @@ import com.kohere.auth.presentation.dto.BusinessVerifyRequest;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LandlordOnboardingRequest;
-import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
 import com.kohere.auth.presentation.dto.PhoneVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
-import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.exception.InvalidInputException;
@@ -339,10 +337,13 @@ public class AuthService {
   /**
    * 재발급. 항상 회전 — 제출 토큰을 ROTATED로 폐기한다. <b>ROTATED 재제출(재사용 탐지)</b>은 탈취 정황이므로 사용자 전 토큰을 일괄 무효화하고,
    * <b>REVOKED(로그아웃·탈퇴)·만료</b>는 권한이 이미 0이라 해당 요청만 거부해 다른 기기 세션을 보존한다(OAuth 2.0 reuse detection).
+   *
+   * <p><b>인자는 채널이 이미 정해진 refresh 원문이다</b> — 쿠키에서 왔는지 요청 본문에서 왔는지는 컨트롤러가 흡수하고 여기서는 구분하지 않는다(ADR-0048
+   * §3). 판정 규칙이 채널마다 갈리지 않게 하는 것이 이 분업의 목적이며, 그래서 서블릿 타입도 이 계층까지 오지 않는다.
    */
   @Transactional
-  public TokenResponse reissue(ReissueRequest request) {
-    String tokenHash = refreshTokenHasher.hash(request.refreshToken());
+  public TokenResponse reissue(String refreshToken) {
+    String tokenHash = refreshTokenHasher.hash(requireRefreshToken(refreshToken));
     RefreshToken token =
         refreshTokenRepository
             .findByTokenHash(tokenHash)
@@ -361,13 +362,31 @@ public class AuthService {
     return issueFullTokens(token.getUserId());
   }
 
-  /** 로그아웃. 제출 refresh를 REVOKED로 무효화(이미 무효화돼도 멱등). */
+  /**
+   * 로그아웃. 제출 refresh를 REVOKED로 무효화(이미 무효화돼도 멱등). 인자의 출처(쿠키·본문)를 구분하지 않는 것은 {@link #reissue}와 같다.
+   */
   @Transactional
-  public void logout(LogoutRequest request) {
-    String tokenHash = refreshTokenHasher.hash(request.refreshToken());
+  public void logout(String refreshToken) {
+    String tokenHash = refreshTokenHasher.hash(requireRefreshToken(refreshToken));
     refreshTokenRepository
         .findByTokenHash(tokenHash)
         .ifPresent(token -> refreshTokenRepository.save(token.revoke()));
+  }
+
+  /**
+   * 쿠키·본문 어느 쪽에서도 refresh를 찾지 못한 요청을 거른다 — 400 {@code INVALID_INPUT} + {@code
+   * errors[].field=refreshToken}(#229 D12). 종전에는 본문 없는 요청이 {@code MALFORMED_REQUEST}였는데, 본문이 선택이 된
+   * 뒤로는 본문이 깨진 것이 아니라 <b>값이 빠진 것</b>이라 코드가 바뀐다.
+   *
+   * <p><b>DTO의 {@code @NotBlank}로는 이 판정을 대신할 수 없다.</b> 본문 없는 요청은 Bean Validation을 아예 타지 않고(인자가
+   * null이면 검증을 건너뛴다), 반대로 제약을 남겨 두면 쿠키에 멀쩡한 토큰이 있는데 본문의 빈 문자열 때문에 거절되는 <b>한 채널이 다른 채널을 막는</b> 상황이
+   * 생긴다. 그래서 두 채널을 합친 뒤 한 곳에서 판정한다.
+   */
+  private static String requireRefreshToken(String refreshToken) {
+    if (!StringUtils.hasText(refreshToken)) {
+      throw new InvalidInputException("refreshToken", "validation.refreshTokenRequired");
+    }
+    return refreshToken;
   }
 
   /**
