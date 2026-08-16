@@ -54,8 +54,9 @@ public final class ListingValidator {
   private static void validateContact(Listing.Contact contact) {
     requireNonNull(contact, "contact가 필요합니다.");
     requireText(contact.managerName(), "contact.managerName이 필요합니다.");
+    // phone은 지점 대표 전화 하나뿐이다. 문자문의 번호(contact.sms)는 임대인 개인 번호를 매물 문서로 복사하는 통로라
+    // 필드째 제거했다(ADR-0039 Amended · changeUnit 0119).
     requireText(contact.phone(), "contact.phone이 필요합니다.");
-    requireText(contact.sms(), "contact.sms가 필요합니다.");
   }
 
   private static void validateAgeRange(int ageMin, int ageMax) {

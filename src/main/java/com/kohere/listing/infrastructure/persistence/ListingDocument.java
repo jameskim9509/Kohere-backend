@@ -75,8 +75,11 @@ class ListingDocument {
   /** MongoDB에 공통으로 저장되는 {@code {ko, en}} 다국어 문구 하위 문서다. */
   record LocalizedTextDocument(String ko, String en) {}
 
-  /** MongoDB에 저장되는 매물 담당자 연락처 하위 문서다. */
-  record ContactDocument(String managerName, String phone, String sms) {}
+  /**
+   * MongoDB에 저장되는 매물 담당자 연락처 하위 문서다. {@code phone}은 지점 대표 전화이며, 임대인 개인 연락처는 이 문서에 복사하지 않는다(ADR-0039
+   * Amended · changeUnit {@code 0119}).
+   */
+  record ContactDocument(String managerName, String phone) {}
 
   /** MongoDB에 저장되는 주소 하위 문서다. 검색 코드는 enum, 표시 주소는 다국어 문서로 보관한다. */
   record AddressDocument(

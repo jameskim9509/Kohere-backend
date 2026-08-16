@@ -717,8 +717,8 @@ public final class ListingDocsFields {
     fields.add(enumField("type", ListingType.class, "공간 유형"));
     fields.add(field("contact", JsonFieldType.OBJECT, "세입자에게 공개할 매물 담당 연락처"));
     fields.add(field("contact.managerName", JsonFieldType.STRING, "지점 운영자명. 세입자에게 그대로 공개된다"));
-    fields.add(field("contact.phone", JsonFieldType.STRING, "전화문의 수신 연락처. 예: `+82) 10-1234-5678`"));
-    fields.add(field("contact.sms", JsonFieldType.STRING, "문자문의 수신 연락처. 형식은 phone과 같다"));
+    fields.add(
+        field("contact.phone", JsonFieldType.STRING, "지점 대표 전화(문의 수신). 예: `+82) 10-1234-5678`"));
     fields.add(
         field(
             "businessRegistrationNumber",
@@ -1024,8 +1024,7 @@ public final class ListingDocsFields {
         field(
             prefix + ".contact.phone",
             JsonFieldType.STRING,
-            "전화 문의를 받는 번호. 임대인 계정 연락처와 별개 값이라 마스킹하지 않는다"));
-    fields.add(field(prefix + ".contact.sms", JsonFieldType.STRING, "문자 문의를 받는 번호"));
+            "전화 문의를 받는 지점 대표 전화. 임대인 개인 연락처와 별개 값이라 마스킹하지 않는다"));
     fields.add(
         optField(
             prefix + ".blogUrl",

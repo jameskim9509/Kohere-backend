@@ -28,7 +28,10 @@ public class Listing {
   /** 매물을 소유하거나 관리하는 집주인 계정 id다. */
   private final Long landlordId;
 
-  /** 세입자에게 공개하는 매물 담당자 연락처다. 임대인 계정 연락처와는 별개 값이다. */
+  /**
+   * 세입자에게 공개하는 매물 담당자 연락처다. {@code phone}은 지점 대표 전화이므로 매물(지점)마다 다른 값이고, 임대인 개인 연락처({@code
+   * users.phone_number})는 이 문서에 복사하지 않는다(ADR-0039 Amended · ADR-0034 §6).
+   */
   private final Contact contact;
 
   /** 임대인 사업자등록번호 원문이다. 세입자 응답에는 포함하지 않는다. */
@@ -242,8 +245,14 @@ public class Listing {
     ROOFTOP
   }
 
-  /** 세입자가 매물 문의에 사용할 담당자 연락처다. */
-  public record Contact(String managerName, String phone, String sms) {}
+  /**
+   * 세입자가 매물 문의에 사용할 담당자 연락처다.
+   *
+   * <p>{@code phone}은 <b>지점 대표 전화</b>다. 임대인 개인 연락처는 여기에 담지 않는다 — 문자문의 번호({@code sms})가 그 통로였고, 임대인이
+   * 거기 적는 값이 온보딩에서 인증한 개인 번호 자신이라 마스킹 대상 PII를 매물 응답으로 평문 공개하게 돼 제거했다(ADR-0039 Amended · ADR-0034
+   * §6).
+   */
+  public record Contact(String managerName, String phone) {}
 
   /** MongoDB 2dsphere와 지도 표시에 쓰는 WGS84 좌표 값이다. */
   public record GeoPoint(double longitude, double latitude) {

@@ -108,13 +108,12 @@ final class ListingMongoMapper {
 
   /** 저장 문서의 담당자 연락처를 도메인 값으로 변환한다. */
   private static Listing.Contact toDomain(ListingDocument.ContactDocument contact) {
-    return new Listing.Contact(contact.managerName(), contact.phone(), contact.sms());
+    return new Listing.Contact(contact.managerName(), contact.phone());
   }
 
   /** 도메인 담당자 연락처를 저장 문서 값으로 변환한다. */
   private static ListingDocument.ContactDocument toDocument(Listing.Contact contact) {
-    return new ListingDocument.ContactDocument(
-        contact.managerName(), contact.phone(), contact.sms());
+    return new ListingDocument.ContactDocument(contact.managerName(), contact.phone());
   }
 
   /** 저장 문서의 주소 값을 도메인 주소 값으로 변환한다. */

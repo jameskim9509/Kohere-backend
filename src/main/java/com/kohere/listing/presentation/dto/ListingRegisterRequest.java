@@ -73,9 +73,13 @@ public record ListingRegisterRequest(
     @NotEmpty Set<ContractDifficulty> contractDifficulties,
     String serviceFeedback) {
 
-  /** 세입자에게 공개하는 매물 담당자 연락처다. */
-  public record ContactRequest(
-      @NotBlank String managerName, @NotBlank String phone, @NotBlank String sms) {}
+  /**
+   * 세입자에게 공개하는 매물 담당자 연락처다. {@code phone}은 지점 대표 전화다.
+   *
+   * <p>문자문의 번호({@code sms})는 받지 않는다 — 임대인이 그 칸에 적는 값은 온보딩에서 인증한 개인 번호({@code users.phone_number})라,
+   * 받는 순간 마스킹 대상 PII를 매물 응답으로 평문 공개하는 통로가 된다(ADR-0039 Amended · ADR-0034 §6).
+   */
+  public record ContactRequest(@NotBlank String managerName, @NotBlank String phone) {}
 
   /**
    * 주소는 {@code GET /api/v1/listings/addresses}가 준 값을 그대로 되돌려 받는다(ADR-0042).

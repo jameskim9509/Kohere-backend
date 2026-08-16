@@ -167,11 +167,7 @@ public class ListingRegisterService {
     return Listing.builder()
         .schemaVersion(4)
         .landlordId(landlordId)
-        .contact(
-            new Listing.Contact(
-                request.contact().managerName(),
-                request.contact().phone(),
-                request.contact().sms()))
+        .contact(new Listing.Contact(request.contact().managerName(), request.contact().phone()))
         .businessRegistrationNumber(request.businessRegistrationNumber())
         .blogUrl(request.blogUrl())
         .ageMin(age.min())
