@@ -5,7 +5,6 @@ import com.kohere.listing.application.dto.ListingAddressSearchResponse;
 import com.kohere.listing.domain.LandlordOnlyListingException;
 import com.kohere.listing.domain.address.AddressSearchClient;
 import com.kohere.listing.domain.address.AddressSearchResult;
-import com.kohere.listing.domain.catalog.ListingCatalogRepository;
 import com.kohere.listing.presentation.dto.ListingAddressSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import lombok.RequiredArgsConstructor;
@@ -31,14 +30,13 @@ public class ListingAddressSearchService {
   private static final String USER_TYPE_LANDLORD = "LANDLORD";
 
   private final AddressSearchClient addressSearchClient;
-  private final ListingCatalogRepository listingCatalogRepository;
   private final UserAccountService userAccountService;
 
   /**
    * 검색어를 정규화한 뒤 외부 주소 검색 결과를 프론트 응답으로 변환한다.
    *
-   * <p>각 후보에는 등록 가능 여부({@code supported})를 붙인다. 검색은 전국을 돌려주지만 등록은 코드 카탈로그가 가진 시·도와 구·군만 통과하므로, 폼이
-   * 고를 수 없는 주소를 미리 거를 수 있어야 한다.
+   * <p>후보를 거르지 않는다. 등록이 카탈로그가 모르는 지역도 받으므로(행정구역은 {@code ETC}로 저장하고 승인 심사가 확정한다) 검색이 미리 고를 수 없는 주소를
+   * 표시할 이유가 없다.
    *
    * @param landlordId 토큰에서 얻은 요청자 ID
    * @param request 등록 폼 주소 칸의 원본 입력을 담은 요청 DTO
@@ -50,10 +48,9 @@ public class ListingAddressSearchService {
     requireLandlord(landlordId);
     String keyword = validateAndNormalizeKeyword(request == null ? null : request.getKeyword());
 
-    ListingCatalogCodes catalog = ListingCatalogCodes.of(listingCatalogRepository.findAll());
     return new ListingAddressSearchResponse(
         addressSearchClient.search(keyword).stream()
-            .map(result -> toResponseItem(result, catalog))
+            .map(ListingAddressSearchService::toResponseItem)
             .toList());
   }
 
@@ -80,23 +77,13 @@ public class ListingAddressSearchService {
     return normalized;
   }
 
-  /**
-   * 제공자 독립 도메인 값을 presentation 계약에 맞는 응답 항목으로 복사하고 등록 가능 여부를 덧붙인다.
-   *
-   * <p>판정은 등록이 쓰는 것과 <b>같은 코드</b>({@link ListingCatalogCodes})로 한다 — 별도 사전을 두면 검색의 안내와 등록의 실제 결과가
-   * 갈라진다.
-   */
-  private static ListingAddressSearchResponse.Item toResponseItem(
-      AddressSearchResult result, ListingCatalogCodes catalog) {
-    boolean supported =
-        catalog.findCity(result.roadAddress()).isPresent()
-            && catalog.findDistrict(result.roadAddress()).isPresent();
+  /** 제공자 독립 도메인 값을 presentation 계약에 맞는 응답 항목으로 복사한다. */
+  private static ListingAddressSearchResponse.Item toResponseItem(AddressSearchResult result) {
     return new ListingAddressSearchResponse.Item(
         result.roadAddress(),
         result.jibunAddress(),
         result.englishAddress(),
         result.lat(),
-        result.lng(),
-        supported);
+        result.lng());
   }
 }

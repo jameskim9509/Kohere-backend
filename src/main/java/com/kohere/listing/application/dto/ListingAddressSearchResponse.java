@@ -19,13 +19,7 @@ public record ListingAddressSearchResponse(List<Item> items) {
    * @param englishAddress 영문 표기. 보조 표시용
    * @param lat WGS84 십진수 위도. 등록 요청의 {@code address.lat}에 그대로 담는다
    * @param lng WGS84 십진수 경도. 등록 요청의 {@code address.lng}에 그대로 담는다
-   * @param supported 이 주소로 매물을 등록할 수 있는지. 코드 카탈로그에서 시·도와 구·군이 모두 판별될 때만 {@code true}
    */
   public record Item(
-      String roadAddress,
-      String jibunAddress,
-      String englishAddress,
-      double lat,
-      double lng,
-      boolean supported) {}
+      String roadAddress, String jibunAddress, String englishAddress, double lat, double lng) {}
 }

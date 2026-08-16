@@ -378,7 +378,8 @@ class DiagnosisMongoIntegrationTest {
     assertThat(criteria.monthlyRentMin()).isEqualTo(200000);
     assertThat(criteria.monthlyRentMax()).isEqualTo(500000);
     assertThat(criteria.conditions()).containsExactly("FEMALE_ONLY");
-    assertThat(criteria.universityCodes()).containsExactlyInAnyOrder("SNU", "CAU", "SOONGSIL");
+    assertThat(criteria.includedUniversityCodes())
+        .containsExactlyInAnyOrder("SNU", "CAU", "SOONGSIL");
     assertThat(criteria.district()).isNull();
     assertThat(criteria.sort()).isEqualTo("recommended,desc");
   }

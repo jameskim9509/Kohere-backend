@@ -16,10 +16,8 @@ import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.ArcRequirement;
-import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.ContractDifficulty;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
@@ -287,8 +285,8 @@ class ListingServiceTest {
         .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
         .address(
             new Listing.Address(
-                City.SEOUL,
-                District.GWANAK_GU,
+                "SEOUL",
+                "GWANAK_GU",
                 new LocalizedText("서울특별시 관악구 테스트로 1", "1 Test-ro, Gwanak-gu, Seoul"),
                 null))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))

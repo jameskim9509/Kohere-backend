@@ -11,12 +11,8 @@ import static org.mockito.Mockito.when;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.listing.application.dto.ListingAddressSearchResponse;
 import com.kohere.listing.domain.LandlordOnlyListingException;
-import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.address.AddressSearchClient;
 import com.kohere.listing.domain.address.AddressSearchResult;
-import com.kohere.listing.domain.catalog.ListingCatalogCategory;
-import com.kohere.listing.domain.catalog.ListingCatalogEntry;
-import com.kohere.listing.domain.catalog.ListingCatalogRepository;
 import com.kohere.listing.presentation.dto.ListingAddressSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import java.util.List;
@@ -39,7 +35,6 @@ class ListingAddressSearchServiceTest {
   private static final long TENANT_ID = 1L;
 
   @Mock private AddressSearchClient addressSearchClient;
-  @Mock private ListingCatalogRepository listingCatalogRepository;
   @Mock private UserAccountService userAccountService;
 
   private ListingAddressSearchService service;
@@ -47,9 +42,7 @@ class ListingAddressSearchServiceTest {
   /** 각 테스트가 독립된 서비스 인스턴스와 Mockito 포트를 사용하도록 생성자 주입으로 조립한다. */
   @BeforeEach
   void setUp() {
-    service =
-        new ListingAddressSearchService(
-            addressSearchClient, listingCatalogRepository, userAccountService);
+    service = new ListingAddressSearchService(addressSearchClient, userAccountService);
     lenient().when(userAccountService.getUserType(LANDLORD_ID)).thenReturn("LANDLORD");
     lenient().when(userAccountService.getUserType(TENANT_ID)).thenReturn("TENANT");
   }
@@ -57,7 +50,6 @@ class ListingAddressSearchServiceTest {
   /** 검색어 앞뒤 공백은 외부 호출 전에 제거하고, 주소 필드는 손실 없이 응답 DTO로 옮긴다. */
   @Test
   void search_유효한_검색어를_trim하고_주소_후보를_반환한다() {
-    givenCatalog();
     when(addressSearchClient.search("신촌로 12")).thenReturn(List.of(seodaemun()));
 
     ListingAddressSearchResponse response = service.search(LANDLORD_ID, request("  신촌로 12  "));
@@ -72,34 +64,23 @@ class ListingAddressSearchServiceTest {
     verify(addressSearchClient).search("신촌로 12");
   }
 
-  /** 카탈로그에서 시·도와 구·군이 모두 잡히는 주소만 등록할 수 있다. */
-  @Test
-  void search_카탈로그가_아는_지역이면_supported가_true다() {
-    givenCatalog();
-    when(addressSearchClient.search("신촌로 12")).thenReturn(List.of(seodaemun()));
-
-    assertThat(service.search(LANDLORD_ID, request("신촌로 12")).items().getFirst().supported())
-        .isTrue();
-  }
-
   /**
-   * 구·군이 카탈로그에 없으면 등록에서 400이 되므로 검색 단계에서 알린다.
+   * 카탈로그가 모르는 지역도 후보에서 거르지 않는다.
    *
-   * <p>경기도는 {@code CITY}에 있지만 그 시·군·구는 {@code DISTRICT}에 없다 — 시·도만 잡히는 것으로는 등록할 수 없다.
+   * <p>등록이 그런 주소도 받고 행정구역을 {@code ETC}로 저장하기 때문이다(승인 심사가 확정한다). 검색이 미리 막으면 등록되는 지역보다 좁게 안내하게 된다.
    */
   @Test
-  void search_구군이_카탈로그에_없으면_supported가_false다() {
-    givenCatalog();
+  void search_카탈로그가_모르는_지역도_후보로_돌려준다() {
     when(addressSearchClient.search("불정로 6")).thenReturn(List.of(bundang()));
 
-    assertThat(service.search(LANDLORD_ID, request("불정로 6")).items().getFirst().supported())
-        .isFalse();
+    assertThat(service.search(LANDLORD_ID, request("불정로 6")).items())
+        .extracting(ListingAddressSearchResponse.Item::roadAddress)
+        .containsExactly(bundang().roadAddress());
   }
 
   /** 외부가 정상적으로 빈 목록을 반환하면 실패로 바꾸지 않고 프론트가 빈 상태를 그릴 수 있게 유지한다. */
   @Test
   void search_검색_결과가_없으면_빈_items를_반환한다() {
-    givenCatalog();
     when(addressSearchClient.search("없는주소")).thenReturn(List.of());
 
     assertThat(service.search(LANDLORD_ID, request("없는주소")).items()).isEmpty();
@@ -110,7 +91,7 @@ class ListingAddressSearchServiceTest {
   void search_임대인이_아니면_외부_검색을_호출하지_않는다() {
     assertThatThrownBy(() -> service.search(TENANT_ID, request("신촌로 12")))
         .isInstanceOf(LandlordOnlyListingException.class);
-    verifyNoInteractions(addressSearchClient, listingCatalogRepository);
+    verifyNoInteractions(addressSearchClient);
   }
 
   /** 누락된 keyword는 외부 호출량을 소모하기 전에 400 입력 예외로 거절한다. */
@@ -118,7 +99,7 @@ class ListingAddressSearchServiceTest {
   void search_keyword가_누락되면_외부_검색을_호출하지_않는다() {
     assertThatThrownBy(() -> service.search(LANDLORD_ID, new ListingAddressSearchRequest()))
         .isInstanceOf(InvalidInputException.class);
-    verifyNoInteractions(addressSearchClient, listingCatalogRepository);
+    verifyNoInteractions(addressSearchClient);
   }
 
   /** 공백만 있는 keyword도 유효한 주소 검색어가 아니므로 외부 검색을 호출하지 않는다. */
@@ -126,7 +107,7 @@ class ListingAddressSearchServiceTest {
   void search_keyword가_공백이면_외부_검색을_호출하지_않는다() {
     assertThatThrownBy(() -> service.search(LANDLORD_ID, request("   ")))
         .isInstanceOf(InvalidInputException.class);
-    verifyNoInteractions(addressSearchClient, listingCatalogRepository);
+    verifyNoInteractions(addressSearchClient);
   }
 
   /** 주소 검색 정책인 최대 100자를 넘는 keyword는 외부 호출 전에 차단한다. */
@@ -134,34 +115,18 @@ class ListingAddressSearchServiceTest {
   void search_keyword가_100자를_초과하면_외부_검색을_호출하지_않는다() {
     assertThatThrownBy(() -> service.search(LANDLORD_ID, request("가".repeat(101))))
         .isInstanceOf(InvalidInputException.class);
-    verifyNoInteractions(addressSearchClient, listingCatalogRepository);
+    verifyNoInteractions(addressSearchClient);
   }
 
   /** 인가 검사는 요청자 ID로만 한다 — 다른 인자로 새어 나가지 않는지 확인한다. */
   @Test
   void search_요청자_ID로_임대인_여부를_확인한다() {
-    givenCatalog();
     when(addressSearchClient.search("신촌로 12")).thenReturn(List.of(seodaemun()));
 
     service.search(LANDLORD_ID, request("신촌로 12"));
 
     verify(userAccountService).getUserType(LANDLORD_ID);
     verify(userAccountService, never()).getUserType(TENANT_ID);
-  }
-
-  /** 등록 경로와 같은 카탈로그를 쓴다 — 별도 사전을 두면 검색의 안내와 등록의 결과가 갈라진다. */
-  private void givenCatalog() {
-    when(listingCatalogRepository.findAll())
-        .thenReturn(
-            List.of(
-                entry(ListingCatalogCategory.CITY, "SEOUL", "서울특별시", "Seoul"),
-                entry(ListingCatalogCategory.CITY, "GYEONGGI", "경기도", "Gyeonggi-do"),
-                entry(ListingCatalogCategory.DISTRICT, "SEODAEMUN_GU", "서대문구", "Seodaemun-gu")));
-  }
-
-  private static ListingCatalogEntry entry(
-      ListingCatalogCategory category, String code, String ko, String en) {
-    return new ListingCatalogEntry(category, code, new LocalizedText(ko, en));
   }
 
   /** 서울 서대문구 — 카탈로그가 시·도와 구·군을 모두 아는 등록 가능한 주소다. */

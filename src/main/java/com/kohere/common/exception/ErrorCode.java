@@ -51,7 +51,6 @@ public enum ErrorCode {
   LISTING_INVALID_SORT_PARAM(HttpStatus.BAD_REQUEST, "정렬 파라미터가 올바르지 않습니다."),
   LISTING_INVALID_BBOX(HttpStatus.BAD_REQUEST, "지도 좌표 범위가 올바르지 않습니다."),
   LISTING_AREA_TOO_LARGE(HttpStatus.BAD_REQUEST, "검색 범위가 너무 넓습니다."),
-  LISTING_INVALID_ADDRESS(HttpStatus.BAD_REQUEST, "주소를 인식할 수 없습니다. 도로명 주소를 확인해 주세요."),
   LISTING_UNKNOWN_CATALOG_CODE(HttpStatus.BAD_REQUEST, "지원하지 않는 코드가 포함되어 있습니다."),
   // 사진 4종은 위반 대상이 JSON 필드가 아니라 파일 part나 저장 키라 INVALID_INPUT의 errors[]에 담을 경로가 없다(ADR-0041).
   LISTING_IMAGE_REQUIRED(HttpStatus.BAD_REQUEST, "매물 사진 장수가 올바르지 않습니다."),

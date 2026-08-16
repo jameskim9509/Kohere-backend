@@ -30,12 +30,12 @@ public class ListingAddressController {
   /**
    * 검색 키워드와 관련된 도로명 주소 후보를 최대 5개 반환한다.
    *
-   * <p>응답의 {@code roadAddress}·{@code lat}·{@code lng}를 매물 등록 요청의 {@code address}에 그대로 담는다. {@code
-   * supported=false}인 후보는 등록에서 {@code 400 LISTING_INVALID_ADDRESS}가 되므로 폼이 선택을 막는다.
+   * <p>응답의 {@code roadAddress}·{@code lat}·{@code lng}를 매물 등록 요청의 {@code address}에 그대로 담는다. 후보를 거르지
+   * 않는다 — 등록이 카탈로그가 모르는 지역도 받고 행정구역을 {@code ETC}로 저장하기 때문이다.
    *
    * @param principal 토큰에서 얻은 요청자. 임대인 여부는 서비스가 확인한다
    * @param request {@code keyword} 쿼리 파라미터를 담은 요청 DTO
-   * @return 도로명 주소·좌표·등록 가능 여부를 담은 후보 목록
+   * @return 도로명 주소·좌표를 담은 후보 목록
    */
   @GetMapping
   public ListingAddressSearchResponse searchAddresses(

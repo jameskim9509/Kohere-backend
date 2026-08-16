@@ -261,7 +261,7 @@ public class Listing {
    * 한국어·영어로 저장한다. 상세 주소는 데이터에 없을 수 있으므로 {@code null}을 허용한다.
    */
   public record Address(
-      City city, District district, LocalizedText fullAddress, LocalizedText detail) {}
+      String city, String district, LocalizedText fullAddress, LocalizedText detail) {}
 
   /** 매물에서 가장 가까운 지하철역과 도보 시간이다. 주변 편의시설은 루트 {@code nearbyFacilities}가 소유한다. */
   public record NearestTransit(TransitType type, LocalizedText name, int walkMinutes) {

@@ -20,10 +20,8 @@ import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.application.dto.RecentListingsResponse;
 import com.kohere.listing.domain.ArcRequirement;
-import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.ContractDifficulty;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
@@ -44,7 +42,9 @@ import com.kohere.listing.domain.SecurityFeature;
 import com.kohere.listing.domain.SupportedLanguage;
 import com.kohere.listing.domain.favorite.Favorite;
 import com.kohere.listing.domain.favorite.FavoriteRepository;
+import com.kohere.listing.domain.nearby.Coordinate;
 import com.kohere.listing.domain.recent.RecentListingRepository;
+import com.kohere.listing.domain.university.UniversityRepository;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
@@ -79,6 +79,10 @@ class ListingMongoIntegrationTest {
   private static final String FAVORITES_COLLECTION = "favorites";
   private static final String RECENT_LISTINGS_COLLECTION = "recentListings";
   private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
+  private static final String UNIVERSITIES_COLLECTION = "universities";
+
+  /** 등록이 인근 대학을 고르는 반경이다({@code ListingRegisterService}와 같은 값). */
+  private static final int UNIVERSITY_RADIUS_METERS = 2_000;
 
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
@@ -87,6 +91,7 @@ class ListingMongoIntegrationTest {
   @Autowired private RecentListingRepository recentListingRepository;
   @Autowired private ListingService listingService;
   @Autowired private ListingRecommendationService listingRecommendationService;
+  @Autowired private UniversityRepository universityRepository;
   @Autowired private MongoTemplate mongoTemplate;
   @MockitoBean private UserAccountService userAccountService;
 
@@ -98,6 +103,7 @@ class ListingMongoIntegrationTest {
     mongoTemplate.getCollection(FAVORITES_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(UNIVERSITIES_COLLECTION).deleteMany(new Document());
     // 응답의 label 자리가 코드값으로 새지 않도록 운영과 같은 정본 카탈로그를 심는다.
     ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
   }
@@ -185,6 +191,13 @@ class ListingMongoIntegrationTest {
 
     assertThat(recentListingIndexNames)
         .contains("recentListings_user_listing", "recentListings_user_viewedAt");
+
+    Set<String> universityIndexNames =
+        mongoTemplate.indexOps(UNIVERSITIES_COLLECTION).getIndexInfo().stream()
+            .map(index -> index.getName())
+            .collect(java.util.stream.Collectors.toSet());
+
+    assertThat(universityIndexNames).contains("universities_location_2dsphere");
   }
 
   /** 가격과 태그 조건이 같은 roomOffer 안에서 함께 만족될 때만 매칭되는지 확인한다. */
@@ -215,6 +228,51 @@ class ListingMongoIntegrationTest {
     Document found = mongoTemplate.getCollection(LISTINGS_COLLECTION).find(query).first();
     assertThat(found).isNotNull();
     assertThat(found.get("title", Document.class).getString("ko")).isEqualTo("신림 스테이");
+  }
+
+  /**
+   * 대학이 밀집한 좌표에서 반경 안의 코드를 모두 찾는지 확인한다(ADR-0045).
+   *
+   * <p>신촌로 12는 연세·이화·홍익이 모두 2km 안이다 — 진단의 {@code HONGIK_YONSEI_EWHA} 그룹과 그대로 맞물리는 자리라, 최근접 하나만 고르면
+   * 매칭이 줄어든다는 결정 근거를 여기서 못 박는다.
+   */
+  @Test
+  void findCodesWithin_반경안의_대학코드를_모두_반환한다() {
+    ListingTestSeeds.seedUniversities(mongoTemplate, UNIVERSITIES_COLLECTION);
+
+    Set<String> codes =
+        universityRepository.findCodesWithin(
+            new Coordinate(37.5559918, 126.9368647), UNIVERSITY_RADIUS_METERS);
+
+    assertThat(codes).containsExactlyInAnyOrder("YONSEI", "EWHA", "HONGIK");
+  }
+
+  /** 반경이 경계다 — 서울대 남쪽 약 1.9km는 잡히고 약 2.1km는 빠진다. */
+  @Test
+  void findCodesWithin_반경_경계를_지킨다() {
+    ListingTestSeeds.seedUniversities(mongoTemplate, UNIVERSITIES_COLLECTION);
+    double snuLng = 126.952239;
+    double snuLat = 37.464007;
+
+    Set<String> inside =
+        universityRepository.findCodesWithin(
+            new Coordinate(snuLat - 0.01708, snuLng), UNIVERSITY_RADIUS_METERS);
+    Set<String> outside =
+        universityRepository.findCodesWithin(
+            new Coordinate(snuLat - 0.01889, snuLng), UNIVERSITY_RADIUS_METERS);
+
+    assertThat(inside).containsExactly("SNU");
+    assertThat(outside).isEmpty();
+  }
+
+  /** 원장이 비어 있어도(시드 전 신규 환경) 조회는 빈 집합이다 — 등록이 예외로 멈추지 않는다. */
+  @Test
+  void findCodesWithin_원장이_비어있으면_빈집합이다() {
+    Set<String> codes =
+        universityRepository.findCodesWithin(
+            new Coordinate(37.5559918, 126.9368647), UNIVERSITY_RADIUS_METERS);
+
+    assertThat(codes).isEmpty();
   }
 
   /** 목록 검색은 지도 범위와 필터를 모두 만족하는 방 상품을 가진 매물 카드를 반환한다. */
@@ -1160,6 +1218,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1195,6 +1254,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1215,7 +1275,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> matchedByGroupMember =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of("CAU"), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                500000,
+                Set.of("FEMALE_ONLY"),
+                Set.of("CAU"),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
     PageResponse<RecommendedListingView> notMatchedByDifferentUniversity =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
@@ -1224,6 +1294,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("FEMALE_ONLY"),
                 Set.of("KOREA"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1232,7 +1303,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> noUniversityFilter =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of(), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                500000,
+                Set.of("FEMALE_ONLY"),
+                Set.of(),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
 
     assertThat(matchedByGroupMember.content())
         .extracting(RecommendedListingView::listingId)
@@ -1256,6 +1337,7 @@ class ListingMongoIntegrationTest {
                 400000,
                 Set.of("FEMALE_ONLY"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1269,6 +1351,7 @@ class ListingMongoIntegrationTest {
                 600000,
                 Set.of("FEMALE_ONLY"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1277,7 +1360,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> aboveMaximum =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 379999, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                379999,
+                Set.of("FEMALE_ONLY"),
+                Set.of("SNU"),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
 
     assertThat(inRange.content())
         .extracting(RecommendedListingView::listingId)
@@ -1294,7 +1387,17 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> moveInNow =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 0, 500000, Set.of("MOVE_IN_NOW"), Set.of("SNU"), null, null, 0, 20, null));
+                "SEOUL",
+                0,
+                500000,
+                Set.of("MOVE_IN_NOW"),
+                Set.of("SNU"),
+                Set.of(),
+                null,
+                null,
+                0,
+                20,
+                null));
     PageResponse<RecommendedListingView> notTagged =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
@@ -1303,6 +1406,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of("MEALS_INCLUDED"),
                 Set.of("SNU"),
+                Set.of(),
                 null,
                 null,
                 0,
@@ -1315,18 +1419,59 @@ class ListingMongoIntegrationTest {
     assertThat(notTagged.content()).isEmpty();
   }
 
+  /**
+   * 진단 ③에서 "그 외 대학"({@code ETC})을 고르면 목록에 든 대학 근처 매물이 빠진다(ADR-0045).
+   *
+   * <p>{@code ETC}는 "대학 조건 없음"이 아니라 <b>목록 14곳의 여집합</b>이다 — 진단 지역의 {@code ETC}가 명시 5구의 여집합인 것과 같다.
+   * 시드 매물 둘은 각각 서울대·홍익대 인근이라 둘 다 빠지고, 대학 코드가 없는 매물만 남는다.
+   */
+  @Test
+  void recommend_ETC는_목록대학_인근매물을_제외한다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+    listingRepository.save(
+        sampleListing().toBuilder()
+            .id(null)
+            .status(Listing.ListingStatus.PUBLISHED)
+            .nearbyUniversityCodes(Set.of())
+            .build());
+    Set<String> allUniversityCodes = Set.of("SNU", "CAU", "SOONGSIL", "HONGIK", "YONSEI", "EWHA");
+
+    PageResponse<RecommendedListingView> etc =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL",
+                null,
+                null,
+                Set.of(),
+                Set.of(),
+                allUniversityCodes,
+                null,
+                null,
+                0,
+                20,
+                null));
+    PageResponse<RecommendedListingView> noUniversityCondition =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", null, null, Set.of(), Set.of(), Set.of(), null, null, 0, 20, null));
+
+    // 대학 코드를 가진 시드 매물 둘은 빠지고, 빈 배열 매물만 남는다.
+    assertThat(etc.content()).hasSize(1);
+    assertThat(noUniversityCondition.content()).hasSizeGreaterThan(etc.content().size());
+  }
+
   /** 진단 ⑥ arcStatus만 바꿔 추천 결과를 비교하기 위한 요청 헬퍼다. */
   private PageResponse<RecommendedListingView> recommendWithArcStatus(String arcStatus) {
     return listingRecommendationService.recommendByCriteria(
         new RecommendationCriteria(
-            "SEOUL", null, null, Set.of(), Set.of(), null, arcStatus, 0, 20, null));
+            "SEOUL", null, null, Set.of(), Set.of(), Set.of(), null, arcStatus, 0, 20, null));
   }
 
   /** 진단 ③ 지역구만 바꿔 추천 결과를 비교하기 위한 요청 헬퍼다. */
   private PageResponse<RecommendedListingView> recommendWithDistrict(String district) {
     return listingRecommendationService.recommendByCriteria(
         new RecommendationCriteria(
-            "SEOUL", null, null, Set.of(), Set.of(), district, null, 0, 20, null));
+            "SEOUL", null, null, Set.of(), Set.of(), Set.of(), district, null, 0, 20, null));
   }
 
   /** 저장·조회 테스트에서 사용할 대표 매물 도메인 객체를 만든다. */
@@ -1409,9 +1554,7 @@ class ListingMongoIntegrationTest {
         .nearbyUniversityCodes(Set.of("SNU"))
         .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
         .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
-        .address(
-            new Listing.Address(
-                City.SEOUL, District.GWANAK_GU, localized("서울특별시 관악구 테스트로 1"), null))
+        .address(new Listing.Address("SEOUL", "GWANAK_GU", localized("서울특별시 관악구 테스트로 1"), null))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .description(localized("테스트 설명"))
         .extraNotes(localized("테스트 주의사항"))

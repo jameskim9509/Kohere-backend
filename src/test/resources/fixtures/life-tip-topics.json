@@ -1,0 +1,107 @@
+[
+  {
+    "_id": "MOVING_IN",
+    "name": {
+      "en": "Moving In",
+      "ko": "입주·이사",
+      "ja": "入居・引っ越し"
+    },
+    "shortDescription": {
+      "en": "Example short description",
+      "ja": "例の短い説明",
+      "ko": "예시 짧은 설명"
+    },
+    "longDescription": {
+      "en": "Example long description",
+      "ja": "例の長い説明",
+      "ko": "예시 긴 설명"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/topics/example/card.png",
+    "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/example/background.png",
+    "order": 1
+  },
+  {
+    "_id": "ADMINISTRATION",
+    "name": {
+      "en": "Administration",
+      "ko": "행정 처리",
+      "ja": "行政手続き"
+    },
+    "shortDescription": {
+      "en": "Example short description",
+      "ja": "例の短い説明",
+      "ko": "예시 짧은 설명"
+    },
+    "longDescription": {
+      "en": "Example long description",
+      "ja": "例の長い説明",
+      "ko": "예시 긴 설명"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/topics/example/card.png",
+    "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/example/background.png",
+    "order": 2
+  },
+  {
+    "_id": "TRANSPORT",
+    "name": {
+      "en": "Transport",
+      "ko": "교통",
+      "ja": "交通"
+    },
+    "shortDescription": {
+      "en": "Example short description",
+      "ja": "例の短い説明",
+      "ko": "예시 짧은 설명"
+    },
+    "longDescription": {
+      "en": "Example long description",
+      "ja": "例の長い説明",
+      "ko": "예시 긴 설명"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/topics/example/card.png",
+    "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/example/background.png",
+    "order": 3
+  },
+  {
+    "_id": "FINANCE",
+    "name": {
+      "en": "Banking & Finance",
+      "ko": "은행·금융",
+      "ja": "銀行・金融"
+    },
+    "shortDescription": {
+      "en": "Example short description",
+      "ja": "例の短い説明",
+      "ko": "예시 짧은 설명"
+    },
+    "longDescription": {
+      "en": "Example long description",
+      "ja": "例の長い説明",
+      "ko": "예시 긴 설명"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/topics/example/card.png",
+    "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/example/background.png",
+    "order": 4
+  },
+  {
+    "_id": "HOUSING",
+    "name": {
+      "en": "Housing",
+      "ko": "주거 생활",
+      "ja": "住まい"
+    },
+    "shortDescription": {
+      "en": "Example short description",
+      "ja": "例の短い説明",
+      "ko": "예시 짧은 설명"
+    },
+    "longDescription": {
+      "en": "Example long description",
+      "ja": "例の長い説明",
+      "ko": "예시 긴 설명"
+    },
+    "imageUrl": "https://cdn.kohere.app/life-tips/topics/example/card.png",
+    "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/example/background.png",
+    "order": 5
+  }
+]

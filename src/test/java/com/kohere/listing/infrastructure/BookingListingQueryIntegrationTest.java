@@ -6,10 +6,8 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
 import com.kohere.listing.domain.ArcRequirement;
-import com.kohere.listing.domain.City;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.ContractDifficulty;
-import com.kohere.listing.domain.District;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
@@ -168,8 +166,7 @@ class BookingListingQueryIntegrationTest {
         .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
         .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
         .address(
-            new Listing.Address(
-                City.SEOUL, District.GWANAK_GU, LocalizedText.same("서울특별시 관악구 테스트로 1"), null))
+            new Listing.Address("SEOUL", "GWANAK_GU", LocalizedText.same("서울특별시 관악구 테스트로 1"), null))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .description(LocalizedText.same("테스트 설명"))
         .extraNotes(LocalizedText.same("테스트 주의사항"))

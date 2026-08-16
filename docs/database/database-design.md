@@ -78,7 +78,7 @@
 ## 3. 마이그레이션
 
 - **MySQL**: Flyway(`flyway-core`,`flyway-mysql`) 후보 — DDL 버전 관리. 정본 [migration-policy](./migration-policy.md).
-- **MongoDB**: 스키마리스 + 애플리케이션 레벨 `schemaVersion` 필드([ADR-0005](../adr/0005-polyglot-persistence.md) D7). 인덱스(`2dsphere`·TTL 등)는 부트스트랩/마이그레이션 스크립트로 기동 시 멱등 보장. **이미 적재된 컬렉션의 1회성 변경(카탈로그 옵션 교체·문서 필드 이행)은 멱등 시더(`count` 가드)가 아니라 모듈별 Mongock `@ChangeUnit`으로 환경당 1회 적용**한다([ADR-0032](../adr/0032-mongodb-migration-runner.md), [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)).
+- **MongoDB**: 스키마리스 + 애플리케이션 레벨 `schemaVersion` 필드([ADR-0005](../adr/0005-polyglot-persistence.md) D7). 인덱스(`2dsphere`·TTL 등)는 부트스트랩이 기동 시 멱등 생성. **스키마·문서 이행(validator 전이·옛 인덱스 삭제·문서 필드 이행)은 모듈별 Mongock `@ChangeUnit`으로 환경당 1회 적용**하고, **레퍼런스 데이터 적재는 마이그레이션이 아니라 운영자가 정본 JSON으로 주입**한다([ADR-0032](../adr/0032-mongodb-migration-runner.md), [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)·[§8-1](./migration-policy.md#8-1-시드-주입-절차)).
 - **Redis**: 스키마 없음. 키 설계·TTL은 코드 상수로 관리([ADR-0006](../adr/0006-refresh-token-store-redis.md)).
 
 ## 4. 모듈별 스키마 (Data Model by Module)
@@ -378,7 +378,7 @@
 | `nearbyUniversityCodes` | string[] | 학교 검색·진단 추천용 코드 |
 | `createdAt` | ISODate | NOT NULL |
 | `updatedAt` | ISODate | NOT NULL |
-| `address` | object | `city`(enum `City`)·`district`(enum `District`) 코드 + 표시 주소 `fullAddress/detail:{ko,en}` |
+| `address` | object | `city`·`district` 코드(문자열 — 정본은 `listingCatalog`의 `CITY`·`DISTRICT`, 주소 토큰에서 파생하며 못 찾으면 `ETC`, [ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)) + 표시 주소 `fullAddress/detail:{ko,en}` |
 | `building` | object | 건물 유형·층수·주차·엘리베이터 |
 | `description` | object | 매물 상세 설명 `{ko,en}` |
 | `extraNotes` | object | 자유 입력 주의사항 `{ko,en}` |
@@ -414,14 +414,28 @@
 
 **인덱스**: UNIQUE `(category, code)`. `displayOrder`·`active`는 현재 MVP 요구가 없어 저장하지 않는다.
 
-저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 예시 몇 건이 아니라 Listing UI가 사용하는 전체 공통 코드 **19종 카테고리·103건**이다 — `ARC_REQUIREMENT`(2)·`BUILDING_TYPE`(7)·`CITY`(3)·`COMMON_SPACE`(7)·`CONDITION_TAG`(8)·`DISTRICT`(9)·`GENDER_POLICY`(4)·`HEATING_SYSTEM`(2)·`KITCHEN`(9)·`LAUNDRY`(4)·`LISTING_TYPE`(3)·`LIVING_AMENITY`(8)·`NEARBY_FACILITY`(5)·`PROVIDED_SUPPLY`(6)·`RENTAL_TYPE`(1)·`SECURITY_FEATURE`(6)·`SUPPORTED_LANGUAGE`(4)·`TRANSIT_TYPE`(1)·`UNIVERSITY`(14). `status`(`ListingStatus`)는 임대인에게만 보이는 관리 상태라 번역 대상이 아니고, 대응하는 카탈로그 카테고리도 없다.
+저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 예시 몇 건이 아니라 Listing UI가 사용하는 전체 공통 코드 **19종 카테고리·105건**이다 — `ARC_REQUIREMENT`(2)·`BUILDING_TYPE`(7)·`CITY`(4 — `ETC` 포함)·`COMMON_SPACE`(7)·`CONDITION_TAG`(8)·`DISTRICT`(10 — `ETC` 포함)·`GENDER_POLICY`(4)·`HEATING_SYSTEM`(2)·`KITCHEN`(9)·`LAUNDRY`(4)·`LISTING_TYPE`(3)·`LIVING_AMENITY`(8)·`NEARBY_FACILITY`(5)·`PROVIDED_SUPPLY`(6)·`RENTAL_TYPE`(1)·`SECURITY_FEATURE`(6)·`SUPPORTED_LANGUAGE`(4)·`TRANSIT_TYPE`(1)·`UNIVERSITY`(14). `status`(`ListingStatus`)는 임대인에게만 보이는 관리 상태라 번역 대상이 아니고, 대응하는 카탈로그 카테고리도 없다.
+
+`universities`
+
+매물 등록이 좌표에서 인근 대학을 파생할 때 대조하는 **대학 좌표 원장**이다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). `listingCatalog`가 코드→라벨을 맡고 이 컬렉션이 코드→좌표를 맡으며, 둘은 `code`로 조인한다 — 같은 라벨을 두 곳에 두지 않기 위해 여기에는 표시 이름이 없다.
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | string | PK · 코드값 그대로(`SNU`). 재시드가 같은 문서를 덮어쓴다 |
+| `code` | string | NOT NULL · `listingCatalog`의 `UNIVERSITY` code·매물 `nearbyUniversityCodes`와 같은 값(조인 키) |
+| `location` | GeoJSON `Point` | **NOT NULL** · `[lng,lat]` · `2dsphere` · 캠퍼스 대표 좌표 |
+
+**인덱스**: `universities_location_2dsphere`(부트스트랩이 멱등 생성). 좌표 없는 문서는 반경 조회에서 영영 잡히지 않으므로 `location`을 validator가 `required`로 막는다.
+
+**시드는 14건**이며 `listingCatalog`의 `UNIVERSITY` 카테고리와 코드가 1:1이다. 좌표 출처는 교육부 학교개황(20241007 기준)의 도로명 주소를 주소 검색 API(NCP Geocoding)로 변환한 값이고, 조인은 학교명이 아니라 학교개황의 **학교코드**로 했다(이름 매칭은 부속고교를 오탐한다). 정본은 [`universities.json`](../../src/test/resources/fixtures/universities.json)이며 운영자가 주입한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). 스키마는 changeUnit `0118 listing-university-collection`이 세운다.
 
 **MVP 구현 메모**
 
 - 주변 시설은 자유 텍스트가 아니라 `nearbyFacilities`의 `NearbyFacility` 코드 배열이다. API 응답에서도 `nearbyFacilities`로 내려주며 다른 공통 코드와 같이 카탈로그 label과 조합한다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
-- **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. 절차와 근거는 [migration-policy §8-1](./migration-policy.md) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
-- **시드(`listings` 2건 · `listingCatalog` 103건)는 운영자가 수동 주입**한다. **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`는 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되므로, 배포 절차에 시드 단계를 포함한다.
+- **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. 이어 `0118 listing-university-collection`이 `universities` validator를 세운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)) — 넷 다 스키마만 다루고 문서를 넣지 않는다. 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
+- **시드(`listings` 2건 · `listingCatalog` 105건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
 - seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
 
 > **장소 후보 검색(`GET /api/v1/listings/places`) — 무상태, 컬렉션 없음**: 지도 검색창 키워드는 네이버 지역 검색 API로 조회한다(아웃바운드 포트 `PlaceSearchClient`, 인프라 어댑터 `NaverPlaceSearchClient`, 설정 `NaverSearchProperties`(prefix `app.naver.search`)). 결과(최대 5개 장소 후보)를 서버에 저장하지 않으므로 이 절엔 관련 스키마가 없다. **경로가 `/api/v1`인 이유**: 매물 조회 계열은 `/api/v2`로 이관되고 `/api/v1` 조회는 DB에 닿지 않는 `deprecated` 스텁이 됐지만, 이 엔드포인트만은 매물 데이터를 쓰지 않아 영향을 받지 않으므로 `/api/v1`에 그대로 둔다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md) · [03-listings-favorites](../api/specs/03-listings-favorites.md)).
@@ -486,7 +500,7 @@
 | `guestSessionId` | string | nullable · **게스트 진단만 채운다**(회원 진단은 null) · 값 형식 `anonymous<uuid>` · 클라이언트가 `X-Guest-Session-Id` 헤더로 에코하는 게스트 세션 키 · **채워지는 경로는 v2 흐름뿐**(아래 註) |
 | `region` | string (enum `Region`) | 필수 · ① 지역 |
 | `purpose` | string (enum `Purpose`) | 필수 · ② 입국 목적·유학 여부 — 단일 enum `STUDY`\|`NON_STUDY`. ③ 대학/지역 조건부 필수의 분기 키(`STUDY`→`university` / `NON_STUDY`→`district`) |
-| `university` | string (enum `UniversityGroup`) | nullable · ③ 대학 그룹(입국 목적 `purpose=STUDY`일 때 **필수**·`NON_STUDY`이면 없음 — 앱 레벨 조건부 필수 불변식) · 단일 그룹 코드를 UPPER_SNAKE로 저장 · 값(6개 그룹): `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC` · 추천 시 그룹은 멤버 대학 코드 집합으로 전개(`SNU_CAU_SOONGSIL`→`{SNU,CAU,SOONGSIL}` 등, `ETC`→`{}` 빈 집합으로 대학 필터 없이 지역 기반 매칭만), 멤버 코드는 listing `nearbyUniversityCodes`(개별 코드 저장 불변)와 1:1 — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) |
+| `university` | string (enum `UniversityGroup`) | nullable · ③ 대학 그룹(입국 목적 `purpose=STUDY`일 때 **필수**·`NON_STUDY`이면 없음 — 앱 레벨 조건부 필수 불변식) · 단일 그룹 코드를 UPPER_SNAKE로 저장 · 값(6개 그룹): `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC` · 추천 시 그룹은 멤버 대학 코드 집합으로 전개(`SNU_CAU_SOONGSIL`→`{SNU,CAU,SOONGSIL}` 등, `ETC`→멤버 없음: 목록 14곳 전체를 제외 조건으로 넘겨 `$nin` 여집합 매칭), 멤버 코드는 listing `nearbyUniversityCodes`(개별 코드 저장 불변)와 1:1 — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) |
 | `district` | string (enum `District`) | nullable · ③ 지역구(입국 목적 `purpose=NON_STUDY`일 때 **필수**·`STUDY`이면 없음 — 앱 레벨 조건부 필수 불변식) · UPPER_SNAKE 저장 · 값: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC` |
 | `conditions` | string[] (enum `DiagnosisCondition`) | 선택, ④는 ≤3, 중복 제거 · ④ 주거 환경 조건 — listing `ConditionTag` 이름으로 통일. 값: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`(8종). 사용자가 ④에서 고른 값만 저장하며 **파생 주입이 없어** `≤3` 제한에 예외가 없다(아래 註) |
 | `monthlyRentMin` | int(KRW) | 필수, ≥0 · ⑤ 월세 최소 · `monthlyRentMin ≤ monthlyRentMax`(앱 레벨 불변식) |
@@ -511,7 +525,7 @@
   - **부수 결정 ①(이 컬렉션의 기준 필드)**: TTL 기준 시각 필드 후보는 `submittedAt`인데, 이 값은 **`IN_PROGRESS` 문서엔 없어 그런 문서는 만료되지 않는다**(Mongo TTL은 기준 필드가 없는 문서를 건너뛴다). 게스트 문서는 v2가 종료 상태(`COMPLETED`·`DISCARDED`)로만 써서 항상 값이 있지만, v1 회원 draft가 영구히 남는 셈이므로 기준 필드를 `submittedAt`으로 둘지 별도 생성 시각을 둘지 명시해야 한다.
   - **부수 결정 ②(`diagnosisFlowSessions`의 기준 필드)**: 그 컬렉션엔 **시각 필드가 아예 없어** TTL을 걸려면 기준 필드부터 신설해야 한다(아래 §`diagnosisFlowSessions`).
 - **ARC 조건 파생 제거**: ⑥ `arcStatus=NO_ARC`(미발급)일 때 서버가 `DiagnosisCondition.NO_ARC`를 `conditions`에 주입하던 규칙과, 그 값을 **"최대 3개 제한에서 제외"하던 예외 조항**은 없앴다 — ARC 요구 여부는 매물 루트 `arcRequired` 한 필드로만 표현하고 추천은 그 필드를 직접 필터한다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `DiagnosisCondition` enum에서도 `NO_ARC` 상수를 제거했다(진단 답 `ArcStatus.NO_ARC`는 이름만 같을 뿐 그대로 유지된다 — 혼동 주의). 기배포 환경의 `diagnoses` 문서에 남은 `conditions` 원소 `NO_ARC`는 Mongock changeUnit이 1회 제거한다(컬렉션 drop 없이 영향 문서만 이행 — [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)).
-- **교차 모듈 no-FK**: `userId` 값만. 추천은 diagnosis가 `RecommendationCriteria`(지역·조건·`universityCodes` 멤버 코드 집합·월세 min-max·지역구·`arcStatus`)로 `listing` 공개 query를 동기 호출해 `RecommendedListingView` 페이지를 수신한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) D5). `universityCodes`는 선택 그룹을 전개한 `Set<String>`(`ETC`는 빈 집합, [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))이고, 월세는 nullable `monthlyRentMin`/`monthlyRentMax`다. listing은 `nearbyUniversityCodes`를 `$in`으로, 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`를 각 경계로 매칭하며, `arcStatus=NO_ARC`는 매물 루트 `arcRequired=NOT_REQUIRED`로 옮겨 **직접 필터**한다(`ARC_ISSUED`는 필터 미적용).
+- **교차 모듈 no-FK**: `userId` 값만. 추천은 diagnosis가 `RecommendationCriteria`(지역·조건·`includedUniversityCodes` 멤버 코드 집합·월세 min-max·지역구·`arcStatus`)로 `listing` 공개 query를 동기 호출해 `RecommendedListingView` 페이지를 수신한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) D5). `includedUniversityCodes`는 선택 그룹을 전개한 `Set<String>`(`ETC`는 멤버 대신 `excludedUniversityCodes`가 목록 전체, [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))이고, 월세는 nullable `monthlyRentMin`/`monthlyRentMax`다. listing은 `nearbyUniversityCodes`를 `$in`으로, 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`를 각 경계로 매칭하며, `arcStatus=NO_ARC`는 매물 루트 `arcRequired=NOT_REQUIRED`로 옮겨 **직접 필터**한다(`ARC_ISSUED`는 필터 미적용).
 - **진단↔매물 값 매핑**: 두 모듈은 각자의 입력 어휘를 보유하므로 값 집합을 일치시키지 않고 **매핑**으로 잇는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 진단 `Region` 3종(`SEOUL`·`BUSAN`·`GYEONGGI`)은 매물 `address.city`(`City`, 카탈로그 3종)와 등가 비교하고, 진단 `District`의 5구는 매물 `address.district`(`District`, 카탈로그 9종)와 등가 비교하되 **`ETC`는 그 5구의 여집합(`$nin`)**으로 질의하며, 진단 `ArcStatus`는 `NO_ARC → arcRequired=NOT_REQUIRED`·`ARC_ISSUED → 필터 미적용`으로 옮긴다. 진단 `District`는 "선택지에 없는 그 외"라는 `ETC`의 의미를 지키려고 **6종 그대로 두고** 매물 9종에 맞춰 넓히지 않는다.
 - **3단계 대학/지역 조건부 필수**: `university`/`district`는 **두 필드로 분리**하며 NOT NULL 제약이 아니라 **앱 레벨 조건부 필수 불변식**으로 강제한다 — 입국 목적(`purpose`)에 맞는 하나만 채워진다: `purpose=STUDY`면 `university` 필수·`district` 없음, `purpose=NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `400 INVALID_INPUT`+`errors[]`(신규 도메인 코드 없음). enum 값 목록은 위 필드 표(`UniversityGroup`: `HUFS_KHU_KOREA`·…·`ETC` 6개 그룹 / `District`: `GURO_GU`·…·`ETC`)대로.
 - **문항·선택지 출처(US-2-5)**: 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)를 호출하면 서버가 (카탈로그 + 진행 중 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question(사용자 언어 라벨 문자열), select{type,max}, options[{code,label}] }`로 내려준다(한 번에 다 주지 않음, 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열)로 보내면 서버가 진행 중(`IN_PROGRESS`) 진단에 저장한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`가 진행 중 진단을 `COMPLETED`로 확정한다. 반환 선택지 `code`는 **확정 검증 enum과 1:1 동일 출처**다(언어 무관 단일 키). 문항·선택지 카탈로그는 **MongoDB `diagnosisQuestions` 컬렉션**(아래)에 데이터로만 영속한다. **분기는 서버 비즈니스 로직(diagnosis 서비스 코드)이 결정한다(클라 로컬 분기·카탈로그 분기 메타 아님)** — ③(step 3)은 저장된 `purpose`에 따라 서비스가 알맞은 질문만 담는다(`STUDY`→대학 질문 `university`, `NON_STUDY`→지역구 질문 `district`; 한 응답에 두 목록을 함께 주지 않음). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`.
@@ -520,14 +534,14 @@
 
 #### 문항·선택지 카탈로그 — `diagnosisQuestions`
 
-진단 6단계의 문항·선택지·제약을 **데이터로만** 영속하는 카탈로그 컬렉션이다(US-2-5). 분기 메타(`branchOn` 등)는 두지 않는다 — 어느 질문을 낼지(③ 대학/지역)는 diagnosis 서비스 비즈니스 로직이 결정한다(D4). v2 서버 주도 흐름(#157 · [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md))이 ① 지역 0건일 때 끼워 넣는 **예외질문도 서버 코드에 하드코딩한 합성 문구가 아니라 이 카탈로그의 일반 문항**(step 1·`field=regionRetry`)이다 — 예외질문을 따로 관리하지 않고 6단계 문항과 같은 곳에 둔다(아래 註). 표시 문자열(번역)은 별도 컬렉션 없이 도큐먼트 내부 `question`·`label`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다(US-2-6). `GET /api/v1/diagnoses/questions/{step}`(클라가 받을 step을 path로 지정)이 (이 카탈로그 + 진행 중 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정·조립해 내려준다(한 번에 다 주지 않음, 다음 step 번호는 클라가 정한다). 선택지 `code`는 **확정 검증 enum과 동일 출처**(언어 무관 단일 키)다. 시드(Mongock `@ChangeUnit`)로 적재, 운영 중 `active`로 가변.
+진단 6단계의 문항·선택지·제약을 **데이터로만** 영속하는 카탈로그 컬렉션이다(US-2-5). 분기 메타(`branchOn` 등)는 두지 않는다 — 어느 질문을 낼지(③ 대학/지역)는 diagnosis 서비스 비즈니스 로직이 결정한다(D4). v2 서버 주도 흐름(#157 · [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md))이 ① 지역 0건일 때 끼워 넣는 **예외질문도 서버 코드에 하드코딩한 합성 문구가 아니라 이 카탈로그의 일반 문항**(step 1·`field=regionRetry`)이다 — 예외질문을 따로 관리하지 않고 6단계 문항과 같은 곳에 둔다(아래 註). 표시 문자열(번역)은 별도 컬렉션 없이 도큐먼트 내부 `question`·`label`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다(US-2-6). `GET /api/v1/diagnoses/questions/{step}`(클라가 받을 step을 path로 지정)이 (이 카탈로그 + 진행 중 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정·조립해 내려준다(한 번에 다 주지 않음, 다음 step 번호는 클라가 정한다). 선택지 `code`는 **확정 검증 enum과 동일 출처**(언어 무관 단일 키)다. 시드(정본 시드 JSON 주입)로 적재, 운영 중 `active`로 가변.
 
 `diagnosisQuestions`
 
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
 | `_id` | ObjectId | PK |
-| ~~`step`~~ | — | **없다** · 진단 단계 번호와 순서는 **코드**(`DiagnosisFlowStep`)가 갖는다 — 카탈로그는 문항의 표현만 담는다(ADR-0036 결정 6). 기배포 환경의 잔재는 changeUnit `diagnosis-question-drop-step`(order 0006)이 `$unset`한다. 옛 컬럼 설명: 진단 단계(①~⑥) · `GET /questions/{step}` path로 지정해 조회하는 단계 키 · **한 step에 문항이 둘일 수 있다**(③=`university`/`district` 분기) → 응용 계층이 `field`로 택일(목록 순서에 기대지 않음) |
+| ~~`step`~~ | — | **없다** · 진단 단계 번호와 순서는 **코드**(`DiagnosisFlowStep`)가 갖는다 — 카탈로그는 문항의 표현만 담는다(ADR-0036 결정 6). 기배포 환경의 잔재는 정본 시드에도 없다. 옛 컬럼 설명: 진단 단계(①~⑥) · `GET /questions/{step}` path로 지정해 조회하는 단계 키 · **한 step에 문항이 둘일 수 있다**(③=`university`/`district` 분기) → 응용 계층이 `field`로 택일(목록 순서에 기대지 않음) |
 | `field` | string | NOT NULL · 제출 필드명(`region`·`regionRetry`(① 지역 0건 예외질문 — 그 답 `YES`/`NO`는 `diagnoses`의 필드가 아니다, 아래 註)·`purpose`·`university`/`district`·`conditions`·`monthlyRent`(⑤ min/max)·`arcStatus`) · step 내 문항 식별 키 |
 | `question` | object | NOT NULL · 문항 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 사용자 언어 키 선택, 없으면 `en` 폴백 |
 | `select` | object | NOT NULL · `type`(enum `SINGLE`/`MULTI`/`NUMBER_RANGE`)·`max`(int, MULTI 상한) — 선택 제약(③ 대학 그룹=`SINGLE`·④ 조건=`MULTI`·⑤ 월세 범위=`NUMBER_RANGE`(두 숫자 입력 min/max) 등) |
@@ -542,7 +556,7 @@
 - **③ 분기(서버 결정)**: 대학/지역 단계는 **분기 메타 없이** 두 질문(`university`·`district`)이 데이터로 각각 존재하고, `GET /api/v1/diagnoses/questions/{step}`이 호출되면 **diagnosis 서비스 비즈니스 로직**이 진행 중 진단에 저장된 `purpose`를 보고 어느 질문을 낼지 결정해 하나만 골라 내려준다 — `STUDY`면 대학 목록으로 `university` 질문, `NON_STUDY`면 지역구 목록으로 `district` 질문(한 응답에 두 목록을 함께 주지 않음, 클라 로컬 분기 아님).
 - **① 지역 0건 예외질문(`regionRetry`)**: v2 흐름이 ① 지역 답 직후 매칭 0건일 때 끼워 넣는 "다른 지역 방을 찾아보시겠어요?" 문항이다 — **별도 컬렉션·별도 결과코드가 아니라 이 카탈로그의 일반 문항**(`field: "regionRetry"` · `select: { type: "SINGLE", max: 1 }` · `options: [{code:"YES"},{code:"NO"}]`)이며, 번역도 다른 문항과 같은 인라인 언어-키 맵에 둔다. ③ 분기(university/district)와 마찬가지로 **step 1에 `region`과 나란히 두고 응용 계층이 `field`로 택일**한다(step만으로는 지목할 수 없다). `options[].code`(`YES`/`NO`)는 흐름 제어 응답이라 **`diagnoses`의 제출 검증 enum과 1:1이 아니다** — 진단 답이 아니므로 `diagnoses`에 저장되지 않는 유일한 문항이다(다른 문항의 "코드=enum 1:1" 전제에서 ⑤ 월세 범위 carve-out과 나란한 예외). 응답 처리·결과코드는 [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md).
 - **추천 사유/액션 번역**: 추천 0건 `suggestions`의 `reason`/`actions[].type`(언어 무관 enum 키)의 표시 `message`/`detail`은 **`diagnosisSuggestions` 전용 컬렉션**(아래)의 `reason`별 인라인 언어-키 맵에서 서버가 사용자 언어 키로 골라 제공한다(문항 카탈로그와 동일 방식, 없으면 `en` 폴백). **v1 전용**이다 — v2 흐름은 `NO_MATCH`에 제안을 싣지 않아 이 컬렉션을 참조하지 않는다(§4-4 `diagnosisFlowSessions`).
-- **시드·변경(Mongock `@ChangeUnit`)**: 카탈로그 적재·진화는 모듈별 Mongock changeUnit으로 환경당 1회 적용한다(멱등 시더가 아니라 변경 관리 러너 — [ADR-0032](../adr/0032-mongodb-migration-runner.md), [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)). diagnosis 모듈 이력: order `0000` `diagnosis-catalog-seed`(init — `diagnosisQuestions`·`diagnosisSuggestions`를 비우고 캐노니컬 시드 재적재, `regionRetry` 문항 포함) → `0001` `diagnosis-university-group-and-rent-range`(③ 대학 그룹·⑤ 월세 범위) → `0003` `diagnosis-private-bath-unification` → `0004` `diagnosis-condition-tag-rename` → **`0005` `diagnosis-region-retry-question`**(기배포 환경용 — 0000 시드가 `regionRetry` 없이 실행된 환경에 그 문항만 추가. 같은 `(step:1, field:regionRetry)` 문항을 지우고 다시 넣어 신규 환경에서도 결과가 같다(멱등)). order는 전 모듈 공통 시퀀스라 중간의 `0002`는 다른 모듈(gamification)이 쓴다. 인덱스는 Mongock이 아니라 부트스트랩에서 멱등 생성한다.
+- **시드**: 카탈로그 적재는 마이그레이션이 아니라 **운영자가 정본 JSON을 주입**한다 — 정본은 [`diagnosis-questions.json`](../../src/test/resources/fixtures/diagnosis-questions.json)(8건)·[`diagnosis-suggestions.json`](../../src/test/resources/fixtures/diagnosis-suggestions.json)(1건)이고 절차는 [migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)이다([ADR-0032](../adr/0032-mongodb-migration-runner.md) §4). 문항 `_id`는 `field` 값(`region`·`regionRetry`·`purpose`·`university`·`district`·`conditions`·`monthlyRent`·`arcStatus`)이라 재주입해도 중복되지 않는다. 인덱스는 부트스트랩이 멱등 생성한다.
 
 #### 추천 조정 제안 — `diagnosisSuggestions`
 
@@ -897,7 +911,7 @@
 - **비페이지**: 주제 수는 고정·소규모라 페이지네이션 없이 `order` 오름차순 전체 배열을 한 번에 반환한다(페이지 객체 없음).
 - **필수(NOT NULL)**: 주제의 `shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`은 모두 필수다 — 홈 카드와 상세 상단이 항상 이미지·설명을 그리므로 "이미지 없는 주제" 경계 케이스를 두지 않는다(사진이 없을 수 있어 nullable인 팁 사진 `LifeTip.imageUrl`과 대비된다).
 - **인덱스 불변**: 신설 4필드는 조회 필터·정렬 키가 아니라 인덱스를 추가하지 않는다 — `{ order: 1 }`(노출 순서 정렬) 인덱스만 그대로 유지한다.
-- **마이그레이션(2단)**: 신설 4필드는 두 갈래로 적재해 모든 환경을 수렴시킨다 — (a) **신규 환경**: baseline 시드 `@ChangeUnit(id="lifetip-catalog-seed", order="0000")`가 처음부터 4필드를 **예시 기본값**(모든 주제 공통)으로 포함해 주제를 적재한다. (b) **기배포(dev/prod)**: 이미 order 0000을 실행해 changelog에 기록한 환경은 Mongock이 **같은 id의 changeUnit을 재실행하지 않고 건너뛰므로** 0000 시드 본문만 고쳐서는 4필드가 채워지지 않는다 → 신규 백필 `@ChangeUnit(id="lifetip-topic-media-and-descriptions", order="0001")`이 **주제 코드로 찾지 않고** 컬렉션 **전체를 `updateMulti`**로 갱신해 모든 주제에 예시 기본값 4필드를 채운다 — 배포 환경의 실제 주제 `code`가 시드의 예시 코드와 다를 수 있어 코드 매칭을 쓰지 않는다(신규 환경은 0000이 이미 같은 값을 넣었고 재-set 하므로 멱등). 4필드의 실제 이미지·설명은 **운영이 DB에서 갱신**한다(예시 기본값은 계약 형태를 만족시키는 자리표시자). (a)만 하면 기배포 환경은 4필드가 없어 위 NOT NULL 계약이 깨진다. 변경 관리 러너·order 순서 규약은 진단 카탈로그(§4-4)와 동일하다([ADR-0032](../adr/0032-mongodb-migration-runner.md) · [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)). 팁 카탈로그(`lifeTips`)는 변경하지 않는다.
+- **적재**: 신설 4필드는 정본 시드가 **예시 기본값**(모든 주제 공통)으로 들고 있고, 실제 이미지·설명은 **운영이 DB에서 갱신**한다(예시 기본값은 계약 형태를 만족시키는 자리표시자). 시드 갱신이 배포와 분리돼 있어 값을 고치는 데 재빌드가 필요 없다 — 절차는 진단 카탈로그(§4-4)와 동일하다([ADR-0032](../adr/0032-mongodb-migration-runner.md) §4 · [migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)).
 
 **예시 도큐먼트** (`lifeTipTopics`)
 
@@ -978,7 +992,7 @@
 }
 ```
 
-- **시드(Mongock `@ChangeUnit`)**: `lifeTipTopics`·`lifeTips`는 진단 카탈로그(§4-4)와 동일하게 모듈별 Mongock `@ChangeUnit`으로 환경당 1회 적재한다(멱등 시더가 아니라 변경 관리 러너 — [ADR-0032](../adr/0032-mongodb-migration-runner.md), [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)). 인덱스(`lifeTipTopics.{order}`·`lifeTips.{topicCode,order}`)는 부트스트랩/마이그레이션에서 기동 시 멱등 보장한다.
+- **시드**: `lifeTipTopics`·`lifeTips`는 진단 카탈로그(§4-4)와 동일하게 **운영자가 정본 JSON을 주입**한다 — [`life-tip-topics.json`](../../src/test/resources/fixtures/life-tip-topics.json)(5건)·[`life-tips.json`](../../src/test/resources/fixtures/life-tips.json)(6건), 절차는 [migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)([ADR-0032](../adr/0032-mongodb-migration-runner.md) §4). 주제 `_id`는 주제 코드, 팁 `_id`는 고정 ObjectId다(응답에 나가는 값이라 형식을 유지한다). 인덱스(`lifeTipTopics.{order}`·`lifeTips.{topicCode,order}`)는 부트스트랩이 기동 시 멱등 보장한다.
 
 ## 5. 관련 문서
 

@@ -66,6 +66,15 @@ public class ListingMongoIndexInitializer implements ApplicationRunner {
             .on("arcRequired", ASC)
             .named("listings_status_arc_requirement"));
 
+    var universityIndexOperations = mongoTemplate.indexOps(UniversityDocument.class);
+
+    // 등록이 매물 좌표로 반경 안의 대학을 훑는다. 원장이 14건이라 컬렉션 스캔도 답은 같지만,
+    // 지오 인덱스를 두는 편이 조회 계획이 명확하고 원장이 커져도 그대로 간다.
+    universityIndexOperations.createIndex(
+        new GeospatialIndex("location")
+            .typed(GeoSpatialIndexType.GEO_2DSPHERE)
+            .named("universities_location_2dsphere"));
+
     var catalogIndexOperations = mongoTemplate.indexOps(ListingCatalogDocument.class);
 
     // category+code는 프론트에 전달할 하나의 번역 항목을 식별한다. 같은 코드가 카테고리별로 다른 라벨을 가질 수 있다.

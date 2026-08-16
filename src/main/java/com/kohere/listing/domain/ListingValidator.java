@@ -65,8 +65,8 @@ public final class ListingValidator {
 
   private static void validateAddress(Listing.Address address) {
     requireNonNull(address, "address가 필요합니다.");
-    requireNonNull(address.city(), "address.city가 필요합니다.");
-    requireNonNull(address.district(), "address.district가 필요합니다.");
+    requireText(address.city(), "address.city가 필요합니다.");
+    requireText(address.district(), "address.district가 필요합니다.");
     requireLocalizedText(address.fullAddress(), "address.fullAddress");
     if (address.detail() != null) {
       requireLocalizedText(address.detail(), "address.detail");

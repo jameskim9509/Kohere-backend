@@ -86,6 +86,7 @@ class ListingRegisterDocsTest {
 
   private static final String LISTINGS_COLLECTION = "listings";
   private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
+  private static final String UNIVERSITIES_COLLECTION = "universities";
 
   /** 코드표 불일치를 재현하려고 지우는 카탈로그 항목의 문서 id다(`category:code`). */
   private static final String NO_MAINT_FEE_CATALOG_ID = "CONDITION_TAG:NO_MAINT_FEE";
@@ -197,7 +198,7 @@ class ListingRegisterDocsTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
   private MockMvc mockMvc;
 
-  /** REST Docs용 MockMvc를 만들고 매물 컬렉션을 비운 뒤 코드 카탈로그(번역 사전)만 시드한다. */
+  /** REST Docs용 MockMvc를 만들고 매물 컬렉션을 비운 뒤 코드 카탈로그(번역 사전)와 대학 좌표 원장을 시드한다. */
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) {
     mockMvc =
@@ -207,7 +208,10 @@ class ListingRegisterDocsTest {
             .build();
     mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(UNIVERSITIES_COLLECTION).deleteMany(new Document());
     ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
+    // 등록이 좌표로 인근 대학을 파생하므로 운영과 같은 정본 원장을 심는다(ADR-0045).
+    ListingTestSeeds.seedUniversities(mongoTemplate, UNIVERSITIES_COLLECTION);
     given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
     given(userAccountService.getLanguage(LANDLORD_ID)).willReturn("ko");
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
@@ -234,7 +238,11 @@ class ListingRegisterDocsTest {
         .andExpect(jsonPath("$.data.location.lat").value(37.5559918))
         .andExpect(jsonPath("$.data.location.lng").value(126.9368647))
         .andExpect(jsonPath("$.data.address.lat").doesNotExist())
-        .andExpect(jsonPath("$.data.nearbyUniversityCodes").isEmpty())
+        // 그 좌표에서 반경 2km 안의 대학을 서버가 파생한다(ADR-0045). 신촌로 12는 세 대학이 모두 도보권이라
+        // 진단 그룹 HONGIK_YONSEI_EWHA와 그대로 맞물린다 — 요청에는 대학 칸이 없다.
+        .andExpect(
+            jsonPath("$.data.nearbyUniversityCodes")
+                .value(containsInAnyOrder("YONSEI", "EWHA", "HONGIK")))
         // 한국어 한 값으로 보낸 문구가 임대인 언어(ko)로 그대로 돌아온다.
         .andExpect(jsonPath("$.data.title").value("신촌 도보 5분 1인실 고시원"))
         .andExpect(jsonPath("$.data.nearestTransit.name").value("신촌역"))
@@ -262,6 +270,24 @@ class ListingRegisterDocsTest {
                     .description(LISTING_REGISTER_DESCRIPTION),
                 requestFields(registerRequestFields()),
                 responseFields(registerResponseFields())));
+  }
+
+  /**
+   * 카탈로그가 모르는 지역도 등록된다 — 행정구역은 {@code ETC}로 저장한다.
+   *
+   * <p>9개 구 목록은 데이터 무결성이 아니라 영업 범위 정책이라, 그 판단은 등록이 아니라 관리자 승인 심사가 한다. 예전에는 여기서 {@code 400
+   * LISTING_INVALID_ADDRESS}가 났고 성북구·동작구처럼 대학이 있는 지역의 매물이 아예 들어오지 못했다.
+   */
+  @Test
+  void 등록_카탈로그가_모르는_지역은_ETC로_저장한다() throws Exception {
+    mockMvc
+        .perform(
+            register(
+                landlordToken(), bodyReplacing("\"서울특별시 서대문구 신촌로 12\"", "\"서울특별시 성북구 안암로 145\"")))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.address.city.code").value("SEOUL"))
+        .andExpect(jsonPath("$.data.address.district.code").value("ETC"))
+        .andExpect(jsonPath("$.data.address.district.label").value("기타"));
   }
 
   /** 등록 응답에는 사업자등록번호와 임대인 설문 3종이 없다. 저장은 하되 세입자에게 나가지 않는 값이라 응답 필드 기술자에도 없고, 없음을 여기서 못 박는다. */
@@ -371,14 +397,6 @@ class ListingRegisterDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "listing-register-invalid-coordinates",
-        LISTING_REGISTER_400);
-
-    // 도로명 주소에서 시·도와 구·군을 뽑지 못하는 주소.
-    performError(
-        register(landlordToken(), bodyReplacing("\"서울특별시 서대문구 신촌로 12\"", "\"신촌로 12\"")),
-        status().isBadRequest(),
-        "LISTING_INVALID_ADDRESS",
-        "listing-register-invalid-address",
         LISTING_REGISTER_400);
 
     // 앱이 아는 코드가 서버 코드표에는 아직 없는 상황을 카탈로그에서 한 행을 지워 재현한다.
