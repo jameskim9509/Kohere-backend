@@ -293,7 +293,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값 |
+      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값이거나 휴대폰 번호 형식 위반(하이픈은 선택) |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -324,7 +324,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `phoneNumber`·`code` 누락·빈값 |
+      | 400 | `INVALID_INPUT` | `phoneNumber`·`code` 누락·빈값이거나 `phoneNumber`가 휴대폰 번호 형식 위반 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -401,7 +401,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값, `birthDate` 누락이거나 `YYYY-MM-DD` 형식이 아니거나 미래 날짜 |
+      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값·휴대폰 번호 형식 위반, `birthDate` 누락이거나 `YYYY-MM-DD` 형식이 아니거나 미래 날짜 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -544,7 +544,7 @@ public final class AuthDocsFields {
         field(
             "phoneNumber",
             JsonFieldType.STRING,
-            "인증번호를 받을 휴대폰 번호(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다)"));
+            "인증번호를 받을 휴대폰 번호(필수, 빈값 불가 — 하이픈은 선택이며 서버가 숫자만 남겨 정규화한다)"));
   }
 
   public static List<FieldDescriptor> phoneCodeResponseFields() {
@@ -594,7 +594,7 @@ public final class AuthDocsFields {
         field(
             "phoneNumber",
             JsonFieldType.STRING,
-            "사전 SMS 인증된 연락처와 일치(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다). 불일치·미인증은 422"),
+            "사전 SMS 인증된 연락처와 일치(필수, 빈값 불가 — 하이픈 표기 차이는 정규화로 흡수한다). 불일치·미인증은 422"),
         field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(필수, 과거 날짜만 — 형식 위반·미래는 400)"));
   }
 }

@@ -1,5 +1,8 @@
 package com.kohere.user.presentation.dto;
 
+import com.kohere.common.request.PhoneNumbers;
+import jakarta.validation.constraints.Pattern;
+
 /**
  * 내 프로필 부분 수정 요청 DTO. 모든 필드가 선택이며, 전송한 필드만 변경하고 미전송 필드는 유지한다(미전송 ≠ 값 비움). {@code email}·{@code
  * nickname}은 이 경로로 수정하지 않는다(이메일은 재인증, 닉네임은 시스템 배정).
@@ -8,6 +11,13 @@ package com.kohere.user.presentation.dto;
  * 성별·생년월일·국적·직업·비자정보·{@code marketingAgreed}를, 임대인(LANDLORD)은 {@code phoneNumber}·{@code
  * marketingAgreed}를 수정한다. 임대인의 {@code phoneNumber} 변경은 새 번호를 SMS로 재인증(§4-1·§4-2)한 뒤에만 반영되며,
  * 미인증·불일치는 422 {@code AUTH_PHONE_NOT_VERIFIED}다(ADR-0034).
+ *
+ * <p><b>{@code phoneNumber}는 선택이지만 형식은 강제한다</b> — 이 필드가 {@code users.phone_number}에 닿는 마지막 요청 경로다.
+ * UNIQUE(V23)가 표기 차이로 뚫리지 않도록 응용 계층이 저장 전에 표준형으로 접는데({@link PhoneNumbers}), 접기 전에 형식을 걸러야 {@code
+ * 1}·{@code abc} 같은 값이 접힌 뒤 정상 번호처럼 저장되는 일을 막을 수 있다. 온보딩·SMS 인증 DTO와 같은 {@link
+ * PhoneNumbers#PATTERN}을 쓴다(#229). {@code @NotBlank}는 붙이지 않는다 — PATCH의 미전송({@code null})은 「변경 없음」이고
+ * {@code @Pattern}은 {@code null}을 통과시키므로 선택 의미가 유지된다. 빈 문자열은 미전송이 아니라 형식 위반이라 {@code
+ * INVALID_INPUT}이다.
  *
  * <p>docs/api/specs/01-auth-onboarding.md §9 PATCH /users/me 요청 스키마. {@code country}는 ISO 코드.
  *
@@ -24,5 +34,5 @@ public record UpdateProfileRequest(
     String occupation,
     String visaType,
     String lang,
-    String phoneNumber,
+    @Pattern(regexp = PhoneNumbers.PATTERN) String phoneNumber,
     Boolean marketingAgreed) {}

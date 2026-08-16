@@ -1,0 +1,13 @@
+-- V23 — users.phone_number UNIQUE 추가 (#229, ADR-0047).
+-- 웹 임대인 가입과 앱 임대인 온보딩은 「같은 번호면 같은 계정」으로 이어붙는다. 두 흐름이 동시에 들어오면 양쪽 다
+-- 「기존 계정 없음」을 읽고 각자 ACTIVE·LANDLORD 행을 만들어 한 사람의 계정이 갈라진다 —
+-- 애플리케이션 조회(FOR UPDATE)는 아직 없는 행을 잠글 수 없으므로, 그 경쟁을 실제로 막는 것은 이 UNIQUE 제약뿐이다.
+-- 두 번째 INSERT가 제약 위반으로 실패하고 그 트랜잭션이 통째로 롤백된다.
+-- MySQL UNIQUE는 NULL 중복을 허용하므로 연락처가 없는 세입자와 탈퇴(익명화로 NULL)한 회원은 영향이 없다 —
+-- V3의 uq_users_nickname과 같은 성질이라 온보딩 전 다건도 무방하다.
+--   ⚠️ 번호 정규화는 입력 경로에만 넣고 기존 행은 백필하지 않는다(#229 D10 — 이 파일에 UPDATE가 없는 이유다).
+--      따라서 하이픈으로 저장돼 있던 기존 임대인 번호는 정규화된 값과 매칭되지 않아 연동에서 누락될 수 있다.
+--      수용된 제약이며 docs/requirements/user-stories.md에 기록돼 있다(재인증으로 번호를 바꾸면 그 시점에 표준형으로 접힌다).
+-- migration-policy §3상 제약 강화 = 비호환이라 중복 행 정리가 선행돼야 하나, 임대인 계정은 아직 중복 번호를 만들 경로가 없었다.
+-- docs/database/database-design.md §4-2 · docs/adr/0047-web-local-credentials-and-phone-based-account-linking.md.
+ALTER TABLE users ADD CONSTRAINT uq_users_phone_number UNIQUE (phone_number);

@@ -1,6 +1,7 @@
 package com.kohere.user.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.PhoneNumbers;
 import com.kohere.user.api.ApplicantProfileView;
 import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
@@ -97,6 +98,11 @@ public class UserAccountServiceImpl implements UserAccountService {
     return toProfileView(userRepository.save(active));
   }
 
+  /**
+   * 임대인 온보딩 완료. 연락처는 저장 직전에 한 번 더 표준형으로 접는다({@link PhoneNumbers}) — 호출자(앱 온보딩·웹 가입·테스트 시드)가 이미 접어
+   * 넘기지만, {@code users.phone_number}의 UNIQUE(V23)는 표기가 하나라도 어긋나면 계정이 갈라지는 것을 막지 못하므로 규약이 아니라 <b>쓰기
+   * 경계</b>에서 불변식을 세운다. {@code normalize}는 멱등이라 겹쳐 불러도 결과가 같다(#229 D10).
+   */
   @Override
   @Transactional
   public UserProfileView completeLandlordOnboarding(
@@ -105,7 +111,10 @@ public class UserAccountServiceImpl implements UserAccountService {
     String nickname = nicknameGenerator.generateUnique();
     User active =
         user.completeLandlordOnboarding(
-            profile.phoneNumber(), profile.birthDate(), nickname, Instant.now());
+            PhoneNumbers.normalize(profile.phoneNumber()),
+            profile.birthDate(),
+            nickname,
+            Instant.now());
     return toProfileView(userRepository.save(active));
   }
 

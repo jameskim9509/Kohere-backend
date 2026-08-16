@@ -39,6 +39,7 @@ import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.PhoneNumbers;
 import com.kohere.common.request.RequestDates;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.LandlordOnboardingProfile;
@@ -327,7 +328,9 @@ public class AuthService {
         userAccountService.completeLandlordOnboarding(
             userId,
             new LandlordOnboardingProfile(
-                request.phoneNumber(), RequestDates.parsePast("birthDate", request.birthDate())));
+                // users.phone_number에는 인증 마커와 같은 표준형을 넣는다 — UNIQUE(V23)가 표기 차이로 뚫리지 않게(#229 D10).
+                PhoneNumbers.normalize(request.phoneNumber()),
+                RequestDates.parsePast("birthDate", request.birthDate())));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
