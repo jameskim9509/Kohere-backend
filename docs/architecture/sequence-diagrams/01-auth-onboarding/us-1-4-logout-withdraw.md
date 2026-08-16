@@ -48,6 +48,8 @@ sequenceDiagram
             end
             AUTH->>SQL: social_accounts 매핑 삭제<br/>(provider, provider_user_id)
             SQL-->>AUTH: 삭제 완료
+            AUTH->>SQL: local_accounts 자격증명 삭제<br/>(웹 이메일·비밀번호 해시)
+            SQL-->>AUTH: 삭제 완료
             AUTH->>RDS: 해당 user refresh 일괄 무효화<br/>(status=REVOKED)
             RDS-->>AUTH: 무효화 완료
             AUTH-->>USER: 정리 완료
@@ -59,8 +61,9 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- 로그아웃은 access 토큰으로 `auth 모듈`의 `POST /api/v1/auth/logout`에 `refreshToken`을 담아 호출하면 Redis에서 해당 **refreshToken을 무효화**하고 `204 No Content`를 반환한다(이미 무효화면 멱등).
+- 로그아웃은 access 토큰으로 `auth 모듈`의 `POST /api/v1/auth/logout`을 호출하면 Redis에서 해당 **refreshToken을 무효화**하고 `204 No Content`를 반환한다(이미 무효화면 멱등). refresh는 **쿠키 우선 · 요청 본문 fallback**으로 읽으며(앱은 기존 본문 방식 그대로), 쿠키로 온 요청에는 `Max-Age=0` 삭제 쿠키를 함께 내린다. 쿠키·본문 어느 쪽에도 없으면 `400 INVALID_INPUT`(`errors[].field=refreshToken`)이다 — 본문이 선택이 되면서 예전의 `MALFORMED_REQUEST`에서 바뀌었다([ADR-0048](../../../adr/0048-web-refresh-token-httponly-cookie.md) · 스펙 §7).
 - 회원 탈퇴는 `user 모듈`의 `DELETE /api/v1/users/me` 호출 시 MySQL에서 **상태를 WITHDRAWN으로 전이**하고 `withdrawn_at`(UTC)을 기록하며 식별 PII(이름·생년월일·국적·표시 언어(`lang`)·직업·이메일·비자·닉네임)를 **즉시 익명화(복구불가)**한다(행 보존). 이어 `UserWithdrawnEvent`를 발행하는데, [`UserWithdrawnEventListener`](../../../../src/main/java/com/kohere/auth/application/UserWithdrawnEventListener.java)가 `@EventListener`로 **같은 트랜잭션 안에서 동기 처리**하므로 아래 auth 정리까지 끝나야 커밋되고 `204 No Content`가 반환된다(운영에서 비동기 분리가 필요하면 `@ApplicationModuleListener`로 전환).
-- `auth 모듈`은 `UserWithdrawnEvent`를 구독해 정리한다. **Apple 연동이면 매핑 삭제 전에** `social_accounts`에서 `apple_refresh_token`을 읽어 Apple `POST /auth/revoke`(`token_type_hint=refresh_token`)로 앱↔Apple ID 연동을 폐기한다(App Store 5.1.1(v), [ADR-0031](../../../adr/0031-apple-sign-in-authorization-code-flow.md)). 이 폐기는 **best-effort** — HTTP 200과 `invalid_grant`/`invalid_token`(이미 폐기)은 성공으로 보고, 그 외 실패(타임아웃·5xx)는 WARN 로그·메트릭만 남기고 **탈퇴를 막지 않는다**(외부 호출은 짧은 타임아웃으로 제한; durable 재시도는 후속). 이어 MySQL의 **`social_accounts` 매핑(provider, provider_user_id)을 삭제**하고 Redis에서 **해당 user의 refresh 토큰을 일괄 무효화(status=REVOKED)**한다 — 이 로컬 정리는 동기·같은 트랜잭션이라 실패하면 탈퇴 전체가 롤백된다(외부 Apple 폐기는 예외). 마이그레이션 이전 Apple 사용자는 `apple_refresh_token`이 없어 폐기를 스킵하며, 다음 로그인 때 백필된다.
+- `auth 모듈`은 `UserWithdrawnEvent`를 구독해 정리한다. **Apple 연동이면 매핑 삭제 전에** `social_accounts`에서 `apple_refresh_token`을 읽어 Apple `POST /auth/revoke`(`token_type_hint=refresh_token`)로 앱↔Apple ID 연동을 폐기한다(App Store 5.1.1(v), [ADR-0031](../../../adr/0031-apple-sign-in-authorization-code-flow.md)). 이 폐기는 **best-effort** — HTTP 200과 `invalid_grant`/`invalid_token`(이미 폐기)은 성공으로 보고, 그 외 실패(타임아웃·5xx)는 WARN 로그·메트릭만 남기고 **탈퇴를 막지 않는다**(외부 호출은 짧은 타임아웃으로 제한; durable 재시도는 후속). 이어 MySQL의 **자격증명 두 벌을 함께 삭제**한다 — **`social_accounts` 매핑(provider, provider_user_id)**(앱)과 **`local_accounts` 행**(웹 이메일·비밀번호 해시, [ADR-0047](../../../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) — 그리고 Redis에서 **해당 user의 refresh 토큰을 일괄 무효화(status=REVOKED)**한다. 이 로컬 정리는 동기·같은 트랜잭션이라 실패하면 탈퇴 전체가 롤백된다(외부 Apple 폐기는 예외).
+  > **두 벌을 다 지워야 하는 이유** — `users` 행은 보존되고 `user_type`도 `LANDLORD` 그대로라, 웹 자격증명이 살아남으면 **탈퇴한 임대인이 이메일·비밀번호로 다시 로그인**할 수 있다(앱 경로가 멀쩡한 것은 `social_accounts`를 지우기 때문이다). 덤으로 `local_accounts.email` UNIQUE가 남아 **같은 이메일로 재가입도 막힌다**. 웹 로그인에는 상태 화이트리스트(`ACTIVE`만 통과, 그 외 401)라는 2차 방어도 함께 둔다. 마이그레이션 이전 Apple 사용자는 `apple_refresh_token`이 없어 폐기를 스킵하며, 다음 로그인 때 백필된다.
 - 이미 WITHDRAWN 상태이면 `409 USER_ALREADY_WITHDRAWN`을 반환한다.
 - 두 동작 모두 인증 필수이며, 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 모듈로 전달한다. 온보딩 스코프(PENDING·TERMS_AGREED) 사용자도 탈퇴는 허용된다.

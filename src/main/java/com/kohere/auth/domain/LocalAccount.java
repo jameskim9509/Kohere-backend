@@ -63,10 +63,22 @@ public class LocalAccount {
    * 비밀번호 대조 실패 1회 누적. 누적치가 {@code maxFailedAttempts}에 도달하면 같은 시점으로 잠근다(시간 경과 자동 해제 없음 — 운영자가 {@code
    * locked_at}을 비우는 것이 유일한 해제 경로다).
    *
+   * <p><b>{@code locked_at}만 비워도 완전한 해제가 되게 한다.</b> 잠기지 않았는데 카운터가 이미 상한 이상이라는 조합은 <b>운영자가 방금 잠금을 풀어
+   * 준 계정</b>에서만 나온다 — 그 상태를 그대로 이어 세면 다음 한 번의 오타가 {@code 5 + 1 >= 5}로 즉시 재잠금이라 해제가 사실상 없던 일이 된다.
+   * 그래서 이 조합을 <b>새 창의 시작</b>으로 보고 1부터 다시 센다.
+   *
+   * <p>문서 넷(스펙 §1-4 두 곳·유저 스토리·시퀀스 us-1-12)이 모두 해제 절차를 "{@code locked_at}을 비운다"로 적고 있는데, 카운터까지 비워야
+   * 실제로 풀린다면 그 절차는 <b>운영자의 기억력에 기대는 반쪽</b>이다. 문서 넷을 고치는 대신 코드가 절차대로 동작하게 만드는 쪽을 택한다 — 운영 규율에 의존하는
+   * 정합성은 언젠가 깨진다.
+   *
+   * <p>부수적으로 상한을 낮추는 설정 변경({@code 10 → 5})도 같은 규칙으로 흡수된다 — 이미 5~9회 쌓인 계정이 <b>배포 직후 첫 실패에</b> 잠기지
+   * 않는다.
+   *
    * <p>상한은 설정값({@code app.auth.web.login-max-failed-attempts})이라 도메인 상수로 굳히지 않고 인자로 받는다.
    */
   public LocalAccount recordLoginFailure(int maxFailedAttempts, Instant now) {
-    int attempts = failedLoginAttempts + 1;
+    boolean unlockedButCounterStale = lockedAt == null && failedLoginAttempts >= maxFailedAttempts;
+    int attempts = (unlockedButCounterStale ? 0 : failedLoginAttempts) + 1;
     return toBuilder()
         .failedLoginAttempts(attempts)
         .lockedAt(attempts >= maxFailedAttempts ? now : lockedAt)

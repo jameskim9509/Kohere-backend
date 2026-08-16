@@ -5,10 +5,10 @@ import com.kohere.auth.application.dto.SignupPhoneVerificationCodeResponse;
 import com.kohere.auth.application.dto.SignupPhoneVerifyResponse;
 import com.kohere.auth.presentation.dto.SignupPhoneVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.SignupPhoneVerifyRequest;
+import com.kohere.common.request.ClientIps;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,42 +36,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class SignupPhoneVerificationController {
 
-  private static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
-
   private final SignupPhoneVerificationService signupPhoneVerificationService;
 
+  /**
+   * 호출자 IP는 {@link ClientIps}가 뽑는다 — 웹 로그인({@link WebAuthController})도 같은 값을 레이트리밋 키로 쓰는데, 추출 규칙이 두
+   * 벌이면 같은 호출자가 엔드포인트마다 다른 버킷에 들어가 한도가 의도대로 걸리지 않는다. 서블릿 타입은 여기까지만 오고 응용 계층에는 문자열만 내려간다.
+   */
   @PostMapping("/verification-code")
   public SignupPhoneVerificationCodeResponse sendCode(
       @Valid @RequestBody SignupPhoneVerificationCodeRequest request,
       HttpServletRequest servletRequest) {
-    return signupPhoneVerificationService.sendCode(request.phoneNumber(), clientIp(servletRequest));
+    return signupPhoneVerificationService.sendCode(
+        request.phoneNumber(), ClientIps.resolve(servletRequest));
   }
 
   @PostMapping("/verify")
   public SignupPhoneVerifyResponse verify(@Valid @RequestBody SignupPhoneVerifyRequest request) {
     return signupPhoneVerificationService.verify(request.phoneNumber(), request.code());
-  }
-
-  /**
-   * IP 레이트리밋 키로 쓸 호출자 IP. 앱은 dev·prod에서 Caddy 리버스 프록시 뒤에 있어({@code
-   * infra/terraform/modules/dev/host/Caddyfile.tftpl}) {@code getRemoteAddr()}가 프록시 주소로 고정되므로
-   * {@code X-Forwarded-For}의 <b>최좌측(원 호출자) 항목</b>을 먼저 보고, 헤더가 없을 때(로컬 직접 호출·테스트)만 remote address로
-   * 떨어진다.
-   *
-   * <p><b>이 값은 신뢰 경계가 아니다</b> — Caddy는 기존 {@code X-Forwarded-For}에 <b>덧붙이므로</b> 클라이언트가 헤더를 먼저 실어
-   * 보내면 최좌측 값을 스스로 정할 수 있다. 그래서 IP 한도는 <b>발송비·문자 폭탄을 늦추는 비용 가드</b>일 뿐 인가 수단이 아니며, 우회할 수 없는 방어는 대상
-   * 번호로 거는 번호 한도와 재발송 쿨다운이다(#229 D6의 이중 한도가 필요한 이유). 프레젠테이션 계층에서만 서블릿 요청을 만지고 응용 계층에는 문자열로 내려보낸다.
-   *
-   * @return 호출자 IP. 판별할 수 없으면 {@code null}이며, 이때 레이트리밋은 번호 한도만 적용한다
-   */
-  private static String clientIp(HttpServletRequest request) {
-    String forwardedFor = request.getHeader(FORWARDED_FOR_HEADER);
-    if (StringUtils.hasText(forwardedFor)) {
-      String leftmost = forwardedFor.split(",", 2)[0].trim();
-      if (StringUtils.hasText(leftmost)) {
-        return leftmost;
-      }
-    }
-    return request.getRemoteAddr();
   }
 }

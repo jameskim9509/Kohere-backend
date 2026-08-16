@@ -13,4 +13,6 @@ interface LocalAccountJpaRepository extends JpaRepository<LocalAccountJpaEntity,
   boolean existsByEmail(String email);
 
   boolean existsByUserId(Long userId);
+
+  void deleteByUserId(Long userId);
 }

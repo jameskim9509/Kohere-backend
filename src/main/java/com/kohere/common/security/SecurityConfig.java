@@ -59,10 +59,11 @@ public class SecurityConfig {
                         "/api/v1/auth/phone/signup/verification-code",
                         "/api/v1/auth/phone/signup/verify")
                     .permitAll()
-                    // 임대인 웹 회원가입(US-1-11) — 계정을 만드는 요청이라 주체가 있을 수 없다. 아래 (2)·(3)의
-                    // /auth/* 매처는 전부 정확 경로라 이 경로를 덮지 않지만, 순서가 뒤집혀도 안전하도록 공개 티어에 둔다.
-                    // PublicPaths.ALL에도 같은 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
-                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup")
+                    // 임대인 웹 회원가입(US-1-11)·로그인(US-1-12) — 계정을 만들거나 아직 토큰을 받기 전이라 주체가
+                    // 있을 수 없다. 아래 (2)·(3)의 /auth/* 매처는 전부 정확 경로라 이 두 경로를 덮지 않지만,
+                    // 순서가 뒤집혀도 안전하도록 공개 티어에 둔다.
+                    // PublicPaths.ALL에도 같은 두 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
+                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login")
                     .permitAll()
                     .requestMatchers("/actuator/health", "/swagger-ui/**")
                     .permitAll()

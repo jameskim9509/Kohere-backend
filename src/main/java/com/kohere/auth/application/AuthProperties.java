@@ -34,5 +34,29 @@ public class AuthProperties {
 
     /** 비밀번호 연속 실패 상한 — 도달하면 계정을 잠근다. 시간 경과 자동 해제도 해제 API도 없다(US-1-12). */
     private int loginMaxFailedAttempts = 5;
+
+    /** 로그인 시도 레이트리밋 한도. */
+    private Login login = new Login();
+
+    /**
+     * 웹 로그인 시도 한도(app.auth.web.login). 위 {@code loginMaxFailedAttempts}가 <b>한 계정을 잠그는</b> 임계값인 것과
+     * 달리 이쪽은 <b>요청 자체를 받아 주는</b> 임계값이라 축(IP·이메일)도 창(1시간)도 다르다.
+     */
+    @Getter
+    @Setter
+    public static class Login {
+
+      /**
+       * 같은 IP에서 1시간에 허용하는 로그인 시도(초과 시 429). 이메일 한도보다 넉넉한 것은 <b>공유 IP</b>(사무실·모바일 NAT) 때문이다 — 한 사무실의
+       * 임대인 여럿이 같은 출구 IP를 쓰는 정상 상황을 막지 않을 만큼은 남겨 둔다. 위조 가능한 축이라 정밀도보다 비용 상한이 목적이다.
+       */
+      private int ipMaxPerHour = 30;
+
+      /**
+       * 같은 이메일로 1시간에 허용하는 로그인 시도(초과 시 429). 잠금 임계값(5회)보다 크게 잡아 <b>정상 사용자가 몇 번 틀리고 다시 맞히는</b> 흐름을 막지
+       * 않으면서, 시간당 잠금 가능 계정 수를 실질적으로 묶는다.
+       */
+      private int emailMaxPerHour = 10;
+    }
   }
 }

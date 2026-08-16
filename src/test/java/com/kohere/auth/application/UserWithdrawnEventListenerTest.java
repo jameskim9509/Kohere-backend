@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.AppleUpstreamException;
+import com.kohere.auth.domain.LocalAccountRepository;
 import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.RefreshTokenRepository;
 import com.kohere.auth.domain.SocialAccount;
@@ -27,11 +28,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 /**
  * {@link UserWithdrawnEventListener} 단위 테스트 — Apple 연동 폐기는 매핑 삭제 <b>전에</b> 일어나고(ADR-0031 #5),
  * best-effort라 폐기 실패가 탈퇴(로컬 정리)를 막지 않으며, Apple 토큰이 없으면(Google·미저장) 폐기를 스킵한다.
+ *
+ * <p>어느 경로로 들어와도 <b>자격증명 두 채널(social_accounts·local_accounts)이 함께</b> 지워지는지도 함께 본다 — 한쪽만 지우면 탈퇴자가
+ * 남은 채널로 다시 로그인한다(ADR-0047의 대칭).
  */
 @ExtendWith(MockitoExtension.class)
 class UserWithdrawnEventListenerTest {
 
   @Mock private SocialAccountRepository socialAccountRepository;
+  @Mock private LocalAccountRepository localAccountRepository;
   @Mock private RefreshTokenRepository refreshTokenRepository;
   @Mock private AppleAuthClient appleAuthClient;
 
@@ -41,7 +46,10 @@ class UserWithdrawnEventListenerTest {
   void setUp() {
     listener =
         new UserWithdrawnEventListener(
-            socialAccountRepository, refreshTokenRepository, appleAuthClient);
+            socialAccountRepository,
+            localAccountRepository,
+            refreshTokenRepository,
+            appleAuthClient);
   }
 
   @Test
@@ -52,9 +60,15 @@ class UserWithdrawnEventListenerTest {
     listener.onUserWithdrawn(new UserWithdrawnEvent(1L));
 
     // 매핑이 지워지면 토큰을 못 읽으므로 revoke가 deleteByUserId보다 먼저여야 한다
-    InOrder inOrder = inOrder(appleAuthClient, socialAccountRepository, refreshTokenRepository);
+    InOrder inOrder =
+        inOrder(
+            appleAuthClient,
+            socialAccountRepository,
+            localAccountRepository,
+            refreshTokenRepository);
     inOrder.verify(appleAuthClient).revokeRefreshToken("apple-rt-1");
     inOrder.verify(socialAccountRepository).deleteByUserId(1L);
+    inOrder.verify(localAccountRepository).deleteByUserId(1L);
     inOrder.verify(refreshTokenRepository).revokeAllByUserId(1L);
   }
 
@@ -71,6 +85,7 @@ class UserWithdrawnEventListenerTest {
 
     // 폐기 실패라도 로컬 정리는 계속 — 탈퇴 차단 금지(ADR-0014/0031 #5)
     verify(socialAccountRepository).deleteByUserId(2L);
+    verify(localAccountRepository).deleteByUserId(2L);
     verify(refreshTokenRepository).revokeAllByUserId(2L);
   }
 
@@ -82,6 +97,7 @@ class UserWithdrawnEventListenerTest {
 
     verify(appleAuthClient, never()).revokeRefreshToken(any());
     verify(socialAccountRepository).deleteByUserId(3L);
+    verify(localAccountRepository).deleteByUserId(3L);
     verify(refreshTokenRepository).revokeAllByUserId(3L);
   }
 
@@ -93,6 +109,7 @@ class UserWithdrawnEventListenerTest {
 
     verify(appleAuthClient, never()).revokeRefreshToken(any());
     verify(socialAccountRepository).deleteByUserId(4L);
+    verify(localAccountRepository).deleteByUserId(4L);
     verify(refreshTokenRepository).revokeAllByUserId(4L);
   }
 
@@ -104,6 +121,7 @@ class UserWithdrawnEventListenerTest {
 
     verify(appleAuthClient, never()).revokeRefreshToken(any());
     verify(socialAccountRepository).deleteByUserId(5L);
+    verify(localAccountRepository).deleteByUserId(5L);
     verify(refreshTokenRepository).revokeAllByUserId(5L);
   }
 

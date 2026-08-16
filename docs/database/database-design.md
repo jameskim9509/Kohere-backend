@@ -221,7 +221,7 @@
 - **이메일 중복 검사는 이 테이블에만**: 웹 가입의 이메일 중복(`409 AUTH_EMAIL_ALREADY_REGISTERED`)은 `local_accounts.email`만 본다. **`users.email`에는 UNIQUE를 걸지 않는다** — 걸면 "본인이 본인 소셜 이메일로 웹 가입"이라는 가장 흔한 정상 경로가 막힌다([§4-2](#4-2-user)). 신규 가입일 때만 폼 이메일을 `users.email`에도 기록하고, 연동일 때는 소셜 진본을 유지한다.
 - **잠금은 컬럼이지 Redis TTL이 아니다**: `failed_login_attempts`·`locked_at`을 TTL 키로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책(US-1-12)이 깨진다. 해제 경로는 없고 운영자가 `locked_at`을 비우는 것이 유일하다(수용된 제약).
 - **연동 매핑은 불변, 자격증명은 가변**: `user_id`·`email`은 생성 이후 바뀌지 않지만 `password_hash`·실패 카운터·`locked_at`은 갱신되므로 `social_accounts`와 달리 `updated_at`을 둔다([§2-2](#2-2-공통-컬럼-표준)).
-- **탈퇴 시 정리는 확인 필요**: 탈퇴는 `users` PII 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)) + `social_accounts` 삭제 + refresh 무효화로 끝나는데(`UserWithdrawnEventListener`), 이 행을 함께 지우는 경로는 아직 없다 — 남으면 탈퇴한 계정의 웹 자격증명이 그대로 남으므로 후속에서 정한다.
+- **탈퇴 시 이 행도 함께 지운다**: 탈퇴는 `users` PII 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)) + `social_accounts` 삭제 + **`local_accounts` 삭제** + refresh 무효화다(`UserWithdrawnEventListener` — 자격증명 두 채널을 같은 자리에서 지운다). 남기면 두 가지가 동시에 무너진다 — ① 탈퇴는 `users` 행을 지우지 않고 `user_type`도 `LANDLORD` 그대로라, 남은 웹 자격증명으로 **권한이 온전한 세션을 다시 받는다**(앱 소셜이 그렇지 않은 것은 `social_accounts`를 지우기 때문이다) ② `uq_local_accounts_email`이 살아남아 **본인이 같은 이메일로 재가입할 수 없다**(409 `AUTH_EMAIL_ALREADY_REGISTERED`). 웹 계정이 없는 세입자·앱 전용 임대인은 0행 삭제라 무해하다.
 - **민감정보**: `email`·`name`·`birth_date`는 로그·응답 마스킹 대상이고(응답에는 애초에 `users` 값만 나간다), 비밀번호는 **해시만** 보관한다. 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
 - **신설 — 전진 마이그레이션 V22**([`V22__create_local_accounts.sql`](../../src/main/resources/db/migration/V22__create_local_accounts.sql), [migration-policy](./migration-policy.md)): 신규 테이블이라 백필이 없는 순수 확장 변경이다.
 
