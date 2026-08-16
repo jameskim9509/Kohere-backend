@@ -23,6 +23,9 @@ final class PublicPaths {
     // 만료된 access 토큰이 남아 있는 브라우저가 가입 화면에서 401 TOKEN_EXPIRED를 맞지 않게 여기에도 넣는다.
     "/api/v1/auth/phone/signup/verification-code",
     "/api/v1/auth/phone/signup/verify",
+    // 임대인 웹 회원가입(US-1-11) — 계정을 만드는 요청이라 신원이 무관하다. 가입 화면은 로그아웃 후 다시
+    // 들어오는 경로라 만료된 access 토큰이 남아 있기 쉽다.
+    "/api/v1/auth/signup",
     "/actuator/health",
     "/swagger-ui/**"
   };

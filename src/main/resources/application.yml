@@ -59,6 +59,15 @@ app:
     web:
       # 임대인 웹 로컬 로그인 정책(ADR-0047). 웹 refresh TTL은 위 refresh-ttl-seconds를 그대로 쓴다.
       login-max-failed-attempts: 5 # 비밀번호 연속 실패 상한 — 도달 시 계정 잠금(자동 해제 없음)
+      refresh-cookie:
+        # 웹 refresh 토큰의 전송 채널(ADR-0048). 앱은 응답 본문으로 받지만 브라우저는 XSS 한 번에 14일 세션이
+        # 통째로 넘어가므로 스크립트가 읽을 수 없는 HttpOnly 쿠키로만 내린다. HttpOnly는 끌 수 있으면 안 되는
+        # 값이라 설정으로 빼지 않는다(RefreshTokenCookies가 상수로 고정). Max-Age도 키를 만들지 않고 위
+        # refresh-ttl-seconds(14일)를 그대로 따라간다 — 값이 갈리면 진짜 만료가 두 벌이 된다.
+        name: refreshToken # 본문 필드명과 같은 이름 — 재발급·로그아웃이 쿠키·본문 어느 쪽에서 읽든 같은 값이다
+        path: /api/v1/auth # 재발급·로그아웃 경로에만 실린다(매물·사진·진단 요청에 refresh가 딸려가지 않는다)
+        same-site: Lax # 크로스사이트 POST에 쿠키가 실리지 않는다 → csrf.disable() 유지의 근거(동일 오리진 전제)
+        secure: true # 평문 구간 유출 방지. local 프로파일에서만 false로 내린다(로컬은 http)
     signup-phone:
       # 비로그인 가입용 연락처 SMS 인증(US-1-13)의 남용 방지 한도. 인증번호 자릿수·TTL·시도 상한·재발송 간격은
       # 온보딩용과 같은 정책이라 아래 app.phone.*를 그대로 재사용하고, 여기엔 이 경로에만 필요한 값만 둔다 —

@@ -79,4 +79,18 @@ public class SignupPhoneVerificationRedisRepository implements SignupPhoneVerifi
         .opsForValue()
         .set(VERIFIED_PREFIX + phoneNumber, VERIFIED_MARKER, Duration.ofSeconds(ttlSeconds));
   }
+
+  /**
+   * 값을 읽지 않고 <b>키 존재만</b> 본다 — 값이 상수 {@code "1"}이라 읽어도 얻을 정보가 없고, 만료는 TTL이 이미 처리한다. {@code hasKey}는
+   * {@code Boolean}을 돌려주므로(연결 실패 시 {@code null} 가능) 박싱을 풀지 않고 대조한다.
+   */
+  @Override
+  public boolean isVerified(String phoneNumber) {
+    return Boolean.TRUE.equals(redis.hasKey(VERIFIED_PREFIX + phoneNumber));
+  }
+
+  @Override
+  public void deleteVerified(String phoneNumber) {
+    redis.delete(VERIFIED_PREFIX + phoneNumber);
+  }
 }

@@ -421,7 +421,15 @@ public class AuthService {
         name);
   }
 
-  private TokenResponse issueFullTokens(long userId) {
+  /**
+   * 정식 토큰 발급 — access(JWT)와 불투명 refresh를 만들고 refresh 해시를 저장소에 남긴다(ADR-0003/0006/0011).
+   *
+   * <p><b>package-private인 것은 의도다.</b> 임대인 웹 트랙({@link WebAuthService})도 같은 토큰을 발급해야 하는데, 발급·회전·재사용
+   * 탐지 규칙이 두 벌이 되면 <b>한쪽만 고친 버그가 조용히 살아남는다</b>(ADR-0048 §3). 그렇다고 {@code public}으로 올리면 auth 밖에서도
+   * 토큰을 찍어낼 수 있는 문이 생기므로, 같은 패키지의 응용 서비스만 닿는 최소 가시성으로 연다. 웹과 앱이 실제로 다른 것은 refresh를 <b>본문으로 내리느냐 쿠키로
+   * 내리느냐</b>뿐이고 그건 컨트롤러 한 겹의 일이다.
+   */
+  TokenResponse issueFullTokens(long userId) {
     String accessToken = jwtTokenService.issueAccessToken(userId);
     String rawRefresh = generateRefreshToken();
     Instant now = Instant.now();

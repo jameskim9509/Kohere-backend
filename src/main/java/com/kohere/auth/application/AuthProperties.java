@@ -21,7 +21,13 @@ public class AuthProperties {
   /** 임대인 웹(로컬 자격증명) 정책값. */
   private Web web = new Web();
 
-  /** 임대인 웹 로그인 정책(app.auth.web, ADR-0047). 웹 refresh TTL은 앱과 같은 14일이라 별도 키를 두지 않는다. */
+  /**
+   * 임대인 웹 로그인 정책(app.auth.web, ADR-0047). 웹 refresh TTL은 앱과 같은 14일이라 별도 키를 두지 않는다.
+   *
+   * <p>같은 트리의 {@code app.auth.web.refresh-cookie.*}는 여기가 아니라 {@link
+   * com.kohere.common.security.RefreshCookieProperties}가 바인딩한다 — 쿠키는 도메인 정책이 아니라 HTTP 전송 수단이라 공유
+   * 커널의 보안 패키지에 있다. 이 클래스는 알 필요가 없어 필드를 두지 않으며, 미지정 필드는 무시되므로 바인딩이 충돌하지 않는다.
+   */
   @Getter
   @Setter
   public static class Web {

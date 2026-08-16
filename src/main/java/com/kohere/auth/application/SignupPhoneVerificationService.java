@@ -2,6 +2,7 @@ package com.kohere.auth.application;
 
 import com.kohere.auth.application.dto.SignupPhoneVerificationCodeResponse;
 import com.kohere.auth.application.dto.SignupPhoneVerifyResponse;
+import com.kohere.auth.domain.PhoneNotVerifiedException;
 import com.kohere.auth.domain.PhoneRateLimitException;
 import com.kohere.auth.domain.PhoneVerificationCodeHasher;
 import com.kohere.auth.domain.PhoneVerificationFailedException;
@@ -17,7 +18,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * 임대인 웹 회원가입 전 연락처(휴대폰) SMS 인증 유스케이스(US-1-13 · 스펙 §1-1·§1-2). 발송(동기·발송 성공 시에만 챌린지 확정)과 확인(해시 대조·시도
- * 상한)을 담당하며, 확인에 성공하면 <b>가입 제출(US-1-11)이 대조할 검증 마커</b>를 남긴다.
+ * 상한)을 담당하며, 확인에 성공하면 <b>가입 제출(US-1-11)이 대조할 검증 마커</b>를 남긴다. 그 마커의 게이트 검사({@link #assertVerified})와
+ * 성공 후 소비({@link #consumeVerification})도 여기 둔다 — 마커를 남기는 곳과 읽는 곳이 갈리면 번호 정규화 규칙이 두 벌이 된다.
  *
  * <p><b>온보딩용 {@link PhoneVerificationService}와의 차이는 딱 둘이다</b> — (1) 계정이 없어 챌린지 키가 {@code userId}가
  * 아니라 정규화한 번호이고, (2) permitAll 경로라 번호·IP 이중 레이트리밋({@link SignupSmsRateLimiter})이 붙는다. 인증번호
@@ -100,6 +102,33 @@ public class SignupPhoneVerificationService {
     repository.markVerified(normalized, properties.getVerifiedTtlSeconds());
     repository.deleteChallenge(normalized);
     return new SignupPhoneVerifyResponse(maskPhone(normalized), true);
+  }
+
+  /**
+   * 가입 제출(US-1-11) 선행 게이트 — 제출된 번호의 검증 마커가 살아 있어야 한다. 없으면(미인증·만료·이미 소비) 422 {@link
+   * PhoneNotVerifiedException}이고 <b>계정 생성도 연동도 하지 않는다</b>.
+   *
+   * <p>앱 트랙의 {@code PhoneVerificationService#assertVerified}가 "마커에 적힌 번호와 제출 번호가 같은가"를 대조하는 것과 달리
+   * 여기서는 <b>번호가 곧 키</b>라 존재 확인이 곧 일치 확인이다 — 다른 번호를 제출하면 애초에 다른 키를 조회한다.
+   *
+   * <p>호출자가 이미 정규화한 값을 넘기지만 여기서 한 번 더 접는다({@link PhoneNumbers#normalize}는 멱등) — 마커를 남긴 {@link
+   * #verify}와 <b>같은 경계에서 같은 규칙으로</b> 접어야 표기 차이로 조용히 어긋나지 않는다.
+   */
+  public void assertVerified(String phoneNumber) {
+    if (!repository.isVerified(PhoneNumbers.normalize(phoneNumber))) {
+      throw new PhoneNotVerifiedException();
+    }
+  }
+
+  /**
+   * 가입 성공 후 검증 마커 소비(삭제) — 마커 하나로 가입을 두 번 태우지 못하게 한다(1회용).
+   *
+   * <p><b>가입 트랜잭션의 맨 끝에서 부른다.</b> Redis 삭제는 MySQL 트랜잭션과 함께 롤백되지 않으므로, 앞에서 지우면 이후 단계가 실패했을 때 계정도 없고
+   * 마커도 없어 사용자가 SMS 인증부터 다시 해야 한다. 반대로 커밋 직전에 지우면 남는 위험은 "커밋 실패 시 마커만 사라짐"으로 같은 모양이지만 창이 훨씬 좁다(#229
+   * §2-3의 처리 순서).
+   */
+  public void consumeVerification(String phoneNumber) {
+    repository.deleteVerified(PhoneNumbers.normalize(phoneNumber));
   }
 
   /**

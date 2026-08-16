@@ -21,6 +21,7 @@ import com.kohere.user.domain.UserRepository;
 import com.kohere.user.domain.UserType;
 import com.kohere.user.domain.VisaType;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -116,6 +117,22 @@ public class UserAccountServiceImpl implements UserAccountService {
             nickname,
             Instant.now());
     return toProfileView(userRepository.save(active));
+  }
+
+  /**
+   * 연동 대상 조회 + 행 잠금. 번호는 <b>읽기 경계에서도</b> 한 번 더 표준형으로 접는다({@link PhoneNumbers}) — 쓰기 경계({@link
+   * #completeLandlordOnboarding})와 같은 형태로 접어야 저장된 값과 조회 키가 어긋나지 않는다. {@code normalize}는 멱등이라 이미 접힌
+   * 값을 다시 넣어도 결과가 같다(#229 D10).
+   *
+   * <p><b>{@code readOnly = true}가 아니다.</b> 잠금 조회는 읽기처럼 보이지만 {@code SELECT … FOR UPDATE}라 읽기 전용
+   * 트랜잭션에서는 실행할 수 없다(MySQL은 READ ONLY 트랜잭션에서 거부한다). 실제 호출은 {@code REQUIRED} 전파로 웹 가입의 쓰기 트랜잭션에
+   * 참여하지만, 단독 호출에도 성립하도록 여기서 읽기 전용을 선언하지 않는다.
+   */
+  @Override
+  @Transactional
+  public Optional<Long> findActiveLandlordIdByPhoneNumber(String normalizedPhoneNumber) {
+    return userRepository.findActiveLandlordIdByPhoneNumberForUpdate(
+        PhoneNumbers.normalize(normalizedPhoneNumber));
   }
 
   @Override
