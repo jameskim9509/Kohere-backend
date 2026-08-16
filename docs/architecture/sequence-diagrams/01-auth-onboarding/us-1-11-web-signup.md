@@ -22,7 +22,7 @@ sequenceDiagram
     Note over SEC: permitAll 경로 — 가입 전이라 토큰이 없다<br/>SecurityConfig 공개 티어와 PublicPaths.ALL에 함께 등록
     SEC->>AUTH: 인증 주체 없이 요청 전달
     Note over AUTH: Bean Validation — 비밀번호는 영문자·숫자·ASCII 특수문자 각 1자 이상,<br/>길이 8~10, 공백 불허. 위반 시 400 INVALID_INPUT (errors 배열에 field=password)
-    Note over AUTH,SQL: 아래는 전부 한 트랜잭션이다 — 어느 단계에서 실패해도 전체 롤백한다<br/>users만 생기고 local_accounts가 없는(로그인 불가) 계정도,<br/>자격증명만 뜬 계정도 남기지 않는다
+    Note over AUTH,SQL: 아래 MySQL 쓰기는 한 트랜잭션이다 — 어느 단계에서 실패해도 함께 롤백한다<br/>users만 생기고 local_accounts가 없는(로그인 불가) 계정도,<br/>자격증명만 뜬 계정도 남기지 않는다<br/>단 아래 Redis 두 단계는 이 보장 밖이다(각 단계 주석 참조)
     Note over AUTH: phoneNumber 정규화(숫자만 남김)
     AUTH->>RDS: signup-phone:verified:{정규화번호} 조회
     RDS-->>AUTH: 인증 마커(있음/없음)
@@ -69,9 +69,9 @@ sequenceDiagram
                 SQL-->>AUTH: 저장 완료 → linked=false
             end
             Note over AUTH: 정식 accessToken+refreshToken 발급<br/>(issueFullTokens — 앱과 같은 메서드, 규칙을 두 벌로 만들지 않는다)
-            AUTH->>RDS: refreshToken 해시 저장(14일 TTL — 앱과 동일)
+            AUTH->>RDS: refreshToken 해시 저장(14일 TTL — 앱과 동일)<br/>Redis라 롤백되지 않는다 — 커밋 시점에 실패하면 해시만 남는다(알려진 제약)
             RDS-->>AUTH: 저장 완료
-            AUTH->>RDS: signup-phone:verified:{정규화번호} 삭제(마커 소비)
+            AUTH->>RDS: signup-phone:verified:{정규화번호} 삭제(마커 소비)<br/>커밋 이후에 실행된다(afterCommit) — 롤백된 가입이 마커를 태우지 않게 한다
             RDS-->>AUTH: 삭제 완료
             AUTH-->>C: 200 OK<br/>Set-Cookie: refreshToken=...; HttpOnly; Secure; SameSite=Lax;<br/>Path=/api/v1/auth; Max-Age=1209600<br/>{ linked, onboardingRequired: false, status: ACTIVE,<br/>tokenType: Bearer, accessToken, expiresIn: 3600, email, name }
             C-->>U: 가입 완료, 매물 등록 진입
@@ -91,7 +91,8 @@ sequenceDiagram
 - **표시 규칙: 응답의 `email`·`name`은 언제나 `users`의 값이다.** 그래서 연동된 계정은 응답에 **소셜 진본 이메일**이 나갈 수 있으며, 이것은 의도된 동작이다(신규 가입 경로에서는 폼 값이 `users`에도 들어가므로 두 값이 100% 같다).
 - **신규 경로는 앱과 같은 도메인 메서드를 순서대로 호출한다.** `createPendingUser(name, email)` → `agreeToTerms(userId, marketingAgreed)` → `completeLandlordOnboarding(userId, {정규화번호, birthDate})`. `user` 모듈에 새 생성 메서드를 만들지 않으며, 세 호출이 `@Transactional(REQUIRED)` 전파로 호출자 트랜잭션에 참여해 원자성이 성립한다. 서버 고정값(`country='KR'`·`lang='ko'`·닉네임 자동 생성·`userType=LANDLORD`)도 앱과 동일하다. **번호를 `users.phone_number`에 기록하는 것이 중요하다** — 그래야 반대 방향([US-1-15](us-1-15-landlord-account-merge.md))에서 이 계정이 매칭 후보가 된다.
 - **토큰은 `issueFullTokens`를 그대로 쓰고 refresh만 채널이 다르다.** access는 응답 본문, refresh는 **`Set-Cookie`(HttpOnly·Secure·`SameSite=Lax`·`Path=/api/v1/auth`·`Max-Age=1209600`)** 로만 내려가며 **응답 본문에 `refreshToken` 필드가 없다**. TTL은 앱과 동일한 14일이다([ADR-0006](../../../adr/0006-refresh-token-store-redis.md)의 Redis 해시 저장·회전 규칙은 그대로다). 마지막으로 인증 마커를 삭제해 재사용을 막는다.
-- **동시성의 최종 방어선은 DB 제약이다.** 같은 번호로 웹 가입과 앱 임대인 온보딩이 거의 동시에 도착하면 둘 다 "기존 계정 없음"으로 판정해 계정이 갈라질 수 있다(check-then-act). 이를 막는 유일한 수단이 **`users.phone_number` UNIQUE**이며, 늦은 쪽이 제약 위반으로 실패하고 재시도하면 상대가 만든 계정을 발견해 정상 연동·병합된다. 애플리케이션 조회만으로는 막을 수 없다.
+- **동시성의 최종 방어선은 DB 제약이다.** 같은 번호로 웹 가입과 앱 임대인 온보딩이 거의 동시에 도착하면 둘 다 "기존 계정 없음"으로 판정해 계정이 갈라질 수 있다(check-then-act). 이를 막는 유일한 수단이 **`users.phone_number` UNIQUE**이며, 늦은 쪽이 제약 위반으로 실패하고 재시도하면 상대가 만든 계정을 발견해 정상 연동·병합된다. 애플리케이션 조회만으로는 막을 수 없다(아직 없는 행은 잠글 수 없다). 실패한 요청의 응답은 **`409 RESOURCE_CONFLICT`** 다 — 전역 예외 핸들러가 제약 위반을 번역하며(종전 `500 INTERNAL_ERROR`), 클라이언트에게 "그대로 다시 보내면 된다"를 알리는 것이 목적이다([US-1-15](us-1-15-landlord-account-merge.md) 흐름 요약).
+- **제약 — 롤백된 가입의 refresh 해시가 Redis에 남는다.** "가입 전체가 한 트랜잭션"은 **MySQL 쓰기에만** 걸린다. `issueFullTokens`는 트랜잭션 안에서 불리지만 refresh 해시를 Redis에 남기고, Redis는 커밋과 함께 롤백되지 않는다 — 바로 위 UNIQUE 경합처럼 **커밋 시점**에 터지는 실패는 이미 토큰이 발급된 뒤라, `users`·`local_accounts`는 깨끗이 되돌아가는데 해시 하나가 **14일 TTL로 살아남는다**. 원문은 409 응답으로 대체돼 클라이언트에 닿지 않으므로 세션을 열 수 없고(악용 불가) 항목은 스스로 사라지지만, 그 사이 `refresh:user:{id}` 인덱스가 실제 세션보다 많아 보인다. 없애려면 토큰 발급을 트랜잭션 밖으로 들어내야 해서 문제 크기에 비해 변경이 크다 — **수용한 한계**다(같은 모양의 제약이 [US-1-15](us-1-15-landlord-account-merge.md)에도 있다). 반대로 SMS 인증 마커 삭제는 같은 이유로 **커밋 이후**에 미뤄 두었다 — 그쪽 잔여물은 사용자를 막으므로 순서를 지킬 값이 있었다.
 - **제약 — 번호 정규화 백필이 없다.** 정규화는 입력 경로에서만 수행하고 기존 데이터는 손대지 않으므로, `users.phone_number`에 하이픈을 포함해 저장된 기존 임대인 행은 매칭에서 누락돼 **연동되지 않고 새 계정이 생길 수 있다**(`users.phone_number` UNIQUE는 그대로 추가한다).
 - **제약 — 번호가 NULL인 계정은 매칭 후보에 들어오지 않는다.** 소셜 로그인만 하고 임대인 온보딩을 마치지 않은 앱 계정은 `phone_number`가 비어 있어 웹이 새 계정으로 가입되지만, 그 앱 계정이 나중에 온보딩을 마칠 때 [US-1-15](us-1-15-landlord-account-merge.md)가 병합해 최종적으로 하나로 수렴한다(정상 동작). 반면 **세입자**는 정의상 `phone_number`를 채우지 않아 **역할 검사 분기를 두지 않아도 구조적으로 제외**되며, 앱에서 세입자로 가입한 사람이 웹에서 임대인 가입을 하면 별개 계정이 생기고 서버는 두 계정이 동일인인지 알 방법이 없어 안내도 하지 않는다.
 - **제약 — 앱·웹 양쪽에 같은 번호의 완주 계정이 각각 있으면 자동 병합하지 않는다.** 양쪽 모두 매물·예약을 보유했을 수 있어 데이터 이관 판단이 필요하고 트리거도 없다 — 운영 수동 처리 대상이다.

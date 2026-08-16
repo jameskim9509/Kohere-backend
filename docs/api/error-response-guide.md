@@ -57,7 +57,7 @@
 | 403 Forbidden | 인증은 됐으나 권한 없음 | `FORBIDDEN` |
 | 404 Not Found | 리소스 없음, 미정의 경로 | `*_NOT_FOUND`, `RESOURCE_NOT_FOUND` |
 | 405 Method Not Allowed | 허용되지 않은 메서드 | `METHOD_NOT_ALLOWED` |
-| 409 Conflict | 상태 충돌·중복 | `*_ALREADY_EXISTS`, `DUPLICATE_*` |
+| 409 Conflict | 상태 충돌·중복 | `*_ALREADY_EXISTS`, `DUPLICATE_*`, `RESOURCE_CONFLICT`(문서화된 UNIQUE 제약의 중복 위반 — §4 주) |
 | 413 Payload Too Large | 업로드 크기 초과 | `PAYLOAD_TOO_LARGE`, `LISTING_IMAGE_TOO_LARGE` |
 | 415 Unsupported Media Type | 지원하지 않는 파일 형식 | `LISTING_IMAGE_UNSUPPORTED_TYPE` |
 | 422 Unprocessable Entity | 형식은 맞으나 비즈니스 규칙 위반 | 도메인별 코드 |
@@ -87,11 +87,18 @@
 | `FORBIDDEN` | 403 | 권한 없음 |
 | `RESOURCE_NOT_FOUND` | 404 | 일반 리소스 없음 |
 | `METHOD_NOT_ALLOWED` | 405 | 미허용 메서드 |
+| `RESOURCE_CONFLICT` | 409 | **아래 세 UNIQUE 제약의 중복 위반에서만** 나온다 — `uq_users_phone_number`(V23) · `uq_local_accounts_email` · `uq_local_accounts_user_id`(V22). 거의 동시에 도착한 다른 요청과 충돌했다는 뜻이고 **재시도가 유효한 복구**다. 도메인이 미리 판정할 수 있는 충돌은 각자의 코드를 쓴다(`BOOKING_ALREADY_EXISTS` 등). 그 밖의 제약 위반(NOT NULL·길이 초과 등)은 **이 코드가 아니라 `INTERNAL_ERROR`(500)** 그대로다(아래 주) |
 | `PAYLOAD_TOO_LARGE` | 413 | 요청 총량이 서블릿 상한을 넘음. multipart 해석이 핸들러 탐색보다 앞서 일어나 어느 엔드포인트인지 알 수 없으므로 도메인 코드가 아니라 공통 코드다 |
 | `TOO_MANY_REQUESTS` | 429 | 호출 한도 초과 |
 | `INTERNAL_ERROR` | 500 | 서버 내부 오류 |
 | `UPSTREAM_ERROR` | 502 | 외부 연동 실패 |
 
+> **`RESOURCE_CONFLICT`는 전역 핸들러가 `DataIntegrityViolationException`을 번역한 결과다(#229)** — 종전에는 이 예외가 `handleUnexpected`까지 흘러 **500 `INTERNAL_ERROR`** 가 됐는데, 그 status는 어느 스펙에도 없고 "다시 보내면 된다"는 신호도 주지 못한다. 번역이 **전역**인 이유는 위반이 드러나는 시점이 둘이기 때문이다 — IDENTITY INSERT는 `save` 호출에서 **즉시**(서비스 메서드 안), 기존 행 UPDATE는 플러시가 밀려 **커밋 시점**(`@Transactional` 프록시가 반환한 뒤)에 터진다. 후자는 서비스 안의 어떤 `try/catch`로도 잡히지 않으므로, 둘을 모두 덮는 자리는 트랜잭션 바깥의 전역 핸들러뿐이다.
+>
+> **번역은 무조건이 아니라 화이트리스트다.** `DataIntegrityViolationException`은 UNIQUE 중복만이 아니라 **NOT NULL 위반·길이 초과·잘못된 FK**까지 같은 타입으로 실어 오는데, 그것들은 재시도해도 절대 성공하지 않는 **서버 버그**다. 통째로 409로 낮추면 클라이언트에게 "충돌이니 다시 보내라"고 거짓말을 하고, 로그 레벨까지 WARN으로 떨어져 **알림 임계값 아래로 사라진다.** 그래서 핸들러는 원인 사슬의 Hibernate `ConstraintViolationException`에서 **제약 이름**을 읽어 위 세 개(`uq_users_phone_number`·`uq_local_accounts_email`·`uq_local_accounts_user_id`)와 대조하고, **일치할 때만** 409로 번역한다. 나머지는 종전 그대로 `handleUnexpected` → **ERROR 로그 + 500**이다. (판정 근거: MySQL은 UNIQUE 중복(오류 1062)에서만 `for key '<인덱스>'`를 메시지에 실어 Hibernate가 제약 이름을 뽑아내고, NOT NULL·길이 초과 메시지에는 그 조각이 없어 이름이 `null`이다. SQLState는 쓰지 않는다 — MySQL은 NOT NULL 위반에도 `23000`을 붙여 **정확히 걸러내려던 것을 다시 끌어들이기** 때문이다.)
+>
+> 코드가 도메인 무관한 공통 코드인 것은 위치 때문이다 — 여기서 `AUTH_*`로 번역하면 매물·커뮤니티의 제약 위반까지 인증 에러가 된다. 뜻을 좁혀 알려야 하는 충돌은 **미리 판정할 수 있는 충돌**이고 그건 도메인이 자기 자리에서 이미 흡수한다(`BookingRepositoryImpl` → `BOOKING_ALREADY_EXISTS`, `UserBlockServiceImpl` → 멱등 무시). 그렇게 지역에서 잡힌 예외는 전역 핸들러까지 오지 않으므로 기존 코드의 정밀도는 그대로다. **이 코드가 나올 수 있는 엔드포인트는 두 개뿐이다** — 임대인 웹 회원가입([§1-3](./specs/01-auth-onboarding.md))과 앱 임대인 온보딩([§5-2](./specs/01-auth-onboarding.md)). 다른 도메인의 스펙 에러 표에 이 코드가 없는 것은 누락이 아니라 **도달하지 않기 때문**이다.
+>
 > **게스트(비회원) 경로에서 달라지는 인증·인가 코드(#181)** — 퀴즈(`/api/v1/quizzes/**`)·생활 팁(`/api/v1/life-tips/**`)·**v2 진단(`/api/v2/diagnoses/**`)** 은 `permitAll`이라 **토큰 없이 호출할 수 있다**(인증 부재를 401로 막지 않는다 — 개별 엔드포인트가 게스트에게 무엇을 반환하는지는 [02-diagnosis-recommendation](./specs/02-diagnosis-recommendation.md) 게스트 접근 절을 따른다). **v1 진단(`/api/v1/diagnoses/**`)은 회원 전용으로 유지**되므로 이 표의 대상이 아니다 — 신규 `permitAll` 매처는 `/api/v2/diagnoses/**`만 대상이고 v1은 `anyRequest().authenticated()`에 남아 토큰이 필수다. 아래 세 경로에 한해 위 코드의 도달 가능성이 갈리며, **그 외 엔드포인트의 계약은 그대로다.**
 >
 > | code | status | 게스트 경로에서 | 근거 |
@@ -144,6 +151,7 @@
 > - **가입용 SMS 남용**: 공통 `TOO_MANY_REQUESTS`(429) 하나로 낸다 — 재발송 쿨다운 60초·번호 5회/시간·IP 20회/시간이 모두 이 코드다. 어느 한도에 걸렸는지 구분해 알려주면 한도를 역산할 수 있다. 발송 실패는 공통 `UPSTREAM_ERROR`(502)이며 챌린지를 저장하지 않는다.
 > - **비밀번호 정책 위반**: `INVALID_INPUT`(400) + `errors[]`(`field=password`). 요청 DTO의 Bean Validation(`@Pattern`)으로 걸어 기존 흐름에 태운다.
 > - **번호가 매칭되지 않아 계정이 갈라지는 경우**: **오류가 아니다.** 세입자·온보딩 미완료 계정은 `phone_number`가 NULL이라 구조적으로 매칭 후보에서 빠지고, 가입은 `linked=false`로 정상 성공한다. 여기에 더해 **번호 정규화 백필을 하지 않으므로**(하이픈 포함으로 저장된 기존 임대인 번호) 매칭에서 누락될 수 있는데, 이때도 오류 대신 별개 계정이 생긴다. 세입자→임대인 전환은 지원하지 않으며, 양쪽에 완주한 계정이 각각 생기면 **자동 병합 트리거가 없어 운영 수동 처리** 대상이다(알려진 제약).
+> - **같은 번호의 동시 가입·온보딩 경합**: 공통 `RESOURCE_CONFLICT`(409)를 쓰고 `AUTH_*` 전용 코드를 두지 않는다 — 번역 지점이 전역 핸들러(모듈 밖)라 인증 도메인 코드를 낼 자리가 아니고, 클라이언트가 할 일은 어느 제약이든 **재시도** 하나다. 재시도는 상대가 만든 계정을 발견해 연동(§1-3)·병합(§5-2)으로 수렴한다. 이 두 흐름 밖에서 이 코드를 보면 그건 경합이 아니라 **화이트리스트 관리 실수**다(위 주).
 > - **`reissue`·`logout`의 refresh 부재**: 쿠키·본문 어디에도 없으면 공통 `INVALID_INPUT`(400) + `errors[].field="refreshToken"`이고, 깨진 JSON 본문은 종전대로 `MALFORMED_REQUEST`(400)다. 토큰 자체가 만료·위조·재사용이면 기존 `AUTH_INVALID_REFRESH_TOKEN`(401)이다.
 
 #### diagnosis 도메인 코드

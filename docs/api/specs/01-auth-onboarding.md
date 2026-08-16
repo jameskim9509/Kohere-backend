@@ -326,7 +326,7 @@ SMS는 §4-1과 같이 **동기 발송**하며 **발송에 성공한 뒤에만**
 
 **연동 판정**은 정규화된 번호 **단독**으로 한다(이름은 매칭 조건이 아니다 — 앱 이름은 소셜 SDK 표기, 웹 이름은 직접 입력이라 불일치가 자연스럽고, 불일치로 계정이 갈리면 사용자는 "앱에서 내 매물의 예약이 안 보인다"만 겪고 원인을 알 수 없다). 그 번호의 `ACTIVE`·`LANDLORD` `users` 행을 잠금 조회해서 **있으면 그 `user_id`에 `local_accounts` 행만 추가**하고(`linked=true`, `users`는 건드리지 않는다), **없으면 새 `users` 행을 만들어** 위 전이를 태운다(`linked=false`). 서버 고정값은 앱과 같다 — `country=KR` · `lang=ko` · 닉네임 자동 배정 · `userType=LANDLORD`. 사업자등록번호는 가입에서 받지 않는다 — 앱 임대인과 동일하게 **매물 등록(`POST /api/v2/listings`) 요청 본문**에 담는다([03-listings-favorites](03-listings-favorites.md)).
 
-> **검증 게이트 우선순위**: ① 제출 `phoneNumber`의 가입용 인증 마커 부재 → `422 AUTH_PHONE_NOT_VERIFIED` → ② 필수 약관 2종 미동의 → `422 AUTH_REQUIRED_AGREEMENT_MISSING` → ③ `local_accounts.email` 중복 → `409 AUTH_EMAIL_ALREADY_REGISTERED` → ④ 번호로 매칭된 계정에 이미 `local_accounts` 행이 있음 → `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS` 순으로 판정한다. 어느 단계에서 실패하든 **전체를 롤백**해 `users` 행만 생기고 자격증명이 없는(= 로그인 불가) 상태나 그 반대를 남기지 않는다.
+> **검증 게이트 우선순위**: ① 제출 `phoneNumber`의 가입용 인증 마커 부재 → `422 AUTH_PHONE_NOT_VERIFIED` → ② 필수 약관 2종 미동의 → `422 AUTH_REQUIRED_AGREEMENT_MISSING` → ③ `local_accounts.email` 중복 → `409 AUTH_EMAIL_ALREADY_REGISTERED` → ④ 번호로 매칭된 계정에 이미 `local_accounts` 행이 있음 → `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS` 순으로 판정한다. 어느 단계에서 실패하든 **DB 쓰기 전체를 롤백**해 `users` 행만 생기고 자격증명이 없는(= 로그인 불가) 상태나 그 반대를 남기지 않는다. 이 원자성은 **MySQL 쓰기에만** 걸린다 — 커밋 시점에 실패하는 요청(아래 `409 RESOURCE_CONFLICT`)은 토큰이 이미 발급된 뒤라 **쓰이지 않을 refresh 해시 하나가 Redis에 14일 TTL로 남는다**(원문은 응답으로 나가지 않아 악용 불가, 항목은 스스로 만료 — §5-2 알려진 제약과 같은 모양이다).
 > **`linked=true`(성공)와 `AUTH_WEB_ACCOUNT_ALREADY_EXISTS`(409)는 같은 조회의 서로 다른 가지**다 — 번호로 기존 계정을 찾은 것까지는 같고, **그 계정에 웹 자격증명이 이미 붙어 있는지**에서 갈린다. 앱만 쓰던 사람이 웹에 처음 가입하면 붙일 자리가 비어 있으니 연동 성공이고, 웹 계정이 있는 사람이 또 가입하면 자리가 이미 찼으니 409다. 후자에 제출된 이메일·비밀번호로 할 수 있는 일은 기존 자격증명을 **덮어쓰는 것**뿐인데, 그건 가입이 아니라 자격증명 교체이며(로그인 ID까지 조용히 바뀐다) 가입 엔드포인트가 할 일이 아니다 — 로그인 화면(§1-4)으로 보낸다.
 > **이메일 중복 검사는 `local_accounts.email`만 본다.** `users.email`은 보지 않고 UNIQUE도 걸지 않는다 — 임대인 대다수는 **앱 소셜 계정과 같은 이메일로 웹 가입**할 것이고, `users.email`까지 유일하게 걸면 본인이 본인 이메일로 가입하려다 409를 맞는다. 소셜 로그인은 `(provider, providerUserId)`로 판정하므로 `users.email`은 로그인에 쓰이지 않는다. 유일해야 하는 것은 **로그인 ID**뿐이고 그건 `local_accounts.email`이다.
 > **폼의 `name`·`birthDate`는 `local_accounts`에 스냅샷으로 저장**하고(`social_accounts.name`과 같은 성격), **연동 시 `users`를 덮어쓰지 않는다** — 기존 값은 온보딩을 마친 확정 값이고 폼 값은 방금 입력한 미검증 값이다. 덮어쓰면 "가입했더니 내 프로필이 바뀌었다"는 놀라운 동작이 된다. 신규 가입일 때만 폼의 `name`·`email`·`birthDate`가 `users`에도 기록된다. **응답에는 언제나 `users`의 값이 나간다**(표시 규칙 — §개요 웹 임대인 트랙).
@@ -414,6 +414,7 @@ Set-Cookie: refreshToken=rt_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2; HttpOnly;
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 409 | `AUTH_EMAIL_ALREADY_REGISTERED` | 같은 이메일의 `local_accounts` 행이 이미 있음(웹 로그인 ID 중복 — `users.email`은 검사하지 않는다) |
 | 409 | `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 번호로 매칭된 계정에 이미 웹 자격증명이 붙어 있음 → 로그인(§1-4)으로 유도. **그 계정의 이메일은 마스킹해서도 응답에 싣지 않는다**(공통 에러 스키마의 `code`·`message`만) |
+| 409 | `RESOURCE_CONFLICT` | 같은 번호의 앱 임대인 온보딩(§5-2)이 거의 동시에 계정을 확정해 `uq_users_phone_number`(V23)·`uq_local_accounts_*`(V22)에 걸림. 트랜잭션은 통째로 롤백되므로 계정이 갈라지지 않으며, **그대로 다시 제출하면** 상대가 만든 계정을 발견해 `linked=true`로 연동된다(재시도가 유효한 유일한 409다) |
 | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`의 가입용 인증 마커가 없거나 만료(§1-1·§1-2 선행) — 계정 생성·연동 모두 하지 않는다 |
 | 422 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 필수 약관(이용약관/개인정보처리방침) 미동의 |
 
@@ -878,11 +879,12 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 **웹 계정 병합(US-1-15)** — 위 게이트를 통과한 뒤 **병합 분기**가 하나 붙는다. 앱 → 웹 방향 연동은 소셜 로그인 시점에 서버가 휴대폰 번호를 몰라 판정할 수 없고(소셜은 `name`·`email`만 준다) 그때는 이미 임시 `users` 행이 만들어진 뒤이므로, **판정 지점이 로그인이 아니라 이 온보딩 제출이고 동작은 연결이 아니라 병합**이다(§개요 웹 임대인 트랙). 서버는 인증된 정규화 번호로 **자기 자신이 아닌 `ACTIVE`·`LANDLORD` `users` 행**을 `SELECT … FOR UPDATE`로 조회한다.
 
 - **없으면 기존 동작 그대로** 자기 계정을 `ACTIVE`로 전이한다(US-1-9 무변경 — 앱만 쓰는 임대인의 정상 경로).
-- **있으면** 그 계정이 웹에서 먼저 가입한 같은 사람이므로 병합한다 — 앱 로그인의 열쇠인 `social_accounts.user_id`를 대상 계정으로 옮기고, 방금 만들어진 임시 `users` 행을 **하드 삭제**한 뒤, **대상 계정 기준으로 토큰을 발급하고 응답의 `user`도 대상 계정 값으로 채운다**(요청 토큰의 `userId`가 아니다). 이후 앱 소셜 로그인은 항상 대상 계정으로 귀결돼, 웹에서 등록한 매물의 예약([04-booking-inquiry-chat](04-booking-inquiry-chat.md))이 앱에서 그대로 조회된다. 전체가 한 트랜잭션이며 실패 시 롤백한다 — `social_accounts`가 어느 쪽에도 붙지 않는 상태가 되면 앱 로그인이 영구히 깨진다.
+- **있으면** 그 계정이 웹에서 먼저 가입한 같은 사람이므로 병합한다 — 앱 로그인의 열쇠인 `social_accounts.user_id`를 대상 계정으로 옮기고, 방금 만들어진 임시 `users` 행을 **하드 삭제**한 뒤, **대상 계정 기준으로 토큰을 발급하고 응답의 `user`도 대상 계정 값으로 채운다**(요청 토큰의 `userId`가 아니다). 이후 앱 소셜 로그인은 항상 대상 계정으로 귀결돼, 웹에서 등록한 매물의 예약([04-booking-inquiry-chat](04-booking-inquiry-chat.md))이 앱에서 그대로 조회된다. 두 DB 쓰기(매핑 이전·행 삭제)는 한 트랜잭션이며 실패 시 함께 롤백한다 — `social_accounts`가 어느 쪽에도 붙지 않는 상태가 되면 앱 로그인이 영구히 깨진다. **토큰 발급은 그 트랜잭션에 들어오지 않는다**(아래 알려진 제약).
 
-> 병합해도 옮길 것은 `social_accounts` 행뿐이다 — 임시 계정은 방금 소셜 로그인으로 만들어져 매물·예약·채팅이 하나도 없다. 옮기는 행 수는 단언하지 않는다(UPDATE가 N행이어도 안전하다). 대상 계정에 `social_accounts`가 여러 행이 되는 것은 **정상**이다(한 사람이 Google·Apple로 각각 앱 로그인해 차례로 병합한 경우). 인증 마커가 없으면 `422 AUTH_PHONE_NOT_VERIFIED`가 선행해 **병합도 하지 않는다** — 번호만 알면 남의 웹 계정을 흡수하는 경로가 생기지 않아야 한다. 조회 조건의 `status='ACTIVE' AND user_type='LANDLORD'`는 지금은 중복이지만(번호가 채워진 계정은 사실상 `ACTIVE` 임대인뿐이다) **명시적으로 건다** — 암묵적 불변식에 기대지 않는다. 동시에 도착한 웹 가입과 앱 온보딩이 계정을 갈라 놓는 것은 `users.phone_number` UNIQUE가 막는다(둘째 트랜잭션이 DB 제약으로 실패하고, 재시도하면 상대가 만든 계정을 발견해 정상 병합된다).
+> 병합해도 옮길 것은 `social_accounts` 행뿐이다 — 임시 계정은 방금 소셜 로그인으로 만들어져 매물·예약·채팅이 하나도 없다. 옮기는 행 수는 단언하지 않는다(UPDATE가 N행이어도 안전하다). 대상 계정에 `social_accounts`가 여러 행이 되는 것은 **정상**이다(한 사람이 Google·Apple로 각각 앱 로그인해 차례로 병합한 경우). 인증 마커가 없으면 `422 AUTH_PHONE_NOT_VERIFIED`가 선행해 **병합도 하지 않는다** — 번호만 알면 남의 웹 계정을 흡수하는 경로가 생기지 않아야 한다. 조회 조건의 `status='ACTIVE' AND user_type='LANDLORD'`는 지금은 중복이지만(번호가 채워진 계정은 사실상 `ACTIVE` 임대인뿐이다) **명시적으로 건다** — 암묵적 불변식에 기대지 않는다. 동시에 도착한 웹 가입과 앱 온보딩이 계정을 갈라 놓는 것은 `users.phone_number` UNIQUE가 막는다 — 둘째 트랜잭션이 DB 제약으로 실패하며, 그 실패는 **`409 RESOURCE_CONFLICT`로 번역해 내려간다**(500이 아니다 — 재시도하면 성공하는 상황이라 클라이언트가 그 신호를 받아야 한다). 재시도하면 상대가 만든 계정을 발견해 정상 병합된다. 번역 대상은 **문서화된 UNIQUE 제약의 중복 위반뿐**이며 `NOT NULL` 위반 등 다른 제약 위반은 종전대로 `500`이다([error-response-guide §4](../error-response-guide.md)).
 
 > **알려진 제약**
+> — **롤백돼도 refresh 해시는 Redis에 남는다.** 한 트랜잭션 보장은 MySQL 쓰기에만 걸린다. 토큰 발급은 트랜잭션 안에서 일어나지만 refresh 해시는 Redis에 남고 롤백되지 않으므로, 위 `409 RESOURCE_CONFLICT`(커밋 시점 UNIQUE 위반)처럼 늦게 실패하는 요청은 **쓰이지 않을 해시 하나를 14일 TTL로 남긴다**. 원문은 응답으로 나가지 않아 세션을 열 수 없고(악용 불가) 항목은 스스로 만료된다 — 그때까지 `refresh:user:{id}` 인덱스가 실제 세션보다 많아 보이는 것이 유일한 영향이다. §1-3 웹 회원가입도 같다.
 > — **임시 계정의 진단 기록은 삭제하지 않는다.** 병합은 `users` 행만 지우므로 사라진 계정을 가리키는 진단 문서가 남을 수 있다(조회 주체가 없어 실질 영향은 없다). 현재 탈퇴조차 진단을 지우지 않으므로, 병합이 탈퇴보다 공격적으로 지우는 비대칭을 만들지 않는다.
 > — **앱·웹 양쪽 모두 완주한 계정은 자동 병합하지 않는다.** 같은 번호의 `ACTIVE` 계정이 양쪽에 각각 있으면 온보딩 경로를 다시 타지 않아 트리거가 없고, 양쪽이 매물·예약을 보유했을 수 있어 데이터 이관 판단이 필요하다 — 운영 수동 처리 대상이다(화면·코드를 두지 않는다).
 > — **번호 정규화 백필이 없다.** 하이픈으로 저장된 기존 임대인 번호는 병합 조회에서 누락될 수 있다.
@@ -946,6 +948,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 `ACTIVE`인 사용자의 온보딩 재요청(동시 요청 포함 — 한 요청만 성공) |
+| 409 | `RESOURCE_CONFLICT` | 같은 번호의 웹 회원가입(§1-3)이 거의 동시에 계정을 확정해 `uq_users_phone_number`(V23)에 걸림 — **병합 대상이 아직 없을 때**의 경합이라 `SELECT … FOR UPDATE`로는 막을 수 없다(없는 행은 잠글 수 없다). 트랜잭션 전체가 롤백돼 계정이 갈라지지 않으며, **그대로 다시 제출하면** 상대가 만든 계정을 발견해 병합으로 수렴한다 |
 | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 온보딩 제출(약관 동의 §2 선행 — 우선 판정) |
 | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`가 미검증이거나 검증한 번호와 불일치(연락처 인증 §4-1·§4-2 선행) |
 

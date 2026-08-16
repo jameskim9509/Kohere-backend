@@ -35,9 +35,32 @@ public class UserRepositoryImpl implements UserRepository {
         .map(UserJpaEntity::getId);
   }
 
+  /**
+   * 병합 대상 잠금 조회 — 조건은 위와 같고 <b>자기 자신({@code excludedUserId})만 뺀다</b>. 여기서는 도메인 객체를 돌려주는데, 그 이유는 포트
+   * {@link UserRepository#findActiveLandlordByPhoneNumberExcludingForUpdate} 참조(대상 프로필이 그대로 응답에
+   * 실린다).
+   */
+  @Override
+  public Optional<User> findActiveLandlordByPhoneNumberExcludingForUpdate(
+      String phoneNumber, long excludedUserId) {
+    return jpaRepository
+        .findByPhoneNumberAndStatusAndUserTypeAndIdNot(
+            phoneNumber, UserStatus.ACTIVE, UserType.LANDLORD, excludedUserId)
+        .map(UserRepositoryImpl::toDomain);
+  }
+
   @Override
   public boolean existsByNickname(String nickname) {
     return jpaRepository.existsByNickname(nickname);
+  }
+
+  /**
+   * 병합에서 진 쪽 임시 계정을 지운다. {@code deleteById}는 대상이 없으면 아무 일도 하지 않으므로(Spring Data는 조회 후 삭제한다) 별도 존재
+   * 검사를 두지 않는다 — 병합은 잠금 조회와 같은 트랜잭션이라 그 사이 사라질 수 없고, 사라졌다면 이미 목적이 달성된 상태다.
+   */
+  @Override
+  public void deleteById(long userId) {
+    jpaRepository.deleteById(userId);
   }
 
   @Override

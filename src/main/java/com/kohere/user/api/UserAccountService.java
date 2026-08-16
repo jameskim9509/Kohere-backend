@@ -66,6 +66,39 @@ public interface UserAccountService {
   Optional<Long> findActiveLandlordIdByPhoneNumber(String normalizedPhoneNumber);
 
   /**
+   * 인증된 휴대폰 번호로 <b>병합할 웹 계정</b>을 찾는다(앱 임대인 온보딩 US-1-15 전용). 위 조회와 조건·잠금이 같고 <b>{@code
+   * excludedUserId}(요청 주체 자신)를 뺀다</b>는 점만 다르다.
+   *
+   * <p><b>왜 자기 제외가 필요한가</b> — 병합을 요청하는 쪽은 이미 로그인한 임시 계정이라, 제외가 없으면 자기 자신이 대상으로 잡혀 소셜 매핑을 자기에게 옮기고
+   * 자기 행을 지우는 자기파괴가 성립한다. 지금은 온보딩 전이라 그 계정의 번호가 비어 있어 실제로 걸리지 않지만, 병합처럼 <b>행을 지우는</b> 동작을 암묵 불변식 위에
+   * 올려두지 않는다(ADR-0047 §4).
+   *
+   * <p><b>왜 식별자가 아니라 프로필인가</b> — 병합 성공 응답의 {@code user}와 토큰은 <b>대상 계정 기준</b>이다(스펙 §5-2). 잠금으로 이미 읽은
+   * 행에서 프로필을 만들어 돌려주면 조회가 한 번으로 끝나고, 응답 값이 <b>잠긴 그 행의 값</b>임이 보장된다. 대상 계정은 이미 {@code ACTIVE}·{@code
+   * LANDLORD}라 상태 전이도 프로필 덮어쓰기도 없다 — 이 뷰는 <b>읽어서 그대로 내보내는</b> 용도뿐이다.
+   *
+   * @param normalizedPhoneNumber 숫자만 남긴 표준형 번호. 구현이 방어적으로 한 번 더 접는다(멱등)
+   * @param excludedUserId 병합을 요청한 임시 계정의 식별자
+   * @return 병합 대상 프로필. 없으면 비어 있음(= 병합하지 않고 US-1-9 기존 온보딩 그대로)
+   */
+  Optional<UserProfileView> findActiveLandlordProfileByPhoneNumberExcluding(
+      String normalizedPhoneNumber, long excludedUserId);
+
+  /**
+   * 회원 행을 <b>하드 삭제</b>한다 — 웹 계정 병합(US-1-15)에서 진 쪽 임시 계정을 지우는 단 하나의 용도이며, 일반적인 계정 종료 수단이 아니다. 사용자가
+   * 스스로 그만두는 것은 탈퇴({@code DELETE /users/me} — {@code WITHDRAWN} 전이 + PII 익명화, ADR-0014)이고 이 메서드는 그
+   * 경로를 대체하지 않는다.
+   *
+   * <p><b>병합에서만 하드 삭제가 맞는 이유</b>: 지우는 행은 몇 분 전 소셜 로그인이 만든 빈 껍데기라 보존할 이력이 없고, 익명화해 남기면 <b>아무도 로그인할 수
+   * 없는 유령 계정</b>이 하나 더 생길 뿐이다(소셜 매핑은 이미 대상 계정으로 옮겨 갔다). 미완료 계정을 {@code DELETE}로 정리한 V21의 선례를
+   * 따른다(#229 D13).
+   *
+   * <p><b>이 삭제는 {@code UserWithdrawnEvent}를 발행하지 않는다.</b> 그 이벤트의 구독자(auth)가 하는 일은 소셜·로컬 자격증명 삭제와
+   * refresh 무효화인데, 병합은 자격증명을 <b>지우는 것이 아니라 옮기는 것</b>이라 발행하면 방금 옮긴 매핑을 스스로 지워 앱 로그인을 영구히 깨뜨린다.
+   */
+  void deleteAccount(long userId);
+
+  /**
    * 계정 식별·상태 조회(소셜 로그인 분기 판정용).
    *
    * @throws com.kohere.user.domain.UserNotFoundException 없거나 탈퇴한 경우

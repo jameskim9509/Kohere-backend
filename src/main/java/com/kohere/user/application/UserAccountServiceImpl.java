@@ -135,6 +135,34 @@ public class UserAccountServiceImpl implements UserAccountService {
         PhoneNumbers.normalize(normalizedPhoneNumber));
   }
 
+  /**
+   * 병합 대상 조회 + 행 잠금(자기 제외). 번호를 읽기 경계에서 다시 접는 이유와 {@code readOnly}를 걸지 않는 이유는 {@link
+   * #findActiveLandlordIdByPhoneNumber}와 같다.
+   *
+   * <p>잠금으로 읽은 행을 그대로 {@link UserProfileView}로 매핑한다 — 온보딩 완료 응답과 <b>같은 매퍼</b>({@link
+   * #toProfileView})를 쓰므로 병합 응답의 {@code user}가 일반 온보딩 응답과 한 필드도 다르지 않다(연락처 마스킹 규칙까지 같다).
+   */
+  @Override
+  @Transactional
+  public Optional<UserProfileView> findActiveLandlordProfileByPhoneNumberExcluding(
+      String normalizedPhoneNumber, long excludedUserId) {
+    return userRepository
+        .findActiveLandlordByPhoneNumberExcludingForUpdate(
+            PhoneNumbers.normalize(normalizedPhoneNumber), excludedUserId)
+        .map(this::toProfileView);
+  }
+
+  /**
+   * 병합에서 진 임시 계정의 행을 지운다. 상태를 확인하지 않는 것은 의도다 — 지울지 말지는 <b>호출자(병합 판정)</b>가 정하고, 여기서 "PENDING만 지운다"
+   * 같은 조건을 덧붙이면 판정이 두 곳으로 갈려 한쪽만 고친 버그가 숨는다. 탈퇴 이벤트를 발행하지 않는 이유는 포트 {@link
+   * UserAccountService#deleteAccount} 참조(자격증명은 지우는 것이 아니라 옮기는 중이다).
+   */
+  @Override
+  @Transactional
+  public void deleteAccount(long userId) {
+    userRepository.deleteById(userId);
+  }
+
   @Override
   @Transactional(readOnly = true)
   public UserAccountView getAccount(long userId) {

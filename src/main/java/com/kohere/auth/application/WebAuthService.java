@@ -39,9 +39,16 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 발급은 나눠 갖지 않는다</b> — {@link AuthService#issueFullTokens}를 그대로 부른다(ADR-0048 §3: 회전·재사용 탐지 규칙을 두 벌로
  * 만들지 않는다).
  *
- * <p><b>가입 전체가 한 트랜잭션이다.</b> 웹에는 온보딩 재개 화면이 없어 {@code PENDING}·{@code TERMS_AGREED} 같은 부분 완료 상태를
- * 남기면 로그인해도 갈 곳이 없는 죽은 계정이 된다. 그래서 상태 체인은 앱과 똑같이 태우되(앱 계정과 데이터 모양이 같아야 연동이 성립한다) 한 트랜잭션 안에서 {@code
- * ACTIVE}까지 연속 전이시킨다 — 어느 단계에서 실패해도 {@code users}만 있고 자격증명이 없는(로그인 불가) 계정도, 그 반대도 남지 않는다.
+ * <p><b>가입의 DB 쓰기 전체가 한 트랜잭션이다.</b> 웹에는 온보딩 재개 화면이 없어 {@code PENDING}·{@code TERMS_AGREED} 같은 부분 완료
+ * 상태를 남기면 로그인해도 갈 곳이 없는 죽은 계정이 된다. 그래서 상태 체인은 앱과 똑같이 태우되(앱 계정과 데이터 모양이 같아야 연동이 성립한다) 한 트랜잭션 안에서
+ * {@code ACTIVE}까지 연속 전이시킨다 — 어느 단계에서 실패해도 {@code users}만 있고 자격증명이 없는(로그인 불가) 계정도, 그 반대도 남지 않는다.
+ *
+ * <p><b>그 원자성은 MySQL 쓰기에만 걸린다.</b> 이 트랜잭션 안에서 부르는 {@link AuthService#issueFullTokens}는 refresh 해시를
+ * <b>Redis</b>에 남기는데, Redis는 트랜잭션 밖이라 롤백되지 않는다 — {@code uq_users_phone_number} 경합처럼 <b>커밋 시점</b>에
+ * 터지는 실패는 이미 토큰이 발급된 뒤라, DB는 깨끗이 되돌아가지만 <b>refresh 해시 하나가 14일 TTL로 남는다</b>. 원문은 409 응답으로 대체돼 클라이언트에
+ * 닿지 않으므로 세션을 열 수 없고(악용 불가) TTL로 소멸하지만, 그 사이 {@code refresh:user:{id}} 인덱스가 실제 세션보다 많아 보인다 — <b>수용한
+ * 한계</b>다(토큰 발급을 트랜잭션 밖으로 들어내는 재구성은 문제 크기에 비해 변경이 크다). 반대로 SMS 인증 마커 소비는 같은 이유로 <b>커밋 이후</b>에 미뤄
+ * 두었다({@link #consumeVerificationAfterCommit}) — 그쪽은 남은 잔여물이 사용자를 막으므로 순서를 지킬 값이 있었다.
  *
  * <p><b>user 모듈에 새 생성 메서드를 만들지 않는다.</b> 기존 세 메서드({@code createPendingUser} → {@code agreeToTerms} →
  * {@code completeLandlordOnboarding})를 순서대로 부르면 {@code @Transactional(REQUIRED)} 전파로 이 트랜잭션에 참여해
@@ -72,7 +79,7 @@ public class WebAuthService {
 
   /**
    * 임대인 웹 회원가입. 게이트를 <b>인증 마커 → 필수 약관 → 이메일 중복 → 번호 매칭</b> 순서로 통과시킨 뒤 연동(자격증명만 추가) 또는 신규 생성(상태 체인
-   * 완주)으로 갈린다. 실패는 전부 롤백된다.
+   * 완주)으로 갈린다. 실패하면 <b>DB 쓰기는</b> 전부 롤백된다(Redis에 남는 refresh 해시 잔여물은 클래스 주석 참조).
    *
    * <p><b>게이트 순서는 계약이다</b>(스펙 §1-3의 검증 게이트 우선순위) — 인증 마커를 가장 먼저 보는 이유는 번호가 비밀이 아니기 때문이다. 마커 없이 이메일
    * 중복이나 번호 매칭을 먼저 판정하면, 남의 번호를 아는 사람이 응답 코드만으로 "그 번호에 계정이 있는지"를 읽어낼 수 있다.

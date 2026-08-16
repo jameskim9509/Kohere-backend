@@ -421,13 +421,21 @@ public final class AuthDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩을 완료(`ACTIVE`)한 사용자의 재요청 |
+      | 409 | `RESOURCE_CONFLICT` | 같은 번호의 임대인 웹 회원가입(`POST /api/v1/auth/signup`)이 거의 동시에 계정을 확정해 연락처 유니크 제약에 걸림 — **그대로 다시 제출하면** 그 계정과 병합돼 성공한다 |
       | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 제출 |
       | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출한 `phoneNumber`가 미인증이거나 사전 인증한 번호와 불일치 |
+
+      **계정 병합**
+
+      - 인증한 연락처로 **이미 웹에서 가입한 임대인 계정**(같은 번호의 다른 `ACTIVE`·`LANDLORD` 계정)이 발견되면 두 계정을 하나로 합친다 — 앱 소셜 자격 매핑을 그 계정으로 옮기고 방금 만들어진 임시 계정은 삭제한다.
+      - 이때 응답의 `data.user`와 토큰은 **합쳐진(웹) 계정 기준**이라 `data.user.id`가 요청 토큰의 사용자와 다르다. 클라이언트는 **응답의 토큰으로 교체**해야 하며, 이후 소셜 로그인은 항상 같은 계정으로 귀결된다.
       """;
 
   public static final String[] LANDLORD_ONBOARDING_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
   public static final String[] LANDLORD_ONBOARDING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-  public static final String[] LANDLORD_ONBOARDING_409 = {"AUTH_ONBOARDING_ALREADY_COMPLETED"};
+  public static final String[] LANDLORD_ONBOARDING_409 = {
+    "AUTH_ONBOARDING_ALREADY_COMPLETED", "RESOURCE_CONFLICT"
+  };
   public static final String[] LANDLORD_ONBOARDING_422 = {
     "AUTH_TERMS_AGREEMENT_REQUIRED", "AUTH_PHONE_NOT_VERIFIED"
   };

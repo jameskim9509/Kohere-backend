@@ -16,7 +16,7 @@ import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
 import com.kohere.user.api.UserWithdrawnEvent;
 import java.time.Instant;
-import java.util.Optional;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +31,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
  *
  * <p>어느 경로로 들어와도 <b>자격증명 두 채널(social_accounts·local_accounts)이 함께</b> 지워지는지도 함께 본다 — 한쪽만 지우면 탈퇴자가
  * 남은 채널로 다시 로그인한다(ADR-0047의 대칭).
+ *
+ * <p>매핑 조회가 리스트인 것은 병합(US-1-15) 이후 <b>한 회원에 여러 매핑</b>이 정상이기 때문이다 — 단건 조회였다면 그 상태에서 탈퇴가 예외로 롤백된다.
  */
 @ExtendWith(MockitoExtension.class)
 class UserWithdrawnEventListenerTest {
@@ -54,8 +56,8 @@ class UserWithdrawnEventListenerTest {
 
   @Test
   void appleUser_revokesRefreshTokenBeforeDeletingMapping() {
-    when(socialAccountRepository.findByUserId(1L))
-        .thenReturn(Optional.of(appleAccount(1L, "apple-rt-1")));
+    when(socialAccountRepository.findAllByUserId(1L))
+        .thenReturn(List.of(appleAccount(1L, "apple-rt-1")));
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(1L));
 
@@ -74,8 +76,8 @@ class UserWithdrawnEventListenerTest {
 
   @Test
   void revokeFailure_doesNotBlockWithdrawal() {
-    when(socialAccountRepository.findByUserId(2L))
-        .thenReturn(Optional.of(appleAccount(2L, "apple-rt-2")));
+    when(socialAccountRepository.findAllByUserId(2L))
+        .thenReturn(List.of(appleAccount(2L, "apple-rt-2")));
     Mockito.doThrow(new AppleUpstreamException(new RuntimeException("timeout")))
         .when(appleAuthClient)
         .revokeRefreshToken("apple-rt-2");
@@ -91,7 +93,7 @@ class UserWithdrawnEventListenerTest {
 
   @Test
   void googleUser_skipsRevoke() {
-    when(socialAccountRepository.findByUserId(3L)).thenReturn(Optional.of(googleAccount(3L)));
+    when(socialAccountRepository.findAllByUserId(3L)).thenReturn(List.of(googleAccount(3L)));
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(3L));
 
@@ -103,7 +105,7 @@ class UserWithdrawnEventListenerTest {
 
   @Test
   void appleUserWithoutStoredToken_skipsRevokeButStillCleansUp() {
-    when(socialAccountRepository.findByUserId(4L)).thenReturn(Optional.of(appleAccount(4L, null)));
+    when(socialAccountRepository.findAllByUserId(4L)).thenReturn(List.of(appleAccount(4L, null)));
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(4L));
 
@@ -115,7 +117,7 @@ class UserWithdrawnEventListenerTest {
 
   @Test
   void noSocialAccount_cleansUpWithoutRevoke() {
-    when(socialAccountRepository.findByUserId(5L)).thenReturn(Optional.empty());
+    when(socialAccountRepository.findAllByUserId(5L)).thenReturn(List.of());
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(5L));
 

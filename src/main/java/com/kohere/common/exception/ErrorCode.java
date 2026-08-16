@@ -18,6 +18,12 @@ public enum ErrorCode {
   FORBIDDEN(HttpStatus.FORBIDDEN, "권한이 없습니다."),
   RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다."),
   METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 메서드입니다."),
+  // 거의 동시에 도착한 다른 요청과 UNIQUE 제약에서 충돌했다 — 재시도가 유효한 복구다.
+  // 도메인이 미리 판정할 수 있는 충돌은 각자의 코드(BOOKING_ALREADY_EXISTS 등)를 쓰고, 이 코드는
+  // 애플리케이션 조회로 막을 수 없는 경합만 받는다. 전역 핸들러가 문서화된 UNIQUE 제약(V22·V23) 위반만
+  // 골라 번역하며, 그 밖의 제약 위반(NOT NULL·길이 초과 등)은 서버 버그라 500 그대로다
+  // (GlobalExceptionHandler#RETRYABLE_UNIQUE_CONSTRAINTS).
+  RESOURCE_CONFLICT(HttpStatus.CONFLICT, "다른 요청과 충돌했습니다. 잠시 후 다시 시도해 주세요."),
   TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "요청이 너무 많습니다."),
   PAYLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "요청 크기가 허용 범위를 넘었습니다."),
   INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "일시적인 오류가 발생했습니다."),

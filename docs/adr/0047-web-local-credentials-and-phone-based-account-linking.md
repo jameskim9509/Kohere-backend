@@ -101,7 +101,7 @@ users (id=42, name, phone_number, user_type=LANDLORD, status=ACTIVE)   ← 사�
 
 ```
 verified = 정규화된 인증 번호
-target = SELECT id FROM users
+target = SELECT * FROM users                     ← 잠근 행에서 응답 프로필까지 만든다(재조회 없음)
           WHERE phone_number = :verified AND id <> :currentUserId
             AND status='ACTIVE' AND user_type='LANDLORD'
           FOR UPDATE
@@ -111,6 +111,8 @@ target = SELECT id FROM users
           issueFullTokens(:targetId)      ← currentUserId가 아니다
 ```
 
+웹 가입(§2)의 같은 조회가 **식별자만** 돌려받는 것과 달리 병합은 **프로필까지** 받는다 — 응답의 `user`가 대상 계정 기준이라 어차피 필요한 값이고, 잠근 행에서 바로 만들면 조회가 한 번으로 끝나며 응답이 그 잠긴 행의 값임이 보장된다. 덮어쓰기 위험은 없다: 병합은 대상 행을 한 칼럼도 쓰지 않는다(§6).
+
 `status='ACTIVE' AND user_type='LANDLORD'`는 지금은 중복이다(번호가 채워진 계정은 사실상 `ACTIVE` 임대인뿐이다). **그래도 명시한다** — 나중에 누군가 다른 경로에서 `PENDING` 계정에 번호를 채워도 병합이 오작동하지 않게 하기 위해서다. 암묵적 불변식에 기대지 않는다. 영향 행 수는 단언하지 않는다(UPDATE는 N행이어도 안전하고, 대상 쪽에 `social_accounts`가 여러 행인 것은 한 사람이 Google·Apple로 들어온 정상 상태다).
 
 임시 계정 행은 **하드 삭제**한다 — 미완료 계정(`PENDING`·`TERMS_AGREED`)을 `DELETE`로 정리한 [V21](../../src/main/resources/db/migration/V21__delete_incomplete_accounts.sql)의 선례를 따른다. 탈퇴의 상태 전이·익명화([ADR-0014](./0014-withdrawal-pii-anonymization.md))를 쓰지 않는 이유는, 이 행이 사람의 계정이 아니라 **몇 분 전에 만들어진 빈 껍데기**라 보존할 이력이 없기 때문이다. 다만 **그 계정의 진단 기록은 지우지 않는다** — 현재는 탈퇴조차 진단을 지우지 않으므로(`UserWithdrawnEvent` 구독자는 `auth` 하나뿐), 병합이 탈퇴보다 공격적으로 지우는 비대칭을 만들지 않는다.
@@ -119,7 +121,11 @@ target = SELECT id FROM users
 
 같은 번호로 **웹 가입 제출**과 **앱 임대인 온보딩 제출**이 거의 동시에 도착하면, 양쪽이 "그 번호를 가진 `users`가 있는가"를 상대의 커밋 전에 조회해 **둘 다 없음으로 판정**한다 → 웹은 새 계정을 만들고 앱은 병합 없이 자기 계정을 `ACTIVE`로 전이시킨다 → **같은 번호의 `ACTIVE` 계정이 둘** 생기고, 이후 병합 트리거가 없다.
 
-애플리케이션 레벨 조회로는 막을 수 없다. **V23에서 `uq_users_phone_number`를 건다** — 두 번째 트랜잭션이 DB 제약으로 실패하므로 계정이 갈라지지 않고, 실패한 쪽은 재시도하면 상대가 만든 계정을 발견해 정상 연동·병합된다.
+애플리케이션 레벨 조회로는 막을 수 없다(아직 없는 행은 잠글 수 없다). **V23에서 `uq_users_phone_number`를 건다** — 두 번째 트랜잭션이 DB 제약으로 실패하므로 계정이 갈라지지 않고, 실패한 쪽은 재시도하면 상대가 만든 계정을 발견해 정상 연동·병합된다.
+
+그 실패는 **`409 RESOURCE_CONFLICT`(공통 코드)로 번역해 내려간다.** 번역하지 않으면 `DataIntegrityViolationException`이 전역 핸들러의 마지막 그물까지 흘러 **500 `INTERNAL_ERROR`** 가 되는데, 그 status는 에러 카탈로그에 없고 재시도로 복구된다는 신호도 주지 못한다. 번역 지점이 **전역 핸들러**인 것은 위반이 드러나는 시점이 쓰기 종류마다 다르기 때문이다 — IDENTITY INSERT(`local_accounts`)는 `save`에서 즉시, 기존 행 UPDATE(`users.phone_number` — 임대인 온보딩)는 플러시가 밀려 **`@Transactional` 프록시가 반환한 뒤 커밋에서** 터진다. 후자는 서비스 안의 어떤 `catch`로도 잡히지 않으므로 둘을 함께 덮는 자리는 트랜잭션 바깥뿐이고, 그 자리에서는 도메인 코드를 낼 수 없으므로 코드도 도메인 무관하다(`AUTH_*`로 번역하면 다른 모듈의 제약 위반까지 인증 에러가 된다). 미리 판정할 수 있는 충돌은 종전대로 도메인이 자기 코드로 낸다(`BOOKING_ALREADY_EXISTS`, 차단의 멱등 흡수).
+
+번역은 **무조건이 아니라 화이트리스트**다. 핸들러는 원인 사슬의 Hibernate `ConstraintViolationException`에서 제약 이름을 읽어 이 결정이 만든 세 개(`uq_users_phone_number` · `uq_local_accounts_email` · `uq_local_accounts_user_id`)와 대조하고, **일치할 때만** 409를 낸다. 같은 예외 타입으로 오는 NOT NULL 위반·길이 초과는 재시도가 무의미한 **서버 버그**라 종전대로 ERROR 로그 + 500으로 남긴다 — 전부 409로 낮추면 클라이언트에게 재시도하라고 거짓말을 하면서 로그 레벨까지 WARN으로 떨어져 알림이 사라진다([error-response-guide §4](../api/error-response-guide.md)).
 
 MySQL의 UNIQUE는 **NULL 중복을 허용**하므로 세입자(정의상 NULL)와 탈퇴자(익명화로 NULL — [ADR-0014](./0014-withdrawal-pii-anonymization.md))는 영향받지 않는다. 이 제약이 [ADR-0034](./0034-landlord-phone-sms-verification.md)의 미결 항목("연락처 유니크 제약 — 현재 미적용")을 닫는다.
 
@@ -147,6 +153,7 @@ MySQL의 UNIQUE는 **NULL 중복을 허용**하므로 세입자(정의상 NULL)�
 | `AUTH_ACCOUNT_LOCKED` | **423** | 비밀번호 5회 연속 실패로 잠긴 계정. **비밀번호가 맞아도 잠금이 우선**이다 |
 | `AUTH_EMAIL_ALREADY_REGISTERED` | 409 | 그 이메일을 이미 남이 웹 로그인 ID로 쓰고 있다 |
 | `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 409 | 번호로 찾은 계정에 이미 웹 자격증명이 있다. 로그인 화면으로 보낸다 |
+| `RESOURCE_CONFLICT`(공통) | 409 | 위 세 UNIQUE 제약의 중복 위반 — 같은 번호의 가입·온보딩이 거의 동시에 확정됐다(§5). **재시도가 유효한 복구**다. 그 밖의 제약 위반은 이 코드가 아니라 500이다 |
 
 `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` 응답에는 **마스킹 이메일을 싣지 않는다.** 공통 스키마(code/message)만 낸다 — SMS 인증을 통과해야 닿는 지점이라 무차별 열거는 불가능하지만, 번호 소유자에게 남의 이메일 일부를 노출할 이유도 없다.
 

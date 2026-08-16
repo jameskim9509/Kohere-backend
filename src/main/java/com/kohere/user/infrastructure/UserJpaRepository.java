@@ -29,4 +29,17 @@ interface UserJpaRepository extends JpaRepository<UserJpaEntity, Long> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<UserJpaEntity> findByPhoneNumberAndStatusAndUserType(
       String phoneNumber, UserStatus status, UserType userType);
+
+  /**
+   * 위 조회에 <b>자기 자신 제외({@code IdNot})</b>를 더한 것 — 앱 임대인 온보딩의 웹 계정 병합(US-1-15)이 쓴다. 잠금·조건·반환 모양이 같아야
+   * 두 방향(연동·병합)의 매칭 규칙이 갈리지 않으므로, 조건을 하나 더한 <b>형제 파생 쿼리</b>로 두고 위 메서드를 고치지 않는다 — 인자 하나를 더해 한 메서드로
+   * 합치면 웹 가입(US-1-11) 쪽이 "제외 대상 없음"을 표현하려고 {@code null}이나 {@code -1} 같은 sentinel을 넘겨야 하고, 그
+   * sentinel이 쿼리에 그대로 흘러 들어간다.
+   *
+   * <p>{@code status}·{@code userType}을 계속 명시하는 이유도 위와 같다 — 지금은 번호가 채워진 계정이 사실상 ACTIVE 임대인뿐이라 중복
+   * 조건이지만, 다른 경로가 {@code PENDING} 계정이나 세입자에 번호를 채우는 날 <b>남의 계정을 흡수하는</b> 병합이 된다.
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  Optional<UserJpaEntity> findByPhoneNumberAndStatusAndUserTypeAndIdNot(
+      String phoneNumber, UserStatus status, UserType userType, Long id);
 }

@@ -584,6 +584,9 @@ class AuthServiceTest {
   void landlordOnboarding_completesAndIssuesFullTokensWithLandlordProfile() {
     when(userAccountService.getAccount(40L))
         .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
+    // 같은 번호의 다른 ACTIVE 임대인이 없으면 병합 분기를 타지 않는다 — US-1-9 기존 동작 그대로다(US-1-15).
+    when(userAccountService.findActiveLandlordProfileByPhoneNumberExcluding("01012345678", 40L))
+        .thenReturn(Optional.empty());
     when(userAccountService.completeLandlordOnboarding(
             eq(40L), any(LandlordOnboardingProfile.class)))
         .thenReturn(landlordProfileView(40L));
