@@ -14,3 +14,9 @@
 | US-1-8 | 임대인 사업자등록번호 검증하기(온보딩 후 분리된 무상태 검증) | [us-1-8-business-verification](us-1-8-business-verification.md) |
 | US-1-9 | 임대인 온보딩 정보 제출하기(약관+연락처 인증만으로 완료) | [us-1-9-landlord-onboarding](us-1-9-landlord-onboarding.md) |
 | US-1-10 | 온보딩 중 연락처(휴대폰) 인증하기(임대인 전용) | [us-1-10-phone-verification](us-1-10-phone-verification.md) |
+| US-1-11 | 임대인 웹 회원가입하기(단일 폼 · 기존 앱 계정 연동) | [us-1-11-web-signup](us-1-11-web-signup.md) |
+| US-1-12 | 임대인 웹 로그인하기(계정 잠금 · refresh 쿠키 재발급) | [us-1-12-web-login](us-1-12-web-login.md) |
+| US-1-13 | 가입용 휴대폰 인증하기(비로그인 · 임대인 웹) | [us-1-13-signup-phone-verification](us-1-13-signup-phone-verification.md) |
+| US-1-15 | 앱 임대인 온보딩 시 기존 웹 계정과 병합하기 | [us-1-15-landlord-account-merge](us-1-15-landlord-account-merge.md) |
+
+> **US-1-14는 결번이다** — 임대인 웹 인증 범위를 확정하면서 쓰이지 않은 번호로, 대응하는 유저 스토리도 다이어그램도 없다(찾지 않아도 된다). 이미 배포된 번호를 흔들지 않으려고 뒤 번호를 당겨 재배열하지 않았으므로 US-1-13 다음은 US-1-15다. 스토리 원문은 [user-stories.md §1](../../../requirements/user-stories.md)에 같은 번호로 있다.
