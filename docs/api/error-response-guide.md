@@ -39,10 +39,10 @@
 | 분류 | 성격 | 대표 status | 예 |
 | --- | --- | --- | --- |
 | 입력 검증 | 요청 형식/제약 위반 | 400 | 필수값 누락, 형식 오류, enum 불일치 |
-| 인증(Authentication) | 누구인지 모름 | 401 | 토큰 없음/만료/위조 |
+| 인증(Authentication) | 누구인지 모름 | 401 | 토큰 없음/만료/위조, 이메일·비밀번호 불일치 |
 | 인가(Authorization) | 권한 없음 | 403 | 남의 리소스 수정, 차단 사용자 |
 | 리소스 없음 | 대상 부재 | 404 | 존재하지 않는 매물/게시글 |
-| 충돌/상태 | 비즈니스 규칙 위반 | 409 / 422 | 중복 가입, 이미 신청한 예약(`BOOKING_ALREADY_EXISTS`) |
+| 충돌/상태 | 비즈니스 규칙 위반 | 409 / 422 / 423 | 중복 가입, 이미 신청한 예약(`BOOKING_ALREADY_EXISTS`), 잠긴 계정(`AUTH_ACCOUNT_LOCKED`) |
 | 레이트리밋 | 과다 호출 | 429 | 신고/메시지 도배(예약 신고 도배 방지 포함 — 후속) |
 | 시스템 | 서버/외부 연동 실패 | 500 / 502 / 503 | DB 오류, 외부 API 연동 실패·타임아웃 |
 
@@ -61,11 +61,14 @@
 | 413 Payload Too Large | 업로드 크기 초과 | `PAYLOAD_TOO_LARGE`, `LISTING_IMAGE_TOO_LARGE` |
 | 415 Unsupported Media Type | 지원하지 않는 파일 형식 | `LISTING_IMAGE_UNSUPPORTED_TYPE` |
 | 422 Unprocessable Entity | 형식은 맞으나 비즈니스 규칙 위반 | 도메인별 코드 |
+| 423 Locked | 계정이 잠겨 자격증명이 맞아도 처리 불가 | `AUTH_ACCOUNT_LOCKED` |
 | 429 Too Many Requests | 레이트리밋 초과 | `TOO_MANY_REQUESTS` |
 | 500 Internal Server Error | 처리되지 않은 서버 오류 | `INTERNAL_ERROR` |
 | 502/503 | 외부 연동 실패/일시 불가 | `UPSTREAM_ERROR`, `SERVICE_UNAVAILABLE` |
 
 > 400과 422: **요청 자체가 깨졌으면 400**, 요청은 정상이나 **도메인 규칙상 처리 불가**면 422를 쓴다. 팀 내 혼선을 줄이려 본 프로젝트는 비즈니스 규칙 위반에 **409(충돌형)** 또는 **422(그 외)** 를 사용한다.
+
+> 423과 403: 잠긴 계정은 **권한이 없는 것이 아니라 대상(계정) 자체가 잠긴 상태**라 의미가 정확한 `423 Locked`를 쓴다 — 클라이언트 분기는 어차피 `error.code`로 하므로 인가 실패와 같은 403으로 뭉뚱그릴 이유가 없다(#229).
 
 > **끝난 버전 경로의 404** — deprecated된 `/api/v1` 매물 조회(`GET /api/v1/listings/{listingId}` · `POST`·`DELETE /api/v1/listings/{listingId}/favorite`)는 **대상의 존재 여부와 무관하게** `LISTING_NOT_FOUND`(404)다. 리소스를 못 찾아서가 아니라 그 경로가 매물 데이터를 더는 제공하지 않기 때문이며, 같은 이유로 목록 계열(`GET /api/v1/listings`·`/map`·`/search`, `/api/v1/users/me/favorites`·`/recent-listings`)은 404가 아니라 **빈 페이지(200)** 다. 정본은 `/api/v2/listings*`이며 버전 정책은 [api-design-guide §2-1](./api-design-guide.md)·[ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)이다.
 
@@ -113,6 +116,34 @@
 | report | `REPORT_*` |
 
 각 API 스펙 문서는 자신이 쓰는 도메인 코드를 표로 정의하고, 이 카탈로그와 충돌하지 않게 한다.
+
+#### auth 도메인 코드
+
+`AUTH_*` 전체 목록의 정본은 [01-auth-onboarding](./specs/01-auth-onboarding.md)이며, 여기에는 **임대인 웹 로그인·회원가입(#229)** 이 추가한 코드를 싣는다. 소셜 로그인·약관·온보딩 계열 코드는 그대로다.
+
+| code | status | 의미 |
+| --- | --- | --- |
+| `AUTH_INVALID_CREDENTIALS` | 401 | 웹 로그인(`POST /api/v1/auth/login`) 실패. **이메일 없음과 비밀번호 불일치를 한 코드로 묶는다**(계정 존재 여부 비노출) |
+| `AUTH_ACCOUNT_LOCKED` | 423 | 비밀번호 5회 연속 실패로 잠긴 계정. **비밀번호가 맞아도** 잠금이 우선한다 |
+| `AUTH_EMAIL_ALREADY_REGISTERED` | 409 | 웹 회원가입(`POST /api/v1/auth/signup`)의 이메일을 이미 다른 사람이 웹 로그인 ID로 쓰고 있음(`local_accounts.email` 중복) |
+| `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 409 | 인증된 휴대폰 번호로 찾은 계정에 웹 자격증명이 이미 붙어 있음. 가입이 아니라 로그인으로 보낸다 |
+
+> **두 409는 다른 케이스다** — `AUTH_EMAIL_ALREADY_REGISTERED`는 "이 이메일은 남이 쓰고 있다"이고, `AUTH_WEB_ACCOUNT_ALREADY_EXISTS`는 "이 사람은 이미 웹 계정이 있다"이다. 앞은 이메일 중복 검사에서, 뒤는 번호 매칭 뒤 자격증명 유무 판정에서 난다. 중복 검사는 **`local_accounts.email`만 보고 `users.email`은 보지 않는다** — 앱 소셜 계정과 같은 주소로 웹 가입하는 것이 가장 흔한 정상 경로라, `users.email`까지 유일성을 걸면 본인이 본인 이메일로 가입하다 409를 맞는다. 응답에는 **마스킹된 이메일 등 기존 계정 정보를 싣지 않는다** — 번호 소유자에게 남의 로그인 ID를 흘리지 않기 위해서다.
+>
+> `AUTH_WEB_ACCOUNT_ALREADY_EXISTS`는 성공 응답의 `linked=true`와 **같은 조회의 다른 가지**다. 번호로 기존 계정을 찾은 것까지는 같고, 붙일 자리가 비어 있으면 연동 성공(`linked=true`), 이미 차 있으면 이 코드다. 이 지점에서 자격증명을 덮어쓰면 가입이 아니라 **로그인 ID 교체**가 되므로 오류로 끊는다.
+
+> **잠금에는 해제 경로가 없다(알려진 제약)** — `AUTH_ACCOUNT_LOCKED`는 시간이 지나도 풀리지 않고 해제 API도 두지 않는다. 운영자가 DB의 `locked_at`을 비우는 것이 유일한 해제 수단이므로 **잠금 발생 시 대응 창구를 운영에서 정해두어야 한다**. 실패 횟수·잠금 여부를 Redis TTL이 아니라 `local_accounts` 컬럼에 두는 이유도 이것이다 — TTL로 두면 만료와 함께 잠금이 저절로 풀려 "해제 없음" 정책이 깨진다.
+>
+> 뒤집으면 **남의 이메일로 5회 틀려 그 계정을 잠글 수 있다**(의도적 잠금 DoS). 잠금을 채택하는 이상 피할 수 없는 고전적 부작용이며, IP 단위 레이트리밋으로 완화할 뿐 완전히 막지 못한다 — **수용한 리스크**다.
+
+> **웹 인증에서 의도적으로 신설하지 않은 코드** — 리뷰어가 누락으로 오해하지 않도록 근거를 남긴다.
+> - **SMS 인증 없는 가입 제출**: 기존 `AUTH_PHONE_NOT_VERIFIED`(422)를 재사용한다. 임대인 온보딩의 게이트와 뜻이 같고, 이때는 **계정 생성도 연동도 하지 않는다**.
+> - **가입용 인증번호 불일치·만료·시도 초과**: 기존 `AUTH_PHONE_VERIFICATION_FAILED`(422). 비로그인 경로라고 코드를 나누지 않는다.
+> - **필수 약관 미동의**: 기존 `AUTH_REQUIRED_AGREEMENT_MISSING`(422). 웹 가입도 앱과 같은 약관 3필드를 받는다.
+> - **가입용 SMS 남용**: 공통 `TOO_MANY_REQUESTS`(429) 하나로 낸다 — 재발송 쿨다운 60초·번호 5회/시간·IP 20회/시간이 모두 이 코드다. 어느 한도에 걸렸는지 구분해 알려주면 한도를 역산할 수 있다. 발송 실패는 공통 `UPSTREAM_ERROR`(502)이며 챌린지를 저장하지 않는다.
+> - **비밀번호 정책 위반**: `INVALID_INPUT`(400) + `errors[]`(`field=password`). 요청 DTO의 Bean Validation(`@Pattern`)으로 걸어 기존 흐름에 태운다.
+> - **번호가 매칭되지 않아 계정이 갈라지는 경우**: **오류가 아니다.** 세입자·온보딩 미완료 계정은 `phone_number`가 NULL이라 구조적으로 매칭 후보에서 빠지고, 가입은 `linked=false`로 정상 성공한다. 여기에 더해 **번호 정규화 백필을 하지 않으므로**(하이픈 포함으로 저장된 기존 임대인 번호) 매칭에서 누락될 수 있는데, 이때도 오류 대신 별개 계정이 생긴다. 세입자→임대인 전환은 지원하지 않으며, 양쪽에 완주한 계정이 각각 생기면 **자동 병합 트리거가 없어 운영 수동 처리** 대상이다(알려진 제약).
+> - **`reissue`·`logout`의 refresh 부재**: 쿠키·본문 어디에도 없으면 공통 `INVALID_INPUT`(400) + `errors[].field="refreshToken"`이고, 깨진 JSON 본문은 종전대로 `MALFORMED_REQUEST`(400)다. 토큰 자체가 만료·위조·재사용이면 기존 `AUTH_INVALID_REFRESH_TOKEN`(401)이다.
 
 #### diagnosis 도메인 코드
 
@@ -182,6 +213,7 @@ RuntimeException
 ```
 
 - `ErrorCode`는 **enum**으로 `code(String)` + `httpStatus` + 기본 `message`를 보유한다. 새 에러는 enum 상수 추가로 등록한다.
+- **새 코드는 메시지 리소스 번들 2벌에도 함께 넣는다** — `src/main/resources/messages.properties`(영어)와 `messages_ko.properties`(한국어) **양쪽**이다. 키가 없으면 `Accept-Language`와 무관하게 enum의 기본 메시지(한국어)로 폴백하므로, 빠뜨려도 빌드·테스트는 통과한 채 **영어 클라이언트에 조용히 한국어가 나간다**(현재 `AUTH_EMAIL_REQUIRED`·`AUTH_EMAIL_MISMATCH`가 두 파일 모두에서 누락된 상태다 — 같은 실수를 반복하지 않는다).
 - 모든 비즈니스 예외는 `BusinessException(ErrorCode)`를 상속해 던진다. 컨트롤러에서 `try/catch`로 응답을 만들지 않는다.
 - 전역 핸들러는 **`@RestControllerAdvice`** 하나에 모은다.
 
@@ -233,8 +265,9 @@ public class GlobalExceptionHandler {
 ## 7. 클라이언트 처리 가이드
 
 - 먼저 **HTTP status**로 큰 분기(2xx/4xx/5xx), 다음 **`error.code`** 로 세부 분기한다. **`message` 문자열로 분기하지 않는다.**
-- `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로.
+- `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로. **웹은 refresh를 HttpOnly 쿠키로 들고 있어 본문 없이 호출한다**(서버가 쿠키 우선·본문 fallback으로 읽으며, 둘 다 없으면 `400 INVALID_INPUT` + `errors[].field="refreshToken"`이다). 앱은 종전대로 본문에 담는다.
 - `400 INVALID_INPUT` → `errors[]`의 `field`를 입력 폼에 매핑해 표시.
+- **임대인 웹 로그인**(`POST /api/v1/auth/login`)은 `401 AUTH_INVALID_CREDENTIALS`와 `423 AUTH_ACCOUNT_LOCKED`를 다르게 안내한다 — 401은 어느 쪽이 틀렸는지 밝히지 않고 "이메일 또는 비밀번호를 확인하라"로, 423은 **재시도로 풀리지 않으므로** 재시도 버튼 대신 운영 문의를 안내한다(해제 경로가 없다 — §4). 가입(`POST /api/v1/auth/signup`)의 `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS`는 **로그인 화면으로**, `409 AUTH_EMAIL_ALREADY_REGISTERED`는 **다른 이메일 입력**으로 보낸다.
 - 매물 등록(`POST /api/v2/listings`)의 코드들은 사용자에게 요구할 행동이 서로 다르다: `400 LISTING_UNKNOWN_CATALOG_CODE`는 입력 교정이 아니라 **코드 카탈로그 재조회(또는 앱 갱신)** 를 안내한다 — 사용자가 앱이 준 선택지에서 골랐는데도 거절됐다는 뜻이기 때문이다. 사진 관련 `400 LISTING_IMAGE_REQUIRED`는 **장수 조정**, `413 LISTING_IMAGE_TOO_LARGE`는 **더 작은 파일**, `415 LISTING_IMAGE_UNSUPPORTED_TYPE`은 **지원 형식으로 변환**을 안내한다. `400 LISTING_IMAGE_KEY_NOT_FOUND`는 임시 사진이 사라졌다는 뜻이므로 **사진을 다시 올리게** 한다.
 - **`/api/v1` 매물 조회가 주는 404·빈 목록은 데이터 상태가 아니다** — 그 경로가 끝났다는 뜻이므로 "삭제된 매물"로 안내하지 말고 앱 업데이트를 유도한다. 매물 데이터는 `/api/v2/listings*`에서 조회한다(§3).
 - **게스트(비로그인)로 퀴즈·생활 팁·진단을 부를 땐 `Authorization` 헤더를 아예 보내지 않는다** — 만료된 토큰을 그대로 붙여 보내면 게스트로 처리되지 않고 `401 TOKEN_EXPIRED`다(재발급하거나 헤더를 떼고 재시도). 진단 v2는 `POST /api/v2/diagnoses/start` 응답의 게스트 세션 키를 보관했다가 이후 요청에 `X-Guest-Session-Id`로 에코해야 하며, 잃어버리면 `400 DIAGNOSIS_SESSION_NOT_FOUND`이므로 `/start`부터 다시 한다(#181).
@@ -245,7 +278,7 @@ public class GlobalExceptionHandler {
 
 - [ ] 모든 에러가 공통 래퍼(`success=false`/`error.code`/`message`)로 응답된다
 - [ ] 컨트롤러에서 `try/catch`로 응답을 만들지 않고 전역 핸들러로 변환한다
-- [ ] 새 에러는 `ErrorCode` enum + 카탈로그(§4)에 등록했고 status 매핑(§3)을 지켰다
+- [ ] 새 에러는 `ErrorCode` enum + 메시지 번들 2벌(`messages`·`messages_ko`) + 카탈로그(§4)에 등록했고 status 매핑(§3)을 지켰다
 - [ ] 비즈니스 예외는 `BusinessException`을 상속하고 의미 있는 이름을 가진다
 - [ ] 검증 실패는 `INVALID_INPUT` + `errors[]`로 내려간다
 - [ ] 5xx는 `ERROR` 로그(스택트레이스 포함), 4xx는 스택트레이스를 남기지 않는다
