@@ -70,6 +70,8 @@
 | [0044](./0044-nearby-station-search-with-kakao-local.md) | 인근 역은 카카오 로컬로 검색한다 | Proposed | 2026-08-15 |
 | [0045](./0045-nearby-university-mapping-from-seeded-coordinates.md) | 인근 대학은 시드된 좌표 원장으로 매핑한다 | Proposed | 2026-08-15 |
 | [0046](./0046-administrative-region-as-catalog-data.md) | 행정구역은 카탈로그 데이터로 두고, 모르는 지역은 ETC로 받는다 | Proposed | 2026-08-16 |
+| [0047](./0047-web-local-credentials-and-phone-based-account-linking.md) | 웹 로컬 자격증명을 별도 테이블로 분리하고 휴대폰 번호로 계정을 공유한다 | Proposed | 2026-08-16 |
+| [0048](./0048-web-refresh-token-httponly-cookie.md) | 웹 refresh 토큰은 HttpOnly 쿠키로 내리고 같은 엔드포인트에 쿠키 채널을 얹는다 | Proposed | 2026-08-16 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
