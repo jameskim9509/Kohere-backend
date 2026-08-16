@@ -50,6 +50,15 @@ public class SecurityConfig {
                     .requestMatchers(
                         HttpMethod.POST, "/api/v1/auth/social-login", "/api/v1/auth/reissue")
                     .permitAll()
+                    // 임대인 웹 가입용 연락처 SMS 인증(US-1-13) — 계정이 없는 가입 전 단계라 주체를 세울 수 없다.
+                    // 아래 (2)의 /auth/phone/verification-code·/auth/phone/verify는 정확 경로 매처라
+                    // 한 세그먼트 깊은 이 경로를 덮지 않지만, 순서가 뒤집혀도 안전하도록 공개 티어에 먼저 둔다.
+                    // PublicPaths.ALL에도 같은 두 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
+                    .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/auth/phone/signup/verification-code",
+                        "/api/v1/auth/phone/signup/verify")
+                    .permitAll()
                     .requestMatchers("/actuator/health", "/swagger-ui/**")
                     .permitAll()
                     // 도로명 주소 검색(ADR-0042)과 인근 역 검색(ADR-0044)은 등록 폼 전용이라

@@ -17,7 +17,14 @@ import org.springframework.util.AntPathMatcher;
 final class PublicPaths {
 
   private static final String[] ALL = {
-    "/api/v1/auth/social-login", "/api/v1/auth/reissue", "/actuator/health", "/swagger-ui/**"
+    "/api/v1/auth/social-login",
+    "/api/v1/auth/reissue",
+    // 임대인 웹 가입용 연락처 SMS 인증(US-1-13) — 계정을 만들기 전에 부르는 경로라 신원이 무관하다.
+    // 만료된 access 토큰이 남아 있는 브라우저가 가입 화면에서 401 TOKEN_EXPIRED를 맞지 않게 여기에도 넣는다.
+    "/api/v1/auth/phone/signup/verification-code",
+    "/api/v1/auth/phone/signup/verify",
+    "/actuator/health",
+    "/swagger-ui/**"
   };
 
   private static final AntPathMatcher MATCHER = new AntPathMatcher();

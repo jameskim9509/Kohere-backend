@@ -13,7 +13,7 @@
 
 | 모듈 | 스토어 | 테이블/컬렉션(키스페이스) | MVP |
 | --- | --- | --- | --- |
-| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}` / `social_accounts`·`local_accounts`(웹 로컬 자격증명) | ✅ |
+| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}`·`signup-phone:code:{정규화번호}`·`signup-phone:verified:{정규화번호}`·`signup-phone:rate:phone:{정규화번호}`·`signup-phone:rate:ip:{IP}`(가입용 SMS 인증·레이트리밋) / `social_accounts`·`local_accounts`(웹 로컬 자격증명) | ✅ |
 | [`user`](#4-2-user) | **MySQL** | `users`·`user_blocks`(사용자 차단, US-4-8)·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안)·`diagnosisFlowSessions`(v2 서버 주도 진행 세션) — 인라인 언어-키 맵 번역, US-2-5·US-2-6·US-2-7 | ✅ |
@@ -138,6 +138,7 @@
 - **검증**: 입력 인증번호 해시가 `codeHash`와 일치하고 미만료·시도 미초과면 `phone-verify:verified:{userId}`에 연락처 기록(코드 키는 만료/삭제). 불일치·만료는 `422 AUTH_PHONE_VERIFICATION_FAILED`.
 - **임대인 온보딩 제출**: `auth`가 `phone-verify:verified:{userId}`의 연락처와 제출 `phoneNumber`를 대조 → 일치해야 `user` 온보딩 완료 명령 진행. 확정 `phoneNumber`는 `users.phone_number`로 영속(아래 §4-2), 인증 흔적은 TTL로 소멸한다(영속 안 함).
 - **민감정보**: `phoneNumber`는 응답·로그 마스킹(예 `010-****-5678`), 인증번호 원문은 보관·로그하지 않는다(해시만).
+- **가입 전(비로그인) 인증은 별도 키스페이스다**: 임대인 웹 회원가입의 선행 인증은 `userId`가 없어 이 키를 쓸 수 없다 — 아래 **(A-5)** `signup-phone:*` 참조.
 
 #### (A-4) 사업자번호 검증(`POST /api/v1/auth/business/verify`) — 무상태, Redis 마커 없음
 
@@ -148,6 +149,26 @@
 - **검증**: `POST /api/v1/auth/business/verify`가 `BusinessRegistryVerifier`로 동기 검증한다. 정상(계속) 사업자면 `verified:true`. 미등록·휴폐업·진위 실패는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애·타임아웃은 공통 `502 UPSTREAM_ERROR`(재시도 유도). 검증 서비스 회신 상호·대표자는 검증 응답 표시용으로만 쓰며 저장하지 않는다. 레이트리밋 임계값 미정(확인 필요).
 - **인가**: 정식 토큰(`ACTIVE`, `ROLE_USER`) 필수. 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출 시 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) `ACTIVE` 사용자면 `403 FORBIDDEN`. 온보딩 제출과는 무관하다(온보딩 게이트에 사업자번호 항목 없음 — §4-2·§4-1 A-3).
 - **민감정보**: 사업자번호 원문은 보관·로그하지 않고, 응답엔 마스킹값(예 `****567890`)만 노출한다.
+
+#### (A-5) Redis — 가입용 연락처 인증(`SignupPhoneVerification`, 임대인 웹·비로그인)
+
+임대인 웹 회원가입(§4-1 C `local_accounts` · [ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) **제출 전에** 수행하는 번호 소유 인증(US-1-13). 인증번호 정책(6자리·코드 TTL 5분·검증 마커 30분·검증 시도 5회·재발송 간격 60초 — `app.phone.*`)과 발송 포트 `VerificationSmsSender`, 해시(SHA-256+pepper)는 **(A-3)과 그대로 공유**한다. 원본 차이는 **키와 접근 통제 둘**이다 — 가입 전 단계라 `userId`가 없어 **정규화(숫자만)한 휴대폰 번호가 곧 키**이고, 두 엔드포인트가 **permitAll**이다. 나머지 차이(번호·IP 이중 레이트리밋, 검증 실패를 `422` 한 코드로 통일)는 그 둘에서 따라 나온다 — 토큰으로 주체를 묶을 수 없으니 남는 식별자로 한도를 걸어야 하고, 응답 차이가 곧 챌린지 상태 노출이 되니 구분하지 않는다. domain-model `SignupPhoneVerification`.
+
+**키스페이스** (Redis · AWS ElastiCache)
+
+| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
+| --- | --- | --- | --- | --- |
+| `signup-phone:code:{정규화번호}` | Hash | `codeHash` · `attempts`(int) · `issuedAt` · `expiresAt` | 인증번호 만료(A-3과 동일 — 5분) | 인증번호 발송·검증. 대조 대상 번호는 **값이 아니라 키**다(A-3은 키가 `userId`라 번호를 값으로 들지만 여기선 중복이 된다) |
+| `signup-phone:verified:{정규화번호}` | String | 상수 `"1"`(존재 자체가 의미) | 검증 마커 만료(A-3과 동일 — 30분) | 웹 회원가입 제출이 대조하고 **성공 시 소비(삭제)** 한다. 소비처가 하나뿐이라 용도 구분 필드가 없다 |
+| `signup-phone:rate:phone:{정규화번호}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 같은 번호로의 발송 남용 차단 — 초과 시 `429 TOO_MANY_REQUESTS` |
+| `signup-phone:rate:ip:{IP}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 번호를 바꿔가며 발송비를 태우는 남용 차단 — 초과 시 `429` |
+
+- **발송**: (A-3)과 같이 **동기 발송**하고 **발송에 성공한 뒤에만** `signup-phone:code:{정규화번호}`를 (재)설정한다(발송 실패 시 챌린지 미저장 + `502 UPSTREAM_ERROR`). 저장 전에 **재발송 쿨다운 60초 → 번호·IP 시간당 한도** 순으로 판정하며, 셋 중 무엇을 어겨도 응답은 `429 TOO_MANY_REQUESTS` 하나다.
+- **레이트리밋 한도**(`app.auth.signup-phone.*`): **번호 5회/1시간 · IP 20회/1시간**(#229 D6). 카운터는 `INCR` + 첫 증가에서만 `EXPIRE`를 거는 **고정 창**이고, **발송 성공이 아니라 시도**를 센다 — 성공분만 세면 provider 장애를 반복시키는 것만으로 한도를 무력화할 수 있다. IP는 리버스 프록시(Caddy) 뒤라 `X-Forwarded-For` 최좌측 값을 쓰며, 그 값은 호출자가 위조할 수 있으므로 **IP 한도는 비용 가드이지 인가가 아니다**(우회 불가한 방어는 번호 한도·쿨다운).
+- **검증**: 입력 인증번호 해시가 `codeHash`와 일치하고 미만료·시도 미초과면 `signup-phone:verified:{정규화번호}`에 마커를 남기고 코드 키를 삭제한다. **챌린지 부재·불일치·만료·시도 상한 초과가 모두 `422 AUTH_PHONE_VERIFICATION_FAILED`** 로, 시도 초과를 `429`로 구분하는 (A-3)과 다르다 — 비로그인 경로에서는 응답의 차이 자체가 챌린지 존재·시도 잔량을 알려 주는 신호가 된다.
+- **계정 존재 여부 비노출**: 발송·확인 어느 쪽도 `users`를 조회하지 않는다. 가입 이력이 있는 번호든 없는 번호든 같은 응답이며, 연동 판정은 가입 제출 시점에만 이뤄진다.
+- **앱 심사용 고정 인증번호 우회(`FixedVerificationPolicy`) 미적용**: 그 우회는 `userId` + Google 소셜 계정으로 판정하는데 가입 전 단계에는 둘 다 없다. 이 경로는 프로파일과 무관하게 항상 실제 발급·발송을 타며, 로컬은 `LoggingVerificationSmsSender`가 인증번호를 콘솔에 찍는다.
+- **민감정보**: 번호·IP가 **키에 실리지만** 전부 TTL(코드 5분·마커 30분·카운터 1시간)로 소멸해 영속하지 않는다. 응답·로그의 번호는 마스킹(예 `010-****-5678`), 인증번호 원문은 보관·로그하지 않는다(해시만).
 
 #### (B) MySQL — 소셜 연동(`social_accounts`)
 
