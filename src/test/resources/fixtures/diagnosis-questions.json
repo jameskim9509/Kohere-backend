@@ -1,0 +1,324 @@
+[
+  {
+    "_id": "region",
+    "field": "region",
+    "question": {
+      "en": "Which region will you live in?",
+      "ko": "어느 지역에서 거주할 예정인가요?"
+    },
+    "select": {
+      "type": "SINGLE",
+      "max": 1
+    },
+    "options": [
+      {
+        "code": "SEOUL",
+        "label": {
+          "en": "Seoul",
+          "ko": "서울"
+        }
+      },
+      {
+        "code": "BUSAN",
+        "label": {
+          "en": "Busan",
+          "ko": "부산"
+        }
+      },
+      {
+        "code": "GYEONGGI",
+        "label": {
+          "en": "Gyeonggi",
+          "ko": "경기"
+        }
+      }
+    ],
+    "active": true
+  },
+  {
+    "_id": "regionRetry",
+    "field": "regionRetry",
+    "question": {
+      "en": "There are no rooms in this region yet. Would you like to look in another region?",
+      "ko": "현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?"
+    },
+    "select": {
+      "type": "SINGLE",
+      "max": 1
+    },
+    "options": [
+      {
+        "code": "YES",
+        "label": {
+          "en": "Yes",
+          "ko": "예"
+        }
+      },
+      {
+        "code": "NO",
+        "label": {
+          "en": "No",
+          "ko": "아니오"
+        }
+      }
+    ],
+    "active": true
+  },
+  {
+    "_id": "purpose",
+    "field": "purpose",
+    "question": {
+      "en": "What is your purpose of stay?",
+      "ko": "입국 목적이 무엇인가요?"
+    },
+    "select": {
+      "type": "SINGLE",
+      "max": 1
+    },
+    "options": [
+      {
+        "code": "STUDY",
+        "label": {
+          "en": "Study",
+          "ko": "유학(학업)"
+        }
+      },
+      {
+        "code": "NON_STUDY",
+        "label": {
+          "en": "Other",
+          "ko": "그 외"
+        }
+      }
+    ],
+    "active": true
+  },
+  {
+    "_id": "university",
+    "field": "university",
+    "question": {
+      "en": "Which university do you attend?",
+      "ko": "어느 대학교에 다니나요?"
+    },
+    "select": {
+      "type": "SINGLE",
+      "max": 1
+    },
+    "options": [
+      {
+        "code": "HUFS_KHU_KOREA",
+        "label": {
+          "en": "HUFS · Kyung Hee · Korea Univ.",
+          "ko": "한국외대·경희대·고려대"
+        }
+      },
+      {
+        "code": "SKKU_SUNGSHIN",
+        "label": {
+          "en": "Sungkyunkwan · Sungshin Women's",
+          "ko": "성균관대·성신여대"
+        }
+      },
+      {
+        "code": "SNU_CAU_SOONGSIL",
+        "label": {
+          "en": "Seoul National · Chung-Ang · Soongsil",
+          "ko": "서울대·중앙대·숭실대"
+        }
+      },
+      {
+        "code": "HONGIK_YONSEI_EWHA",
+        "label": {
+          "en": "Hongik · Yonsei · Ewha Womans",
+          "ko": "홍익대·연세대·이화여대"
+        }
+      },
+      {
+        "code": "KONKUK_SEJONG_HYU",
+        "label": {
+          "en": "Konkuk · Sejong · Hanyang",
+          "ko": "건국대·세종대·한양대"
+        }
+      },
+      {
+        "code": "ETC",
+        "label": {
+          "en": "Other",
+          "ko": "기타"
+        }
+      }
+    ],
+    "active": true
+  },
+  {
+    "_id": "district",
+    "field": "district",
+    "question": {
+      "en": "Which district will you live in?",
+      "ko": "어느 지역(구)에서 거주할 예정인가요?"
+    },
+    "select": {
+      "type": "SINGLE",
+      "max": 1
+    },
+    "options": [
+      {
+        "code": "GURO_GU",
+        "label": {
+          "en": "Guro-gu",
+          "ko": "구로구"
+        }
+      },
+      {
+        "code": "YEONGDEUNGPO_GU",
+        "label": {
+          "en": "Yeongdeungpo-gu",
+          "ko": "영등포구"
+        }
+      },
+      {
+        "code": "GEUMCHEON_GU",
+        "label": {
+          "en": "Geumcheon-gu",
+          "ko": "금천구"
+        }
+      },
+      {
+        "code": "GWANAK_GU",
+        "label": {
+          "en": "Gwanak-gu",
+          "ko": "관악구"
+        }
+      },
+      {
+        "code": "DONGDAEMUN_GU",
+        "label": {
+          "en": "Dongdaemun-gu",
+          "ko": "동대문구"
+        }
+      },
+      {
+        "code": "ETC",
+        "label": {
+          "en": "Other",
+          "ko": "기타"
+        }
+      }
+    ],
+    "active": true
+  },
+  {
+    "_id": "conditions",
+    "field": "conditions",
+    "question": {
+      "en": "Select your housing conditions (up to 3).",
+      "ko": "원하는 주거 조건을 선택하세요(최대 3개)."
+    },
+    "select": {
+      "type": "MULTI",
+      "max": 3
+    },
+    "options": [
+      {
+        "code": "MOVE_IN_NOW",
+        "label": {
+          "en": "Immediate move-in",
+          "ko": "즉시 입주"
+        }
+      },
+      {
+        "code": "FEMALE_ONLY",
+        "label": {
+          "en": "Female only",
+          "ko": "여성 전용"
+        }
+      },
+      {
+        "code": "PRIVATE_BATH",
+        "label": {
+          "en": "Private bath",
+          "ko": "개인 욕실"
+        }
+      },
+      {
+        "code": "ENGLISH_OK",
+        "label": {
+          "en": "English available",
+          "ko": "영어 가능"
+        }
+      },
+      {
+        "code": "ADDRESS_REGISTRATION",
+        "label": {
+          "en": "Resident registration",
+          "ko": "전입신고 가능"
+        }
+      },
+      {
+        "code": "NO_MAINT_FEE",
+        "label": {
+          "en": "No maintenance fee",
+          "ko": "관리비 없음"
+        }
+      },
+      {
+        "code": "MEALS_INCLUDED",
+        "label": {
+          "en": "Meals provided",
+          "ko": "식사 제공"
+        }
+      },
+      {
+        "code": "DOUBLE_ROOM",
+        "label": {
+          "en": "Double room",
+          "ko": "2인실"
+        }
+      }
+    ],
+    "active": true
+  },
+  {
+    "_id": "monthlyRent",
+    "field": "monthlyRent",
+    "question": {
+      "en": "What is your monthly rent range (min–max)? (KRW)",
+      "ko": "월세 범위(최소~최대)는 얼마인가요?(원)"
+    },
+    "select": {
+      "type": "NUMBER_RANGE",
+      "max": 1
+    },
+    "options": [],
+    "active": true
+  },
+  {
+    "_id": "arcStatus",
+    "field": "arcStatus",
+    "question": {
+      "en": "What is your ARC issuance status?",
+      "ko": "외국인등록증(ARC) 발급 상태는 어떤가요?"
+    },
+    "select": {
+      "type": "SINGLE",
+      "max": 1
+    },
+    "options": [
+      {
+        "code": "ARC_ISSUED",
+        "label": {
+          "en": "Issued",
+          "ko": "발급 완료"
+        }
+      },
+      {
+        "code": "NO_ARC",
+        "label": {
+          "en": "Pending",
+          "ko": "발급 예정"
+        }
+      }
+    ],
+    "active": true
+  }
+]

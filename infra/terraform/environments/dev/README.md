@@ -228,6 +228,16 @@ mail_from        = "noreply@kohere.app"
 naver_search_client_id     = "..."   # sensitive
 naver_search_client_secret = "..."   # sensitive
 
+# --- NCP Maps Geocoding (도로명 주소 검색, 옵션 — SSM SecureString) ---
+# 미설정 시 앱은 정상 기동하되 주소 검색(GET /api/v1/listings/addresses)만 502. NCP 콘솔에서 Maps Application 등록 후 발급(위 검색 API와 다른 키).
+naver_geocode_client_id     = "..."   # sensitive
+naver_geocode_client_secret = "..."   # sensitive
+
+# --- 카카오 로컬 API (인근 역 검색 · 인근 대학 파생, 옵션 — SSM SecureString) ---
+# 미설정 시 앱은 정상 기동하되 역 검색(GET /api/v1/listings/stations)만 502이고 등록의 인근 대학이 빈 배열.
+# 카카오 개발자 콘솔에서 앱 생성 → 로컬 API 활성화 후 REST API 키 발급(네이버·NCP와 다른 콘솔).
+kakao_rest_api_key = "..."   # sensitive
+
 # --- CI/CD (모두 default 있음) ---
 github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"
@@ -402,6 +412,14 @@ aws ec2 delete-volume --volume-id <vol-id> --region ap-northeast-2
 
 - 원격 **state 버킷**(`bootstrap/`)은 이 destroy 대상이 아니다 — 여러 환경이 공유하므로 그대로 둔다.
 - ECR 리포지토리/이미지도 dev destroy 대상이 아니다(bootstrap 소유·prod와 공유).
+- **콘텐츠 이미지 S3 버킷**(`module.s3_cloudfront`)은 destroy 대상이지만 `force_destroy` 가 없어 객체가 남아 있으면 `BucketNotEmpty` 로 실패한다. 앱이 매물 사진을 이 버킷에 올리므로([ADR-0041](../../../../docs/adr/0041-listing-image-upload-to-s3.md)) 먼저 비운다:
+
+  ```bash
+  BUCKET=$(terraform output -raw images_bucket)
+  aws s3 rm "s3://$BUCKET" --recursive
+  ```
+
+  버전 관리를 켠 적이 있는 버킷이면(모듈 기본값은 이제 `enable_versioning = false` 지만 예전 기본값은 `true` 였다) 위 명령이 이전 버전·삭제 마커를 남긴다. `aws s3api list-object-versions` 로 뽑아 `aws s3api delete-objects` 로 지워야 destroy가 통과한다.
 
 ---
 

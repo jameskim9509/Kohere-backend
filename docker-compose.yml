@@ -1,13 +1,14 @@
-# Kohere 로컬 개발 스택 (M0-C) — app + MySQL + MongoDB + Redis + MailHog 일괄 기동
+# Kohere 로컬 개발 스택 (M0-C) — app + MySQL + MongoDB + Redis + MailHog + MinIO 일괄 기동
 #
 #   전체 기동:   ./gradlew bootJar && docker compose up --build   # 앱 이미지는 미리 빌드한 jar를 COPY
-#   인프라만:    docker compose up -d mysql mongo redis mailhog   # 앱은 ./gradlew bootRun 으로 따로 실행(권장)
+#   인프라만:    docker compose up -d mysql mongo redis mailhog minio minio-init   # 앱은 ./gradlew bootRun 으로 따로 실행(권장)
 #   종료:        docker compose down            # 데이터 보존
 #                docker compose down -v          # 볼륨(데이터)까지 삭제
 #
 # 영속 배치(ADR-0005): MySQL=auth·user / MongoDB=listing·diagnosis / Redis=refresh 토큰(ADR-0006).
 # MailHog는 온보딩 이메일 인증용 로컬 SMTP(가짜 메일서버) — 받은 메일은 http://localhost:8025 웹 UI에서 확인한다.
-# 컨테이너는 서비스명(mysql·mongo·redis·mailhog)으로 서로를 찾는다. 기본 자격증명은 .env 로 덮어쓸 수 있다.
+# MinIO는 매물 사진용 S3 호환 저장소(ADR-0041) — 올라간 객체는 http://localhost:9001 콘솔에서 확인한다.
+# 컨테이너는 서비스명(mysql·mongo·redis·mailhog·minio)으로 서로를 찾는다. 기본 자격증명은 .env 로 덮어쓸 수 있다.
 name: kohere
 
 # 컨테이너 로그 상한(ADR-0038). json-file 드라이버 기본값은 max-file=1에 크기 무제한이다 — local은
@@ -71,6 +72,44 @@ services:
       timeout: 5s
       retries: 10
 
+  # 매물 사진 업로드용 S3 호환 저장소(ADR-0041). S3와 같은 API라 앱은 endpoint만 바꿔 같은 어댑터를 쓴다 —
+  # 로컬 전용 스텁을 두지 않으므로 "로컬만 통과"하는 업로드 경로가 생기지 않는다.
+  #   콘솔: http://localhost:9001 (minioadmin / minioadmin) — 올라간 객체를 눈으로 확인
+  minio:
+    image: minio/minio:latest
+    container_name: kohere-minio
+    restart: unless-stopped
+    logging: *default-logging
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000" # S3 API (앱이 PutObject 하는 포트)
+      - "9001:9001" # 웹 콘솔
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # 버킷을 한 번 만들고 끝나는 일회성 잡. MinIO는 버킷을 자동 생성하지 않아 첫 업로드가 NoSuchBucket으로 실패한다.
+  minio-init:
+    image: minio/mc:latest
+    container_name: kohere-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} &&
+      mc mb --ignore-existing local/${APP_IMAGES_BUCKET:-kohere-local-images} &&
+      mc anonymous set download local/${APP_IMAGES_BUCKET:-kohere-local-images}
+      "
+
   # 온보딩 이메일 인증용 가짜 SMTP. 실제로 메일을 보내지 않고 1025(SMTP)로 받아 8025(웹 UI)에 보여준다.
   mailhog:
     image: mailhog/mailhog:latest
@@ -100,6 +139,8 @@ services:
         condition: service_healthy
       mailhog:
         condition: service_started
+      minio:
+        condition: service_healthy
     # logback JSON_FILE 출력 지점. 호스트 ./logs 에 바인드해 컨테이너 밖에서 바로 확인한다 —
     # dev/prod와 같은 경로(/logs)를 써서 "배포하면 어떤 모양인지"를 로컬에서 그대로 재현한다.
     #   확인: docker compose up -d app  →  tail -f logs/app.json
@@ -129,6 +170,17 @@ services:
       # 네이버 지역 검색 API — 실제 값은 gitignore된 .env에서 읽어 컨테이너 환경변수로만 전달한다.
       NAVER_SEARCH_CLIENT_ID: ${NAVER_SEARCH_CLIENT_ID:-}
       NAVER_SEARCH_CLIENT_SECRET: ${NAVER_SEARCH_CLIENT_SECRET:-}
+      # NCP Maps Geocoding — 도로명 주소 검색(ADR-0042). 위 검색 API와 콘솔·키가 다르다.
+      NAVER_GEOCODE_CLIENT_ID: ${NAVER_GEOCODE_CLIENT_ID:-}
+      NAVER_GEOCODE_CLIENT_SECRET: ${NAVER_GEOCODE_CLIENT_SECRET:-}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
+      # 매물 사진 저장소(MinIO, ADR-0041). 컨테이너에서는 서비스명으로 찾으므로 endpoint가 minio:9000이다.
+      # 응답 URL은 호스트 브라우저가 열 주소라 localhost:9000이어야 한다 — 업로드 주소와 읽기 주소가 다르다.
+      APP_IMAGES_BUCKET: ${APP_IMAGES_BUCKET:-kohere-local-images}
+      APP_IMAGES_ENDPOINT: http://minio:9000
+      APP_IMAGES_PUBLIC_BASE_URL: http://localhost:9000/${APP_IMAGES_BUCKET:-kohere-local-images}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       # 앱스토어 심사 계정 고정 인증번호(이슈 #180) — 기본 비활성. 켜면 등록된 심사 계정에 한해
       # 인증번호를 고정값으로 발급하고 외부 발송을 생략한다(운영 미사용).
       # 목록은 콤마 구분. tenant는 이메일 인증만, landlord는 SMS 인증만 허용된다.
@@ -145,3 +197,4 @@ volumes:
   mysql-data:
   mongo-data:
   redis-data:
+  minio-data:

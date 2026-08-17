@@ -378,7 +378,8 @@ class DiagnosisMongoIntegrationTest {
     assertThat(criteria.monthlyRentMin()).isEqualTo(200000);
     assertThat(criteria.monthlyRentMax()).isEqualTo(500000);
     assertThat(criteria.conditions()).containsExactly("FEMALE_ONLY");
-    assertThat(criteria.universityCodes()).containsExactlyInAnyOrder("SNU", "CAU", "SOONGSIL");
+    assertThat(criteria.includedUniversityCodes())
+        .containsExactlyInAnyOrder("SNU", "CAU", "SOONGSIL");
     assertThat(criteria.district()).isNull();
     assertThat(criteria.sort()).isEqualTo("recommended,desc");
   }
@@ -411,25 +412,25 @@ class DiagnosisMongoIntegrationTest {
   }
 
   @Test
-  @DisplayName("⑥ ARC 미발급(NO_ARC)은 conditions에 NO_ARC를 파생하고 추천 조건으로 전달한다(최대 3개 제한 제외)")
-  void arcNoArcDerivesNoArcCondition() {
+  @DisplayName("⑥ ARC 미발급(NO_ARC)은 conditions를 건드리지 않고 arcStatus로 추천 조건에 전달된다")
+  void arcNoArcPassesArcStatusToCriteria() {
     long userId = 24L;
     answer(userId, "region", "SEOUL");
     answer(userId, "purpose", "STUDY");
     answer(userId, "university", "SNU_CAU_SOONGSIL");
-    // ④ 3개 + 파생 NO_ARC = 4개여도 NO_ARC는 최대 3개 계산에서 제외되어 확정된다.
     answerCodes(userId, "conditions", Set.of("FEMALE_ONLY", "PRIVATE_BATH", "ENGLISH_OK"));
     answerRent(userId, 200000, 500000);
     answer(userId, "arcStatus", "NO_ARC");
     DiagnosisCreatedResponse created = diagnosisService.submit(userId);
 
+    // ⑥은 ④와 완전히 분리된 축이라 사용자가 고른 ④ 3개만 conditions에 남는다.
     DiagnosisResponse detail = diagnosisService.getDetail(userId, created.diagnosisId());
     assertThat(detail.conditions())
-        .contains(
-            DiagnosisCondition.NO_ARC,
+        .containsExactlyInAnyOrder(
             DiagnosisCondition.FEMALE_ONLY,
             DiagnosisCondition.PRIVATE_BATH,
             DiagnosisCondition.ENGLISH_OK);
+    assertThat(detail.arcStatus()).isEqualTo(ArcStatus.NO_ARC);
 
     ArgumentCaptor<RecommendationCriteria> captor =
         ArgumentCaptor.forClass(RecommendationCriteria.class);
@@ -438,25 +439,36 @@ class DiagnosisMongoIntegrationTest {
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
     seedNoMatchSuggestion();
     diagnosisService.getRecommendations(userId, created.diagnosisId(), 0, 20, "recommended,desc");
-    assertThat(captor.getValue().conditions()).contains("NO_ARC");
+    // listing은 arcStatus=NO_ARC일 때만 arcRequired=NOT_REQUIRED 매물로 좁힌다.
+    assertThat(captor.getValue().arcStatus()).isEqualTo("NO_ARC");
+    assertThat(captor.getValue().conditions()).doesNotContain("NO_ARC");
   }
 
   @Test
-  @DisplayName("⑥ ARC 발급 완료(ARC_ISSUED)는 NO_ARC 조건을 만들지 않는다")
-  void arcIssuedHasNoNoArc() {
+  @DisplayName("⑥ ARC 발급 완료(ARC_ISSUED)는 arcStatus 그대로 전달되고 conditions를 늘리지 않는다")
+  void arcIssuedPassesArcStatusToCriteria() {
     long userId = 25L;
     completeStudyFlow(userId); // arcStatus=ARC_ISSUED
     DiagnosisCreatedResponse created = diagnosisService.submit(userId);
-    assertThat(diagnosisService.getDetail(userId, created.diagnosisId()).conditions())
-        .doesNotContain(DiagnosisCondition.NO_ARC)
-        .contains(DiagnosisCondition.FEMALE_ONLY);
+    DiagnosisResponse detail = diagnosisService.getDetail(userId, created.diagnosisId());
+    assertThat(detail.conditions()).containsExactly(DiagnosisCondition.FEMALE_ONLY);
+    assertThat(detail.arcStatus()).isEqualTo(ArcStatus.ARC_ISSUED);
+
+    ArgumentCaptor<RecommendationCriteria> captor =
+        ArgumentCaptor.forClass(RecommendationCriteria.class);
+    given(listingRecommendationService.recommendByCriteria(captor.capture()))
+        .willReturn(emptyPage());
+    given(userAccountService.getLanguage(anyLong())).willReturn("ko");
+    seedNoMatchSuggestion();
+    diagnosisService.getRecommendations(userId, created.diagnosisId(), 0, 20, "recommended,desc");
+    assertThat(captor.getValue().arcStatus()).isEqualTo("ARC_ISSUED");
   }
 
   @Test
-  @DisplayName("arcStatus↔conditions 답 순서와 무관하게 NO_ARC 파생이 정합하고, 재답변 시 토글된다")
-  void arcConditionOrderAndToggle() {
+  @DisplayName("arcStatus↔conditions 답 순서와 무관하게 서로를 덮어쓰지 않고, 재답변 시 arcStatus만 토글된다")
+  void arcStatusAndConditionsAreIndependent() {
     long userId = 26L;
-    // ⑥을 ④보다 먼저 답해도 이후 ④ 답이 파생 NO_ARC를 덮어쓰지 않는다.
+    // ⑥을 ④보다 먼저 답해도 이후 ④ 답이 ⑥을 지우지 않는다.
     answer(userId, "arcStatus", "NO_ARC");
     answerCodes(userId, "conditions", Set.of("FEMALE_ONLY"));
     answer(userId, "region", "SEOUL");
@@ -464,10 +476,11 @@ class DiagnosisMongoIntegrationTest {
     answer(userId, "university", "SNU_CAU_SOONGSIL");
     answerRent(userId, 200000, 500000);
     DiagnosisCreatedResponse pending = diagnosisService.submit(userId);
-    assertThat(diagnosisService.getDetail(userId, pending.diagnosisId()).conditions())
-        .contains(DiagnosisCondition.NO_ARC, DiagnosisCondition.FEMALE_ONLY);
+    DiagnosisResponse pendingDetail = diagnosisService.getDetail(userId, pending.diagnosisId());
+    assertThat(pendingDetail.conditions()).containsExactly(DiagnosisCondition.FEMALE_ONLY);
+    assertThat(pendingDetail.arcStatus()).isEqualTo(ArcStatus.NO_ARC);
 
-    // 새 진단에서 NO_ARC→ARC_ISSUED로 재답변하면 파생 NO_ARC 조건이 제거된다.
+    // 새 진단에서 NO_ARC→ARC_ISSUED로 재답변하면 arcStatus만 바뀌고 ④ 답은 그대로 남는다.
     answer(userId, "arcStatus", "NO_ARC");
     answerCodes(userId, "conditions", Set.of("PRIVATE_BATH"));
     answer(userId, "arcStatus", "ARC_ISSUED");
@@ -476,13 +489,13 @@ class DiagnosisMongoIntegrationTest {
     answer(userId, "university", "SNU_CAU_SOONGSIL");
     answerRent(userId, 200000, 500000);
     DiagnosisCreatedResponse issued = diagnosisService.submit(userId);
-    assertThat(diagnosisService.getDetail(userId, issued.diagnosisId()).conditions())
-        .doesNotContain(DiagnosisCondition.NO_ARC)
-        .contains(DiagnosisCondition.PRIVATE_BATH);
+    DiagnosisResponse issuedDetail = diagnosisService.getDetail(userId, issued.diagnosisId());
+    assertThat(issuedDetail.conditions()).containsExactly(DiagnosisCondition.PRIVATE_BATH);
+    assertThat(issuedDetail.arcStatus()).isEqualTo(ArcStatus.ARC_ISSUED);
   }
 
   @Test
-  @DisplayName("④ conditions에 파생 전용 NO_ARC를 직접 넣으면 INVALID_INPUT")
+  @DisplayName("④ conditions에 주거 조건이 아닌 NO_ARC를 넣으면 INVALID_INPUT")
   void conditionsRejectNoArcDirectSelection() {
     assertThatThrownBy(() -> answerCodes(27L, "conditions", Set.of("NO_ARC")))
         .isInstanceOf(InvalidInputException.class);

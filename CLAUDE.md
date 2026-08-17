@@ -35,8 +35,10 @@ CI([.github/workflows/ci.yml](.github/workflows/ci.yml))가 PR마다 `spotlessCh
 
 ## API 규약 ([docs/api/](docs/api/api-design-guide.md))
 
-- 모든 엔드포인트는 **`/api/v1`** 프리픽스, 응답은 **공통 래퍼 `{ success, data, error }`**(`common/response/ApiResponse`). 결정: [ADR-0004](docs/adr/0004-api-response-envelope.md).
+- 모든 엔드포인트는 **경로 프리픽스로 버전**을 가진다 — 기본은 **`/api/v1`**, 하위 호환이 깨지는 변경만 **`/api/v2`**(진단 서버 주도 흐름 · 매물 등록·조회). **매물 조회 v1은 데이터를 반환하지 않는 deprecated 스텁**이다(정본은 `/api/v2/listings*` — [ADR-0040](docs/adr/0040-listing-query-api-v2-and-v1-sunset.md)). 버전 정책은 [api-design-guide §2-1](docs/api/api-design-guide.md).
+- 응답은 **공통 래퍼 `{ success, data, error }`**(`common/response/ApiResponse`) — 버전과 무관하게 자동 래핑된다. 결정: [ADR-0004](docs/adr/0004-api-response-envelope.md) · [ADR-0013](docs/adr/0013-response-auto-wrapping.md).
 - **인증**: 소셜 로그인(Apple/Google) → 서버 JWT. **access=JWT(stateless)**, **refresh=불투명(opaque) 토큰(서버 해시 저장)**. 헤더 `Authorization: Bearer <accessToken>`.
+- **임대인 웹**은 이메일·비밀번호 **로컬 자격증명**(`local_accounts`)으로 가입·로그인하고 refresh는 **HttpOnly 쿠키**로 받는다(`reissue`·`logout`은 쿠키 우선 · 본문 fallback). 결정: [ADR-0047](docs/adr/0047-web-local-credentials-and-phone-based-account-linking.md) · [ADR-0048](docs/adr/0048-web-refresh-token-httponly-cookie.md).
 - **에러**: `common/exception`의 `ErrorCode` enum + `GlobalExceptionHandler`(`@RestControllerAdvice`). 코드 카탈로그·status 매핑은 [error-response-guide](docs/api/error-response-guide.md).
 - 설계 규약(페이지네이션·필터·지도 검색·날짜 UTC·enum UPPER_SNAKE·금액 KRW 정수)은 [api-design-guide](docs/api/api-design-guide.md).
 

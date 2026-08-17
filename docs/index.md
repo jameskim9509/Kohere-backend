@@ -60,7 +60,7 @@
 | --- | --- |
 | [system-overview](architecture/system-overview.md) | 시스템 전체 구성도/컴포넌트 |
 | [domain-model](architecture/domain-model.md) | 모듈별 **애그리거트 카탈로그**(루트·식별자·불변식·저장소·협력) — 전술적 도메인 정본 |
-| [sequence-diagrams](architecture/sequence-diagrams/README.md) | 유저 스토리별 사용자→앱→백엔드 **모듈** 시퀀스 다이어그램(모듈 분해·이벤트/호출 구분, 43종) |
+| [sequence-diagrams](architecture/sequence-diagrams/README.md) | 유저 스토리별 사용자→앱→백엔드 **모듈** 시퀀스 다이어그램(모듈 분해·이벤트/호출 구분, 48종) — 매물 등록은 [us-3-6-listing-registration](architecture/sequence-diagrams/03-listings-favorites/us-3-6-listing-registration.md), 임대인 웹 가입·로그인·병합(US-1-11~US-1-13·US-1-15)은 [01-auth-onboarding](architecture/sequence-diagrams/01-auth-onboarding/README.md) |
 
 ### database — 데이터베이스
 
@@ -75,6 +75,8 @@
 | --- | --- |
 | [adr/README](adr/README.md) | ADR 인덱스와 작성 방법 |
 | [0000-adr-template](adr/0000-adr-template.md) | ADR 작성 템플릿 |
+| [0047-web-local-credentials-and-phone-based-account-linking](adr/0047-web-local-credentials-and-phone-based-account-linking.md) | 웹 로컬 자격증명(`local_accounts`)을 `users`에서 분리하고 휴대폰 번호로 앱·웹 계정을 한 `user_id`에 공유(연동·병합) |
+| [0048-web-refresh-token-httponly-cookie](adr/0048-web-refresh-token-httponly-cookie.md) | 웹 refresh 토큰을 HttpOnly 쿠키 채널로 내리고 `reissue`·`logout`을 쿠키 우선·본문 fallback으로 읽는 결정 |
 
 ---
 

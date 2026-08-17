@@ -6,6 +6,7 @@ final class ListingMigrationCollections {
   static final String LISTINGS = "listings";
   static final String LISTING_CATALOG = "listingCatalog";
   static final String SEARCH_PLACES = "searchPlaces";
+  static final String UNIVERSITIES = "universities";
 
   private ListingMigrationCollections() {}
 }

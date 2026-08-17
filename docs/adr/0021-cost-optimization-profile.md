@@ -20,6 +20,7 @@ Accepted
   - DocumentDB `db.t3.medium` ~$81/mo, RDS `db.t4g.micro` ~$21/mo, ElastiCache 2노드 ~$35/mo, NAT ~$32/mo, 인터페이스 엔드포인트 ~$95/mo, ALB ~$16/mo, Fargate ~$41/mo → **합계 ~$370/mo**.
   - dev에서 이 수준의 HA·관리형 운영은 **명백한 과투자**다.
 - **로컬 개발은 이미 `docker-compose`로 app+MySQL+MongoDB+Redis+MailHog를 한 번에 띄운다**([docker-compose.yml](../../docker-compose.yml)). dev를 "클라우드에 올린 같은 compose"로 두면 로컬↔dev 구성이 일치해 친숙하고, 재현·디버깅이 쉽다.
+  > **개정(2026-08-14, [ADR-0041](./0041-listing-image-upload-to-s3.md))** — 매물 사진을 앱이 직접 올리게 되면서 **로컬 compose에 MinIO가 늘었다**(`app · mysql · mongo · redis · mailhog · minio` + 버킷을 한 번 만들고 끝나는 `minio-init`). **dev EC2는 그대로 5개**(`caddy · app · mysql · mongo · redis`)라 [ADR-0026](./0026-dev-host-memory-budget.md)의 2GB 예산은 영향을 받지 않는다 — MinIO도 MailHog와 같이 **로컬 전용**이고 dev·prod는 아래 결정대로 실 S3에 올린다. 앱은 S3와 MinIO에 같은 어댑터를 쓰고 endpoint·자격증명만 다르므로 "로컬↔dev 구성 일치"라는 근거 자체는 유지된다.
 - 단, **앱 이미지·DB 엔진은 prod과 동일**해야 호환성 검증이 의미가 있다(같은 ECR 이미지, `mysql:8.0`·`mongo:7`·`redis:7`).
 - 상태(state) 백엔드는 prod·dev 공통으로 **S3 + native lockfile**(DynamoDB 불요, [ADR-0020](./0020-terraform-remote-state-s3-dynamodb.md))을 쓰며 `key`로 환경을 분리한다(`prod/…`, `dev/…`).
 
@@ -28,7 +29,7 @@ Accepted
 **dev는 단일 EC2 1대에 dev 전용 `docker-compose`(Caddy · app · mysql · mongo · redis)를 기동하고, EIP를 Route53 A 레코드로 노출한다.** ALB·ECS·RDS·DocumentDB·ElastiCache·NAT를 **쓰지 않는다**.
 
 - **컴퓨트**: EC2 `t3.small` 1대(2vCPU/2GB, x86 — ECR 앱 이미지가 amd64, prod ECS `X86_64`와 일치). `docker compose`로 컨테이너를 `restart: unless-stopped`로 기동.
-- **이미지**: **app은 ECR**(CI가 push한 prod와 동일 빌드)에서 pull, `mysql:8.0`·`mongo:7`·`redis:7`은 Docker Hub. **MailHog는 로컬 compose 전용이라 dev에는 없다** — dev는 실 SMTP(Gmail SMTP)를 쓴다.
+- **이미지**: **app은 ECR**(CI가 push한 prod와 동일 빌드)에서 pull, `mysql:8.0`·`mongo:7`·`redis:7`은 Docker Hub. **MailHog·MinIO는 로컬 compose 전용이라 dev에는 없다** — dev는 실 SMTP(Gmail SMTP)와 실 S3 버킷을 쓴다.
 - **HTTPS(443)**: **Caddy** 컨테이너가 80/443을 받아 **Let's Encrypt 인증서를 자동 발급·갱신**하고 app(내부 8080)으로 프록시한다([ADR-0022](./0022-dev-https-caddy.md)). 도메인 제공 시 HTTPS(443), 없으면 `:80`(HTTP) 폴백. (prod의 ALB 443 종단을 dev에선 Caddy가 대신 — 갱신·reload를 자체 처리해 호스트 docker 명령 불필요.)
 - **시크릿**: **SSM Parameter Store SecureString**(무료·**Secrets Manager 미사용**, [ADR-0023](./0023-secrets-in-ssm-parameter-store.md)). `JWT_SECRET`·`REFRESH_PEPPER`·`EMAIL_PEPPER`는 Terraform이 자동 생성, `GOOGLE_CLIENT_ID`·SMTP 자격증명 등은 변수로 받아 파라미터로 저장. EC2가 부팅 시 인스턴스 프로파일로 `GetParameter`(+`kms:Decrypt`)하여 `/opt/kohere/.env`(0600)에 주입 — compose만 읽고 `docker inspect`/명령행 미노출.
 - **콘텐츠 이미지**(매물·생활팁·국기 등): prod과 **동일한 S3 + CloudFront 모듈**을 dev에도 둔다. **앱(백엔드)은 S3에 업로드만** 하고(인스턴스 역할) 응답에 **CDN URL**을 담는다 → **클라이언트가 그 URL로 CloudFront에서 직접** 이미지를 받는다(앱은 이미지 서빙 경로에 없음). 커스텀 도메인(`cdn.dev.kohere.app`) 지정 시 **Route53 alias→CloudFront**로 받고(인증서는 us-east-1 ACM·무료, Route53 레코드 무시 가능), 미지정 시 `*.cloudfront.net` 직접 — **비용 영향 없음**.

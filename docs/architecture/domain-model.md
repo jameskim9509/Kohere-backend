@@ -23,7 +23,7 @@
 | --- | --- | --- | --- |
 | [`auth`](#1-auth--인증온보딩) | `SocialAccount`, `RefreshToken`, `EmailVerification`, `PhoneVerification` (+ `BusinessVerification` — 무상태 검증, 영속 없음) | `SocialIdentity`, `TokenHash` | ✅ |
 | [`user`](#2-user--회원-프로필계정-lifecycle) | `User`, `UserBlock` | `FullName`, `Consent` | ✅ |
-| [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `GeoPoint`, `Address`, `RoomOffer`, `MatchedPlace` | ✅ |
+| [`listing`](#3-listing--매물-등록탐색찜) | `Listing`, `Favorite`, `RecentListing` | `GeoPoint`, `Address`, `Contact`, `RoomOffer`, `MatchedPlace` | ✅ |
 | [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis`, `DiagnosisFlowSession`(v2) | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
 | [`booking`](#5-booking--매물-신청예약) | `Booking`, `BookingReport` | — (`GreetingMessage`는 후속·이연) | ✅ |
 | [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | 후속·이연 |
@@ -40,7 +40,7 @@
 
 > [API 스펙](../api/specs/01-auth-onboarding.md)(`/api/v1/auth`) · [시퀀스](sequence-diagrams/01-auth-onboarding/README.md) · `allowedDependencies = {common}`
 
-소셜 로그인(Apple/Google) 자격을 회원 식별자로 매핑하고(소셜 로그인 시점에 제공자 토큰으로 확정한 `email`과 요청으로 받은 `name`을 `user`의 `User`에 즉시 채운다 — 온보딩까지 미루지 않음), 서버 자체 세션 토큰(불투명 refresh)의 발급·회전·재사용 탐지·무효화와 **ACTIVE(온보딩 완료) 사용자 전용 이메일 인증(인증번호 발송·검증)**, 그리고 **임대인 온보딩 중 연락처(휴대폰) SMS 인증**을 책임지는 인증 경계다. 사업자등록번호 검증(`BusinessVerification`)은 **온보딩과 분리된 ACTIVE 임대인 전용 무상태(stateless) 검증**으로, 온보딩 게이트가 아니라 매물 등록 시점에 정식 access 토큰으로 별도 호출된다(검증 결과를 서버에 저장하지 않고 응답 본문으로만 회신 — 아래 `BusinessVerification` 참조). 회원 프로필·상태(`PENDING`/`TERMS_AGREED`/`ACTIVE`/`WITHDRAWN`)는 `user` 모듈 소관이므로 여기선 회원 식별자(`userId`)로만 참조한다. 온보딩은 역할(`userType`: 세입자 `TENANT` / 임대인 `LANDLORD`)에 따라 분기하며, **소셜 로그인·약관 동의까지는 두 역할 공통**이고 이후 임대인만 연락처 인증(`PhoneVerification`)을 추가로 거친다 — **세입자 온보딩은 약관 동의만으로 완료**(이메일 인증은 온보딩 게이트가 아니라 ACTIVE 전용 별도 API로 분리, `AUTH_EMAIL_NOT_VERIFIED` 제거), **임대인 온보딩은 약관 동의 + 연락처 인증만으로 완료**(사업자번호 게이트 없음). 온보딩 제출 엔드포인트(세입자 `POST /auth/onboarding`, 임대인 `POST /auth/landlord/onboarding`)에서 `userType`이 확정된다.
+소셜 로그인(Apple/Google) 자격을 회원 식별자로 매핑하고(소셜 로그인 시점에 제공자 토큰으로 확정한 `email`과 요청으로 받은 `name`을 `user`의 `User`에 즉시 채운다 — 온보딩까지 미루지 않음), 서버 자체 세션 토큰(불투명 refresh)의 발급·회전·재사용 탐지·무효화와 **ACTIVE(온보딩 완료) 사용자 전용 이메일 인증(인증번호 발송·검증)**, 그리고 **임대인 온보딩 중 연락처(휴대폰) SMS 인증**을 책임지는 인증 경계다. 사업자등록번호 검증(`BusinessVerification`)은 **온보딩과 분리된 ACTIVE 임대인 전용 무상태(stateless) 검증**으로, 온보딩 게이트가 아니라 임대인이 필요할 때 정식 access 토큰으로 직접 호출한다(검증 결과를 서버에 저장하지 않고 응답 본문으로만 회신 — 아래 `BusinessVerification` 참조). **매물 등록 시점에는 이 검증을 호출하지 않는다** — 등록 API(`POST /api/v2/listings`)는 사업자등록번호를 **형식만 검증해 저장**하고, 진위는 **관리자가 승인 심사에서 수동으로 확인**한다. 회원 프로필·상태(`PENDING`/`TERMS_AGREED`/`ACTIVE`/`WITHDRAWN`)는 `user` 모듈 소관이므로 여기선 회원 식별자(`userId`)로만 참조한다. 온보딩은 역할(`userType`: 세입자 `TENANT` / 임대인 `LANDLORD`)에 따라 분기하며, **소셜 로그인·약관 동의까지는 두 역할 공통**이고 이후 임대인만 연락처 인증(`PhoneVerification`)을 추가로 거친다 — **세입자 온보딩은 약관 동의만으로 완료**(이메일 인증은 온보딩 게이트가 아니라 ACTIVE 전용 별도 API로 분리, `AUTH_EMAIL_NOT_VERIFIED` 제거), **임대인 온보딩은 약관 동의 + 연락처 인증만으로 완료**(사업자번호 게이트 없음). 온보딩 제출 엔드포인트(세입자 `POST /auth/onboarding`, 임대인 `POST /auth/landlord/onboarding`)에서 `userType`이 확정된다.
 
 **`SocialAccount`** — 소셜 제공자 자격을 한 명의 회원에 묶는 자격 매핑 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(provider, providerUserId)`.
 
@@ -106,7 +106,7 @@
 
 **불변식:** 발송은 온보딩 토큰(`PENDING`/`TERMS_AGREED` 모두 `onboardingCompleted=false`)을 가진 본인에 한함(임대인 분기) — 사용자당 활성 시도 1건(재발송은 기존 시도 대체); 인증 챌린지는 **SMS 발송이 성공한 뒤에만 확정**하고(동기 발송), provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 거부(재시도 유도 — 이메일 발송 실패와 대칭); 검증 시 챌린지가 없으면(미발송·만료·이미 검증으로 키 부재) 올릴 `attempts` 레코드가 없어 즉시 `422 AUTH_PHONE_VERIFICATION_FAILED`(재요청 유도); 챌린지가 있고 `attempts`가 상한 미만일 때 입력 인증번호 해시가 `codeHash`와 일치하면 `VERIFIED`로 전이하고, 불일치면 `attempts`를 올려 상한 초과 시 `429 TOO_MANY_REQUESTS`·아니면 `422 AUTH_PHONE_VERIFICATION_FAILED`(과도 재발송도 `429`); 임대인 온보딩 제출(`POST /auth/landlord/onboarding`)은 제출 `phoneNumber`가 `VERIFIED`된 번호와 일치해야 진행(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`); 인증번호 원문은 보관·로그하지 않음(해시만), `phoneNumber`는 응답·로그 마스킹(예 `010-****-5678`); 만료/완료 시도는 TTL로 자동 소멸. **인증번호 정책은 이메일 인증(`EmailVerification`)과 통일** — 인증번호 6자리·코드 TTL 5분·검증 마커 TTL 30분·검증 시도 5회·재발송 간격 60초이며, SMS provider는 인프라 어댑터로 격리한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 프로필 연락처 변경(US-1-5)도 같은 `PhoneVerification` 재인증을 거친다(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`).
 
-**`BusinessVerification`** — 임대인이 입력한 **사업자등록번호**의 진위·상태(정상 영업)를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md))로 확인하는 **무상태(stateless) 검증**이다. **온보딩과 분리된 ACTIVE 임대인 전용 검증**으로, 온보딩을 마친(`ACTIVE`·`userType=LANDLORD`) 임대인이 나중에(매물 등록 시점) 정식 access 토큰(ROLE_USER)으로 `POST /api/v1/auth/business/verify`를 호출한다 — 온보딩 게이트가 아니다. **검증 결과는 서버에 저장하지 않고(Redis 마커·해시 컬럼 없음) 응답 본문에만 담는다** — 따라서 애그리거트로 영속되지 않으며(단명 상태 없음), 요청 `{ businessRegistrationNumber(숫자 10자리) }` → 응답 `{ businessRegistrationNumber(마스킹), verified:true }`의 요청·응답 계약만 갖는다. 연락처 인증(`PhoneVerification`)의 "온보딩 중 인증 → 마커 → 온보딩 대조" 패턴(이메일 인증 `EmailVerification`은 #192로 온보딩에서 분리돼 ACTIVE 전용이 됐다)과 달리, 검증 결과를 저장·대조하는 마커가 없다.
+**`BusinessVerification`** — 임대인이 입력한 **사업자등록번호**의 진위·상태(정상 영업)를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md))로 확인하는 **무상태(stateless) 검증**이다. **온보딩과 분리된 ACTIVE 임대인 전용 검증**으로, 온보딩을 마친(`ACTIVE`·`userType=LANDLORD`) 임대인이 필요할 때 정식 access 토큰(ROLE_USER)으로 `POST /api/v1/auth/business/verify`를 직접 호출한다 — 온보딩 게이트가 아니다. **매물 등록 시점에는 이 검증을 호출하지 않는다** — 등록 API(`POST /api/v2/listings`)는 사업자등록번호를 **형식만 검증해 저장**하고, 진위는 **관리자가 승인 심사에서 수동으로 확인**한다([ADR-0033](../adr/0033-business-registry-verification.md)). **검증 결과는 서버에 저장하지 않고(Redis 마커·해시 컬럼 없음) 응답 본문에만 담는다** — 따라서 애그리거트로 영속되지 않으며(단명 상태 없음), 요청 `{ businessRegistrationNumber(숫자 10자리) }` → 응답 `{ businessRegistrationNumber(마스킹), verified:true }`의 요청·응답 계약만 갖는다. 연락처 인증(`PhoneVerification`)의 "온보딩 중 인증 → 마커 → 온보딩 대조" 패턴(이메일 인증 `EmailVerification`은 #192로 온보딩에서 분리돼 ACTIVE 전용이 됐다)과 달리, 검증 결과를 저장·대조하는 마커가 없다.
 
 **인가·판정:**
 
@@ -114,9 +114,9 @@
 | --- | --- |
 | 인가 | 정식 access 토큰(ACTIVE, ROLE_USER) 필수. 온보딩 토큰(PENDING/TERMS_AGREED, ROLE_ONBOARDING)으로 호출 시 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) ACTIVE 사용자면 `403 FORBIDDEN` |
 | 판정 | 사업자등록정보 검증 API 조회로 정상(계속) 사업자면 `verified:true`; 미등록·휴폐업·진위 실패는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애·타임아웃은 `502 UPSTREAM_ERROR` |
-| 저장 | 없음 — 검증 결과를 서버에 남기지 않는다(무상태). `user.businessRegistrationNumberHash` 컬럼에도 쓰지 않으며, 그 컬럼은 추후 매물 등록(별도 도메인·미구현) 시점에 채운다 |
+| 저장 | 없음 — 검증 결과를 서버에 남기지 않는다(무상태). `user.businessRegistrationNumberHash` 컬럼에도 쓰지 않으며, **매물 등록 시점에도 그 컬럼을 채우지 않는다** — 사업자등록번호 **원문**은 `listing`의 매물 문서(`Listing.businessRegistrationNumber`)가 보유한다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)) |
 
-**불변식:** 검증은 정식 access 토큰(ACTIVE·ROLE_USER)을 가진 임대인 본인에 한함 — 온보딩 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌 ACTIVE 사용자는 `403 FORBIDDEN`; 사업자등록정보 검증 API **동기 호출**로 국세청 사업자등록정보 진위·상태를 확인해 **정상(계속 사업자)만** `verified:true`로 회신하고, 미등록·휴업·폐업·진위 불일치는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애·타임아웃은 `502 UPSTREAM_ERROR`로 거부; **검증 결과를 서버에 저장하지 않는다**(Redis 마커 없음, `businessRegistrationNumberHash` 컬럼에도 쓰지 않음) — 결과는 응답 본문에만 담기며 온보딩 제출과 대조하지 않는다; 사업자번호 원문은 보관·로그하지 않고 응답·로그는 마스킹(예 `****567890`, 확인 필요). (확인 필요: 검증 서비스 회신 상호·대표자 활용 여부, 검증 레이트리밋 임계값)
+**불변식:** 검증은 정식 access 토큰(ACTIVE·ROLE_USER)을 가진 임대인 본인에 한함 — 온보딩 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌 ACTIVE 사용자는 `403 FORBIDDEN`; 사업자등록정보 검증 API **동기 호출**로 국세청 사업자등록정보 진위·상태를 확인해 **정상(계속 사업자)만** `verified:true`로 회신하고, 미등록·휴업·폐업·진위 불일치는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애·타임아웃은 `502 UPSTREAM_ERROR`로 거부; **검증 결과를 서버에 저장하지 않는다**(Redis 마커 없음, `businessRegistrationNumberHash` 컬럼에도 쓰지 않음) — 결과는 응답 본문에만 담기며 온보딩 제출과 대조하지 않는다; **`auth`는** 사업자번호 원문을 보관·로그하지 않고 응답·로그는 마스킹한다(예 `****567890`, 확인 필요) — 원문 보관은 `listing`의 매물 문서 한정으로 허용된다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)의 [ADR-0033](../adr/0033-business-registry-verification.md) 개정, `users` 테이블·온보딩에는 미채택). (확인 필요: 검증 서비스 회신 상호·대표자 활용 여부, 검증 레이트리밋 임계값)
 
 **값 객체(VO):**
 
@@ -150,7 +150,7 @@
 
 > [API 스펙](../api/specs/01-auth-onboarding.md)(`/api/v1/users/me`) · [시퀀스](sequence-diagrams/01-auth-onboarding/README.md) · `allowedDependencies = {common}`
 
-회원 프로필과 계정 생애주기(가입·약관 동의·온보딩·수정·탈퇴)를 소유한다. 사용자는 소셜 검증만 끝난 `PENDING` → 약관 동의 완료 `TERMS_AGREED` → 온보딩 완료 `ACTIVE` → 탈퇴 `WITHDRAWN`의 단방향 상태 모델을 가진다(약관 동의와 온보딩은 분리된 단계로 각각 상태를 전이한다). 회원은 역할(`userType`)에 따라 **세입자(`TENANT`, 외국인 거주 탐색자)** 와 **임대인(`LANDLORD`, 매물 등록자)** 으로 나뉘며 한 `User` 애그리거트로 통합 관리한다(별도 모듈 아님). 소셜 로그인·약관 동의까지는 공통이고 이후 온보딩에서 분기한다 — 세입자는 `gender`·`birthDate`·`country`·`visaType`를 온보딩에서 수집하고(단일 `name`·`email`은 소셜 로그인 시점에 확정돼 온보딩에서 재수집하지 않는다; `occupation`은 `lang`처럼 **선택** 수집 — 매물 추천·탐색에서 쓰지 않아 필수에서 제외(#187)), **임대인은 `phoneNumber`(SMS 인증 완료)·`birthDate` 두 필드로 온보딩을 완료**하며(단일 `name`은 세입자와 동일하게 소셜 로그인 시점에 확정돼 온보딩에서 재수집하지 않는다; 약관 동의 + 연락처 인증만 — 사업자번호는 온보딩에서 수집하지 않음) **`gender`·`occupation`·`visaType`을 미수집**한다(단일 `name`·`email`은 세입자와 동일하게 소셜 로그인 provider 값으로 보유 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집"을 개정(#192): email 수집 폼이 아니라 소셜 로그인 provider email 보유; 생년월일은 세입자와 동일하게 수집; `country`=`KR`·`lang`=`ko`는 임대인에게 입력받지 않고 **서버가 온보딩 시 고정으로 심는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 country 미수집" 결정을 개정(#141))(임대인 온보딩의 본인 확인은 `phoneNumber` SMS 인증이고, 세입자 `email`은 소셜 로그인으로 확정돼 온보딩 인증 게이트가 없다 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 임대인 사업자등록번호는 온보딩과 분리돼 추후 매물 등록 시점에 채워지며(온보딩 완료 시 `null`), 검증은 별도 무상태 API로 다룬다(§1 `BusinessVerification`). `userType`은 온보딩 제출 시 확정되고 이후 불변이다.
+회원 프로필과 계정 생애주기(가입·약관 동의·온보딩·수정·탈퇴)를 소유한다. 사용자는 소셜 검증만 끝난 `PENDING` → 약관 동의 완료 `TERMS_AGREED` → 온보딩 완료 `ACTIVE` → 탈퇴 `WITHDRAWN`의 단방향 상태 모델을 가진다(약관 동의와 온보딩은 분리된 단계로 각각 상태를 전이한다). 회원은 역할(`userType`)에 따라 **세입자(`TENANT`, 외국인 거주 탐색자)** 와 **임대인(`LANDLORD`, 매물 등록자)** 으로 나뉘며 한 `User` 애그리거트로 통합 관리한다(별도 모듈 아님). 소셜 로그인·약관 동의까지는 공통이고 이후 온보딩에서 분기한다 — 세입자는 `gender`·`birthDate`·`country`·`visaType`를 온보딩에서 수집하고(단일 `name`·`email`은 소셜 로그인 시점에 확정돼 온보딩에서 재수집하지 않는다; `occupation`은 `lang`처럼 **선택** 수집 — 매물 추천·탐색에서 쓰지 않아 필수에서 제외(#187)), **임대인은 `phoneNumber`(SMS 인증 완료)·`birthDate` 두 필드로 온보딩을 완료**하며(단일 `name`은 세입자와 동일하게 소셜 로그인 시점에 확정돼 온보딩에서 재수집하지 않는다; 약관 동의 + 연락처 인증만 — 사업자번호는 온보딩에서 수집하지 않음) **`gender`·`occupation`·`visaType`을 미수집**한다(단일 `name`·`email`은 세입자와 동일하게 소셜 로그인 provider 값으로 보유 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집"을 개정(#192): email 수집 폼이 아니라 소셜 로그인 provider email 보유; 생년월일은 세입자와 동일하게 수집; `country`=`KR`·`lang`=`ko`는 임대인에게 입력받지 않고 **서버가 온보딩 시 고정으로 심는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 country 미수집" 결정을 개정(#141))(임대인 온보딩의 본인 확인은 `phoneNumber` SMS 인증이고, 세입자 `email`은 소셜 로그인으로 확정돼 온보딩 인증 게이트가 없다 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 임대인 사업자등록번호는 온보딩에서 수집하지 않고 **매물 등록 시점에도 `users` 컬럼을 채우지 않는다**(항상 `null` — 원문은 `listing`의 매물 문서가 보유한다, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 검증은 별도 무상태 API로 다룬다(§1 `BusinessVerification`). `userType`은 온보딩 제출 시 확정되고 이후 불변이다.
 
 **`User`** — 회원의 프로필·동의·계정 생애주기를 일관성 경계로 묶는 애그리거트 루트. 식별자 `id`(소셜 자격→회원 매핑·세션 토큰·이메일 인증은 `auth` 소관). [값 객체: `FullName`, `Consent`]
 
@@ -161,8 +161,8 @@
 | `id` | 식별자 | 애그리거트 식별자(타 모듈은 이 값으로만 회원 참조) |
 | `userType` | enum `UserType` | 회원 역할(`TENANT` 세입자 / `LANDLORD` 임대인). 온보딩 제출 엔드포인트로 분기·확정, 이후 불변(확인 필요: NOT NULL DEFAULT `TENANT`) |
 | `name` | VO `FullName` | 회원 이름 — 세입자·임대인 공통 **단일 `name`**(역할 무관, 항상 존재). **소셜 로그인 시점에 확정**돼(요청 `name`을 신뢰 — Apple은 최초 1회만 이름을 준다) 온보딩에서 재수집하지 않으며, 수정은 `PATCH /users/me`. API는 단일 `name` 필드로 주고받고 저장도 단일 `name` 컬럼(`VARCHAR(200)` — 구 `first_name`+`last_name`을 통합, 마이그레이션 V19; [database-design](../database/database-design.md) §4-2) |
-| `phoneNumber` | String | 임대인 연락처(임대인 온보딩 필수, 세입자 미수집). 온보딩 전 `auth` SMS 인증(`PhoneVerification`의 `VERIFIED`)을 거친 값 — 응답·로그 마스킹(예 `010-****-5678`). 형식 확인 필요(예 VARCHAR(20)) |
-| `businessRegistrationNumber` | String, nullable | 임대인 사업자등록번호(세입자 미수집). **온보딩에서는 수집하지 않아 온보딩 완료 시 `null`** — 추후 매물 등록(별도 도메인·미구현) 시점에 채운다(현재 이 컬럼을 채우는 코드 경로 없음). 원문 비저장, 해시로만 영속(컬럼 `business_registration_number_hash`)하고 응답·로그 마스킹(예 `****567890`)(확인 필요) |
+| `phoneNumber` | String | 임대인 **개인** 연락처(임대인 온보딩 필수, 세입자 미수집). 온보딩 전 `auth` SMS 인증(`PhoneVerification`의 `VERIFIED`)을 거친 값 — 응답·로그 마스킹(예 `010-****-5678`)이며 매물 응답에 노출하지 않는다. 매물별 담당 연락처(`Listing.contact`)는 **별개 값**이라 마스킹 대상이 아니다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 형식 확인 필요(예 VARCHAR(20)) |
+| `businessRegistrationNumber` | String, nullable | 임대인 사업자등록번호(세입자 미수집). **온보딩에서 수집하지 않고 매물 등록 시점에도 채우지 않아 항상 `null`** — 이 컬럼(`business_registration_number_hash`)을 채우는 코드 경로가 없다. 등록 확인용 원문은 `listing`의 매물 문서(`Listing.businessRegistrationNumber`)가 보유한다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 값이 생긴다면 원문 비저장·해시로만 영속하고 응답·로그 마스킹(예 `****567890`)(확인 필요) |
 | `nickname` | String | 시스템이 배정하는 표시용 닉네임(`형용사 + 사물`). 전역 유니크, 사용자 입력 아님 — 온보딩 완료 시 자동 배정(세입자·임대인 공통). 메인 화면 비노출(프로필·`더보기 탭`에서 확인) |
 | `gender` | enum `Gender` | 성별. 세입자 온보딩 필수(임대인 미수집) |
 | `birthDate` | LocalDate | 생년월일(과거 날짜만). 세입자·임대인 온보딩 필수 |
@@ -177,7 +177,7 @@
 | `updatedAt` | Instant | 최종 수정 시각(UTC) |
 | `withdrawnAt` | Instant(UTC), nullable | 탈퇴 시각(탈퇴 시 기록) |
 
-**불변식:** 상태 전이는 `PENDING → TERMS_AGREED → ACTIVE → WITHDRAWN`만 허용(역전이·건너뛰기 금지); **약관 동의** 상태 전이는 `PENDING`에서만 일어나며(→`TERMS_AGREED`) 이때 `consent`(이용약관·개인정보처리방침·마케팅 동의 + `agreedAt` + `termsVersion`)를 확정 — 이용약관·개인정보처리방침 동의가 모두 필요(미동의 `422 AUTH_REQUIRED_AGREEMENT_MISSING`)하고 마케팅 동의는 선택(기본 미동의); 이미 `TERMS_AGREED`면 약관 재호출은 상태·동의를 바꾸지 않는 멱등 성공(`200`, 의도적 재동의 아님 — 마케팅 동의 변경은 프로필 수정으로), 이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`; **온보딩 제출**은 `TERMS_AGREED`에서만 가능하며(약관 미동의 `PENDING` 상태에서 시도하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`) **역할별로 분기**한다 — 세입자는 `POST /auth/onboarding`으로 `gender`·`birthDate`·`country`·`visaType`와 **선택 필드** `occupation`(미전송이면 저장하지 않고(NULL) 응답에서 생략 — 매물 추천·탐색에서 쓰지 않아 필수에서 제외(#187), 값이 오면 enum 검증)·`lang`(미전송이면 저장하지 않고(NULL) 표시 시 `en`으로 폴백)을 제출하고(**단일 `name`·`email`은 소셜 로그인 시점에 확정돼 온보딩 요청 필드가 아니다** — #192), 임대인은 `POST /auth/landlord/onboarding`으로 **`phoneNumber`·`birthDate` 두 필드**를 제출하고(단일 `name`·`email`은 세입자와 동일하게 소셜 로그인 시점에 확정돼 온보딩 요청 필드가 아니다 — #192; 임대인은 `businessRegistrationNumber` 미수집; 생년월일은 세입자와 동일하게 수집; **`country`=`KR`·`lang`=`ko`는 임대인이 전송하지 않고 서버가 고정으로 심는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)), 성공 시 `ACTIVE`로 전이하면서 해당 필드를 한 번에 확정하고 `userType`(세입자 `TENANT` / 임대인 `LANDLORD`)을 확정(이후 불변)하며 `nickname`을 자동 배정한다(이미 `ACTIVE` 재요청은 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`); 온보딩 완료 게이트는 **역할별로 분기**한다 — **세입자**는 약관 동의(`TERMS_AGREED`)만으로 완료하고(이메일 인증은 더 이상 온보딩 게이트가 아니라 ACTIVE 전용 별도 API로 분리 — `AUTH_EMAIL_NOT_VERIFIED` 제거), **임대인**은 제출 `phoneNumber`가 `auth` SMS 인증(`VERIFIED`)된 번호와 일치해야 한다(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`; 우선순위 약관 동의 → 연락처 인증 — **사업자번호 게이트 없음**); `nickname`은 `NicknameGenerator`(도메인 서비스)가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 무작위 배정하되 전역 유니크가 보장될 때까지 재조합 재시도(상한 초과 시 fallback; 사용자 입력·수정 대상 아님); 필수 약관 동의는 프로필 수정으로 철회 불가(탈퇴 경로로만); 프로필 부분 수정은 `ACTIVE`에서만, 전송 필드만 변경(미전송 ≠ 비움) — **역할별로 수정 가능 필드가 갈린다**: 세입자는 `name`·`gender`·`birthDate`(과거만)·`country`·`occupation`·`visaType`·`lang`·`marketingAgreed`를, 임대인은 `name`·`phoneNumber`·`marketingAgreed`를 수정 가능하다(**`lang` 변경 주체는 세입자뿐** — 임대인 프로필 수정은 `lang`을 읽지 않고 `ko` 고정을 유지한다; `country`와 `lang`은 독립이라 `country`만 보내도 `lang`은 바뀌지 않고 `lang`만 보내면 `country`는 그대로이며, 각 필드는 전송한 값만 저장한다 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); 세입자·임대인 `email`은 소셜 로그인 값으로 고정돼 이 경로로 수정 불가(email 수정은 #192 범위 밖·후속 이슈); `nickname`·`userType`은 공통 불변; 임대인 `businessRegistrationNumber`는 온보딩에서 수집하지 않으므로 이 프로필 수정 경로 대상이 아니다 — 추후 매물 등록에서 다룬다; `phoneNumber`는 변경 시 **SMS 재인증(`PhoneVerification` VERIFIED) 필요** — 새 번호 재인증 후에만 반영(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`), [API 스펙](../api/specs/01-auth-onboarding.md) §9); 탈퇴는 `PENDING`/`TERMS_AGREED`/`ACTIVE`에서 `WITHDRAWN`으로(이미 `WITHDRAWN` 재요청 `409 USER_ALREADY_WITHDRAWN`); `WITHDRAWN`·부재 사용자 조회·수정은 `404 USER_NOT_FOUND`; 모든 변경은 `updatedAt`을 갱신; 탈퇴(`WITHDRAWN`) 시 `withdrawnAt`을 기록하고 식별 PII(이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임)를 즉시 익명화한다(`lang`은 국적과 함께 `NULL`로 — 표시 언어도 사용자 식별정보이므로 익명화 범위에 포함, [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md) · [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — 임대인 PII(`name`·`email`·`phoneNumber`·`birthDate`, 및 추후 매물 등록에서 채워질 경우 `businessRegistrationNumber`(해시)) 익명화 범위는 확인 필요; `email`·`visaType`(및 임대인 `phoneNumber`, 값이 있으면 `businessRegistrationNumber`)은 민감정보로 로그·타 사용자 노출 시 마스킹(본인 `GET /users/me`는 평문 노출 — 단 임대인 프로필 응답 형태는 추후 확인 필요).
+**불변식:** 상태 전이는 `PENDING → TERMS_AGREED → ACTIVE → WITHDRAWN`만 허용(역전이·건너뛰기 금지); **약관 동의** 상태 전이는 `PENDING`에서만 일어나며(→`TERMS_AGREED`) 이때 `consent`(이용약관·개인정보처리방침·마케팅 동의 + `agreedAt` + `termsVersion`)를 확정 — 이용약관·개인정보처리방침 동의가 모두 필요(미동의 `422 AUTH_REQUIRED_AGREEMENT_MISSING`)하고 마케팅 동의는 선택(기본 미동의); 이미 `TERMS_AGREED`면 약관 재호출은 상태·동의를 바꾸지 않는 멱등 성공(`200`, 의도적 재동의 아님 — 마케팅 동의 변경은 프로필 수정으로), 이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`; **온보딩 제출**은 `TERMS_AGREED`에서만 가능하며(약관 미동의 `PENDING` 상태에서 시도하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`) **역할별로 분기**한다 — 세입자는 `POST /auth/onboarding`으로 `gender`·`birthDate`·`country`·`visaType`와 **선택 필드** `occupation`(미전송이면 저장하지 않고(NULL) 응답에서 생략 — 매물 추천·탐색에서 쓰지 않아 필수에서 제외(#187), 값이 오면 enum 검증)·`lang`(미전송이면 저장하지 않고(NULL) 표시 시 `en`으로 폴백)을 제출하고(**단일 `name`·`email`은 소셜 로그인 시점에 확정돼 온보딩 요청 필드가 아니다** — #192), 임대인은 `POST /auth/landlord/onboarding`으로 **`phoneNumber`·`birthDate` 두 필드**를 제출하고(단일 `name`·`email`은 세입자와 동일하게 소셜 로그인 시점에 확정돼 온보딩 요청 필드가 아니다 — #192; 임대인은 `businessRegistrationNumber` 미수집; 생년월일은 세입자와 동일하게 수집; **`country`=`KR`·`lang`=`ko`는 임대인이 전송하지 않고 서버가 고정으로 심는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)), 성공 시 `ACTIVE`로 전이하면서 해당 필드를 한 번에 확정하고 `userType`(세입자 `TENANT` / 임대인 `LANDLORD`)을 확정(이후 불변)하며 `nickname`을 자동 배정한다(이미 `ACTIVE` 재요청은 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`); 온보딩 완료 게이트는 **역할별로 분기**한다 — **세입자**는 약관 동의(`TERMS_AGREED`)만으로 완료하고(이메일 인증은 더 이상 온보딩 게이트가 아니라 ACTIVE 전용 별도 API로 분리 — `AUTH_EMAIL_NOT_VERIFIED` 제거), **임대인**은 제출 `phoneNumber`가 `auth` SMS 인증(`VERIFIED`)된 번호와 일치해야 한다(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`; 우선순위 약관 동의 → 연락처 인증 — **사업자번호 게이트 없음**); `nickname`은 `NicknameGenerator`(도메인 서비스)가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 무작위 배정하되 전역 유니크가 보장될 때까지 재조합 재시도(상한 초과 시 fallback; 사용자 입력·수정 대상 아님); 필수 약관 동의는 프로필 수정으로 철회 불가(탈퇴 경로로만); 프로필 부분 수정은 `ACTIVE`에서만, 전송 필드만 변경(미전송 ≠ 비움) — **역할별로 수정 가능 필드가 갈린다**: 세입자는 `name`·`gender`·`birthDate`(과거만)·`country`·`occupation`·`visaType`·`lang`·`marketingAgreed`를, 임대인은 `name`·`phoneNumber`·`marketingAgreed`를 수정 가능하다(**`lang` 변경 주체는 세입자뿐** — 임대인 프로필 수정은 `lang`을 읽지 않고 `ko` 고정을 유지한다; `country`와 `lang`은 독립이라 `country`만 보내도 `lang`은 바뀌지 않고 `lang`만 보내면 `country`는 그대로이며, 각 필드는 전송한 값만 저장한다 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); 세입자·임대인 `email`은 소셜 로그인 값으로 고정돼 이 경로로 수정 불가(email 수정은 #192 범위 밖·후속 이슈); `nickname`·`userType`은 공통 불변; 임대인 `businessRegistrationNumber`는 온보딩에서 수집하지 않으므로 이 프로필 수정 경로 대상이 아니다 — 매물 등록에서 받는 사업자등록번호는 `users`가 아니라 매물 문서에 저장된다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)); `phoneNumber`는 변경 시 **SMS 재인증(`PhoneVerification` VERIFIED) 필요** — 새 번호 재인증 후에만 반영(미인증·불일치 `422 AUTH_PHONE_NOT_VERIFIED`), [API 스펙](../api/specs/01-auth-onboarding.md) §9); 탈퇴는 `PENDING`/`TERMS_AGREED`/`ACTIVE`에서 `WITHDRAWN`으로(이미 `WITHDRAWN` 재요청 `409 USER_ALREADY_WITHDRAWN`); `WITHDRAWN`·부재 사용자 조회·수정은 `404 USER_NOT_FOUND`; 모든 변경은 `updatedAt`을 갱신; 탈퇴(`WITHDRAWN`) 시 `withdrawnAt`을 기록하고 식별 PII(이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임)를 즉시 익명화한다(`lang`은 국적과 함께 `NULL`로 — 표시 언어도 사용자 식별정보이므로 익명화 범위에 포함, [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md) · [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — 임대인 PII(`name`·`email`·`phoneNumber`·`birthDate`) 익명화 범위는 확인 필요이며, 매물 문서에 남는 임대인 PII(`Listing.contact`·`Listing.businessRegistrationNumber`)는 이 익명화 범위 밖이라 임대인 탈퇴 기능 구현 시 함께 설계한다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)); `email`·`visaType`(및 임대인 개인 `phoneNumber`)은 민감정보로 로그·타 사용자 노출 시 마스킹하되 **매물별 담당 연락처(`Listing.contact`)는 임대인 개인 연락처와 별개 값이라 마스킹하지 않고 세입자 응답에 공개한다**(본인 `GET /users/me`는 평문 노출 — 단 임대인 프로필 응답 형태는 추후 확인 필요).
 
 **`UserBlock`** — 한 회원이 다른 회원을 차단한 사실 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(blockerId, blockedUserId)`.
 
@@ -218,7 +218,7 @@
 | enum | 값 | 의미 |
 | --- | --- | --- |
 | `UserType` | `TENANT` | 세입자(외국인 거주 탐색자) — 온보딩에서 `gender`·`birthDate`·`country`·`visaType` 수집(+`occupation`(#187)·`lang` 선택) |
-| | `LANDLORD` | 임대인(매물 등록자) — 온보딩에서 `phoneNumber`·`birthDate` 수집(단일 `name`·`email`은 세입자와 동일하게 소셜 로그인 시 확정·보유; 사업자등록번호는 추후 매물 등록 시점; `country`=`KR`·`lang`=`ko`는 서버 고정) |
+| | `LANDLORD` | 임대인(매물 등록자) — 온보딩에서 `phoneNumber`·`birthDate` 수집(단일 `name`·`email`은 세입자와 동일하게 소셜 로그인 시 확정·보유; 사업자등록번호는 `users`에 저장하지 않고 매물 문서가 보유; `country`=`KR`·`lang`=`ko`는 서버 고정) |
 | `UserStatus` | `PENDING` | 소셜 검증만 완료, 약관 미동의·온보딩 미완료 |
 | | `TERMS_AGREED` | 약관 동의 완료, 온보딩 정보 미입력 |
 | | `ACTIVE` | 온보딩 완료, 정상 이용 |
@@ -249,45 +249,58 @@
 
 ---
 
-## 3. `listing` — 매물 탐색·찜
+## 3. `listing` — 매물 등록·탐색·찜
 
 > [API 스펙](../api/specs/03-listings-favorites.md) · [시퀀스](sequence-diagrams/03-listings-favorites/README.md) · `allowedDependencies = {common, user :: api}`
 
-외국인 대상 주거 매물의 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC. 매물은 **건물/주소 단위 Listing**으로 관리하고, 동일한 가격·재고·검색 태그를 가진 실제 방 묶음은 Listing 내부의 **방 상품(`RoomOffer`)** 으로 관리한다. 임대 방식·계약기간·환불 정책·성별 정책처럼 매물 전체에 공통인 값은 Listing 루트가 소유한다.
+외국인 대상 주거 매물의 **등록**(임대인)과 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC. 매물은 **건물/주소 단위 Listing**으로 관리하고, 동일한 가격·계약기간·검색 태그를 가진 실제 방 묶음은 Listing 내부의 **방 상품(`RoomOffer`)** 으로 관리한다. 임대 방식·환불 정책·성별 정책·ARC 요구 여부처럼 매물 전체에 공통인 값은 Listing 루트가 소유하고, **가격·계약기간은 방 상품이 소유한다**. 매물 스키마는 임대인 등록 폼을 기준으로 정의한 **v4**(`schemaVersion=4`)다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)).
 
-**`Listing`** — 주소와 공용시설을 공유하는 건물 매물 애그리거트 루트. 식별자 `id`는 MongoDB ObjectId의 24자리 hex 문자열이며 API에서는 `listingId`로 노출한다. [값 객체: `GeoPoint`, `Address`, `NearestTransit`, `Building`, `PropertyPolicies`, `Facilities`, `RoomOffer`]
+**등록 경로**는 임대인이 호출하는 `POST /api/v2/listings` 하나이며, **매물 v2의 첫 엔드포인트**였다. 이어서 **조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겨 이쪽이 정본**이 됐고, 같은 경로의 `/api/v1` 조회는 개정 전(v3) 응답 구조를 복원한 **`deprecated` 스텁**으로 DB에 닿지 않고 빈 결과 또는 `404 LISTING_NOT_FOUND`만 반환한다(제거 시점 미정) — 출시된 구버전 앱이 v4 구조를 받아 깨지는 대신 "매물 없음" 화면을 보고 업데이트로 유도되게 하려는 것이며, 새 데이터로 옛 모양을 조립하지 않으므로 하위 호환용 값 날조도 없다. 장소 후보 검색(`GET /api/v1/listings/places`)과 도로명 주소 검색(`GET /api/v1/listings/addresses`, 임대인 전용)만 매물 데이터를 쓰지 않아 `/api/v1`에 그대로 남는다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)). 공개 조회는 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 없으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 되며, 결국 같은 `/api/v2/listings` 네임스페이스가 **GET은 공개, POST(등록)는 회원 전용**으로 갈린다. 등록 인가는 **2단**이다 — 보안 필터가 `hasRole("USER")` 명시 매처로 온보딩 스코프(`ROLE_ONBOARDING`) 토큰을 걸러내고([ADR-0010](../adr/0010-jwt-authentication-filter.md)), 임대인 여부(`userType=LANDLORD`)는 토큰 클레임에 없으므로 서비스가 `user::api getUserType(userId)` 공개 쿼리로 재검사해 `403 FORBIDDEN`으로 거른다. `landlordId`는 요청 본문이 아니라 **토큰에서** 얻는다. **사진은 이 요청에 파일로 실리지 않는다** — 먼저 `POST /api/v2/listings/images`로 한 장씩 올려 받은 저장 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)에 담는다. 요청을 파일마다 가르는 이유는 브라우저가 요청 단위로만 진행률을 주기 때문이고, 어느 사진이 어느 방 것인지는 **이 JSON 구조**가 정한다. 임시 사진은 `uploads/{landlordId}/{uuid}.{ext}`에 놓였다가 등록 확정 시 `listings/{listingId}/cover/…`·`listings/{listingId}/rooms/{roomOfferId}/…`로 복사되며, 확정 키가 식별자를 포함하므로 `listingId`·`roomOfferId`를 저장 전에 발급한다. 순서는 **키 검사 → 복사 → 저장 → 임시본 삭제**다 — 거절될 요청은 확정 위치에 흔적을 남기지 않고, 복사나 저장이 실패하면 복사본만 걷어내고 임시본은 남겨 다시 제출할 수 있게 한다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 등록 결과는 `201 Created` + 생성된 매물(상세 응답 구조)이며, 상태는 항상 `PENDING`으로 시작해 관리자 승인 전까지 목록·지도·상세·찜·신청 어디에도 노출되지 않는다. 사업자등록번호는 **형식만 검증해 저장**하고 진위는 **관리자가 승인 심사에서 수동으로 확인**한다 — 등록 시점에 `POST /api/v1/auth/business/verify`를 호출하지 않는다([ADR-0033](../adr/0033-business-registry-verification.md)). **주소는 `GET /api/v1/listings/addresses`로 먼저 검색해** 고른 후보의 `roadAddress`·`lat`·`lng`를 요청에 담고, 서버는 그 좌표를 `location`에 채운다(등록 시점 재지오코딩 없음 — [ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). 주변 대학(`nearbyUniversityCodes`)은 그 좌표로 원장을 훑어 서버가 채운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). **관리자 승인(`PENDING → PUBLISHED`/`REJECTED`)·임대인 수정·재고는 후속**이다.
+
+**`Listing`** — 주소와 공용시설을 공유하는 건물 매물 애그리거트 루트. 식별자 `id`는 MongoDB ObjectId의 24자리 hex 문자열이며 API에서는 `listingId`로 노출한다. [값 객체: `GeoPoint`, `Address`, `NearestTransit`, `Building`, `Contact`, `Facilities`, `RoomOffer`]
 
 **속성:**
 
 | 속성 | 타입 | 설명 |
 | --- | --- | --- |
 | `id` | 식별자 | 애그리거트 식별자 |
-| `schemaVersion` | int | 문서 구조 버전 |
+| `schemaVersion` | int | 문서 구조 버전(v4 = `4`) |
 | `landlordId` | 식별자 | 매물을 등록한 임대인 → `userType=LANDLORD`인 `User` 식별자 참조 |
+| `contact` | VO `Contact` | 매물 담당 연락처(담당자명·지점 대표 전화). 세입자 응답에 공개. 임대인 개인 연락처는 담지 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended) |
+| `businessRegistrationNumber` | String | 등록 확인용 사업자등록번호 **원문**(숫자 10자리). 민감정보 — 응답 비노출 |
+| `blogUrl` | String, nullable | 지점 블로그 링크(있을 때만) |
 | `title` | VO `LocalizedText` | 매물 제목 `{ko,en}` |
 | `type` | enum `ListingType` | 매물 유형 |
-| `status` | enum `ListingStatus` | 공개/임시저장/중지/삭제 상태 |
+| `status` | enum `ListingStatus` | 승인 대기/공개/반려/중지/삭제 상태 |
+| `rejectionReason` | String, nullable | 반려 사유(관리자 입력·한국어 단일 문자열). `status=REJECTED`일 때만 값이 있고 재제출 시 비운다 — 임대인만 읽는 값이라 번역 대상이 아니다 |
 | `rentalType` | enum `RentalType` | 매물 공통 임대 방식 |
-| `refundPolicy` | VO `RefundPolicy` | 매물 공통 환불 정책 |
-| `contract` | VO `Contract` | 매물 공통 최소/최대 계약기간 |
+| `refundPolicy` | VO `LocalizedText` | 매물 공통 환불 정책 안내 문구 `{ko,en}` |
 | `genderPolicy` | enum `GenderPolicy` | 매물 공통 성별 정책 |
-| `location` | VO `GeoPoint` | 지도 검색용 좌표. 도메인/GeoJSON 순서는 `longitude, latitude`, API는 `{lat,lng}` |
+| `arcRequired` | enum `ArcRequirement` | 외국인등록증(ARC) 필수 요구 여부. 진단 `ArcStatus`와 값이 1:1로 대응하는 매물 쪽 정본 |
+| `ageMin` | int | 이용 가능 최소 연령 |
+| `ageMax` | int | 이용 가능 최대 연령 |
+| `languagesSupported` | `Set<SupportedLanguage>` | 외국어 응대 가능 언어(복수) |
+| `location` | VO `GeoPoint` | NOT NULL · 지도 검색용 좌표. 도메인/GeoJSON 순서는 `longitude, latitude`, API는 `{lat,lng}`. 등록이 주소 검색으로 받은 `address.lat`·`lng`로 채운다(ADR-0042 · changeUnit `0116`에서 필수로 전환) |
 | `address` | VO `Address` | 표시 주소·행정구역 |
-| `nearestTransit` | VO `NearestTransit` | 가까운 교통수단·도보 시간·주변 시설 안내 |
-| `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 **개별 대학(member) 코드**(`SNU`·`CAU` 등) — 진단의 `UniversityGroup` 그룹 코드가 아니라 개별 대학 코드를 저장한다(저장 형식 불변). 진단은 선택 그룹을 member 코드로 펼쳐 `$in`으로 매칭([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)) |
+| `nearestTransit` | VO `NearestTransit` | 가까운 지하철역·도보 시간 |
+| `nearbyFacilities` | `Set<NearbyFacility>` | 주변 편의시설(복수) — 교통과 무관한 값이라 루트가 소유 |
+| `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 **개별 대학(member) 코드**(`SNU`·`CAU` 등) — 진단의 `UniversityGroup` 그룹 코드가 아니라 개별 대학 코드를 저장한다(저장 형식 불변). 진단은 선택 그룹을 member 코드로 펼쳐 `$in`으로 매칭([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). **등록이 `location` 반경 2km 안의 대학을 원장(`universities`)에서 찾아 채운다**([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)) |
 | `building` | VO `Building` | 건물 유형·층수·주차·엘리베이터 |
-| `propertyPolicies` | VO `PropertyPolicies` | 건물/전체 방 공통 정책(ARC·전입신고·식사·영어 안내 등) |
-| `facilities` | VO `Facilities` | 난방·주방·세탁·공용 편의·보안·공간·제공 물품 |
-| `roomOffers` | `List<RoomOffer>` | 가격·재고·검색 태그가 같은 실제 방 묶음 |
-| `descriptions` | VO `Descriptions` | 다국어 상세 설명과 자유 입력 주의사항 |
-| `imageUrls` | `List<String>` | 건물 공용 이미지 URL 목록(순서 보존, 첫 번째가 썸네일) |
+| `facilities` | VO `Facilities` | 난방·주방·세탁·생활 편의·보안·공용 공간·제공 물품 |
+| `roomOffers` | `List<RoomOffer>` | 가격·계약기간·검색 태그가 같은 실제 방 묶음. 등록 시 최소 1개 필수이며 각 `roomOfferId`는 서버가 발급한다 |
+| `description` | VO `LocalizedText` | 매물 소개 문구 `{ko,en}` |
+| `extraNotes` | VO `LocalizedText` | 입주 시 유의사항·생활 규칙 `{ko,en}` |
+| `imageUrls` | `List<String>` | 건물 공용 이미지 URL 목록(순서 보존, 첫 번째가 썸네일). **등록 요청은 URL이 아니라 저장 키(`imageKeys`, 1~5개)를 보낸다** — 서버가 임시 위치의 사진을 확정 위치로 복사하고 그 CDN URL을 보낸 순서 그대로 채운다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
+| `preferredNationalities` | `Set<Nationality>` | 임대인이 선호하는 입주자 국적(등록 폼 설문, 복수). 응답 비노출 |
+| `contractDifficulties` | `Set<ContractDifficulty>` | 외국인 임차인과 계약할 때 겪은 어려움(등록 폼 설문, 복수). 응답 비노출 |
+| `serviceFeedback` | String | Kohere에 바라는 점(등록 폼 설문, 자유 입력). 응답 비노출 |
 | `favoriteCount` | int | 찜 수 집계(≥0) |
 | `createdAt` | Instant | 생성 시각(UTC) |
 | `updatedAt` | Instant | 수정 시각(UTC) |
 
-**불변식:** `Listing.status=PUBLISHED`이고 `RoomOffer.status=ACTIVE`인 방 상품이 하나 이상 있는 매물만 목록·지도·상세·찜·신청 대상이며 그 외 상태는 조회 시 부재처럼 처리한다(`404 LISTING_NOT_FOUND`); Listing은 저장 시 최소 1개 이상의 `roomOffers`를 가져야 한다; 금액은 `RoomOffer.pricing`에 집주인이 정한 단일값으로 저장하고 사용자 필터의 최소·최대 예산은 조회 조건일 뿐 애그리거트 속성이 아니다; 상세 화면의 조건 요약은 DB에 저장하지 않고 활성 `RoomOffer.filterTags` 합집합과 `NO_ARC` 같은 정책 파생 조건으로 응답 시 계산한다; 필터 매칭의 정본은 반드시 같은 `RoomOffer`가 가격·재고·옵션을 동시에 만족하는지로 판정한다; `imageUrls` 첫 항목이 건물 썸네일; 직접 연락처는 매물 애그리거트에 저장하지 않는다; `favoriteCount`는 0 미만 불가이며 멱등 토글에서 중복 증감하지 않는다; `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점 산출 표현값이며 영속 속성이 아니다. 현재 일반 목록·기존 키워드 검색의 `favorited`는 실제 찜 조회 없이 항상 `false`이고, 찜 목록 저장소는 예외적으로 `PUBLISHED`만 검사해 ACTIVE 방 상품이 없는 매물이 포함될 수 있다.
+**불변식:** `Listing.status=PUBLISHED`이고 `RoomOffer.status=ACTIVE`인 방 상품이 하나 이상 있는 매물만 목록·지도·상세·찜·신청 대상이며 그 외 상태는 조회 시 부재처럼 처리한다(`404 LISTING_NOT_FOUND`); 등록 직후 상태는 `PENDING`이고 공개는 관리자 승인(`PENDING → PUBLISHED`)으로만 이뤄지며 반려(`PENDING → REJECTED`)는 `rejectionReason`을 함께 기록한다(재제출 시 `rejectionReason`을 비운다 — 승인 API는 후속); **`location`이 없는 매물은 승인을 통과하지 못한다**(좌표 없이는 지도·거리 조회에 실릴 수 없다); Listing은 저장 시 최소 1개 이상의 `roomOffers`를 가져야 하고 각 `RoomOffer.roomImageUrls`는 최소 2장이다; **등록 요청이 싣지 않고 서버가 채우는 값**은 `id`·`roomOffers[].roomOfferId`·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`)·`imageUrls`·`roomOffers[].roomImageUrls`다 — 사진은 URL이 아니라 **저장 키**로 실려 오므로 서버가 확정 위치로 복사한 뒤 그 URL을 보낸 순서 그대로 채운다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)); 등록 폼의 **한 칸이 두 필드로 갈리는 입력**(지점 운영층 `1~2` → `building.usedFloorMin`/`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`/`ageMax`)은 서버가 파싱하며 형식 위반은 `400 INVALID_INPUT`이고 `usedFloorMin <= usedFloorMax <= building.totalFloors`를 함께 검증한다; 코드 값을 받는 필드는 `listingCatalog`의 `(category, code)`에 실재해야 한다(위반 `400 LISTING_UNKNOWN_CATALOG_CODE`, 문자열 길이 제한은 두지 않는다); `address.fullAddress`는 입력값을 **정규화 없이 그대로** 저장하고 `address.city`·`district`만 도로명 주소 파싱으로 `City`·`District` enum을 도출한다(파싱 실패 `400 LISTING_INVALID_ADDRESS`); `ageMin <= ageMax`; 금액은 `RoomOffer.pricing`에 집주인이 정한 단일값으로 저장하고 사용자 필터의 최소·최대 예산은 조회 조건일 뿐 애그리거트 속성이 아니다; 상세 화면의 조건 요약은 DB에 저장하지 않고 활성 `RoomOffer.filterTags` 합집합으로 응답 시 계산한다 — **파생 태그는 없어 저장값과 응답 태그가 1:1**이고, ARC 요구 여부는 태그가 아니라 루트 `arcRequired` 필드 하나로 표현한다; 필터 매칭의 정본은 반드시 같은 `RoomOffer`가 가격·옵션을 동시에 만족하는지로 판정한다; `imageUrls` 첫 항목이 건물 썸네일; **매물 담당 연락처(`contact`)는 매물 애그리거트가 저장하고 세입자 응답에 공개한다** — 임대인 개인 연락처(`users.phone_number`, 마스킹 대상 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md))와는 **별개 값**이라 마스킹하지 않으며, 임대인 개인 연락처는 매물에 저장하지도 노출하지도 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)); `businessRegistrationNumber`(원문)와 등록 폼 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장하되 **응답에서 제외**한다; `favoriteCount`는 0 미만 불가이며 멱등 토글에서 중복 증감하지 않는다; `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점 산출 표현값이며 영속 속성이 아니다. 현재 일반 목록·기존 키워드 검색의 `favorited`는 실제 찜 조회 없이 항상 `false`이고, 찜 목록 저장소는 예외적으로 `PUBLISHED`만 검사해 ACTIVE 방 상품이 없는 매물이 포함될 수 있다.
 
-**`RoomOffer`** — 동일한 가격·재고·검색 태그를 가진 실제 방 묶음. Listing 내부 구성 요소이며 독립 애그리거트가 아니다. 식별자 `roomOfferId`.
+**`RoomOffer`** — 동일한 가격·계약기간·검색 태그를 가진 실제 방 묶음. Listing 내부 구성 요소이며 독립 애그리거트가 아니다. 식별자 `roomOfferId`.
 
 **속성:**
 
@@ -296,14 +309,14 @@
 | `roomOfferId` | 식별자 | Listing 내부 방 상품 식별자 |
 | `name` | VO `LocalizedText` | 사용자에게 노출되는 방 상품명 `{ko,en}` |
 | `status` | enum `RoomOfferStatus` | 판매/노출 상태 |
-| `pricing` | VO `Pricing` | 월세·보증금·관리비·통화 |
-| `inventory` | VO `Inventory` | 전체 수량·계약 가능 수량·다음 입주 가능일 |
-| `filterTags` | `Set<ConditionTag>` | 검색 최적화를 위해 정본 필드에서 파생한 필터 태그 |
-| `roomImageUrls` | `List<String>` | 방 상품 전용 이미지 |
+| `contract` | VO `Contract` | 방 상품별 최소/최대 계약기간 |
+| `pricing` | VO `Pricing` | 월세·주세·보증금·관리비·통화 |
+| `filterTags` | `Set<ConditionTag>` | 방 상품별 검색 필터 태그(등록 폼의 방 옵션 선택값). 응답 태그는 이 저장값과 1:1 — 파생 태그를 더하지 않는다 |
+| `roomImageUrls` | `List<String>` | 방 상품 전용 이미지 URL 목록(순서 보존). **등록 요청은 `roomOffers[].roomImageKeys`(방마다 2~5개)로 저장 키를 보낸다** — 서버가 확정 위치로 복사하고 그 URL(배포 환경은 CDN 도메인)을 채운다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
 
-**불변식:** `pricing.monthlyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; Listing 루트의 `contract.minStayMonths <= contract.maxStayMonths`; `inventory.availableCount <= inventory.totalCount`이고 둘 다 0 이상; 계약 확정은 `availableCount > 0`인 방 상품에서만 가능하며 확정 시 수량을 원자적으로 1 감소시킨다; 가격·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
+**불변식:** `pricing.monthlyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; `contract.minStayMonths <= contract.maxStayMonths`(계약기간은 매물 공통이 아니라 **방 상품마다** 다를 수 있다); 가격·계약기간·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
 
-**다국어 표시:** 매물마다 달라지는 제목·주소·역명·방 이름·환불 설명은 `LocalizedText(ko,en)`로 Listing에 저장한다. 검색·검증용 enum/시설/조건 code는 번역하지 않고, 별도 `listingCatalog`의 `{category,code,label:{ko,en}}`와 응답 시 결합한다. 프론트 응답은 `{code,label}`이며 label은 표시, code는 필터 요청에 사용한다. 로그인 사용자의 언어는 `listing → user::api getLanguage` 동기 조회로 결정하고 비로그인·미지원 언어는 영어로 폴백한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)).
+**다국어 표시:** 매물마다 달라지는 제목·주소·역명·방 이름·환불 정책 문구·소개 문구(`description`)·유의사항(`extraNotes`)은 `LocalizedText(ko,en)`로 Listing에 저장한다. 검색·검증용 enum/시설/조건 code는 번역하지 않고, 별도 `listingCatalog`의 `{category,code,label:{ko,en}}`와 응답 시 결합한다 — 행정구역(`City`·`District`)·`ArcRequirement`·`SupportedLanguage`·`NearbyFacility`·개별 대학 코드도 같은 방식으로 라벨을 얻는다. 반면 `status`(`ListingStatus`)와 `rejectionReason`은 임대인·관리자만 읽는 값이라 카탈로그·번역 대상이 아니다(카탈로그에 상태 카테고리가 없다). 프론트 응답은 `{code,label}`이며 label은 표시, code는 필터 요청에 사용한다. 로그인 사용자의 언어는 `listing → user::api getLanguage` 동기 조회로 결정하고 비로그인·미지원 언어는 영어로 폴백한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)).
 
 **`Favorite`** — 사용자가 매물을 찜한 사실 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(userId, listingId)`.
 
@@ -337,52 +350,34 @@
 | --- | --- | --- | --- |
 | `GeoPoint` | `longitude` | double | 경도(WGS84). MongoDB GeoJSON 좌표 배열의 첫 번째 값 |
 | | `latitude` | double | 위도(WGS84). API 응답에서는 `lat`으로 변환 |
-| `Address` | `city` | String | 도시/광역 단위 코드 |
-| | `district` | String | 구/군 단위 코드 |
+| `Address` | `city` | string | 도시/광역 단위 · 정본은 `listingCatalog`의 `CITY`(주소 토큰에서 파생, 못 찾으면 `ETC`) |
+| | `district` | string | 구/군 단위 · 정본은 `listingCatalog`의 `DISTRICT`([ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)) |
 | | `fullAddress` | VO `LocalizedText` | 표시 주소 `{ko,en}` |
 | | `detail` | VO `LocalizedText` | 상세주소 `{ko,en}`, nullable |
 | `NearestTransit` | `type` | enum `TransitType` | 가까운 교통수단 유형 |
-| | `name` | VO `LocalizedText` | 역/정류장 이름 `{ko,en}` |
+| | `name` | VO `LocalizedText` | 역 이름 `{ko,en}` |
 | | `walkMinutes` | int | 도보 시간(분) |
-| | `nearbyPlacesDescription` | VO `LocalizedText` | 주변 편의시설 안내 `{ko,en}` |
+| `Contact` | `managerName` | String | 매물 담당자(지점 운영자)명 |
+| | `phone` | String | 지점 대표 전화(문의 수신). 매물마다 다른 값이라 임대인 개인 연락처(`users.phone_number`)와 별개다 |
 | `Building` | `type` | enum `BuildingType` | 건물 형태 |
 | | `usedFloorMin` | int | 사용 층 최소값 |
 | | `usedFloorMax` | int | 사용 층 최대값 |
 | | `totalFloors` | int | 건물 전체 층수 |
 | | `parkingAvailable` | boolean | 주차 가능 여부 |
 | | `elevatorAvailable` | boolean | 엘리베이터 여부 |
-| `PropertyPolicies` | `arcRequired` | boolean | ARC 필요 여부 |
-| | `residentRegistrationAvailable` | boolean | 전입신고 가능 여부 |
-| | `studySuitable` | boolean | 학업 목적 거주 적합 여부 |
-| | `mealsProvided` | boolean | 식사 제공 여부 |
-| | `englishAvailable` | boolean | 영어 소통 가능 여부 |
 | `Facilities` | `heatingSystem` | `Set<HeatingSystem>` | 난방 방식 |
-| | `kitchen` | Set<String> | 주방 시설 코드 |
-| | `laundry` | Set<String> | 세탁 시설 |
-| | `livingAmenities` | Set<String> | 생활 편의시설 |
-| | `securityFeatures` | Set<String> | 보안 시설 |
-| | `commonSpaces` | List<CommonSpace> | 공용 공간 |
-| | `providedSupplies` | Set<String> | 제공 물품 |
-| `CommonSpace` | `type` | enum `CommonSpaceType` | 공용 공간 유형 |
-| | `count` | Integer | 수량. 미확정이면 null |
+| | `kitchen` | `Set<KitchenFacility>` | 주방 시설 |
+| | `laundry` | `Set<LaundryFacility>` | 세탁 시설 |
+| | `livingAmenities` | `Set<LivingAmenity>` | 생활 편의시설 |
+| | `securityFeatures` | `Set<SecurityFeature>` | 보안 시설 |
+| | `commonSpaces` | `Set<CommonSpaceType>` | 공용 공간(원소가 곧 코드 — 수량은 받지 않는다) |
+| | `providedSupplies` | `Set<ProvidedSupply>` | 제공 물품 |
 | `Pricing` | `monthlyRent` | int | 월세(KRW 정수) |
-| | `deposit` | int | 보증금(KRW 정수) |
+| | `deposit` | int | 보증금(KRW 정수) — booking의 `totalAmount = deposit + monthlyRent × 계약 개월수` 계산 근거 |
 | | `maintenanceFee` | int | 관리비(KRW 정수) |
 | | `currency` | enum `Currency` | 통화(현재 `KRW`) |
-| `Contract` | `minStayMonths` | int | 최소 계약 개월 |
-| | `maxStayMonths` | int | 최대 계약 개월 |
-| `RefundPolicy` | `code` | enum `RefundPolicyCode` | 환불 정책 코드 |
-| | `description` | VO `LocalizedText` | 환불 정책 설명 `{ko,en}` |
-| `Inventory` | `totalCount` | int | 동일 조건 실제 방 전체 수 |
-| | `availableCount` | int | 현재 계약 가능한 수 |
-| | `nextAvailableFrom` | LocalDate | 현재 가능 수량이 없을 때 가장 빠른 예상 입주 가능일 |
-| `Descriptions` | `ko` | String | 한국어 상세 설명 |
-| | `en` | String | 영어 상세 설명 |
-| | `extraNotes` | String | 자유 입력 추가 안내(현재 번역 대상 아님) |
-| `MatchedPlace` | `type` | enum `SearchPlaceType` | 매칭된 POI 유형(학교·지역·역). 키워드 검색 입력어가 매칭된 위치를 표현하는 조회 결과 값(매칭 없으면 부재) |
-| | `name` | String | POI 이름 |
-| | `lat` | double | 위도 |
-| | `lng` | double | 경도 |
+| `Contract` | `minStayMonths` | int | 최소 계약 개월(`RoomOffer` 소유) |
+| | `maxStayMonths` | int | 최대 계약 개월(`RoomOffer` 소유) |
 
 **상태(enum):**
 
@@ -390,32 +385,53 @@
 | --- | --- | --- |
 | `ListingType` | `GOSHIWON` | 고시원 |
 | | `CO_LIVING` | 코리빙 |
-| | `SHARE_HOUSE` | 셰어하우스 |
-| | `OTHER` | 기타 |
-| `ListingStatus` | `DRAFT` | 임시저장 |
-| | `PUBLISHED` | 공개 중 |
+| | `SHARE_HOUSE` | 쉐어하우스 |
+| `ListingStatus` | `PENDING` | 등록 직후 관리자 승인 대기(등록 시 기본값) |
+| | `PUBLISHED` | 승인돼 공개 중 |
+| | `REJECTED` | 관리자 반려(`rejectionReason` 보유) |
 | | `PAUSED` | 임대인/운영자에 의해 노출 중지 |
 | | `DELETED` | 삭제 처리 |
 | `RoomOfferStatus` | `ACTIVE` | 노출·계약 가능 |
 | | `INACTIVE` | 노출 중지 |
 | `RentalType` | `MONTHLY_RENT` | 월세 |
-| | `JEONSE` | 전세 |
 | `Currency` | `KRW` | 원화 |
+| `City` | `SEOUL` | 서울특별시 |
+| | `BUSAN` | 부산광역시 |
+| | `GYEONGGI` | 경기도 |
+| `District` | `JONGNO_GU` | 종로구 |
+| | `SEODAEMUN_GU` | 서대문구 |
+| | `MAPO_GU` | 마포구 |
+| | `GWANGJIN_GU` | 광진구 |
+| | `DONGDAEMUN_GU` | 동대문구 |
+| | `GWANAK_GU` | 관악구 |
+| | `GURO_GU` | 구로구 |
+| | `YEONGDEUNGPO_GU` | 영등포구 |
+| | `GEUMCHEON_GU` | 금천구 |
 | `TransitType` | `SUBWAY` | 지하철 |
-| | `BUS` | 버스 |
-| `BuildingType` | `GOSHIWON` | 고시원 |
-| | `VILLA` | 빌라 |
-| | `APARTMENT` | 아파트 |
+| `BuildingType` | `COMMERCIAL_BUILDING` | 상가건물 |
+| | `STANDALONE_BUILDING` | 단독건물 |
+| | `VILLA` | 빌라/연립 |
+| | `DETACHED_HOUSE` | 단독주택 |
 | | `OFFICETEL` | 오피스텔 |
-| | `OTHER` | 기타 |
+| | `APARTMENT` | 아파트 |
+| | `MIXED_USE` | 주상복합 |
 | `HeatingSystem` | `CENTRAL` | 중앙난방 |
 | | `INDIVIDUAL` | 개별난방 |
-| | `DISTRICT` | 지역난방 |
-| | `OTHER` | 기타 |
 | `GenderPolicy` | `ANY` | 성별 무관 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MALE_ONLY` | 남성 전용 |
 | | `GENDER_SEPARATED` | 층/공간 분리 |
+| `ArcRequirement` | `REQUIRED` | 외국인등록증(ARC) 필수 |
+| | `NOT_REQUIRED` | ARC 불필요(여권 등으로 신분 확인) |
+| `SupportedLanguage` | `ENGLISH` | 영어 |
+| | `CHINESE` | 중국어 |
+| | `JAPANESE` | 일본어 |
+| | `OTHER` | 기타 |
+| `NearbyFacility` | `CONVENIENCE_STORE` | 편의점 |
+| | `MART` | 마트/슈퍼마켓 |
+| | `HOSPITAL_PHARMACY` | 병원/약국 |
+| | `PARK` | 공원 |
+| | `LAUNDROMAT` | 세탁소 |
 | `ConditionTag` | `MOVE_IN_NOW` | 즉시 입주 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MEALS_INCLUDED` | 식사 제공 |
@@ -424,13 +440,45 @@
 | | `ENGLISH_OK` | 영어 소통 가능 |
 | | `ADDRESS_REGISTRATION` | 전입신고 가능 |
 | | `NO_MAINT_FEE` | 관리비 없음 |
-| | `NO_ARC` | ARC 없이 가능(검색용 가상 필터) |
 | `RoomFeature` | `SINGLE_ROOM` | 1인실 |
 | | `DOUBLE_ROOM` | 2인실 |
 | | `PRIVATE_BATH` | 개인 욕실 |
 | | `PRIVATE_REFRIGERATOR` | 개인 냉장고 |
 | | `MICROWAVE` | 전자레인지 |
 | | `ELECTRIC_KETTLE` | 전기포트 |
+| `KitchenFacility` | `SHARED_REFRIGERATOR` | 공용 냉장고 |
+| | `INDUCTION` | 인덕션 |
+| | `GAS_STOVE` | 가스레인지 |
+| | `MICROWAVE` | 전자레인지 |
+| | `ELECTRIC_KETTLE` | 전기포트 |
+| | `RICE_COOKER` | 전기밥솥 |
+| | `TOASTER` | 토스트기 |
+| | `COFFEE_MACHINE` | 커피머신 |
+| | `WATER_PURIFIER` | 정수기 |
+| `LaundryFacility` | `WASHER` | 세탁기 |
+| | `DRYER` | 건조기 |
+| | `DRYING_RACK` | 건조대 |
+| | `IRON` | 다리미 |
+| `LivingAmenity` | `WIFI` | 와이파이 |
+| | `TV` | TV |
+| | `SOFA` | 소파 |
+| | `GYM_EQUIPMENT` | 운동기구 |
+| | `AIR_CONDITIONER` | 공용 에어컨 |
+| | `PROJECTOR` | 프로젝터 |
+| | `AIR_PURIFIER` | 공기청정기 |
+| | `SHARED_PC` | 공용 PC |
+| `SecurityFeature` | `CCTV` | CCTV |
+| | `ENTRANCE_DOOR_LOCK` | 공동현관 도어락 |
+| | `DOOR_LOCK` | 방별 도어락 |
+| | `FIRE_EXTINGUISHER` | 소화기 |
+| | `FIRE_ALARM` | 화재경보기 |
+| | `SECURITY_GUARD` | 경비원 |
+| `ProvidedSupply` | `BEDDING` | 침구류 |
+| | `LAUNDRY_DETERGENT` | 세탁세제 |
+| | `SEASONING` | 조미료 |
+| | `SLIPPERS` | 실내화 |
+| | `TISSUE` | 휴지 |
+| | `TOWEL` | 수건 |
 | `CommonSpaceType` | `SHARED_KITCHEN` | 공용 주방 |
 | | `SHARED_TOILET` | 공용 화장실 |
 | | `SHARED_BATH` | 공용 욕실 |
@@ -438,19 +486,27 @@
 | | `STUDY_ROOM` | 스터디룸 |
 | | `MEETING_ROOM` | 회의실 |
 | | `ROOFTOP` | 옥상 |
-| `RefundPolicyCode` | `FULL_REFUND_BEFORE_7_DAYS` | 입주 7일 전 전액 환불 |
-| | `PARTIAL_REFUND` | 부분 환불 |
-| | `NON_REFUNDABLE` | 환불 불가 |
-| | `CUSTOM` | 직접 입력 |
-| `SearchPlaceType` | `UNIVERSITY` | 학교 |
-| | `REGION` | 지역 |
-| | `SUBWAY_STATION` | 지하철역 |
+| `Nationality` | `JAPAN` | 일본(등록 폼 설문 — 선호 국적) |
+| | `USA` | 미국 |
+| | `CHINA` | 중국 |
+| | `SOUTHEAST_ASIA` | 동남아 |
+| | `EUROPE` | 유럽 |
+| | `OTHER` | 기타 |
+| `ContractDifficulty` | `LANGUAGE` | 의사소통 문제(언어) — 등록 폼 설문 |
+| | `CULTURE` | 외국인 생활 관련 문제(문화) |
+| | `IDENTITY` | 낯선 외국인에 대한 두려움(신원) |
+| | `PAYMENT` | 대금 지급·환율(결제) |
+| | `CONTRACT_FULFILLMENT` | 손해배상·위약금(계약 이행) |
+| | `COMMUNICATION_CHANNEL` | 외국인과의 소통 채널 부족 |
+| | `OTHER` | 기타 |
 
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox·마커 결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 요청 bbox의 중심 좌표를 기준으로 하며, bbox 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 
 > `RoomFeature` enum은 코드에 남아 있지만 현재 `RoomOffer` 속성이나 MongoDB 저장 스키마에서는 사용하지 않는다. 방 검색 조건의 현재 정본은 `RoomOffer.filterTags`의 `ConditionTag`다.
+>
+> `Nationality`·`ContractDifficulty`는 등록 폼 설문 응답 전용이라 `listingCatalog`에 카테고리가 없다 — 세입자 응답에 나가지 않아 라벨을 번역할 소비처가 없다. `ListingStatus`도 같은 이유로 카탈로그 대상이 아니다(임대인·관리자만 읽는다).
 
-**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·월세 범위·지역·대학 그룹으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다 — `diagnosis`가 선택 대학 그룹을 펼친 member 코드 집합을 넘기면 `nearbyUniversityCodes`를 `$in`(ANY member)으로 매칭하고(빈 집합이면 대학 필터 생략), 월세 범위는 같은 ACTIVE `RoomOffer`의 `pricing.monthlyRent`에 각 경계(존재 시)를 적용한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자·대표 가격·썸네일이 필요할 때 공개 쿼리로 검증한다. 지도 검색창 키워드 장소 검색은 아웃바운드 포트 `PlaceSearchClient`(domain)로 추상화하고 인프라 어댑터 `NaverPlaceSearchClient`(네이버 지역 검색 API)가 구현한다 — **무상태**(매물 미조회·미저장)이며 최대 5개 후보(`title`·`address`·`roadAddress`·`lng`·`lat`, 네이버 `mapx/mapy`→WGS84 변환)를 반환하고, 외부 장애·타임아웃·인증정보 누락·응답/좌표 형식 이상은 `502 UPSTREAM_ERROR`로 응답한다.
+**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. **매물 등록의 임대인 인가 재검사**도 같은 경로다 — 보안 필터가 넘긴 `userId`로 `user::api getUserType(userId)`를 동기 조회해 `LANDLORD`가 아니면 `403 FORBIDDEN`으로 거절하고(`auth`의 사업자번호 검증이 같은 쿼리를 쓰는 것과 동일 패턴), 매물 문서에는 그 `userId`만 `landlordId`로 남긴다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·월세 범위·지역·대학 그룹으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다 — `diagnosis`가 선택 대학 그룹을 펼친 member 코드 집합을 넘기면 `nearbyUniversityCodes`를 `$in`(ANY member)으로 매칭하고(`ETC`면 그 대신 목록 전체를 제외 조건으로 받아 `$nin`으로 거른다), 월세 범위는 같은 ACTIVE `RoomOffer`의 `pricing.monthlyRent`에 각 경계(존재 시)를 적용한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). **진단과 매물은 값 집합을 공유하지 않고 매핑으로 잇는다** — 진단 `Region`은 `address.city`(`City`)와 등가 비교하고, 진단 `District`의 5구는 `address.district`(`District`)와 등가 비교하되 **`ETC`는 그 5구의 여집합(`$nin`)** 으로 질의하며, 진단 `ArcStatus`는 `NO_ARC`면 `arcRequired=NOT_REQUIRED` 필터로 옮기고 `ARC_ISSUED`면 필터를 걸지 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자·대표 가격·썸네일이 필요할 때 공개 쿼리로 검증한다. 지도 검색창 키워드 장소 검색은 아웃바운드 포트 `PlaceSearchClient`(domain)로 추상화하고 인프라 어댑터 `NaverPlaceSearchClient`(네이버 지역 검색 API)가 구현한다 — **무상태**(매물 미조회·미저장)이며 최대 5개 후보(`title`·`address`·`roadAddress`·`lng`·`lat`, 네이버 `mapx/mapy`→WGS84 변환)를 반환하고, 외부 장애·타임아웃·인증정보 누락·응답/좌표 형식 이상은 `502 UPSTREAM_ERROR`로 응답한다. 매물 사진 저장도 같은 구조다 — 아웃바운드 포트 `ListingImageStorage`(domain)를 인프라 어댑터 `S3ListingImageStorage`(AWS S3, 로컬은 MinIO로 endpoint만 바꾼다)가 구현하고, 업로드(`upload`)·확정 복사(`copy`)·삭제(`deleteQuietly`) 셋을 맡는다. 사진은 업로드 API가 `uploads/{landlordId}/{uuid}.{ext}`에 올려 두고, 등록이 확정될 때 `listings/{listingId}/cover/{uuid}.{ext}`·`listings/{listingId}/rooms/{roomOfferId}/{uuid}.{ext}`로 복사되며 매물 문서에는 URL만 남는다. 확정 키가 식별자를 포함하므로 저장 전에 `ListingRepository.nextIdentity()`로 `listingId`·`roomOfferId`를 선발급한다. 복사·저장이 실패하면 복사본을 보상 삭제하고(삭제 계약은 실패를 처리하는 중에 불리므로 예외를 던지지 않는다) 임시본은 남긴다. 없는 원본은 복사가 `400 LISTING_IMAGE_KEY_NOT_FOUND`로, 그 밖의 저장소 실패는 `502 UPSTREAM_ERROR`로 갈린다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)).
 
 ---
 
@@ -497,7 +553,7 @@
 | `SuggestionAction` | `type` | enum `SuggestionActionType` | 조정 유형 |
 | | `detail` | String | 결과를 늘리기 위한 단일 조정 제안 — `diagnosisSuggestions` 컬렉션의 `type`별 인라인 언어-키 맵(`{ "en": .., "ja": .. }`)에서 **사용자 언어 키로 서버가 선택**(해당 언어 키 부재 시 영어(`en`) 폴백) |
 
-> 진단 결과 화면은 `Diagnosis.criteria`를 입력으로 `listing`의 공개 추천 쿼리를 호출해 추천 전용 요약(`RecommendedListingView`)·좌표를 조립한다. 매물은 본 모듈 애그리거트가 아니므로 식별자(`listingId`)로만 참조하며, 추천 결과는 진단에 종속된 읽기 결과로 영속하지 않는다. **대학 그룹 매칭**: 진단은 선택된 `UniversityGroup`을 소속 개별 대학 코드 `universityCodes`로 확장해 넘기고, `listing`은 `nearbyUniversityCodes`를 그 코드 집합으로 `$in` 매칭한다 — `ETC`면 대학 필터를 생략한다. **월세 범위 매칭**: `monthlyRentMin`/`monthlyRentMax`는 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 적용한다. 교차 모듈 계약은 `RecommendationCriteria`로 전달한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 0건 추천 제안의 `message`/`detail`은 `diagnosisSuggestions` 컬렉션의 인라인 언어-키 맵에서 서버가 사용자 언어로 골라 제공한다.
+> 진단 결과 화면은 `Diagnosis.criteria`를 입력으로 `listing`의 공개 추천 쿼리를 호출해 추천 전용 요약(`RecommendedListingView`)·좌표를 조립한다. 매물은 본 모듈 애그리거트가 아니므로 식별자(`listingId`)로만 참조하며, 추천 결과는 진단에 종속된 읽기 결과로 영속하지 않는다. **대학 그룹 매칭**: 진단은 선택된 `UniversityGroup`을 소속 개별 대학 코드 `includedUniversityCodes`로 확장해 넘기고, `listing`은 `nearbyUniversityCodes`를 그 코드 집합으로 `$in` 매칭한다 — `ETC`면 목록 전체를 제외 조건으로 넘겨 여집합(`$nin`)으로 매칭한다. **월세 범위 매칭**: `monthlyRentMin`/`monthlyRentMax`는 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 적용한다. 교차 모듈 계약은 `RecommendationCriteria`로 전달한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 0건 추천 제안의 `message`/`detail`은 `diagnosisSuggestions` 컬렉션의 인라인 언어-키 맵에서 서버가 사용자 언어로 골라 제공한다.
 
 **상태(enum):**
 
@@ -519,7 +575,7 @@
 | | `GEUMCHEON_GU` | 금천구 |
 | | `GWANAK_GU` | 관악구 |
 | | `DONGDAEMUN_GU` | 동대문구 |
-| | `ETC` | 기타 |
+| | `ETC` | 기타 — "선택지에 없는 그 외"라는 뜻이라 추천 시 매물 `address.district`의 **위 5구 여집합**으로 매칭한다(매물 9종에 맞춰 선택지를 늘리지 않는다) |
 | `DiagnosisCondition` | `MOVE_IN_NOW` | 즉시입주(④, listing `ConditionTag` 이름 통일) |
 | | `FEMALE_ONLY` | 여성전용 |
 | | `PRIVATE_BATH` | 개인욕실 |
@@ -528,9 +584,8 @@
 | | `NO_MAINT_FEE` | 관리비없음 |
 | | `MEALS_INCLUDED` | 식사제공 |
 | | `DOUBLE_ROOM` | 2인실 |
-| | `NO_ARC` | ARC 불요(⑥ `arcStatus=NO_ARC`에서 서버가 파생, ④ 직접 선택 불가·최대 3개 제한 제외) |
-| `ArcStatus` | `ARC_ISSUED` | ARC(외국인등록증) 발급 완료 |
-| | `NO_ARC` | ARC 미발급(추천 시 파생 조건 `DiagnosisCondition.NO_ARC`로 반영) |
+| `ArcStatus` | `ARC_ISSUED` | ARC(외국인등록증) 발급 완료(추천 시 ARC 필터 미적용) |
+| | `NO_ARC` | ARC 미발급(추천 시 `arcStatus` 값을 그대로 넘겨 매물 `arcRequired=NOT_REQUIRED`로 매칭 — 파생 조건으로 바꾸지 않는다) |
 | `DiagnosisStatus` | `IN_PROGRESS` | 진행 중(v1이 단계별 답을 채워가는 in-progress draft, 이력·목록 비노출) |
 | | `COMPLETED` | 제출 확정 완료(`IN_PROGRESS`에서 전이, 이력·목록 노출) |
 | | `DISCARDED` | 6단계를 못 채우고 **끝난** v2 시도(`Diagnosis.discard`) — 수요 분석 전용 기록이라 **사용자 노출 경로를 두지 않는다**: 목록(이력·최근)은 `COMPLETED`만 보므로 자동으로 빠지고, **id로 직접 오는 상세·추천은 명시적으로 404로 거절**한다(소유권만으론 못 막는다 — 본인 기록이고 id가 순차 발급이라 추측 가능). ADR-0036 결정 12 |
@@ -540,11 +595,11 @@
 | | `INCREASE_BUDGET` | 월세 범위 확대(최소를 낮추거나 최대를 높임 — enum 코드는 유지) |
 | | `ADJUST_KEYWORD` | 키워드 조정 |
 
-> `DiagnosisCondition`은 `listing`의 `ConditionTag`와 동일 이름을 쓴다(각 모듈이 자기 enum을 소유·공유 금지).
+> `DiagnosisCondition`은 `listing`의 `ConditionTag`와 동일 이름을 쓴다(각 모듈이 자기 enum을 소유·공유 금지) — 두 enum 모두 8종으로 1:1이며 **ARC 관련 값은 어느 쪽에도 없다**(진단은 `arcStatus` 답으로, 매물은 `arcRequired` 필드로 표현한다). ④ 주거 환경 조건은 예외 없이 최대 3개다.
 >
 > `UniversityGroup`·`District`는 ③ 대학·지역 선택 단계의 입력 enum으로, **enum 값 카탈로그의 정본은 이 문서**다(위 표에 등재). **고정 enum(코드 1:1 검증용)은 MongoDB `diagnosisQuestions` 카탈로그**(`step`·`field`·`options[{code, label}]`·`select{type,max}` — **데이터만**, 분기 메타 없음)로 두고, **표시 문자열(번역)은 같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — `code`(UPPER_SNAKE)는 제출 검증 enum과 단일 출처(1:1)로 고정·언어 무관이고, 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`처럼 **언어 코드를 키로 하는 맵**으로 둔다(서버가 사용자 언어 키로 선택, 부재 시 영어(`en`) 폴백; 닉네임 풀·`countries`와 다른 부류로, reference로 분리하지 않음). 대학 그룹 질문(`university`)·지역 질문(`district`)은 각각 별도 step 데이터로 카탈로그에 존재하고, **어느 질문을 낼지는 서비스가 저장된 `purpose`로 결정**한다(데이터에 분기 메타 없음). 대학 그룹 질문의 `options[].code`는 `UniversityGroup`과 1:1(6개 그룹), 사용자는 그중 1개를 단일 선택한다.
 >
-> **대학 그룹 → 소속 개별 대학 코드(member) 매핑** — `UniversityGroup`은 ③ 단계의 **선택 입력**이고, member 개별 코드(`SNU`·`CAU` 등 기존 개별 University 코드)는 **추천 질의 시 그룹을 펼친(query-time expansion) 결과**다. 개별 코드는 여전히 `listing`의 `nearbyUniversityCodes`에 저장되는 값으로(**listing 저장 형식은 변경하지 않음** — 그룹 코드가 아니라 member 개별 코드를 저장), 진단은 선택 그룹을 아래 member 집합으로 확장해 listing 공개 추천 쿼리에 넘기고 listing은 `nearbyUniversityCodes`를 그 집합으로 `$in`(ANY member) 매칭한다. `ETC`는 member가 빈 집합이라 대학 필터를 생략한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)).
+> **대학 그룹 → 소속 개별 대학 코드(member) 매핑** — `UniversityGroup`은 ③ 단계의 **선택 입력**이고, member 개별 코드(`SNU`·`CAU` 등 기존 개별 University 코드)는 **추천 질의 시 그룹을 펼친(query-time expansion) 결과**다. 개별 코드는 여전히 `listing`의 `nearbyUniversityCodes`에 저장되는 값으로(**listing 저장 형식은 변경하지 않음** — 그룹 코드가 아니라 member 개별 코드를 저장), 진단은 선택 그룹을 아래 member 집합으로 확장해 listing 공개 추천 쿼리에 넘기고 listing은 `nearbyUniversityCodes`를 그 집합으로 `$in`(ANY member) 매칭한다. `ETC`는 고른 학교가 목록 밖이라는 뜻이므로, 멤버를 펼치는 대신 **목록 전체를 제외 조건**으로 넘겨 여집합(`$nin`)으로 매칭한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)).
 >
 > | `UniversityGroup` | ko 라벨 | en 라벨 | member 개별 대학 코드 |
 > | --- | --- | --- | --- |
@@ -553,11 +608,11 @@
 > | `SNU_CAU_SOONGSIL` | 서울대·중앙대·숭실대 | Seoul National · Chung-Ang · Soongsil | `SNU`·`CAU`·`SOONGSIL` |
 > | `HONGIK_YONSEI_EWHA` | 홍익대·연세대·이화여대 | Hongik · Yonsei · Ewha Womans | `HONGIK`·`YONSEI`·`EWHA` |
 > | `KONKUK_SEJONG_HYU` | 건국대·세종대·한양대 | Konkuk · Sejong · Hanyang | `KONKUK`·`SEJONG`·`HYU` |
-> | `ETC` | 기타 | Other | (빈 집합) — 대학 필터 생략, 지역 기반 매칭만 |
+> | `ETC` | 기타 | Other | (멤버 없음) — 목록 14곳의 **여집합**(`$nin`)으로 매칭 |
 >
 > **⑤ 월세 범위(`monthlyRent`) — `NUMBER_RANGE` 카브아웃** — 5단계 월세 입력은 enum 옵션이 아니라 **숫자 범위 자유 입력**이라 `diagnosisQuestions`의 step-5 `select.type`을 `"NUMBER_RANGE"`(두 숫자 입력 필드, `options`는 빈 배열)로 둔다 — "모든 step은 코드가 enum과 1:1인 고정 옵션 목록"이라는 전제에서 의도적으로 갈라진 예외다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)).
 
-**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다 — `userId`(→ `user`), 추천 결과의 `listingId`(→ `listing`). 추천은 `Diagnosis.criteria`로 `listing` 공개 추천 쿼리 `recommendByCriteria`를 동기 호출해 `RecommendedListingView` 페이지를 받아 조립한다(엔티티 비공유, ADR-0002 Decision 5). 교차 모듈 계약 `RecommendationCriteria`의 `universityCodes`는 개별 대학 코드 `Set<String>`(`ETC`면 빈 집합)이고, `monthlyRentMin`/`monthlyRentMax`는 nullable이다. listing은 같은 ACTIVE 방 상품의 월세에 각 경계를 적용한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). 라벨 번역에 쓸 표시 언어는 `user` 공개 쿼리 `getLanguage`로 동기 취득한다. 진단 제출·재진단은 본 모듈 내부에서 완결되며 외부 발행 이벤트는 없다.
+**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다 — `userId`(→ `user`), 추천 결과의 `listingId`(→ `listing`). 추천은 `Diagnosis.criteria`로 `listing` 공개 추천 쿼리 `recommendByCriteria`를 동기 호출해 `RecommendedListingView` 페이지를 받아 조립한다(엔티티 비공유, ADR-0002 Decision 5). 교차 모듈 계약 `RecommendationCriteria`의 `includedUniversityCodes`는 개별 대학 코드 `Set<String>`(`ETC`면 비고 대신 `excludedUniversityCodes`가 목록 전체로 채워진다)이고, `monthlyRentMin`/`monthlyRentMax`는 nullable이며, `arcStatus`도 원시 값으로 함께 넘긴다. listing은 같은 ACTIVE 방 상품의 월세에 각 경계를 적용한다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). **두 모듈은 값 집합을 일치시키지 않고 매핑으로 잇는다** — `Region`↔`address.city`는 등가 비교, `District`의 5구는 등가 비교하되 `ETC`는 매물 쪽 그 5구의 **여집합(`$nin`)**, `ArcStatus`는 `NO_ARC`면 매물 `arcRequired=NOT_REQUIRED` 필터·`ARC_ISSUED`면 필터 미적용으로 옮긴다(진단 `District`는 6종 그대로 두고 매물 9종에 맞춰 늘리지 않는다 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 라벨 번역에 쓸 표시 언어는 `user` 공개 쿼리 `getLanguage`로 동기 취득한다. 진단 제출·재진단은 본 모듈 내부에서 완결되며 외부 발행 이벤트는 없다.
 
 - **문항·선택지 카탈로그(US-2-5)** — 6단계별 {질문(`question`), 선택지[`code`], 선택 제약(`select{type, max}`)}는 `Diagnosis` 애그리거트가 아니라 **MongoDB `diagnosisQuestions` 컬렉션(도메인 포트로 조회)**로 제공한다 — **데이터만 보유**하고 분기 메타(`branchOn` 등)는 두지 않는다(분기는 서비스 비즈니스 로직 소관). 번역(표시 문자열)은 분리 컬렉션 없이 **같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`로 두고 선택지 `code`(UPPER_SNAKE)는 언어 무관 불변이다. 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)을 호출하면, 서버가 (카탈로그 + 본인 진행 중(`IN_PROGRESS`) 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question, select{type, max}, options[{code, label}] }`(`question`·`label`은 서버가 인라인 언어-키 맵에서 사용자 언어 키로 고른 표시 문자열, `code`는 언어 무관)로 내려준다(한 번에 다 주지 않음; 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열; **⑤ 월세 범위는 enum 코드가 아니라 두 숫자 필드** `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` — 순서 없는 `codes[]` 배열을 재사용하지 않는다)로 보내면 서버가 **본인 진행 중(`IN_PROGRESS`) 진단에 저장**한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`(제출)가 진행 중 진단의 저장된 답을 재검증해 `COMPLETED`로 확정한다. **분기는 서비스 비즈니스 로직이 결정한다(클라 로컬 분기·데이터 분기 메타 아님)** — ③ 대학·지역 단계(step 3)는 저장된 `purpose`를 보고 서비스가 알맞은 질문만 낸다: `STUDY`면 대학 그룹 질문(`university`, 목록 `UniversityGroup` 6개 그룹)을, `NON_STUDY`면 지역 질문(`district`, 목록 `District`)을 내려준다(두 질문 데이터는 카탈로그에 각각 존재하고, 노출은 서비스가 결정; 한 응답에 두 목록을 함께 주지 않는다). 선택지 `code`는 제출 검증 enum과 **동일 출처(1:1)** 라 코드로 제출하면 `INVALID_INPUT` 없이 수용된다(카탈로그·번역 모두 `diagnosisQuestions` 도큐먼트에 함께 보유). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`로 거른다.
 - **라벨 번역(US-2-6)** — 표시 `label`·`question`은 **사용자 표시 언어**의 값으로 채운다. `code`는 언어 무관 동일(UPPER_SNAKE)이며 인라인 언어-키 맵의 값(표시 문자열)만 언어별이고, 해당 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님; `Accept-Language` 비의존). 표시 언어는 **`user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`으로 회신 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); 토큰 클레임 분기 제거; ADR-0002 Decision 5) — `user`는 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다. 표시 문자열은 **`diagnosisQuestions` 도큐먼트의 `question`/`options[].label`에 인라인 언어-키 맵으로 임베드**한다: `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**이다(문항·옵션은 `diagnosisQuestions`, 추천 사유/액션은 `diagnosisSuggestions` 컬렉션에 같은 인라인 언어-키 맵 방식 재사용). **표시 언어 결정은 전적으로 `user` 소관**이며(`users.lang`이 있으면 그 값, 없으면 `en`), `diagnosis`는 폴백 규칙을 알지 못한 채 언어 코드만 받는다. 미지원 언어의 **폴백 기본 언어는 영어**다. 서버 동작: 표시 언어(`user` `getLanguage`) → 도큐먼트의 언어-키 맵에서 그 언어 키 값을 골라(부재 시 `en`) 응답 조립.
@@ -625,7 +680,7 @@
 >
 > **소유자 식별자(`landlordId`) — 생성 시 비정규화 저장:** 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 함께 저장한다(생성이 이미 `listing::api`로 매물을 조회하므로 소유자 스냅샷 캡처 비용이 거의 없다). 임대인 **조회 분기**(`userType=LANDLORD`)의 "내 매물에 신청됨"은 이 `landlordId`로 booking 저장소에서 직접 스코핑하며(목록 `landlord_id=요청자`, 상세 `booking.landlordId==요청자` 행 단위 확인), **cross-store 조인이 불필요**하다([ADR-0005](../adr/0005-polyglot-persistence.md)) — `chat_rooms`가 `landlord_id`를 비정규화하는 선례와 일치한다. 생성 시점 스냅샷이라 소유권 이전 시 stale하나 이전은 MVP 범위 밖이다. 예약 **생성** 자체는 세입자 전용이라 본인 매물 차단(소유자 대조)은 여전히 불필요하다. 첫 인사 메시지(`GreetingMessage`)는 채팅 연동 설계에 속하므로 **후속·이연**으로 애그리거트 저장 필드에 두지 않는다.
 
-**불변식:** 예약은 `ACTIVE` 세입자(`userType=TENANT`) 전용 — 임대인/비세입자는 거부(`403 FORBIDDEN`); **동일 세입자–동일 방 상품 예약은 중복 방지한다** — `(tenantId, roomOfferId)`에 UNIQUE(`uq_bookings_tenant_room_offer`)를 두어 활성 예약을 1건으로 제한하고, 이미 신청한 방 상품 재신청은 `409 BOOKING_ALREADY_EXISTS`로 거부한다(상태 전이가 미구현이라 모든 예약이 `REQUESTED`=활성이므로 조건 없는 UNIQUE로 "활성 1건"이 정확히 표현된다 — ⚠️ 향후 상태 전이가 도입되면 `REJECTED`·`CANCELED` 건이 같은 방 재신청을 영구 차단하므로 활성 상태만 거는 **부분 유니크**로 교체해야 하며, MySQL은 부분 유니크 인덱스를 지원하지 않아 표현 방식(`active_room_offer_id` 같은 nullable 컬럼 + UNIQUE 트릭, 또는 앱 레벨 검사)을 그때 정한다); 예약은 세입자 전용이라 자기 소유 매물 예약 상황이 성립하지 않아 본인 매물 차단(소유자 조회)도 없다; `moveInDate`는 과거 불가·매물 입주 가능일 이전 불가(`422 BOOKING_INVALID_MOVE_IN_DATE`); `contractPeriod`는 양의 정수 개월수(`400 INVALID_INPUT`); 대상 매물·방 상품이 없거나 비공개면 부재 처리(`404 LISTING_NOT_FOUND`); **신청 생성 시 `status`는 항상 `REQUESTED` 고정 — 수락/거절/취소 등 상태전이는 이 범위 밖**(1차 MVP 미구현); 목록·상세 조회는 `userType`으로 분기한다 — **세입자 분기**는 요청자 본인(`tenantId`) 예약만 반환하며 없거나 타인 예약이면 `404 BOOKING_NOT_FOUND`, **임대인 분기**(`userType=LANDLORD`)는 요청자 소유 매물(`listing.landlordId`=본인)에 신청된 예약만 반환하며 없거나 내 소유 매물 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(두 역할 모두 유효 요청이라 역할 `403` 없음); **삭제(내 목록에서 숨김)는 요청자 쪽 필드만 세팅한다** — 세입자는 `tenantDeletedAt`, 임대인은 `landlordDeletedAt`에 삭제 시각(UTC)을 기록하며 **상대의 목록·상세 가시성은 그대로다**(두 참여자가 예약 1건을 공유하므로 단일 삭제 플래그를 두면 한쪽의 삭제가 상대의 기록까지 지우는 데이터 손실이 된다); 삭제는 **멱등** — 이미 삭제한 예약을 다시 삭제해도 성공(`204`)이며, 이를 위해 변이 경로는 삭제·차단으로 **필터되지 않은** 조회로 대상을 찾는다(필터된 조회를 쓰면 두 번째 요청이 `404`가 되어 멱등이 깨진다); 참여자가 아니거나 없는 예약의 삭제는 `404 BOOKING_NOT_FOUND`(존재 비노출 — 조회 규약과 통일); **차단 관계인 상대의 예약은 목록·상세에서 제외한다** — 차단자 기준 **단방향**이라 내가 상대를 차단하면 그 상대와의 모든 예약이 **내 목록에서만** 사라지고 상대의 목록은 그대로다(차단은 `*DeletedAt`을 세팅하지 않는다 — 숨김은 차단 필터가 수행한다); **차단 관계면 신규 예약 신청을 거부한다** — 요청자와 매물 소유자 사이에 **어느 방향으로든**(양방향 판정) 차단이 있으면 `POST /listings/{listingId}/bookings`는 `403 FORBIDDEN`으로 막는다(막지 않으면 생성은 성공하는데 차단 필터가 그 예약을 양쪽 목록에서 영구히 가리는 **블랙홀 예약**이 된다).
+**불변식:** 예약은 `ACTIVE` 세입자(`userType=TENANT`) 전용 — 임대인/비세입자는 거부(`403 FORBIDDEN`); **동일 세입자–동일 방 상품 예약은 중복 방지한다** — `(tenantId, roomOfferId)`에 UNIQUE(`uq_bookings_tenant_room_offer`)를 두어 활성 예약을 1건으로 제한하고, 이미 신청한 방 상품 재신청은 `409 BOOKING_ALREADY_EXISTS`로 거부한다(상태 전이가 미구현이라 모든 예약이 `REQUESTED`=활성이므로 조건 없는 UNIQUE로 "활성 1건"이 정확히 표현된다 — ⚠️ 향후 상태 전이가 도입되면 `REJECTED`·`CANCELED` 건이 같은 방 재신청을 영구 차단하므로 활성 상태만 거는 **부분 유니크**로 교체해야 하며, MySQL은 부분 유니크 인덱스를 지원하지 않아 표현 방식(`active_room_offer_id` 같은 nullable 컬럼 + UNIQUE 트릭, 또는 앱 레벨 검사)을 그때 정한다); 예약은 세입자 전용이라 자기 소유 매물 예약 상황이 성립하지 않아 본인 매물 차단(소유자 조회)도 없다; `moveInDate`는 과거 불가(`422 BOOKING_INVALID_MOVE_IN_DATE` — 매물이 입주 가능일을 보유하지 않으므로 과거 날짜 검증만 한다); `contractPeriod`는 양의 정수 개월수(`400 INVALID_INPUT`); 대상 매물·방 상품이 없거나 비공개면 부재 처리(`404 LISTING_NOT_FOUND`); **신청 생성 시 `status`는 항상 `REQUESTED` 고정 — 수락/거절/취소 등 상태전이는 이 범위 밖**(1차 MVP 미구현); 목록·상세 조회는 `userType`으로 분기한다 — **세입자 분기**는 요청자 본인(`tenantId`) 예약만 반환하며 없거나 타인 예약이면 `404 BOOKING_NOT_FOUND`, **임대인 분기**(`userType=LANDLORD`)는 요청자 소유 매물(`listing.landlordId`=본인)에 신청된 예약만 반환하며 없거나 내 소유 매물 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(두 역할 모두 유효 요청이라 역할 `403` 없음); **삭제(내 목록에서 숨김)는 요청자 쪽 필드만 세팅한다** — 세입자는 `tenantDeletedAt`, 임대인은 `landlordDeletedAt`에 삭제 시각(UTC)을 기록하며 **상대의 목록·상세 가시성은 그대로다**(두 참여자가 예약 1건을 공유하므로 단일 삭제 플래그를 두면 한쪽의 삭제가 상대의 기록까지 지우는 데이터 손실이 된다); 삭제는 **멱등** — 이미 삭제한 예약을 다시 삭제해도 성공(`204`)이며, 이를 위해 변이 경로는 삭제·차단으로 **필터되지 않은** 조회로 대상을 찾는다(필터된 조회를 쓰면 두 번째 요청이 `404`가 되어 멱등이 깨진다); 참여자가 아니거나 없는 예약의 삭제는 `404 BOOKING_NOT_FOUND`(존재 비노출 — 조회 규약과 통일); **차단 관계인 상대의 예약은 목록·상세에서 제외한다** — 차단자 기준 **단방향**이라 내가 상대를 차단하면 그 상대와의 모든 예약이 **내 목록에서만** 사라지고 상대의 목록은 그대로다(차단은 `*DeletedAt`을 세팅하지 않는다 — 숨김은 차단 필터가 수행한다); **차단 관계면 신규 예약 신청을 거부한다** — 요청자와 매물 소유자 사이에 **어느 방향으로든**(양방향 판정) 차단이 있으면 `POST /listings/{listingId}/bookings`는 `403 FORBIDDEN`으로 막는다(막지 않으면 생성은 성공하는데 차단 필터가 그 예약을 양쪽 목록에서 영구히 가리는 **블랙홀 예약**이 된다).
 
 > **왜 삭제·차단이 `BookingStatus` 값이 아닌가:** 표시 상태는 `status`로 표현하지 않는다 — (1) `status`는 `tenantId`·`landlordId`가 **공유하는 하나의 필드**라 한쪽의 숨김이 상대가 보는 상태까지 바꿔 버리고, (2) **취소(`CANCELED`)와 숨김은 다른 개념**이며(취소는 예약 자체의 종료, 삭제는 내 목록의 표시 여부 — 상대에겐 예약이 그대로 살아 있다), (3) 1차 MVP는 애초에 **상태 전이가 미구현**(`REQUESTED` 고정)이라 `status`에 실을 전이가 없다. 그래서 참여자별 표시 상태는 `tenantDeletedAt`·`landlordDeletedAt` 두 독립 필드로 둔다(물리 컬럼·인덱스·소프트삭제 규약과의 관계는 [database-design](../database/database-design.md) 소관).
 >
@@ -690,7 +745,7 @@
 >
 > `contractPeriod`는 enum이 아니라 **정수(개월수, 양의 정수)** 다 — `1`·`3`·`6`·`12`·`24` 등 자유 입력.
 
-**협력 / 이벤트:** 세입자는 `user`, 매물·방 상품은 `listing`을 식별자로만 참조한다(ADR-0002, 엔티티 비공유). **생성 시점**에는 매물 존재·공개 검증과 입주 가능일 조회를 `listing` 공개 쿼리(`listing::api`)로 받는다(부재/비공개 `404 LISTING_NOT_FOUND`; 예약은 세입자 전용이라 소유자 조회는 불요). **조회 시점**(목록·상세)에는 **스냅샷 없이 실시간 조인**한다 — 매물 요약·가격(`title`·`thumbnailUrl`·주소·`RoomOffer` name·`deposit`·`monthlyRent`)은 `listing::api`로 `(listingId, roomOfferId)`를 조회하고, 예약자 성명(`tenantName`)은 `user::api`(`getUserName(tenantId)`)로 조회해 애플리케이션 레벨에서 조합한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md); 가격 변경 시 상세는 현재가 기준). 총 금액은 조회 시점 계산값(`deposit + monthlyRent × contractPeriod`, 관리비 제외)이다. 두 조회 메서드(`listing::api`의 가격·매물요약 조회, `user::api`의 성명 조회)는 신규 공개 조회로 노출되며 이에 따라 `booking`의 `allowedDependencies`는 `{common, listing, user}`다. **임대인 조회 분기**(`userType=LANDLORD`)는 소유권을 `Booking.landlordId`로 판정하므로 `listing::api` 소유권 조회 메서드가 **불필요**하다 — 대신 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId`를 추가 노출하고, 임대인 **상세** 분기의 신청자 프로필 조회를 위해 `user::api`에 `getApplicantProfile`(성명·성별·국적·이메일)를 신규 공개 조회로 추가한다. 임대인에게 신청자 PII(이메일·성별·국적)는 **마스킹 없이 평문으로 노출**한다(제품 결정). **차단**은 `user`가 소유하는 `UserBlock`(§2)에 위임한다 — 목록·상세 필터가 쓸 차단 상대 식별자 집합은 `user::api`의 `findBlockedUserIds(요청자)`로, 신규 신청 가드의 양방향 판정은 `isBlockedBetween(요청자, 임대인)`으로 동기 조회해 **애플리케이션 레벨에서** 적용한다(차단 기록을 직접 조인하지 않는다, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 차단 **생성**만은 경로가 `POST /bookings/{bookingId}/block`이라 상대를 예약에서 도출해야 하므로(`요청자 == tenantId ? landlordId : tenantId` — 클라이언트가 상대 식별자를 보내지 않는다) 엔드포인트는 `booking`에 두되 저장은 `user::api` 공개 명령으로 `user`에 위임한다 — `user`가 생성을 소유하면 상대를 도출하려 `user → booking`이 생기고 `booking → user :: api`가 이미 있어 **순환이 나 `ApplicationModules.verify()`가 깨진다**. 차단 목록·해제(`/api/v1/users/me/blocks`)는 예약과 무관하게 `user`가 제공한다(차단하면 그 예약이 목록에서 사라져 `bookingId`를 다시 얻을 수 없으므로 해제 경로가 예약에 매일 수 없다). 세 협력 모두 기존 `user :: api`를 쓰므로 `allowedDependencies`는 **`{common, listing, user}` 그대로**이고 새 의존 엣지가 없다. **예약 신고 접수**(`BookingReport`)는 대상 존재·참여자 검증이 예약 내부 정보라 모듈 안에서 완결되며 `report`(§9)를 호출하지 않는다(대상이 겹치지 않는다 — 위 `BookingReport` 참조).
+**협력 / 이벤트:** 세입자는 `user`, 매물·방 상품은 `listing`을 식별자로만 참조한다(ADR-0002, 엔티티 비공유). **생성 시점**에는 매물 존재·공개 검증을 `listing` 공개 쿼리(`listing::api`)로 받는다(부재/비공개 `404 LISTING_NOT_FOUND`; 예약은 세입자 전용이라 소유자 조회는 불요). **조회 시점**(목록·상세)에는 **스냅샷 없이 실시간 조인**한다 — 매물 요약·가격(`title`·`thumbnailUrl`·주소·`RoomOffer` name·`deposit`·`monthlyRent`)은 `listing::api`로 `(listingId, roomOfferId)`를 조회하고, 예약자 성명(`tenantName`)은 `user::api`(`getUserName(tenantId)`)로 조회해 애플리케이션 레벨에서 조합한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md); 가격 변경 시 상세는 현재가 기준). 총 금액은 조회 시점 계산값(`deposit + monthlyRent × contractPeriod`, 관리비 제외)이다. 두 조회 메서드(`listing::api`의 가격·매물요약 조회, `user::api`의 성명 조회)는 신규 공개 조회로 노출되며 이에 따라 `booking`의 `allowedDependencies`는 `{common, listing, user}`다. **임대인 조회 분기**(`userType=LANDLORD`)는 소유권을 `Booking.landlordId`로 판정하므로 `listing::api` 소유권 조회 메서드가 **불필요**하다 — 대신 예약 **생성** 시 소유자 캡처를 위해 `listing::api`의 매물 조회 뷰(`RoomOfferBookingView`)에 `landlordId`를 추가 노출하고, 임대인 **상세** 분기의 신청자 프로필 조회를 위해 `user::api`에 `getApplicantProfile`(성명·성별·국적·이메일)를 신규 공개 조회로 추가한다. 임대인에게 신청자 PII(이메일·성별·국적)는 **마스킹 없이 평문으로 노출**한다(제품 결정). **차단**은 `user`가 소유하는 `UserBlock`(§2)에 위임한다 — 목록·상세 필터가 쓸 차단 상대 식별자 집합은 `user::api`의 `findBlockedUserIds(요청자)`로, 신규 신청 가드의 양방향 판정은 `isBlockedBetween(요청자, 임대인)`으로 동기 조회해 **애플리케이션 레벨에서** 적용한다(차단 기록을 직접 조인하지 않는다, [ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 차단 **생성**만은 경로가 `POST /bookings/{bookingId}/block`이라 상대를 예약에서 도출해야 하므로(`요청자 == tenantId ? landlordId : tenantId` — 클라이언트가 상대 식별자를 보내지 않는다) 엔드포인트는 `booking`에 두되 저장은 `user::api` 공개 명령으로 `user`에 위임한다 — `user`가 생성을 소유하면 상대를 도출하려 `user → booking`이 생기고 `booking → user :: api`가 이미 있어 **순환이 나 `ApplicationModules.verify()`가 깨진다**. 차단 목록·해제(`/api/v1/users/me/blocks`)는 예약과 무관하게 `user`가 제공한다(차단하면 그 예약이 목록에서 사라져 `bookingId`를 다시 얻을 수 없으므로 해제 경로가 예약에 매일 수 없다). 세 협력 모두 기존 `user :: api`를 쓰므로 `allowedDependencies`는 **`{common, listing, user}` 그대로**이고 새 의존 엣지가 없다. **예약 신고 접수**(`BookingReport`)는 대상 존재·참여자 검증이 예약 내부 정보라 모듈 안에서 완결되며 `report`(§9)를 호출하지 않는다(대상이 겹치지 않는다 — 위 `BookingReport` 참조).
 
 **후속·이연(1차 MVP 제외):** 신청 성공 시 **`BookingCreatedEvent`** 를 발행해(페이로드: `bookingId`·`listingId`·`tenantId`·`landlordId`·`moveInDate`·`contractPeriod`·첫 인사 메시지) `chat`이 구독하고 임대인 채팅방 보장·예약 카드(`BOOKING_CARD`) 고정·첫 인사 전송을 처리하는 채팅 연동 설계는 **1차 MVP 범위 밖으로 이연**한다(설계 보존, 삭제 아님). `booking`은 `chat`을 알지 못한다(단방향).
 
@@ -919,7 +974,7 @@
 | | `C` | 세 번째 보기 |
 | | `D` | 네 번째 보기 |
 
-> 퀴즈 콘텐츠는 `Quiz` 애그리거트를 **MongoDB `quizzes` 컬렉션**(`diagnosisQuestions`와 동종의 문서 카탈로그, ADR-0005 폴리글랏 — 퀴즈=콘텐츠/문서 → MongoDB)에 보유한다. 표시 문자열(`question`·`choices[].text`·`explanation`)은 분리 컬렉션 없이 **같은 도큐먼트 안에 인라인 언어-키 맵으로 임베드**하고(언어 코드 키), 보기 키 `A`~`D`(`ChoiceKey`)는 언어 무관 불변으로 채점 기준이다. `active` 불리언이 랜덤 풀을 게이트하며, 시드는 Mongock `@ChangeUnit`으로 적재한다. 제출 테이블·포인트 테이블은 없다(무상태 채점).
+> 퀴즈 콘텐츠는 `Quiz` 애그리거트를 **MongoDB `quizzes` 컬렉션**(`diagnosisQuestions`와 동종의 문서 카탈로그, ADR-0005 폴리글랏 — 퀴즈=콘텐츠/문서 → MongoDB)에 보유한다. 표시 문자열(`question`·`choices[].text`·`explanation`)은 분리 컬렉션 없이 **같은 도큐먼트 안에 인라인 언어-키 맵으로 임베드**하고(언어 코드 키), 보기 키 `A`~`D`(`ChoiceKey`)는 언어 무관 불변으로 채점 기준이다. `active` 불리언이 랜덤 풀을 게이트하며, 시드는 정본 시드 JSON 주입으로 적재한다. 제출 테이블·포인트 테이블은 없다(무상태 채점).
 
 **협력 / 이벤트:** 채점 귀속 주체는 `user`를 식별자(`userId`)로만 참조한다(ADR-0002). 번역에 쓸 **표시 언어는 `user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`으로 회신 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(ADR-0002 Decision 5). 이로써 **모듈 의존 `gamification → user`를 추가**한다(위 `allowedDependencies` 항목). 퀴즈 콘텐츠는 **MongoDB 문서 카탈로그**(`diagnosisQuestions`와 동종, ADR-0005)로 제공하며, 채점은 **무상태**라 제출·적립·이벤트를 남기지 않는다.
 
@@ -1011,7 +1066,7 @@
 
 **불변식:** `topicCode`는 실재하는 `LifeTipTopic.code`를 가리켜야 한다(참조 무결성 — 없는 주제 코드로 조회 시 `404 LIFE_TIP_TOPIC_NOT_FOUND`); 한 주제의 팁 목록은 `(topicCode, order)`로 노출 순서를 정하며, 주제당 팁 수가 제한적이라 페이지네이션 없이 전체 리스트를 한 번에 반환한다(비페이지 — "해당 주제에 맞는 제목-내용-사진의 모든 리스트"); `title`·`content`는 표시 문자열만 언어별이고 `id`·`imageUrl`은 언어 무관 불변; `imageUrl`이 없는 팁은 `null`로 두되 나머지 필드(`title`·`content`)는 정상 노출한다; 응답 스키마는 언어와 무관하게 동일하고 서버가 언어 문자열만 채운다.
 
-> `LifeTipTopic`·`LifeTip` 모두 운영이 시드로 적재하는 큐레이션 카탈로그다(사용자 생성 콘텐츠 아님). 시드는 진단 카탈로그와 동일하게 Mongock `@ChangeUnit`(모듈별)로 `lifeTipTopics`/`lifeTips` 컬렉션에 적재한다([ADR-0032](../adr/0032-mongodb-migration-runner.md)). 컬렉션·인덱스 등 영속 매핑(`lifeTipTopics { order: 1 }`, `lifeTips { topicCode: 1, order: 1 }` 복합)은 [database-design](../database/database-design.md) 소관이라 여기서 다루지 않는다.
+> `LifeTipTopic`·`LifeTip` 모두 운영이 시드로 적재하는 큐레이션 카탈로그다(사용자 생성 콘텐츠 아님). 시드는 진단 카탈로그와 동일하게 운영자가 정본 JSON을 `lifeTipTopics`/`lifeTips` 컬렉션에 주입한다([ADR-0032](../adr/0032-mongodb-migration-runner.md) §4). 컬렉션·인덱스 등 영속 매핑(`lifeTipTopics { order: 1 }`, `lifeTips { topicCode: 1, order: 1 }` 복합)은 [database-design](../database/database-design.md) 소관이라 여기서 다루지 않는다.
 
 **i18n(진단과 동일 전략):** 번역 기준은 **사용자 표시 언어**이고, `user` 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(`user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`으로 회신 — `lifetip`은 그 규칙을 알지 못한다; `Accept-Language`·토큰 클레임 미사용; [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6 일관). 표시 문자열(`name`/`title`/`content`)은 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하고, 서버가 사용자 언어 키로 문자열을 고르되 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)·`imageUrl`은 언어 무관 불변이라 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다). 진단 문항 라벨(`diagnosisQuestions`의 인라인 언어-키 맵)과 같은 부류로, 새 i18n 메커니즘을 만들지 않는다.
 

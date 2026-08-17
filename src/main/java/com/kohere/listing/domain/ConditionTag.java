@@ -1,6 +1,9 @@
 package com.kohere.listing.domain;
 
-/** UI 필터 칩과 방 상품 태그에 쓰는 주거 조건이다. NO_ARC는 매물 정책으로 계산하는 가상 필터다. */
+/**
+ * 방 상품 검색 필터 태그다. {@code roomOffers[].filterTags}에 저장한 값과 응답 태그가 1:1이며 서버가 파생하는 값은 없다.
+ * docs/api/specs/03-listings-favorites.md (ConditionTag).
+ */
 public enum ConditionTag {
   MOVE_IN_NOW,
   FEMALE_ONLY,
@@ -9,11 +12,5 @@ public enum ConditionTag {
   PRIVATE_BATH,
   ENGLISH_OK,
   ADDRESS_REGISTRATION,
-  NO_MAINT_FEE,
-  NO_ARC;
-
-  /** MongoDB roomOffers.filterTags에 실제 저장되는 방 상품 태그인지 알려준다. */
-  public boolean storedInRoomOfferFilterTags() {
-    return this != NO_ARC;
-  }
+  NO_MAINT_FEE
 }

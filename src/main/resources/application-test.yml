@@ -34,6 +34,21 @@ app:
       # 테스트 컨텍스트 기동용 더미 값. HTTP 어댑터 단위 테스트는 MockRestServiceServer로 실제 네트워크를 차단한다.
       client-id: test-naver-client-id
       client-secret: test-naver-client-secret
+    geocode:
+      # 주소 검색(ADR-0042)도 같은 이유의 더미 값이다. 문서 테스트는 AddressSearchClient를 목으로 대체한다.
+      client-id: test-ncp-geocode-client-id
+      client-secret: test-ncp-geocode-client-secret
+  kakao:
+    local:
+      # 역 검색·대학 파생(ADR-0044)도 같은 이유의 더미 값이다.
+      # 어댑터 테스트는 MockRestServiceServer로, 문서 테스트는 포트 목으로 네트워크를 막는다.
+      rest-api-key: test-kakao-rest-api-key
+  images:
+    # enabled=false → StubListingImageStorage 폴백. 문서·컨트롤러 테스트가 저장소 없이 등록 흐름을 그대로 탄다.
+    # 어댑터 자체는 MinIO 컨테이너를 띄우는 통합 테스트가 검증한다.
+    enabled: false
+    bucket: test-images-bucket
+    cdn-domain: cdn.test.kohere.app
 
 # Mongock 비활성 — 테스트는 Mongo 미가용(슬라이스 테스트만 Testcontainers). 1회성 마이그레이션은 test에서 돌리지 않는다.
 mongock:

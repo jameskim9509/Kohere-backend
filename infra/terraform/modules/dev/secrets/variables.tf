@@ -114,6 +114,27 @@ variable "naver_search_client_secret" {
   sensitive   = true
 }
 
+variable "naver_geocode_client_id" {
+  description = "NCP Maps Geocoding API Client ID(도로명 주소 검색)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "naver_geocode_client_secret" {
+  description = "NCP Maps Geocoding API Client Secret(도로명 주소 검색)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "kakao_rest_api_key" {
+  description = "카카오 로컬 API REST API 키(인근 역 검색 · 등록 시 인근 대학 파생)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # ----- 앱 런타임 토글·설정(비밀 아님) — SSM String으로 저장해 refresh-env가 .env로 회수(재배포만으로 반영, ADR-0024) -----
 variable "solapi_enabled" {
   description = "SOLAPI 실 발송 활성화(앱 app.solapi.enabled). false면 로깅 폴백"

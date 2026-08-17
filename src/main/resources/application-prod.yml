@@ -58,3 +58,17 @@ app:
       # 운영 인증정보는 환경변수/Secrets Manager에서만 주입하고 저장소에는 값을 남기지 않는다.
       client-id: ${NAVER_SEARCH_CLIENT_ID}
       client-secret: ${NAVER_SEARCH_CLIENT_SECRET}
+    geocode:
+      # NCP Maps Geocoding(ADR-0042). search와 별개 콘솔의 자격증명이라 값을 공유하지 않는다.
+      client-id: ${NAVER_GEOCODE_CLIENT_ID}
+      client-secret: ${NAVER_GEOCODE_CLIENT_SECRET}
+  kakao:
+    local:
+      # 카카오 로컬(ADR-0044). naver와 별개 콘솔의 자격증명이라 값을 공유하지 않는다.
+      rest-api-key: ${KAKAO_REST_API_KEY}
+  images:
+    # 매물 사진 저장소(ADR-0041). 버킷·CDN 도메인은 terraform이 APP_IMAGES_* 로 주입한다(비밀 아님).
+    # 자격증명은 설정에 두지 않는다 — 태스크 역할이 임시 자격증명을 준다.
+    enabled: ${APP_IMAGES_ENABLED:true}
+    bucket: ${APP_IMAGES_BUCKET}
+    cdn-domain: ${APP_IMAGES_CDN_DOMAIN}

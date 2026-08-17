@@ -1,0 +1,632 @@
+[
+  {
+    "_id": "LISTING_TYPE:GOSHIWON",
+    "category": "LISTING_TYPE",
+    "code": "GOSHIWON",
+    "label": { "ko": "고시원", "en": "Goshiwon" }
+  },
+  {
+    "_id": "LISTING_TYPE:CO_LIVING",
+    "category": "LISTING_TYPE",
+    "code": "CO_LIVING",
+    "label": { "ko": "코리빙", "en": "Co-living" }
+  },
+  {
+    "_id": "LISTING_TYPE:SHARE_HOUSE",
+    "category": "LISTING_TYPE",
+    "code": "SHARE_HOUSE",
+    "label": { "ko": "쉐어하우스", "en": "Share House" }
+  },
+  {
+    "_id": "RENTAL_TYPE:MONTHLY_RENT",
+    "category": "RENTAL_TYPE",
+    "code": "MONTHLY_RENT",
+    "label": { "ko": "월세", "en": "Monthly Rent" }
+  },
+  {
+    "_id": "GENDER_POLICY:ANY",
+    "category": "GENDER_POLICY",
+    "code": "ANY",
+    "label": { "ko": "성별 제한 없음", "en": "Any Gender" }
+  },
+  {
+    "_id": "GENDER_POLICY:FEMALE_ONLY",
+    "category": "GENDER_POLICY",
+    "code": "FEMALE_ONLY",
+    "label": { "ko": "여성 전용", "en": "Female Only" }
+  },
+  {
+    "_id": "GENDER_POLICY:MALE_ONLY",
+    "category": "GENDER_POLICY",
+    "code": "MALE_ONLY",
+    "label": { "ko": "남성 전용", "en": "Male Only" }
+  },
+  {
+    "_id": "GENDER_POLICY:GENDER_SEPARATED",
+    "category": "GENDER_POLICY",
+    "code": "GENDER_SEPARATED",
+    "label": { "ko": "남녀 분리", "en": "Gender-Separated" }
+  },
+  {
+    "_id": "BUILDING_TYPE:COMMERCIAL_BUILDING",
+    "category": "BUILDING_TYPE",
+    "code": "COMMERCIAL_BUILDING",
+    "label": { "ko": "상가건물", "en": "Commercial Building" }
+  },
+  {
+    "_id": "BUILDING_TYPE:STANDALONE_BUILDING",
+    "category": "BUILDING_TYPE",
+    "code": "STANDALONE_BUILDING",
+    "label": { "ko": "단독건물", "en": "Standalone Building" }
+  },
+  {
+    "_id": "BUILDING_TYPE:VILLA",
+    "category": "BUILDING_TYPE",
+    "code": "VILLA",
+    "label": { "ko": "빌라/연립", "en": "Villa" }
+  },
+  {
+    "_id": "BUILDING_TYPE:DETACHED_HOUSE",
+    "category": "BUILDING_TYPE",
+    "code": "DETACHED_HOUSE",
+    "label": { "ko": "단독주택", "en": "Detached House" }
+  },
+  {
+    "_id": "BUILDING_TYPE:OFFICETEL",
+    "category": "BUILDING_TYPE",
+    "code": "OFFICETEL",
+    "label": { "ko": "오피스텔", "en": "Officetel" }
+  },
+  {
+    "_id": "BUILDING_TYPE:APARTMENT",
+    "category": "BUILDING_TYPE",
+    "code": "APARTMENT",
+    "label": { "ko": "아파트", "en": "Apartment" }
+  },
+  {
+    "_id": "BUILDING_TYPE:MIXED_USE",
+    "category": "BUILDING_TYPE",
+    "code": "MIXED_USE",
+    "label": { "ko": "주상복합", "en": "Mixed-use Building" }
+  },
+  {
+    "_id": "TRANSIT_TYPE:SUBWAY",
+    "category": "TRANSIT_TYPE",
+    "code": "SUBWAY",
+    "label": { "ko": "지하철", "en": "Subway" }
+  },
+  {
+    "_id": "HEATING_SYSTEM:CENTRAL",
+    "category": "HEATING_SYSTEM",
+    "code": "CENTRAL",
+    "label": { "ko": "중앙난방", "en": "Central Heating" }
+  },
+  {
+    "_id": "HEATING_SYSTEM:INDIVIDUAL",
+    "category": "HEATING_SYSTEM",
+    "code": "INDIVIDUAL",
+    "label": { "ko": "개별난방", "en": "Individual Heating" }
+  },
+  {
+    "_id": "LAUNDRY:WASHER",
+    "category": "LAUNDRY",
+    "code": "WASHER",
+    "label": { "ko": "세탁기", "en": "Washer" }
+  },
+  {
+    "_id": "LAUNDRY:DRYER",
+    "category": "LAUNDRY",
+    "code": "DRYER",
+    "label": { "ko": "건조기", "en": "Clothes Dryer" }
+  },
+  {
+    "_id": "LAUNDRY:DRYING_RACK",
+    "category": "LAUNDRY",
+    "code": "DRYING_RACK",
+    "label": { "ko": "건조대", "en": "Drying Rack" }
+  },
+  {
+    "_id": "LAUNDRY:IRON",
+    "category": "LAUNDRY",
+    "code": "IRON",
+    "label": { "ko": "다리미", "en": "Iron" }
+  },
+  {
+    "_id": "KITCHEN:SHARED_REFRIGERATOR",
+    "category": "KITCHEN",
+    "code": "SHARED_REFRIGERATOR",
+    "label": { "ko": "공용 냉장고", "en": "Shared Refrigerator" }
+  },
+  {
+    "_id": "KITCHEN:INDUCTION",
+    "category": "KITCHEN",
+    "code": "INDUCTION",
+    "label": { "ko": "인덕션", "en": "Induction Cooktop" }
+  },
+  {
+    "_id": "KITCHEN:GAS_STOVE",
+    "category": "KITCHEN",
+    "code": "GAS_STOVE",
+    "label": { "ko": "가스레인지", "en": "Gas Stove" }
+  },
+  {
+    "_id": "KITCHEN:MICROWAVE",
+    "category": "KITCHEN",
+    "code": "MICROWAVE",
+    "label": { "ko": "전자레인지", "en": "Microwave" }
+  },
+  {
+    "_id": "KITCHEN:ELECTRIC_KETTLE",
+    "category": "KITCHEN",
+    "code": "ELECTRIC_KETTLE",
+    "label": { "ko": "전기포트", "en": "Electric Kettle" }
+  },
+  {
+    "_id": "KITCHEN:RICE_COOKER",
+    "category": "KITCHEN",
+    "code": "RICE_COOKER",
+    "label": { "ko": "전기밥솥", "en": "Rice Cooker" }
+  },
+  {
+    "_id": "KITCHEN:TOASTER",
+    "category": "KITCHEN",
+    "code": "TOASTER",
+    "label": { "ko": "토스트기", "en": "Toaster" }
+  },
+  {
+    "_id": "KITCHEN:COFFEE_MACHINE",
+    "category": "KITCHEN",
+    "code": "COFFEE_MACHINE",
+    "label": { "ko": "커피머신", "en": "Coffee Machine" }
+  },
+  {
+    "_id": "KITCHEN:WATER_PURIFIER",
+    "category": "KITCHEN",
+    "code": "WATER_PURIFIER",
+    "label": { "ko": "정수기", "en": "Water Purifier" }
+  },
+  {
+    "_id": "LIVING_AMENITY:WIFI",
+    "category": "LIVING_AMENITY",
+    "code": "WIFI",
+    "label": { "ko": "와이파이", "en": "Wi-Fi" }
+  },
+  {
+    "_id": "LIVING_AMENITY:TV",
+    "category": "LIVING_AMENITY",
+    "code": "TV",
+    "label": { "ko": "TV", "en": "TV" }
+  },
+  {
+    "_id": "LIVING_AMENITY:SOFA",
+    "category": "LIVING_AMENITY",
+    "code": "SOFA",
+    "label": { "ko": "소파", "en": "Sofa" }
+  },
+  {
+    "_id": "LIVING_AMENITY:GYM_EQUIPMENT",
+    "category": "LIVING_AMENITY",
+    "code": "GYM_EQUIPMENT",
+    "label": { "ko": "운동기구", "en": "Gym Equipment" }
+  },
+  {
+    "_id": "LIVING_AMENITY:AIR_CONDITIONER",
+    "category": "LIVING_AMENITY",
+    "code": "AIR_CONDITIONER",
+    "label": { "ko": "공용 에어컨", "en": "Shared Air Conditioner" }
+  },
+  {
+    "_id": "LIVING_AMENITY:PROJECTOR",
+    "category": "LIVING_AMENITY",
+    "code": "PROJECTOR",
+    "label": { "ko": "프로젝터", "en": "Projector" }
+  },
+  {
+    "_id": "LIVING_AMENITY:AIR_PURIFIER",
+    "category": "LIVING_AMENITY",
+    "code": "AIR_PURIFIER",
+    "label": { "ko": "공기청정기", "en": "Air Purifier" }
+  },
+  {
+    "_id": "LIVING_AMENITY:SHARED_PC",
+    "category": "LIVING_AMENITY",
+    "code": "SHARED_PC",
+    "label": { "ko": "공용 PC", "en": "Shared PC" }
+  },
+  {
+    "_id": "SECURITY_FEATURE:CCTV",
+    "category": "SECURITY_FEATURE",
+    "code": "CCTV",
+    "label": { "ko": "CCTV", "en": "CCTV" }
+  },
+  {
+    "_id": "SECURITY_FEATURE:ENTRANCE_DOOR_LOCK",
+    "category": "SECURITY_FEATURE",
+    "code": "ENTRANCE_DOOR_LOCK",
+    "label": { "ko": "공동현관 도어락", "en": "Entrance Door Lock" }
+  },
+  {
+    "_id": "SECURITY_FEATURE:DOOR_LOCK",
+    "category": "SECURITY_FEATURE",
+    "code": "DOOR_LOCK",
+    "label": { "ko": "방별 도어락", "en": "Room Door Lock" }
+  },
+  {
+    "_id": "SECURITY_FEATURE:FIRE_EXTINGUISHER",
+    "category": "SECURITY_FEATURE",
+    "code": "FIRE_EXTINGUISHER",
+    "label": { "ko": "소화기", "en": "Fire Extinguisher" }
+  },
+  {
+    "_id": "SECURITY_FEATURE:FIRE_ALARM",
+    "category": "SECURITY_FEATURE",
+    "code": "FIRE_ALARM",
+    "label": { "ko": "화재경보기", "en": "Fire Alarm" }
+  },
+  {
+    "_id": "SECURITY_FEATURE:SECURITY_GUARD",
+    "category": "SECURITY_FEATURE",
+    "code": "SECURITY_GUARD",
+    "label": { "ko": "경비원", "en": "Security Guard" }
+  },
+  {
+    "_id": "COMMON_SPACE:SHARED_KITCHEN",
+    "category": "COMMON_SPACE",
+    "code": "SHARED_KITCHEN",
+    "label": { "ko": "공용 주방", "en": "Shared Kitchen" }
+  },
+  {
+    "_id": "COMMON_SPACE:SHARED_TOILET",
+    "category": "COMMON_SPACE",
+    "code": "SHARED_TOILET",
+    "label": { "ko": "공용 화장실", "en": "Shared Toilet" }
+  },
+  {
+    "_id": "COMMON_SPACE:SHARED_BATH",
+    "category": "COMMON_SPACE",
+    "code": "SHARED_BATH",
+    "label": { "ko": "공용 샤워실", "en": "Shared Bathroom" }
+  },
+  {
+    "_id": "COMMON_SPACE:LOUNGE",
+    "category": "COMMON_SPACE",
+    "code": "LOUNGE",
+    "label": { "ko": "라운지", "en": "Lounge" }
+  },
+  {
+    "_id": "COMMON_SPACE:STUDY_ROOM",
+    "category": "COMMON_SPACE",
+    "code": "STUDY_ROOM",
+    "label": { "ko": "스터디룸", "en": "Study Room" }
+  },
+  {
+    "_id": "COMMON_SPACE:MEETING_ROOM",
+    "category": "COMMON_SPACE",
+    "code": "MEETING_ROOM",
+    "label": { "ko": "회의실", "en": "Meeting Room" }
+  },
+  {
+    "_id": "COMMON_SPACE:ROOFTOP",
+    "category": "COMMON_SPACE",
+    "code": "ROOFTOP",
+    "label": { "ko": "옥상", "en": "Rooftop" }
+  },
+  {
+    "_id": "PROVIDED_SUPPLY:BEDDING",
+    "category": "PROVIDED_SUPPLY",
+    "code": "BEDDING",
+    "label": { "ko": "침구류", "en": "Bedding" }
+  },
+  {
+    "_id": "PROVIDED_SUPPLY:LAUNDRY_DETERGENT",
+    "category": "PROVIDED_SUPPLY",
+    "code": "LAUNDRY_DETERGENT",
+    "label": { "ko": "세탁세제", "en": "Laundry Detergent" }
+  },
+  {
+    "_id": "PROVIDED_SUPPLY:SEASONING",
+    "category": "PROVIDED_SUPPLY",
+    "code": "SEASONING",
+    "label": { "ko": "조미료", "en": "Seasoning" }
+  },
+  {
+    "_id": "PROVIDED_SUPPLY:SLIPPERS",
+    "category": "PROVIDED_SUPPLY",
+    "code": "SLIPPERS",
+    "label": { "ko": "실내화", "en": "Slippers" }
+  },
+  {
+    "_id": "PROVIDED_SUPPLY:TISSUE",
+    "category": "PROVIDED_SUPPLY",
+    "code": "TISSUE",
+    "label": { "ko": "휴지", "en": "Toilet Paper" }
+  },
+  {
+    "_id": "PROVIDED_SUPPLY:TOWEL",
+    "category": "PROVIDED_SUPPLY",
+    "code": "TOWEL",
+    "label": { "ko": "수건", "en": "Towel" }
+  },
+  {
+    "_id": "CONDITION_TAG:MOVE_IN_NOW",
+    "category": "CONDITION_TAG",
+    "code": "MOVE_IN_NOW",
+    "label": { "ko": "즉시 입주", "en": "Move-in Now" }
+  },
+  {
+    "_id": "CONDITION_TAG:FEMALE_ONLY",
+    "category": "CONDITION_TAG",
+    "code": "FEMALE_ONLY",
+    "label": { "ko": "여성 전용", "en": "Female Only" }
+  },
+  {
+    "_id": "CONDITION_TAG:MEALS_INCLUDED",
+    "category": "CONDITION_TAG",
+    "code": "MEALS_INCLUDED",
+    "label": { "ko": "식사 제공", "en": "Meals Included" }
+  },
+  {
+    "_id": "CONDITION_TAG:DOUBLE_ROOM",
+    "category": "CONDITION_TAG",
+    "code": "DOUBLE_ROOM",
+    "label": { "ko": "2인실", "en": "Double Room" }
+  },
+  {
+    "_id": "CONDITION_TAG:PRIVATE_BATH",
+    "category": "CONDITION_TAG",
+    "code": "PRIVATE_BATH",
+    "label": { "ko": "개인 욕실", "en": "Private Bath" }
+  },
+  {
+    "_id": "CONDITION_TAG:ENGLISH_OK",
+    "category": "CONDITION_TAG",
+    "code": "ENGLISH_OK",
+    "label": { "ko": "영어 안내 가능", "en": "English OK" }
+  },
+  {
+    "_id": "CONDITION_TAG:ADDRESS_REGISTRATION",
+    "category": "CONDITION_TAG",
+    "code": "ADDRESS_REGISTRATION",
+    "label": { "ko": "전입신고 가능", "en": "Address Registration" }
+  },
+  {
+    "_id": "CONDITION_TAG:NO_MAINT_FEE",
+    "category": "CONDITION_TAG",
+    "code": "NO_MAINT_FEE",
+    "label": { "ko": "관리비 없음", "en": "No Maint. Fee" }
+  },
+  {
+    "_id": "SUPPORTED_LANGUAGE:ENGLISH",
+    "category": "SUPPORTED_LANGUAGE",
+    "code": "ENGLISH",
+    "label": { "ko": "영어", "en": "English" }
+  },
+  {
+    "_id": "SUPPORTED_LANGUAGE:CHINESE",
+    "category": "SUPPORTED_LANGUAGE",
+    "code": "CHINESE",
+    "label": { "ko": "중국어", "en": "Chinese" }
+  },
+  {
+    "_id": "SUPPORTED_LANGUAGE:JAPANESE",
+    "category": "SUPPORTED_LANGUAGE",
+    "code": "JAPANESE",
+    "label": { "ko": "일본어", "en": "Japanese" }
+  },
+  {
+    "_id": "SUPPORTED_LANGUAGE:OTHER",
+    "category": "SUPPORTED_LANGUAGE",
+    "code": "OTHER",
+    "label": { "ko": "기타", "en": "Other" }
+  },
+  {
+    "_id": "NEARBY_FACILITY:CONVENIENCE_STORE",
+    "category": "NEARBY_FACILITY",
+    "code": "CONVENIENCE_STORE",
+    "label": { "ko": "편의점", "en": "Convenience Store" }
+  },
+  {
+    "_id": "NEARBY_FACILITY:MART",
+    "category": "NEARBY_FACILITY",
+    "code": "MART",
+    "label": { "ko": "마트/슈퍼마켓", "en": "Mart/Supermarket" }
+  },
+  {
+    "_id": "NEARBY_FACILITY:HOSPITAL_PHARMACY",
+    "category": "NEARBY_FACILITY",
+    "code": "HOSPITAL_PHARMACY",
+    "label": { "ko": "병원/약국", "en": "Hospital/Pharmacy" }
+  },
+  {
+    "_id": "NEARBY_FACILITY:PARK",
+    "category": "NEARBY_FACILITY",
+    "code": "PARK",
+    "label": { "ko": "공원", "en": "Park" }
+  },
+  {
+    "_id": "NEARBY_FACILITY:LAUNDROMAT",
+    "category": "NEARBY_FACILITY",
+    "code": "LAUNDROMAT",
+    "label": { "ko": "세탁소", "en": "Laundromat" }
+  },
+  {
+    "_id": "CITY:SEOUL",
+    "category": "CITY",
+    "code": "SEOUL",
+    "label": { "ko": "서울특별시", "en": "Seoul" }
+  },
+  {
+    "_id": "CITY:BUSAN",
+    "category": "CITY",
+    "code": "BUSAN",
+    "label": { "ko": "부산광역시", "en": "Busan" }
+  },
+  {
+    "_id": "CITY:GYEONGGI",
+    "category": "CITY",
+    "code": "GYEONGGI",
+    "label": { "ko": "경기도", "en": "Gyeonggi-do" }
+  },
+  {
+    "_id": "CITY:ETC",
+    "category": "CITY",
+    "code": "ETC",
+    "label": { "ko": "기타", "en": "Other" }
+  },
+  {
+    "_id": "DISTRICT:GWANAK_GU",
+    "category": "DISTRICT",
+    "code": "GWANAK_GU",
+    "label": { "ko": "관악구", "en": "Gwanak-gu" }
+  },
+  {
+    "_id": "DISTRICT:DONGDAEMUN_GU",
+    "category": "DISTRICT",
+    "code": "DONGDAEMUN_GU",
+    "label": { "ko": "동대문구", "en": "Dongdaemun-gu" }
+  },
+  {
+    "_id": "DISTRICT:JONGNO_GU",
+    "category": "DISTRICT",
+    "code": "JONGNO_GU",
+    "label": { "ko": "종로구", "en": "Jongno-gu" }
+  },
+  {
+    "_id": "DISTRICT:GWANGJIN_GU",
+    "category": "DISTRICT",
+    "code": "GWANGJIN_GU",
+    "label": { "ko": "광진구", "en": "Gwangjin-gu" }
+  },
+  {
+    "_id": "DISTRICT:MAPO_GU",
+    "category": "DISTRICT",
+    "code": "MAPO_GU",
+    "label": { "ko": "마포구", "en": "Mapo-gu" }
+  },
+  {
+    "_id": "DISTRICT:SEODAEMUN_GU",
+    "category": "DISTRICT",
+    "code": "SEODAEMUN_GU",
+    "label": { "ko": "서대문구", "en": "Seodaemun-gu" }
+  },
+  {
+    "_id": "DISTRICT:GURO_GU",
+    "category": "DISTRICT",
+    "code": "GURO_GU",
+    "label": { "ko": "구로구", "en": "Guro-gu" }
+  },
+  {
+    "_id": "DISTRICT:YEONGDEUNGPO_GU",
+    "category": "DISTRICT",
+    "code": "YEONGDEUNGPO_GU",
+    "label": { "ko": "영등포구", "en": "Yeongdeungpo-gu" }
+  },
+  {
+    "_id": "DISTRICT:GEUMCHEON_GU",
+    "category": "DISTRICT",
+    "code": "GEUMCHEON_GU",
+    "label": { "ko": "금천구", "en": "Geumcheon-gu" }
+  },
+  {
+    "_id": "DISTRICT:ETC",
+    "category": "DISTRICT",
+    "code": "ETC",
+    "label": { "ko": "기타", "en": "Other" }
+  },
+  {
+    "_id": "UNIVERSITY:SNU",
+    "category": "UNIVERSITY",
+    "code": "SNU",
+    "label": { "ko": "서울대학교", "en": "Seoul National Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:CAU",
+    "category": "UNIVERSITY",
+    "code": "CAU",
+    "label": { "ko": "중앙대학교", "en": "Chung-Ang Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:SOONGSIL",
+    "category": "UNIVERSITY",
+    "code": "SOONGSIL",
+    "label": { "ko": "숭실대학교", "en": "Soongsil Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:KHU",
+    "category": "UNIVERSITY",
+    "code": "KHU",
+    "label": { "ko": "경희대학교", "en": "Kyung Hee Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:HUFS",
+    "category": "UNIVERSITY",
+    "code": "HUFS",
+    "label": { "ko": "한국외국어대학교", "en": "Hankuk Univ. of Foreign Studies" }
+  },
+  {
+    "_id": "UNIVERSITY:KOREA",
+    "category": "UNIVERSITY",
+    "code": "KOREA",
+    "label": { "ko": "고려대학교", "en": "Korea Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:SKKU",
+    "category": "UNIVERSITY",
+    "code": "SKKU",
+    "label": { "ko": "성균관대학교", "en": "Sungkyunkwan Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:SUNGSHIN",
+    "category": "UNIVERSITY",
+    "code": "SUNGSHIN",
+    "label": { "ko": "성신여자대학교", "en": "Sungshin Women's Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:KONKUK",
+    "category": "UNIVERSITY",
+    "code": "KONKUK",
+    "label": { "ko": "건국대학교", "en": "Konkuk Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:SEJONG",
+    "category": "UNIVERSITY",
+    "code": "SEJONG",
+    "label": { "ko": "세종대학교", "en": "Sejong Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:HYU",
+    "category": "UNIVERSITY",
+    "code": "HYU",
+    "label": { "ko": "한양대학교", "en": "Hanyang Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:YONSEI",
+    "category": "UNIVERSITY",
+    "code": "YONSEI",
+    "label": { "ko": "연세대학교", "en": "Yonsei Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:EWHA",
+    "category": "UNIVERSITY",
+    "code": "EWHA",
+    "label": { "ko": "이화여자대학교", "en": "Ewha Womans Univ." }
+  },
+  {
+    "_id": "UNIVERSITY:HONGIK",
+    "category": "UNIVERSITY",
+    "code": "HONGIK",
+    "label": { "ko": "홍익대학교", "en": "Hongik Univ." }
+  },
+  {
+    "_id": "ARC_REQUIREMENT:REQUIRED",
+    "category": "ARC_REQUIREMENT",
+    "code": "REQUIRED",
+    "label": { "ko": "외국인 등록증 필수", "en": "ARC Required" }
+  },
+  {
+    "_id": "ARC_REQUIREMENT:NOT_REQUIRED",
+    "category": "ARC_REQUIREMENT",
+    "code": "NOT_REQUIRED",
+    "label": { "ko": "외국인 등록증 불필요", "en": "ARC Not Required" }
+  }
+]

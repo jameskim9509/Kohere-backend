@@ -7,8 +7,12 @@ import java.util.List;
 /**
  * 저장 전 애플리케이션 경로에서 매물 문서의 필수 구조와 도메인 불변식을 검증한다.
  *
- * <p>MongoDB는 스키마리스라 잘못된 모양의 문서도 저장 자체는 가능하다. 그래서 애플리케이션이 저장하기 직전에 v3 스키마의 필수 필드와 값 범위를 검증해, 조회 시점의
+ * <p>MongoDB는 스키마리스라 잘못된 모양의 문서도 저장 자체는 가능하다. 그래서 애플리케이션이 저장하기 직전에 v4 스키마의 필수 필드와 값 범위를 검증해, 조회 시점의
  * NullPointerException이나 잘못된 검색 결과를 미리 막는다.
+ *
+ * <p>{@code blogUrl}·{@code rejectionReason}·{@code serviceFeedback}은 값이 없을 수 있어 필수로 보지 않는다.
+ * MongoDB validator의 {@code required} 목록도 같은 셋을 제외한다. {@code location}은 지오코딩이 없던 시절에 같은 예외였지만, 등록이
+ * 주소 검색이 준 좌표를 받게 되면서 필수로 조였다(ADR-0042 · changeUnit {@code 0116}).
  */
 public final class ListingValidator {
 
@@ -16,28 +20,48 @@ public final class ListingValidator {
 
   public static void validateForSave(Listing listing) {
     requireNonNull(listing, "listing이 필요합니다.");
-    require(listing.getSchemaVersion() == 3, "schemaVersion은 3이어야 합니다.");
+    require(listing.getSchemaVersion() == 4, "schemaVersion은 4여야 합니다.");
     requireNonNull(listing.getLandlordId(), "landlordId가 필요합니다.");
+    validateContact(listing.getContact());
+    requireText(listing.getBusinessRegistrationNumber(), "businessRegistrationNumber가 필요합니다.");
+    validateAgeRange(listing.getAgeMin(), listing.getAgeMax());
     requireLocalizedText(listing.getTitle(), "title");
     requireNonNull(listing.getType(), "type이 필요합니다.");
-    requireNonNull(listing.getStatus(), "status가 필요합니다.");
     requireNonNull(listing.getRentalType(), "rentalType이 필요합니다.");
-    validateRefundPolicy(listing.getRefundPolicy());
-    validateContract(listing.getContract());
+    requireNonNull(listing.getStatus(), "status가 필요합니다.");
     requireNonNull(listing.getGenderPolicy(), "genderPolicy가 필요합니다.");
-    requireNonNull(listing.getLocation(), "location이 필요합니다.");
-    validateAddress(listing.getAddress());
-    validateNearestTransit(listing.getNearestTransit());
-    validateBuilding(listing.getBuilding());
-    requireNonNull(listing.getPropertyPolicies(), "propertyPolicies가 필요합니다.");
-    validateFacilities(listing.getFacilities());
-    validateRoomOffers(listing.getRoomOffers());
-    requireCollection(listing.getNearbyUniversityCodes(), "nearbyUniversityCodes");
-    validateDescriptions(listing.getDescriptions());
-    requireCollection(listing.getImageUrls(), "imageUrls");
+    requireCollection(listing.getLanguagesSupported(), "languagesSupported");
     require(listing.getFavoriteCount() >= 0, "favoriteCount는 0 이상이어야 합니다.");
+    requireCollection(listing.getImageUrls(), "imageUrls");
+    requireCollection(listing.getNearbyUniversityCodes(), "nearbyUniversityCodes");
     requireNonNull(listing.getCreatedAt(), "createdAt이 필요합니다.");
     requireNonNull(listing.getUpdatedAt(), "updatedAt이 필요합니다.");
+    validateAddress(listing.getAddress());
+    requireNonNull(listing.getLocation(), "location이 필요합니다.");
+    validateBuilding(listing.getBuilding());
+    requireLocalizedText(listing.getDescription(), "description");
+    requireLocalizedText(listing.getExtraNotes(), "extraNotes");
+    validateFacilities(listing.getFacilities());
+    validateNearestTransit(listing.getNearestTransit());
+    requireCollection(listing.getNearbyFacilities(), "nearbyFacilities");
+    requireNonNull(listing.getArcRequired(), "arcRequired가 필요합니다.");
+    requireLocalizedText(listing.getRefundPolicy(), "refundPolicy");
+    validateRoomOffers(listing.getRoomOffers());
+    requireCollection(listing.getPreferredNationalities(), "preferredNationalities");
+    requireCollection(listing.getContractDifficulties(), "contractDifficulties");
+  }
+
+  private static void validateContact(Listing.Contact contact) {
+    requireNonNull(contact, "contact가 필요합니다.");
+    requireText(contact.managerName(), "contact.managerName이 필요합니다.");
+    // phone은 지점 대표 전화 하나뿐이다. 문자문의 번호(contact.sms)는 임대인 개인 번호를 매물 문서로 복사하는 통로라
+    // 필드째 제거했다(ADR-0039 Amended · changeUnit 0119).
+    requireText(contact.phone(), "contact.phone이 필요합니다.");
+  }
+
+  private static void validateAgeRange(int ageMin, int ageMax) {
+    require(ageMin >= 0, "ageMin은 0 이상이어야 합니다.");
+    require(ageMin <= ageMax, "ageMin은 ageMax 이하여야 합니다.");
   }
 
   private static void validateAddress(Listing.Address address) {
@@ -54,8 +78,6 @@ public final class ListingValidator {
     requireNonNull(transit, "nearestTransit이 필요합니다.");
     requireNonNull(transit.type(), "nearestTransit.type이 필요합니다.");
     requireLocalizedText(transit.name(), "nearestTransit.name");
-    requireLocalizedText(
-        transit.nearbyPlacesDescription(), "nearestTransit.nearbyPlacesDescription");
   }
 
   private static void validateBuilding(Listing.Building building) {
@@ -75,15 +97,6 @@ public final class ListingValidator {
     requireCollection(facilities.securityFeatures(), "facilities.securityFeatures");
     requireCollection(facilities.commonSpaces(), "facilities.commonSpaces");
     requireCollection(facilities.providedSupplies(), "facilities.providedSupplies");
-    facilities
-        .commonSpaces()
-        .forEach(
-            space -> {
-              requireNonNull(space.type(), "facilities.commonSpaces.type이 필요합니다.");
-              if (space.count() != null) {
-                require(space.count() >= 0, "facilities.commonSpaces.count는 0 이상이어야 합니다.");
-              }
-            });
   }
 
   private static void validateRoomOffers(List<Listing.RoomOffer> roomOffers) {
@@ -92,40 +105,25 @@ public final class ListingValidator {
     roomOffers.forEach(ListingValidator::validateRoomOffer);
   }
 
+  /**
+   * 방 상품 하나의 필수 구조를 검증한다.
+   *
+   * <p>{@code roomOfferId}는 매물 {@code id}와 마찬가지로 값이 없으면 저장 어댑터가 ObjectId를 발급하므로 필수로 보지 않는다. 저장 시점의
+   * 문서에는 항상 채워져 들어가므로 MongoDB validator의 {@code required}와도 어긋나지 않는다.
+   */
   private static void validateRoomOffer(Listing.RoomOffer roomOffer) {
     requireNonNull(roomOffer, "roomOffers 항목이 필요합니다.");
     requireLocalizedText(roomOffer.name(), "roomOffers.name");
     requireNonNull(roomOffer.status(), "roomOffers.status가 필요합니다.");
+    requireNonNull(roomOffer.contract(), "roomOffers.contract가 필요합니다.");
     validatePricing(roomOffer.pricing());
-    requireNonNull(roomOffer.inventory(), "roomOffers.inventory가 필요합니다.");
     requireCollection(roomOffer.filterTags(), "roomOffers.filterTags");
-    validateStoredConditionTags(roomOffer.filterTags(), "roomOffers.filterTags");
     requireCollection(roomOffer.roomImageUrls(), "roomOffers.roomImageUrls");
-  }
-
-  private static void validateStoredConditionTags(Collection<ConditionTag> tags, String field) {
-    require(!tags.contains(ConditionTag.NO_ARC), field + "에는 검색용 NO_ARC 태그를 저장할 수 없습니다.");
   }
 
   private static void validatePricing(Listing.Pricing pricing) {
     requireNonNull(pricing, "roomOffers.pricing이 필요합니다.");
     requireNonNull(pricing.currency(), "roomOffers.pricing.currency가 필요합니다.");
-  }
-
-  private static void validateContract(Listing.Contract contract) {
-    requireNonNull(contract, "contract가 필요합니다.");
-  }
-
-  private static void validateRefundPolicy(Listing.RefundPolicy refundPolicy) {
-    requireNonNull(refundPolicy, "refundPolicy가 필요합니다.");
-    requireNonNull(refundPolicy.code(), "refundPolicy.code가 필요합니다.");
-    requireLocalizedText(refundPolicy.description(), "refundPolicy.description");
-  }
-
-  private static void validateDescriptions(Listing.Descriptions descriptions) {
-    requireNonNull(descriptions, "descriptions가 필요합니다.");
-    requireText(descriptions.ko(), "descriptions.ko가 필요합니다.");
-    requireText(descriptions.en(), "descriptions.en이 필요합니다.");
   }
 
   private static void requireCollection(Collection<?> values, String field) {

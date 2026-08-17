@@ -1,15 +1,29 @@
 package com.kohere.user;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
+import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_400;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_401;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_403;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.BLOCKS_LIST_SUMMARY;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_400;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_401;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_403;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_DESCRIPTION;
+import static com.kohere.docs.UserDocsFields.UNBLOCK_SUMMARY;
+import static com.kohere.docs.UserDocsFields.blocksListQueryParameters;
+import static com.kohere.docs.UserDocsFields.blocksListResponseFields;
+import static com.kohere.docs.UserDocsFields.unblockPathParameters;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
-import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
-import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -17,11 +31,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.docs.ApiDocsErrors;
+import com.kohere.docs.ApiDocsTags;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
 import com.kohere.user.api.UserAccountService;
-import java.time.LocalDate;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,10 +51,11 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
-import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
@@ -65,6 +82,7 @@ class UserBlockDocsTest {
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
+  @Autowired private JwtProperties jwtProperties;
 
   @MockitoBean private UserAccountService userAccountService;
   @MockitoBean private BookingListingQueryService listingQueryService;
@@ -94,7 +112,6 @@ class UserBlockDocsTest {
         "101호 원룸",
         5_000_000,
         500_000,
-        LocalDate.of(2026, 1, 1),
         LANDLORD_ID);
   }
 
@@ -144,39 +161,12 @@ class UserBlockDocsTest {
         .andDo(
             document(
                 "user-blocks-list",
-                queryParameters(
-                    parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
-                    parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")),
-                responseFields(
-                    fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부"),
-                    fieldWithPath("data.content[].userId")
-                        .type(JsonFieldType.NUMBER)
-                        .description("차단한 상대 식별자"),
-                    fieldWithPath("data.content[].name")
-                        .type(JsonFieldType.STRING)
-                        .description("차단한 상대 표시명(마스킹 수준 확인 필요)"),
-                    fieldWithPath("data.content[].blockedAt")
-                        .type(JsonFieldType.STRING)
-                        .description("차단 시각(UTC)"),
-                    fieldWithPath("data.page.number")
-                        .type(JsonFieldType.NUMBER)
-                        .description("현재 페이지 번호"),
-                    fieldWithPath("data.page.size")
-                        .type(JsonFieldType.NUMBER)
-                        .description("페이지 크기"),
-                    fieldWithPath("data.page.totalElements")
-                        .type(JsonFieldType.NUMBER)
-                        .description("전체 건수"),
-                    fieldWithPath("data.page.totalPages")
-                        .type(JsonFieldType.NUMBER)
-                        .description("전체 페이지 수"),
-                    fieldWithPath("data.page.hasNext")
-                        .type(JsonFieldType.BOOLEAN)
-                        .description("다음 페이지 존재 여부"),
-                    fieldWithPath("error")
-                        .type(JsonFieldType.NULL)
-                        .optional()
-                        .description("성공 응답의 error는 항상 null"))));
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary(BLOCKS_LIST_SUMMARY)
+                    .description(BLOCKS_LIST_DESCRIPTION),
+                queryParameters(blocksListQueryParameters()),
+                responseFields(blocksListResponseFields())));
   }
 
   @Test
@@ -191,7 +181,11 @@ class UserBlockDocsTest {
         .andDo(
             document(
                 "user-blocks-unblock",
-                pathParameters(parameterWithName("userId").description("차단을 해제할 상대 식별자"))));
+                resourceDetails()
+                    .tag(ApiDocsTags.USERS)
+                    .summary(UNBLOCK_SUMMARY)
+                    .description(UNBLOCK_DESCRIPTION),
+                pathParameters(unblockPathParameters())));
 
     mockMvc
         .perform(get("/api/v1/users/me/blocks").header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)))
@@ -207,5 +201,125 @@ class UserBlockDocsTest {
             delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID)
                 .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)))
         .andExpect(status().isNoContent());
+  }
+
+  /**
+   * 목록·해제의 실패 스니펫. 전부 보안 필터 또는 MVC 바인딩에서 끝나 차단 상태가 필요 없다.
+   *
+   * <p>{@code 400}은 두 갈래라 스니펫도 둘이다 — 범위 위반({@code size=101})은 {@code
+   * UserBlockServiceImpl.validatePage}가 던지는 {@code INVALID_INPUT}, 정수가 아닌 값은 바인딩 단계의 {@code
+   * MALFORMED_REQUEST}다. 해제는 멱등이라 차단하지 않은 상대에도 204를 주므로 404가 없다.
+   */
+  @Test
+  void blocksErrorSnippets() throws Exception {
+    String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
+    String expiredToken = bearer(expiredAccessToken(jwtProperties));
+
+    performListError(
+        get("/api/v1/users/me/blocks")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
+            .param("size", "101"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "user-blocks-list-invalid-input",
+        BLOCKS_LIST_400);
+    performListError(
+        get("/api/v1/users/me/blocks")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID))
+            .param("size", "abc"),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "user-blocks-list-malformed-request",
+        BLOCKS_LIST_400);
+    performListError(
+        get("/api/v1/users/me/blocks"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "user-blocks-list-unauthenticated",
+        BLOCKS_LIST_401);
+    performListError(
+        get("/api/v1/users/me/blocks").header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "user-blocks-list-token-expired",
+        BLOCKS_LIST_401);
+    performListError(
+        get("/api/v1/users/me/blocks").header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "user-blocks-list-onboarding-required",
+        BLOCKS_LIST_403);
+
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", "abc")
+            .header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "user-blocks-unblock-malformed-request",
+        UNBLOCK_400);
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "user-blocks-unblock-unauthenticated",
+        UNBLOCK_401);
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID)
+            .header(HttpHeaders.AUTHORIZATION, expiredToken),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "user-blocks-unblock-token-expired",
+        UNBLOCK_401);
+    performUnblockError(
+        delete("/api/v1/users/me/blocks/{userId}", LANDLORD_ID)
+            .header(HttpHeaders.AUTHORIZATION, onboardingToken),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "user-blocks-unblock-onboarding-required",
+        UNBLOCK_403);
+  }
+
+  /** 목록은 path 변수가 없다 — 쿼리 파라미터는 생성기가 모델 전체를 합치므로 성공 스니펫의 선언이 그대로 남는다. */
+  private void performListError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                identifier,
+                ApiDocsTags.USERS,
+                BLOCKS_LIST_SUMMARY,
+                BLOCKS_LIST_DESCRIPTION,
+                errorCodes));
+  }
+
+  private void performUnblockError(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String... errorCodes)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                identifier,
+                ApiDocsTags.USERS,
+                UNBLOCK_SUMMARY,
+                UNBLOCK_DESCRIPTION,
+                unblockPathParameters(),
+                errorCodes));
   }
 }

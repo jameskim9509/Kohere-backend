@@ -4,7 +4,8 @@
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis mailhog
 #   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
-#      └ local 프로파일이라 매물 더미 데이터(listing)가 시드된다.
+#      └ **매물은 자동 시드되지 않는다**(v4 개편에서 시더 제거 — ADR-0039 §4).
+#        예약할 매물이 있어야 하므로 listing.http 의 "시드" 절을 먼저 실행한다.
 #   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
 #   4) "1. 소셜 로그인"부터 위에서 순서대로 "Send Request" 클릭 — 토큰은 이름붙은 응답으로 자동 전달된다.
 #
@@ -100,7 +101,8 @@ Content-Type: application/json
 
 ### 5-b. (참고) 매물 목록 — 예약할 listingId·roomOfferId 확보용
 #     각 카드의 data.content[].listingId·roomOfferId 를 위 @listingId·@roomOfferId 에 복사한다.
-GET {{baseUrl}}/api/v1/listings?page=0&size=5
+#     **경로는 /api/v2 다.** 조회 계열은 v2로 옮겼고 /api/v1/listings 는 빈 결과만 주는 스텁이다(ADR-0040).
+GET {{baseUrl}}/api/v2/listings?page=0&size=5
 Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
 
 ### 6. 매물 예약(신청) 생성 — 201 Created + Location: /api/v1/bookings/{bookingId}

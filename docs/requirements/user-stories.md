@@ -12,7 +12,7 @@
 
 - 1. 소셜 로그인 · 온보딩 — [API 스펙](../api/specs/01-auth-onboarding.md)
 - 2. 맞춤 진단 & 매물 추천 — [API 스펙](../api/specs/02-diagnosis-recommendation.md)
-- 3. 매물 탐색 · 찜 — [API 스펙](../api/specs/03-listings-favorites.md)
+- 3. 매물 등록 · 탐색 · 찜 — [API 스펙](../api/specs/03-listings-favorites.md)
 - 4. 매물 예약(신청) · (후속) 문의·인앱 채팅 — [API 스펙](../api/specs/04-booking-inquiry-chat.md)
 - 5. 커뮤니티 (게시판 · 동네친구) — [API 스펙](../api/specs/05-community.md)
 - 6. 게이미피케이션 (퀴즈) — [API 스펙](../api/specs/06-gamification.md)
@@ -25,9 +25,11 @@
 
 > 관련 API 스펙: [01-auth-onboarding](../api/specs/01-auth-onboarding.md)
 
-외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고(소셜 로그인 시 네이티브 SDK가 준 이름·이메일도 함께 받아 확정·반환한다 — #192), 신규 회원은 **약관 동의 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(임대인은 온보딩 선행으로 연락처 SMS 인증을 한 단계 더 거친다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·비자정보이며(이름·이메일은 소셜 로그인 때 이미 확보해 온보딩에서 받지 않는다 — #192, 직업은 **선택** — 매물 추천·탐색에 쓰지 않아 미입력을 허용한다, #187), 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
+외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고(소셜 로그인 시 네이티브 SDK가 준 이름·이메일도 함께 받아 확정·반환한다 — #192. **소셜 로그인은 앱 진입 경로이며, 임대인은 매물 등록 웹에서 이메일·비밀번호 로컬 자격증명으로도 진입한다** — US-1-11 ~ US-1-13), 신규 회원은 **약관 동의 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(임대인은 온보딩 선행으로 연락처 SMS 인증을 한 단계 더 거친다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·비자정보이며(이름·이메일은 소셜 로그인 때 이미 확보해 온보딩에서 받지 않는다 — #192, 직업은 **선택** — 매물 추천·탐색에 쓰지 않아 미입력을 허용한다, #187), 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
 
-사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 생년월일·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되(이름은 세입자와 동일하게 소셜 로그인 때 확보해 온보딩에서 받지 않는다 — #192) 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·직업·비자정보를 **수집하지 않으며(이메일은 세입자와 동일하게 소셜 로그인 provider 값을 보유하고, 생년월일도 세입자와 동일하게 수집), 사업자등록번호도 온보딩에서 수집하지 않는다** — 단 국적(`country`=`KR`)·표시 언어(`lang`=`ko`)는 클라이언트가 보내지 않고 **서버가 온보딩 시 고정 부여**한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 `country` 미수집" 결정을 개정). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**다.
+사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 생년월일·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되(이름은 세입자와 동일하게 소셜 로그인 때 확보해 온보딩에서 받지 않는다 — #192) 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·직업·비자정보를 **수집하지 않으며(이메일은 세입자와 동일하게 소셜 로그인 provider 값을 보유하고, 생년월일도 세입자와 동일하게 수집), 사업자등록번호도 온보딩에서 수집하지 않는다** — 단 국적(`country`=`KR`)·표시 언어(`lang`=`ko`)는 클라이언트가 보내지 않고 **서버가 온보딩 시 고정 부여**한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 `country` 미수집" 결정을 개정). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**, **US-1-11 ~ US-1-13·US-1-15는 임대인 웹(매물 등록 웹) 전용**이다(**US-1-14는 결번** — 어느 스토리에도 배정하지 않은 번호이며 빠진 스토리가 아니다).
+
+임대인에게는 앱 소셜 로그인과 별개로 **매물 등록 웹의 로컬 자격증명 경로**가 하나 더 있다 — 웹은 소셜 로그인을 지원하지 않고 **이메일(로그인 ID) + 비밀번호**로 가입·로그인하며(US-1-11·US-1-12), 가입 전 본인 확인은 비로그인 상태에서 **휴대폰 번호를 키로 쓰는 SMS 인증**(US-1-13)이 맡는다. 웹 가입 폼은 한 페이지에서 이름·생년월일·연락처·이메일·비밀번호·약관 동의를 모두 받으므로 서버가 `PENDING` → `TERMS_AGREED` → `ACTIVE`를 **한 트랜잭션 안에서 연속 전이**시켜 완주하며, 웹에는 부분 완료 상태도 온보딩 재개 화면도 없다(앱이 단계를 나눈 이유는 소셜이 이름·이메일만 주는 제약이었고 웹 폼에는 그 제약이 없다). 두 경로는 **같은 `users` 행을 공유한다** — 자격증명 테이블만 `social_accounts`(앱)와 `local_accounts`(웹)로 나뉘고, 같은 사람인지는 **SMS 인증을 통과한 휴대폰 번호 단독**으로 판정한다(이름은 매칭 조건이 아니다). 그래야 웹에서 등록한 매물의 `landlordId`와 앱 소셜 로그인의 `userId`가 같아져 예약(US-4-6)·후속 채팅이 앱에서 그대로 보인다. 판정 시점은 방향에 따라 갈린다 — 웹 가입은 SMS 인증을 이미 마친 뒤라 그 자리에서 **연결**되고(US-1-11), 앱은 소셜 로그인 시점에 번호를 몰라 임대인 온보딩(US-1-9)에서야 **병합**된다(US-1-15). 웹 refresh 토큰은 응답 본문이 아니라 **HttpOnly 쿠키**로 내리며, 재발급·로그아웃(US-1-3·US-1-4)은 쿠키 우선·요청 본문 fallback으로 읽어 앱 동작을 그대로 유지한다(v1 유지, v2 불필요).
 
 > 관련 NFR: [non-functional-requirements](non-functional-requirements.md) — 4. 보안(토큰/민감정보 보호), 1. 성능(소셜 검증 응답시간), 5. 관측성(인증 실패 로깅·마스킹). 구체 목표값은 NFR 문서 확정 전이라 (확인 필요).
 
@@ -59,7 +61,7 @@
 - **입력 검증 실패**
   Given `provider`가 누락(null)이거나 `idToken`이 빈 문자열이면
   When `POST /api/v1/auth/social-login`을 호출하면
-  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다. (`provider`가 `APPLE`/`GOOGLE` 외 enum 문자열이면 역직렬화 단계에서 거부되어 `400` + `error.code=MALFORMED_REQUEST`로 처리한다 — 둘 다 별도 도메인 코드가 아닌 표준 입력 오류)
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다. (`provider`가 `APPLE`/`GOOGLE` 외 값이면 서버가 파싱해 `400` + `error.code=INVALID_INPUT`으로 처리한다 — 둘 다 별도 도메인 코드가 아닌 표준 입력 오류)
 - **인증·권한 — 소셜 검증 실패**
   Given `idToken`의 서명이 위조되었거나 `aud`/`iss`가 우리 앱과 불일치하거나 `exp`가 지났으면
   When `POST /api/v1/auth/social-login`을 호출하면
@@ -162,7 +164,11 @@
 - **정상 — 회원 탈퇴**
   Given 인증된 사용자(`ACTIVE` 또는 `PENDING`)가
   When `DELETE /api/v1/users/me`를 호출하면
-  Then `204 No Content`를 반환하고 사용자 상태를 `WITHDRAWN`으로 전이하며 모든 refresh 토큰을 무효화한다(개인정보 파기/익명화는 정책 — 확인 필요).
+  Then `204 No Content`를 반환하고 사용자 상태를 `WITHDRAWN`으로 전이하며 모든 refresh 토큰을 무효화한다(개인정보 파기/익명화는 정책 — 확인 필요). 자격증명은 **두 벌을 함께** 지운다 — `social_accounts`(앱)와 `local_accounts`(웹). `users` 행이 보존되고 `user_type`도 그대로라, 웹 자격증명이 남으면 탈퇴한 임대인이 이메일·비밀번호로 다시 로그인된다(ADR-0047).
+  그리고 응답에 로그아웃과 **같은 `Max-Age=0` 삭제 쿠키**를 함께 내린다(ADR-0048). 서버에서는 이미 전부 무효화됐으므로 보안 구멍이 아니라 잔여물 정리다 — 지우지 않으면 죽은 쿠키가 최대 14일 브라우저에 남는다. 로그아웃과 달리 **조건이 없다**: 쿠키 `Path`가 `/api/v1/auth`라 브라우저가 `DELETE /users/me`에는 쿠키를 싣지 않아 보유 여부를 판정할 수 없다(쿠키를 가진 적 없는 앱에는 무해하다).
+- **경계 — 삭제 쿠키는 성공 응답에만 실린다**
+  Given 이미 탈퇴한 계정(`409`)이나 존재하지 않는 사용자(`404`)로 탈퇴를 호출하면
+  Then 삭제 쿠키를 내리지 않는다. 실패 응답에 실으면 두 번째 탭·더블클릭으로 나는 `409`가 **아직 살아 있는 세션의 쿠키를 지운다**.
 - **정상 — Apple 연동 폐기(App Store 5.1.1(v))**
   Given Apple로 가입해 `apple_refresh_token`이 저장된 사용자가
   When `DELETE /api/v1/users/me`로 탈퇴하면
@@ -192,7 +198,7 @@
 - 관련 NFR: 보안(본인 리소스만 접근), 보안(민감정보 응답 마스킹 정책 — 확인 필요)
 - 백엔드 관점: `GET`/`PATCH /api/v1/users/me`는 세입자·임대인 **공통 엔드포인트**이며, `userType`(`TENANT`/`LANDLORD`)에 따라 응답·수정 가능 필드가 갈린다.
   - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`)와 `birthDate`(임대인과 공통)·`lang`을 포함한다. `lang`(표시 언어, ISO 639-1 소문자, 지원 `en`·`ko`·`ja`)은 사용자가 앱 **지구본**에서 직접 고르는 **선택** 필드이며, 미설정이면(NULL) 표시 시 `en`으로 폴백한다. 다국어 화면(진단 문항·퀴즈·생활 팁) 번역이 이 값을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6·US-6-3·US-8-3). **임대인은 서버가 `'ko'` 고정이며 변경할 수 없다.**
-  - **임대인(`LANDLORD`)**: 단일 `name`(세입자·임대인 모두 단일 `name`으로 통일 — 내부도 세입자와 동일한 단일 `name` 컬럼에 저장하며 소셜 로그인 때 캡처돼 온보딩에서 재입력하지 않는다, #192. API 요청·응답 필드명은 `name`)·`email`·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`·`country`+`countryName`·`countryFlag`·`lang`을 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인도 세입자와 동일하게 소셜 로그인 provider(Google/Apple) `email`을 보유해 응답에 포함한다**(email 수집 폼이 아니라 소셜 로그인이 역할 미정 상태로 캡처·저장한 값 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192). email 수정은 세입자와 동일하게 후속 이슈). **임대인의 `lang`(`'ko'`)·`country`(`'KR'`)는 서버가 온보딩에서 고정으로 심는 값이라 응답에는 나오되 이 경로로 수정할 수 없다**(ADR-0034의 "임대인 country 미수집" 결정을 개정한다). 세입자 전용 필드(`gender`/`occupation`/`visaType`)는 **임대인 응답에 포함하지 않지만, `birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
+  - **임대인(`LANDLORD`)**: 단일 `name`(세입자·임대인 모두 단일 `name`으로 통일 — 내부도 세입자와 동일한 단일 `name` 컬럼에 저장하며 소셜 로그인 때 캡처돼 온보딩에서 재입력하지 않는다, #192. API 요청·응답 필드명은 `name`)·`email`·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`·`country`+`countryName`·`countryFlag`·`lang`을 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인도 세입자와 동일하게 소셜 로그인 provider(Google/Apple) `email`을 보유해 응답에 포함한다**(email 수집 폼이 아니라 소셜 로그인이 역할 미정 상태로 캡처·저장한 값 — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192). email 수정은 세입자와 동일하게 후속 이슈). **임대인의 `lang`(`'ko'`)·`country`(`'KR'`)는 서버가 온보딩에서 고정으로 심는 값이라 응답에는 나오되 이 경로로 수정할 수 없다**(ADR-0034의 "임대인 country 미수집" 결정을 개정한다). 세입자 전용 필드(`gender`/`occupation`/`visaType`)는 **임대인 응답에 포함하지 않지만, `birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다**. `businessRegistrationNumber`는 `users`에는 해시 컬럼만 두고 원문을 매물 문서에만 저장하므로 프로필 응답·수정 대상이 아니다(변경 시 외부 사업자등록정보 재검증 필요 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
   - 두 역할 공통으로 `userType`·`nickname`은 불변이고, 세입자 `email`은 소셜 로그인 값으로 고정되어 이 경로로 수정하지 않는다(이메일 변경은 후속 이슈 — #192; 임대인도 소셜 로그인 provider 값으로 `email`을 보유하되 수정은 세입자와 동일하게 후속 이슈다).
 
 **AC (Given / When / Then)**
@@ -216,7 +222,7 @@
 - **정상 — 부분 수정(임대인)**
   Given 유효한 access 토큰을 보유한 임대인(`userType=LANDLORD`)이
   When `PATCH /api/v1/users/me`에 자유 수정 필드(`name`·`marketingAgreed`) 중 일부(예: `name`)만 담아 호출하면
-  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 세입자와 동일하게 단일 `name` 컬럼에 저장한다(#192). `birthDate`(온보딩에서 확정, 조회 전용)·`businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`·`lang`·`country`(서버 고정 `'ko'`/`'KR'` — 표시 언어 변경은 세입자만 가능, [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141))는 이 경로로 수정할 수 없다(`email`은 임대인도 provider 값을 보유하되 세입자와 동일하게 이 경로로 수정하지 않는다 — 후속 이슈). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
+  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 세입자와 동일하게 단일 `name` 컬럼에 저장한다(#192). `birthDate`(온보딩에서 확정, 조회 전용)·`businessRegistrationNumber`(원문은 매물 문서에만 저장돼 프로필 수정 대상이 아니며, 변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`·`lang`·`country`(서버 고정 `'ko'`/`'KR'` — 표시 언어 변경은 세입자만 가능, [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141))는 이 경로로 수정할 수 없다(`email`은 임대인도 provider 값을 보유하되 세입자와 동일하게 이 경로로 수정하지 않는다 — 후속 이슈). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
 - **비즈니스 규칙 — 임대인 연락처 변경 시 SMS 재인증(임대인)**
   Given 임대인이 새 `phoneNumber`로 변경하려 하나 그 번호를 SMS 재인증(US-1-10)하지 않았으면(VERIFIED 마커 없음·불일치)
   When `PATCH /api/v1/users/me`에 새 `phoneNumber`를 담아 호출하면
@@ -322,11 +328,11 @@
 
 **As a** 온보딩을 완료한(ACTIVE) 임대인
 **I want** 정식 access 토큰으로 사업자등록번호를 외부 사업자등록정보 검증 API(국세청 사업자등록정보 기반)로 진위·영업 상태까지 확인받기를
-**So that** (매물 등록 등) 실제 영업 중인 사업자임을 증명해야 하는 시점에 온보딩과 분리된 무상태 검증으로 즉시 확인받을 수 있다.
+**So that** 실제 영업 중인 사업자임을 확인해야 할 때 온보딩과 분리된 무상태 검증으로 즉시 확인받을 수 있다.
 
 - 우선순위: **High**
 - 관련 NFR: 보안(사업자등록번호 등 민감정보 저장·로그 마스킹), 보안·신뢰성(외부 연동 타임아웃·관측성·장애 시 degrade), 보안(검증 시도 레이트리밋)
-- 선행: 온보딩 완료(US-1-9, `ACTIVE`)와 정식 access 토큰(`ROLE_USER`)이 필요하다. 이 단계는 **임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용**으로, 온보딩(US-1-9)의 선행 게이트가 아니며 세입자 온보딩(US-1-2)에는 없다.
+- 선행: 온보딩 완료(US-1-9, `ACTIVE`)와 정식 access 토큰(`ROLE_USER`)이 필요하다. 이 단계는 **임대인 온보딩 후(ACTIVE) 임대인이 필요할 때 직접 호출하는 전용 API**로, 온보딩(US-1-9)의 선행 게이트가 아니며 세입자 온보딩(US-1-2)에는 없다. **매물 등록(US-3-6)도 이 API를 호출하지 않는다** — 등록은 사업자등록번호를 형식만 검증해 매물 문서에 저장하고 진위는 관리자가 승인 심사에서 수동으로 확인한다([ADR-0033](../adr/0033-business-registry-verification.md) 개정).
 - 백엔드 관점: 온보딩과 **분리된 무상태(stateless) 검증 API**다 — 검증 결과를 서버에 저장하지 않고(Redis 마커 없음·`user.businessRegistrationNumberHash`에도 쓰지 않음) **응답(HTTP body)에만** 담아 회신한다. `auth`가 사업자등록번호를 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터: 사업자등록정보 검증 API — 국세청 사업자등록정보 기반, 구체 provider는 [ADR-0033](../adr/0033-business-registry-verification.md))로 **동기 검증**해 정상(계속) 사업자면 `verified:true`를, 미등록·휴업·폐업·진위 실패면 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`를 응답한다. 검증 API 장애·타임아웃 등 연동 실패는 `502 UPSTREAM_ERROR`로 응답해 재시도를 유도한다(임대인 연락처 인증 US-1-10·세입자 이메일 인증 US-1-6의 동기 호출·실패 정책과 대칭). 인가는 정식 토큰(`ACTIVE`, `ROLE_USER`)이 필수이며, 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출하면 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) `ACTIVE` 사용자면 `403 FORBIDDEN`이다.
 
 **AC (Given / When / Then)**
@@ -374,8 +380,8 @@
 
 - 우선순위: **High**
 - 관련 NFR: 보안(연락처 등 민감정보 저장·로그 마스킹), 보안(휴대폰 소유 인증)
-- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)이 완료되어야 한다(약관 + 연락처만으로 온보딩 완료 — 사업자등록번호 검증(US-1-8)은 온보딩 선행이 아니라 온보딩 후 별도 단계다).
-- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ phoneNumber, birthDate }` 두 필드다. 임대인은 성별·국적·직업·비자정보를 **수집하지 않으며(생년월일 `birthDate`은 세입자와 동일하게 필수 수집), 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 추후 매물 등록 시점에 채운다). `name`은 세입자와 동일하게 소셜 로그인 때 `User.name`에 캡처·저장돼 온보딩에서 재입력하지 않으며(수정은 `PATCH /users/me`), `email`도 세입자와 동일하게 소셜 로그인 provider 값을 보유하므로 온보딩에서 수집하지 않는다(ADR-0034의 "임대인 이메일 미수집" 결정을 개정 — 수집 폼이 아니라 provider 값 보유, #192). 임대인 온보딩 본인 확인은 여전히 전화(SMS) 인증(US-1-10)이며 email은 인증 대상이 아니다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
+- 선행: 약관 동의(US-1-7, `TERMS_AGREED`)·연락처 인증(US-1-10)이 완료되어야 한다(약관 + 연락처만으로 온보딩 완료 — 사업자등록번호 검증(US-1-8)은 온보딩 선행이 아니고, **매물 등록(US-3-6)의 선행 단계도 아닌** 독립 무상태 API다).
+- 백엔드 관점: 세입자 온보딩(`POST /auth/onboarding`, US-1-2)과 분리된 **임대인 전용 엔드포인트** `POST /api/v1/auth/landlord/onboarding`로 처리한다. 성공 시 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임 자동 배정과 정식 access/refresh 토큰 발급은 세입자 온보딩과 동일하다(상태 전이 액션이므로 `200`). 요청 본문은 `{ phoneNumber, birthDate }` 두 필드다. 임대인은 성별·국적·직업·비자정보를 **수집하지 않으며(생년월일 `birthDate`은 세입자와 동일하게 필수 수집), 사업자등록번호도 온보딩에서 수집하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md); `user.businessRegistrationNumberHash` 컬럼은 유지하되 온보딩 완료 시 `null`로 남고 **매물 등록 시점에도 채우지 않는다** — 사업자등록번호는 **매물 등록 요청(US-3-6)에서 받아 원문 그대로 매물 문서에 저장**한다, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). 그때도 등록 API는 **형식(숫자 10자리)만 검증하고 진위는 자동 검증하지 않는다** — 무상태 검증 API(US-1-8)를 호출하지 않으며, 진위 확인은 관리자가 승인 심사에서 수동으로 한다. 따라서 임대인 계정에는 온보딩 이후에도 사업자등록번호가 남지 않는다. `name`은 세입자와 동일하게 소셜 로그인 때 `User.name`에 캡처·저장돼 온보딩에서 재입력하지 않으며(수정은 `PATCH /users/me`), `email`도 세입자와 동일하게 소셜 로그인 provider 값을 보유하므로 온보딩에서 수집하지 않는다(ADR-0034의 "임대인 이메일 미수집" 결정을 개정 — 수집 폼이 아니라 provider 값 보유, #192). 임대인 온보딩 본인 확인은 여전히 전화(SMS) 인증(US-1-10)이며 email은 인증 대상이 아니다. 검증 게이트 우선순위는 약관 미동의 → 연락처 미인증 순이며 사업자번호 게이트는 없다.
 
 **AC (Given / When / Then)**
 
@@ -454,14 +460,302 @@
   When 연락처 인증 API를 호출하면
   Then 누락·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`를 반환한다.
 
+---
+
+### US-1-11 — 임대인 웹 회원가입하기 (임대인 웹 전용)
+
+**As a** 매물을 등록하려는 임대인
+**I want** 웹 회원가입 페이지 한 곳에서 이름·생년월일·연락처·이메일·비밀번호·약관 동의를 한 번에 제출해 가입을 끝내되, 앱에 이미 내 계정이 있으면 그 계정에 자동으로 연결되기를
+**So that** 웹에서 등록한 매물의 예약·(후속) 채팅을 앱에서 소셜 로그인해도 그대로 볼 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(비밀번호 BCrypt 해시 보관·번호 소유 증명 없는 계정 탈취 차단), 보안(이름·연락처·비밀번호 로그 마스킹), 정합성(가입 원자성)
+- 선행: 가입용 연락처 인증(US-1-13)을 통과해야 제출할 수 있다. 앱 소셜 로그인(US-1-1)·약관 동의(US-1-7)·임대인 온보딩(US-1-9)은 선행이 아니다 — 웹 가입은 앱과 독립된 진입점이며, 이미 앱 계정이 있는 사람도 같은 폼을 그대로 제출한다(연동 여부로 입력란이 갈리지 않는다).
+- 백엔드 관점: `POST /api/v1/auth/signup`(`permitAll`)을 신설한다. 요청은 `{ name, birthDate, phoneNumber, email, password, termsOfServiceAgreed, privacyPolicyAgreed, marketingAgreed }`, 응답 `data`는 `{ linked, onboardingRequired, status, tokenType, accessToken, expiresIn, email, name }`이며 **refresh 토큰은 응답 본문에 담지 않고** `Set-Cookie: refreshToken`으로만 내린다(US-1-12의 쿠키 속성·TTL과 동일).
+  - **가입 API 하나가 `ACTIVE`까지 원자적으로 완주한다** — `PENDING` → `TERMS_AGREED` → `ACTIVE`를 한 트랜잭션 안에서 연속 전이시키되 상태 체인과 도메인 전이(약관 동의·임대인 온보딩)는 앱과 동일한 것을 그대로 호출한다. **앱 계정과 데이터 모양이 같아야 연동이 성립**하므로 웹 전용 상태나 웹 전용 생성 경로를 만들지 않는다. 웹에 부분 완료 상태를 남기면 온보딩 재개 화면이 없어 로그인해도 갈 곳이 없는 죽은 계정이 된다.
+  - 웹 자격증명은 `auth` 모듈이 새로 소유하는 `local_accounts`(`email` UNIQUE·`user_id` UNIQUE·`password_hash`·`failed_login_attempts`·`locked_at`·`name`·`birth_date`)에 저장한다. `users`에 비밀번호 컬럼을 붙이지 않는다 — 자격증명은 `auth`, 프로필은 `user` 소유라는 경계를 유지하고 `social_accounts`와 대칭을 이룬다. `user_id` UNIQUE가 "한 계정에 웹 자격증명 1개" 불변식을 DB 레벨로 보장한다.
+  - **연동 판정 키는 SMS 인증을 통과한 `phoneNumber` 단독**이다. 번호는 비밀이 아니라 조회 키일 뿐이고 소유 증명은 전적으로 US-1-13이 담당하므로, 인증을 통과하지 않은 번호로는 어떤 연동도 일어나지 않는다. 이름을 매칭 조건에 넣으면 보안에 기여하는 바 없이 실패만 늘린다 — 앱 이름은 소셜 SDK 표기(`Kim Imdae`), 웹 이름은 직접 입력(`김임대`)이라 불일치가 자연스럽고, 불일치하면 계정이 조용히 갈라져 사용자는 "앱에서 내 매물의 예약이 안 보인다"만 겪는다.
+  - 휴대폰 번호는 **입력 경로에서 숫자만 남겨 정규화**한 값으로 저장·조회하며, `users.phone_number`에 UNIQUE 제약을 새로 건다. 이 제약이 웹 가입과 앱 온보딩(US-1-15)이 동시에 들어올 때 계정이 갈라지는 것을 막는 유일한 수단이다. 세입자·탈퇴자는 번호가 NULL이라(MySQL UNIQUE는 NULL 중복을 허용) 영향받지 않는다. **기존 데이터는 백필하지 않는다** — 하이픈이 포함된 채 저장된 임대인 번호는 매칭에서 누락될 수 있다(아래 경계 AC).
+  - 이메일 중복 검사는 **`local_accounts.email`에만** 건다. `users.email`은 보지 않으며 UNIQUE도 추가하지 않는다 — 소셜 로그인은 `(provider, providerUserId)`로 계정을 판정해 `users.email`이 로그인 ID가 아니고(nullable·비UNIQUE), 여기에 유일성을 걸면 소셜과 같은 이메일로 웹 가입하는 가장 흔한 정상 경로가 막힌다.
+  - 약관은 앱 `POST /auth/terms`(US-1-7)와 **같은 3필드**를 가입 요청에 함께 싣는다 — `termsOfServiceAgreed`·`privacyPolicyAgreed`는 필수 `true`, `marketingAgreed`는 선택이다. 웹 화면에는 개인정보 수집·이용 동의 체크박스만 두고 서비스 이용약관은 **가입 버튼 문구로 갈음**하므로("가입하기를 누르면 서비스 이용약관에 동의하는 것으로 봅니다"), 서버가 기록하는 `termsOfServiceAgreed=true`가 화면 고지와 일치한다. 마케팅 동의는 화면에 없어도 무방하며 이후 `PATCH /users/me`로 켤 수 있다(US-1-5).
+  - 서버 고정값은 앱과 동일하다 — `country="KR"`·`lang="ko"`·닉네임 자동 배정·`userType="LANDLORD"`. 사업자등록번호도 앱과 같이 가입에서 수집하지 않으며 검증(US-1-8)은 가입 후 별도 호출이다.
+  - **표시 규칙: 응답의 `name`·`email`은 `users`의 값을 싣는다.** 폼이 준 `name`·`birthDate`는 `local_accounts`에 스냅샷으로만 남기고(provider가 준 표시 이름을 `User.name`과 별개로 보관하는 `social_accounts.name`과 같은 취급) 어떤 응답에도 싣지 않는다. 연동된 계정이면 응답에 소셜 진본 이메일이 나갈 수 있으며 의도된 동작이다. 프로필 수정(US-1-5)도 `users`만 바꾸고 `local_accounts` 사본은 갱신하지 않는다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 기존 앱 계정과 연동되는 가입**
+  Given 앱에서 소셜 로그인 후 임대인 온보딩까지 마쳐 `ACTIVE`·`LANDLORD`이고 연락처가 `01012345678`인 사용자가 존재하고, 웹 가입자가 **같은 번호로 가입용 연락처 인증(US-1-13)을 통과**했으며
+  When 폼 전체(`name`·`birthDate`·`phoneNumber`·`email`·`password`·약관 3필드)를 담아 `POST /api/v1/auth/signup`을 호출하면
+  Then `200 OK` + `data.linked=true`·`data.status="ACTIVE"`·`data.onboardingRequired=false`와 `accessToken`·`tokenType="Bearer"`·`expiresIn`을 반환하고(refresh는 `Set-Cookie`), **새 `users` 행을 만들지 않고** 기존 `user_id`에 `local_accounts` 행만 추가한다. 이후 이 계정으로 웹에서 등록한 매물의 `landlordId`는 앱 소셜 로그인 시의 `userId`와 같다.
+- **정상 — 연동 시 `users`를 갱신하지 않는다**
+  Given 위 연동이 성립하고 폼의 `name`·`birthDate`·`email`이 기존 계정의 값과 다르면
+  When 가입을 제출하면
+  Then 폼 값은 `local_accounts`(`name`·`birth_date`·`email`)에만 저장하고 **`users`의 `name`·`birth_date`·`email`은 갱신하지 않는다**(소셜 진본 유지). 기존 값은 온보딩을 마친 확정 값이고 폼 값은 방금 입력한 미검증 값이라, 덮어쓰면 "가입했더니 내 프로필이 바뀌었다"는 놀라운 동작이 된다. 응답의 `name`·`email`도 `users`의 값이며, 이름이 달라도 연동을 막지 않는다.
+- **정상 — 연동 대상이 없는 신규 가입(한 번에 완주)**
+  Given 그 번호를 가진 기존 사용자가 없고 가입용 연락처 인증을 통과했으며
+  When `POST /api/v1/auth/signup`을 호출하면
+  Then `200 OK` + `data.linked=false`·`data.status="ACTIVE"`·`data.onboardingRequired=false`와 정식 토큰(refresh는 쿠키)을 반환한다. 서버는 한 트랜잭션 안에서 `users` 생성(`PENDING`) → 약관 동의 전이(`TERMS_AGREED`) → 임대인 온보딩 전이(`ACTIVE`·`userType="LANDLORD"`·정규화한 `phoneNumber`·`birthDate` 기록) → `local_accounts` 생성까지 마친다. **신규 생성일 때만 폼의 `name`·`email`이 `users`에도 들어간다.** 웹에는 별도 약관·온보딩 단계가 없다.
+- **정합성 — 가입 원자성**
+  Given 위 연쇄 전이 중 어느 단계가 실패하면
+  When 가입을 제출하면
+  Then **전체를 롤백**한다. `users` 행만 생기고 `local_accounts`가 없는(로그인 불가) 상태나, 반대로 자격증명만 뜬 상태를 남기지 않는다.
+- **보안 — 연락처 인증 없는 가입 시도(계정 탈취 차단)**
+  Given 제출한 `phoneNumber`에 유효한 가입용 검증 마커(US-1-13)가 없으면
+  When `POST /api/v1/auth/signup`을 호출하면
+  Then `422` + `error.code=AUTH_PHONE_NOT_VERIFIED`를 반환하고 **계정 생성도 연동도 하지 않는다**(이름과 번호를 안다는 것만으로는 남의 계정에 자격증명이 붙지 않는다).
+- **비즈니스 규칙 — 필수 약관 미동의**
+  Given `termsOfServiceAgreed`·`privacyPolicyAgreed` 중 하나라도 `false`이면
+  When 가입을 제출하면
+  Then `422` + `error.code=AUTH_REQUIRED_AGREEMENT_MISSING`을 반환하고 계정을 만들지 않는다(US-1-7과 같은 규칙·같은 코드 — 형식은 맞으나 비즈니스 규칙 위반이라 422).
+- **비즈니스 규칙 — 이메일 중복(로그인 ID 유일성)**
+  Given 같은 이메일로 이미 `local_accounts` 행이 있으면
+  When 가입을 제출하면
+  Then `409` + `error.code=AUTH_EMAIL_ALREADY_REGISTERED`를 반환한다. 이메일은 연동 키가 아니라 **웹 로그인 ID**이므로 유일해야 로그인(US-1-12)이 계정을 특정할 수 있다(중복을 허용하면 로그인 기능 자체가 성립하지 않는다).
+- **정상 — 앱 소셜 로그인 이메일과 같은 주소로 웹 가입(막지 않는다)**
+  Given 앱에서 소셜 로그인으로 `users.email="kim@gmail.com"`을 보유한 사용자가 웹에서도 같은 주소로 가입하면
+  When 가입을 제출하면
+  Then **정상 처리한다** — 중복 검사는 `local_accounts.email`에만 걸고 `users.email`은 보지 않으며, `users.email`에 UNIQUE를 추가하지 않는다. 임대인 대다수가 타는 경로라 여기에 유일성을 걸면 본인이 본인 이메일로 가입하다 `409`를 맞는다.
+- **경계 — 남이 쓰는 소셜 이메일로 웹 가입**
+  Given A가 앱에서 `kim@gmail.com`으로 소셜 가입해 있고 **다른 사람** B가 웹에서 같은 주소로 가입하면(오타든 악의든)
+  When 가입을 제출하면
+  Then B의 번호가 A와 달라 매칭되지 않으므로 **별개 계정이 생성되고 `users.email`이 같은 사용자가 둘** 존재하게 된다. 매물·예약은 `user_id`로 갈려 섞이지 않으며, 이메일은 웹 로그인 ID일 뿐 계정 복구 수단이 아니라 계정 탈취로 이어지지 않는다.
+- **비즈니스 규칙 — 이미 웹 계정이 연결된 사용자(번호로 판정)**
+  Given 번호로 매칭된 `users`에 이미 `local_accounts` 행이 존재하면
+  When 가입을 제출하면
+  Then `409` + `error.code=AUTH_WEB_ACCOUNT_ALREADY_EXISTS`를 반환하고 **기존 자격증명을 덮어쓰지 않는다**(로그인 화면으로 안내). 이 상태는 연동이 이미 끝나 붙일 자리가 없는 상태이며, 제출된 이메일·비밀번호로 할 수 있는 일은 로그인 ID까지 조용히 바꾸는 자격증명 교체뿐이라 가입 엔드포인트가 할 일이 아니다. **응답에는 공통 에러 스키마(`code`·`message`)만 담고 그 계정의 이메일은 마스킹해서도 노출하지 않는다.** 이메일 중복(`AUTH_EMAIL_ALREADY_REGISTERED`)과는 다른 케이스다 — 저건 "이 이메일은 남이 쓰고 있다", 이건 "이 사람은 이미 웹 계정이 있다"이다.
+- **경계 — 온보딩 미완료 앱 계정은 매칭되지 않는다(정상 동작)**
+  Given 앱에서 소셜 로그인만 하고 임대인 온보딩을 마치지 않은 계정이 존재하면(`phone_number`가 NULL)
+  When 웹 가입을 제출하면
+  Then 매칭에 걸리지 않아 **새 계정으로 가입된다**(`linked=false`). 그 앱 계정이 나중에 임대인 온보딩을 마칠 때 **US-1-15가 병합**하므로 최종적으로 하나의 계정으로 수렴한다.
+- **경계 — 세입자 계정은 매칭 대상이 아니다(세입자→임대인 전환 불가)**
+  Given 앱에서 세입자(`TENANT`)로 가입·온보딩을 마친 계정이 존재하면(세입자는 `phone_number`가 NULL)
+  When 같은 사람이 웹 가입을 제출하면
+  Then 매칭에 걸리지 않아 **별개의 임대인 계정이 생성된다**. `userType`은 온보딩 제출로 확정된 뒤 불변이라 세입자→임대인 전환은 지원하지 않으며, **역할 검사나 거부 분기를 두지 않는다** — 번호 부재로 구조적으로 걸러진다. 서버는 두 계정이 동일인인지 알 수 없어 안내도 하지 않는다. 앱에서도 임대인으로 쓰려면 **다른 소셜 계정으로 앱에 가입해 US-1-15 병합**을 타야 한다.
+- **경계 — 하이픈으로 저장된 기존 번호는 매칭에서 누락될 수 있다**
+  Given 번호 정규화는 이번 변경의 **입력 경로에만** 적용하고 기존 데이터를 백필하지 않으므로, `users.phone_number`에 하이픈이 포함된 채 저장된 임대인이 있으면
+  When 그 사람이 웹 가입을 제출하면
+  Then 정규화한 번호와 문자열이 달라 매칭되지 않고 별개 계정이 생긴다. **알려진 제약으로 수용하며**, 필요하면 운영에서 해당 행을 개별 정리한다.
+- **입력 검증 — 비밀번호 정책**
+  Given 비밀번호가 영문자(`A-Za-z`) 1자 이상 · 숫자 1자 이상 · **ASCII 특수문자**(``!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~``) 1자 이상을 모두 포함하고 **길이 8~10자**를 만족하지 않거나, **공백**·한글 등 허용 집합 밖 문자를 포함하면
+  When 가입을 제출하면
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(`field=password`)를 반환한다. 검증은 요청 DTO의 Bean Validation(`@Pattern`)으로 걸어 기존 `INVALID_INPUT` 처리 흐름에 태운다.
+- **입력 검증 실패(그 외)**
+  Given `name`·`phoneNumber`·`email` 누락, `email` 형식 위반, `phoneNumber` 형식 위반(하이픈은 허용하고 서버가 정규화한다), `birthDate` 형식 위반·미래 날짜, 약관 필수 boolean 누락(null)이면
+  When `POST /api/v1/auth/signup`을 호출하면
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`(field/reason)를 반환한다.
+- **보안 — 비밀번호 보관**
+  Given 어떤 경우에도
+  When 가입을 제출하면
+  Then 비밀번호 원문을 저장·로그하지 않고 **BCrypt 해시로만** 보관한다.
+- **경계·동시성 — 같은 번호로 웹 가입과 앱 온보딩이 동시에 도착**
+  Given 같은 번호에 대해 웹 가입 제출과 앱 임대인 온보딩 제출(US-1-15)이 거의 동시에 도착해 양쪽 모두 상대의 커밋 전에 번호를 조회하면
+  When 두 트랜잭션이 각각 계정을 확정하려 하면
+  Then `users.phone_number` UNIQUE 제약이 두 번째를 실패시켜 **같은 번호의 `ACTIVE` 계정이 둘 생기지 않는다**(조회 후 삽입 패턴은 애플리케이션 레벨로 막을 수 없다). 실패한 쪽은 재시도하면 상대가 만든 계정을 발견해 정상 연동·병합된다.
+  **And** 실패한 요청의 응답은 **`409` + `error.code=RESOURCE_CONFLICT`** 다(전역 예외 핸들러가 **문서화된 UNIQUE 제약**의 중복 위반만 골라 번역한다 — 종전 `500 INTERNAL_ERROR`에서 바뀌었다). 트랜잭션은 통째로 롤백되므로 `users`·`local_accounts` 어디에도 반쪽 행이 남지 않는다.
+- **알려진 제약 — 롤백돼도 refresh 해시는 Redis에 남는다**
+  Given 위 경합처럼 커밋 시점에 UNIQUE 위반이 나면
+  When 트랜잭션이 롤백돼 `409`가 나가면
+  Then **MySQL 쓰기만** 되돌아간다 — 토큰 발급은 이미 끝난 뒤이고 refresh 해시는 Redis에 있어 롤백 대상이 아니므로, **쓰이지 않을 해시 하나가 14일 TTL로 남는다**. 원문은 응답으로 전달되지 않아 세션을 열 수 없고(악용 불가) 항목은 스스로 만료되지만, 그때까지 `refresh:user:{id}` 인덱스가 실제 세션 수보다 많아 보인다. 토큰 발급을 트랜잭션 밖으로 들어내는 재구성은 하지 않는다(수용).
+
+---
+
+### US-1-12 — 임대인 웹 로그인하기 (임대인 웹 전용)
+
+**As a** 웹 계정을 만든 임대인
+**I want** 이메일·비밀번호로 로그인하고 refresh 토큰이 브라우저 쿠키에 안전하게 보관되기를
+**So that** 매 방문마다 다시 로그인하지 않고 웹에서 매물을 관리할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(무차별 대입 방어·자격증명 오류 정보 최소화·쿠키 속성), 보안(이메일·비밀번호 로그 마스킹), 성능(비밀번호 해시 검증 비용)
+- 선행: 웹 회원가입(US-1-11) 완료. 앱 소셜 로그인(US-1-1)과는 별개 진입점이며 웹은 소셜 로그인을 지원하지 않는다.
+- 백엔드 관점: `POST /api/v1/auth/login`(`permitAll`)을 신설한다. 요청은 `{ email, password }`, 응답 `data`는 `{ onboardingRequired, status, tokenType, accessToken, expiresIn, email, name }`이며 refresh는 `Set-Cookie`로만 내린다. 기존 `/auth/social-login`에 `provider=LOCAL`을 끼워 넣지 않는다 — 소셜 요청 DTO가 이미 provider별 조건부 자격 필드로 복잡해 `password`까지 섞으면 검증 분기가 3중이 된다.
+  - **토큰 발급·회전·재사용 탐지는 기존 로직(US-1-3)을 그대로 재사용**한다. 규칙을 두 벌로 만들지 않으며, 웹 refresh TTL도 **앱과 동일한 14일**이라 웹 전용 설정키를 새로 두지 않는다.
+  - refresh 쿠키는 `HttpOnly`·`Secure`·`SameSite=Lax`·`Path=/api/v1/auth`로 내린다. 재발급·로그아웃(US-1-3·US-1-4)은 refresh를 **쿠키 우선·요청 본문 fallback**으로 읽고, **요청이 쿠키로 왔으면 회전된 refresh를 다시 쿠키로, 본문으로 왔으면 기존대로 본문에** 담는다 — 앱 동작이 그대로라 하위 호환이 깨지지 않아 v2가 필요 없다.
+  - 실패 횟수·잠금 시각은 Redis TTL이 아니라 **`local_accounts.failed_login_attempts`·`locked_at` 컬럼**에 둔다. TTL로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책이 깨진다.
+  - **로그인 시도 자체에 레이트리밋을 건다** — 자격증명 조회·비밀번호 해시 대조보다 **먼저** IP 30회/시간·이메일 10회/시간을 세고(`app.auth.web.login.*`, Redis 고정 창) 초과하면 `429 TOO_MANY_REQUESTS`다. 순서가 계약이다: 뒤에서 보면 막힌 요청도 이미 BCrypt 비용을 치른 뒤라, `permitAll`이면서 **선행 조건이 하나도 없는** 이 경로의 CPU 증폭을 막지 못한다(가입은 SMS 인증 마커 게이트 뒤에 있다).
+  - **웹과 API를 같은 오리진에 배치하는 것을 전제**로 한다 — CORS 설정이 필요 없고 `SameSite=Lax`가 크로스사이트 요청에 refresh 쿠키를 싣지 않아 `csrf.disable()`을 유지한다. 이 전제는 배포 형상에 달려 있다(아래 CSRF AC).
+  - 신규 경로는 보안 설정의 `permitAll` matcher와 **공개 경로 목록 양쪽에** 등록한다. 목록에서 빠지면 만료된 토큰을 들고 있는 브라우저가 로그인 요청에서 `401 TOKEN_EXPIRED`를 맞는다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 로그인**
+  Given `local_accounts`에 등록된 이메일과 비밀번호가 일치하고 잠기지 않은 계정이 있고
+  When `POST /api/v1/auth/login`에 `{ email, password }`를 담아 호출하면
+  Then `200 OK` + `data`에 `accessToken`·`tokenType="Bearer"`·`expiresIn`·`status="ACTIVE"`·`onboardingRequired=false`와 `email`·`name`(둘 다 `users`의 값)을 반환하고, **refresh 토큰은 응답 본문이 아니라 `Set-Cookie`로** 내려간다. 실패 카운터는 0으로 리셋한다.
+- **경계 — 웹 계정은 항상 `ACTIVE`다**
+  Given 웹 가입이 한 트랜잭션으로 `ACTIVE`까지 완주하므로(US-1-11)
+  When 웹 로그인을 호출하면
+  Then `onboardingRequired`는 항상 `false`, `status`는 항상 `"ACTIVE"`다. **웹 로그인에는 온보딩 재개 분기가 없다** — 앱처럼 `PENDING`/`TERMS_AGREED` 상태로 로그인해 재개 지점을 분기하는 경로(US-1-1)가 웹에는 존재하지 않는다.
+- **인증·권한 — 존재하지 않는 이메일 / 비밀번호 불일치**
+  Given 둘 중 어느 경우든
+  When `POST /api/v1/auth/login`을 호출하면
+  Then **동일하게** `401` + `error.code=AUTH_INVALID_CREDENTIALS`를 반환한다(이메일 존재 여부를 노출하지 않는다).
+- **보안 — 비밀번호 5회 실패 시 계정 잠금**
+  Given 같은 계정에 대해 비밀번호 검증이 연속 5회 실패하면
+  When 5회째 실패가 발생하면
+  Then `failed_login_attempts=5`와 `locked_at`을 기록해 계정을 잠그고, 이후에는 **비밀번호가 맞더라도** `423` + `error.code=AUTH_ACCOUNT_LOCKED`를 반환한다(잠금 판정이 자격증명 검증보다 우선한다).
+- **경계 — 잠금 해제 경로가 없다**
+  Given 계정이 잠긴 상태이면
+  When 임대인이 다시 로그인하면
+  Then 계속 `423` + `error.code=AUTH_ACCOUNT_LOCKED`다. **해제 기능도 시간 경과 자동 해제도 구현하지 않는다** — 운영자가 DB에서 `locked_at`을 비우는 것이 유일한 해제 경로다. 알려진 제약이며, 잠긴 임대인이 연락할 대응 창구를 운영에서 정해 둬야 한다(코드 변경 없음).
+- **경계 — `locked_at`만 비우면 완전한 해제다**
+  Given 운영자가 잠긴 계정의 `locked_at`만 비우고 `failed_login_attempts`(=5)는 그대로 두었으면
+  When 그 임대인이 다시 로그인하다 비밀번호를 한 번 틀리면
+  Then 카운터를 `6`으로 올려 즉시 재잠금하지 않고 **`1`부터 다시 센다**(잠기지 않았는데 카운터가 이미 상한 이상인 상태 = 방금 해제된 계정으로 본다). 해제 절차가 운영자의 기억력에 기대지 않도록 코드가 절차를 완결시킨다.
+- **보안 — 로그인 시도 레이트리밋**
+  Given 같은 IP에서 1시간에 30회 또는 같은 이메일로 1시간에 10회를 넘겨 로그인을 시도하면
+  When 그 다음 요청이 오면
+  Then **자격증명을 조회하기 전에** `429` + `error.code=TOO_MANY_REQUESTS`를 반환한다. 이메일 존재 여부와 무관하고, 어느 축에 걸렸는지 구분해 알리지 않는다(한도 역산 방지). 이메일 키는 소문자로 접어 세므로 대소문자를 바꿔가며 우회할 수 없다.
+- **경계 — 의도적 계정 잠금(DoS)은 수용한다**
+  Given 남의 이메일로 비밀번호를 5회 틀리면 그 사람의 계정을 잠글 수 있으면
+  When 그런 시도가 반복되면
+  Then 시도 레이트리밋(IP 30회/시간·이메일 10회/시간)이 **시간당 잠글 수 있는 계정 수를 묶되 완전히 막지는 못한다** — 잠금 임계값이 5회라 이메일 한도 안에서도 한 계정은 잠글 수 있다. 위조 가능한 IP 축과 달리 이메일 축은 우회할 수 없다는 점이 이 완화의 근거다. 잠금 정책을 채택하는 이상 피할 수 없는 고전적 부작용이며 리스크를 수용하고 진행한다.
+- **보안 — refresh 쿠키 속성**
+  Given 가입·로그인·재발급 응답으로 refresh 쿠키를 내릴 때
+  When 쿠키를 만들면
+  Then `HttpOnly`·`Secure`·`SameSite=Lax`·`Path=/api/v1/auth`·`Max-Age=1209600`(14일, 앱 refresh TTL과 동일)을 설정한다. 기본값은 안전한 쪽(`Secure`)이며 http로 도는 로컬 프로파일에서만 이를 내린다.
+- **정상 — 쿠키로 재발급·로그아웃**
+  Given 웹 세션의 access 토큰이 만료됐고 브라우저가 refresh 쿠키를 보유하면
+  When 본문 없이 `POST /api/v1/auth/reissue`를 호출하면(쿠키 자동 첨부)
+  Then 기존 회전·재사용 탐지 규칙(US-1-3)대로 새 토큰을 발급하고 **회전된 refresh를 다시 쿠키로** 내린다. 본문으로 온 요청은 기존대로 본문에 담아 돌려준다(앱 하위 호환). 쿠키를 **지우는** 자리는 둘이다 — 로그아웃(US-1-4)은 쿠키로 온 요청에, 탈퇴(US-1-4)는 성공 응답에 조건 없이 **`Max-Age=0` 삭제 쿠키**를 내린다.
+- **입력 검증 실패 — refresh가 쿠키에도 본문에도 없음**
+  Given `POST /api/v1/auth/reissue`·`POST /api/v1/auth/logout` 요청에 refresh 쿠키가 없고 본문 `refreshToken`도 없거나 공백이면
+  When 호출하면
+  Then `400` + `error.code=INVALID_INPUT` + `errors[].field="refreshToken"`을 반환한다(본문은 선택이 되므로 본문 부재 자체는 오류가 아니다). 본문 JSON 자체가 깨진 경우는 기존대로 `400` + `error.code=MALFORMED_REQUEST`다.
+- **입력 검증 실패 — 로그인 요청**
+  Given `email`이 누락·형식 위반이거나 `password`가 빈 문자열이면
+  When `POST /api/v1/auth/login`을 호출하면
+  Then `400` + `error.code=INVALID_INPUT` + `errors[]`를 반환한다(자격증명을 대조하기 전에 거른다).
+- **보안 — CSRF**
+  Given 웹과 API를 동일 오리진에 배치하고 refresh 쿠키가 `SameSite=Lax`이면
+  When 크로스사이트 요청이 들어오면
+  Then refresh 쿠키가 실리지 않는다. **별도 CSRF 토큰을 구현하지 않으며 `csrf.disable()`을 유지한다.** 다만 이 전제는 배포 형상에 달려 있다 — 웹을 다른 호스트로 배포하면 `csrf.disable()` + 쿠키 refresh가 CSRF 표면이 되므로, 배포 형상을 바꿀 때 이 결정을 함께 재검토해야 한다.
+
+---
+
+### US-1-13 — 가입 전 연락처(휴대폰) 인증하기 (임대인 웹 전용, 비로그인)
+
+**As a** 아직 로그인하지 않은 웹 가입자
+**I want** 내 휴대폰 번호로 SMS 인증번호를 받아 확인하기를
+**So that** 본인 소유 번호임을 증명해 웹 회원가입(기존 앱 계정 연동 포함)을 진행할 수 있다.
+
+- 우선순위: **High**
+- 관련 NFR: 보안(휴대폰 소유 인증·인증번호 해시 보관·**비로그인 경로 SMS 남용 방지**), 보안(연락처·인증번호 로그 마스킹), 비용(SMS 발송비)
+- 선행: 없다(비로그인 진입점). 이 인증을 통과해야 웹 회원가입(US-1-11)을 제출할 수 있다.
+- 백엔드 관점: 온보딩용 연락처 인증(US-1-10)은 챌린지를 **`userId`를 키로 저장**하고 인증 필요 경로에 있어, 계정이 없는 가입 전 단계에서 재사용할 수 없다. 그래서 **정규화한 휴대폰 번호를 키로 쓰는 챌린지**를 쓰는 엔드포인트 `POST /api/v1/auth/phone/signup/verification-code`·`POST /api/v1/auth/phone/signup/verify`를 신설하고 `permitAll`로 연다. 기존 `/auth/phone/*`는 그대로 둔다(가입 먼저 → 인증 나중 대안은 이미 만든 `PENDING` 계정을 나중에 병합해야 해서 더 지저분하므로 채택하지 않는다).
+  - 인증번호 정책(6자리·코드 TTL 5분·검증 마커 TTL 30분·검증 시도 상한 5회·재발송 간격 60초)과 `VerificationSmsSender` 포트·해시 보관·동기 발송 실패 정책은 US-1-10과 **동일하게 재사용**한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)).
+  - 번호는 저장·조회 전에 **숫자만 남겨 정규화**하므로 하이픈 유무와 무관하게 같은 챌린지를 가리킨다.
+  - 검증 마커의 소비처는 **웹 회원가입 제출(US-1-11) 하나뿐**이라 용도 구분 필드를 두지 않으며, 가입이 성공하면 마커를 즉시 소비(삭제)한다.
+  - 앱 심사용 고정 인증번호 우회는 `userId`와 Google 소셜 계정을 전제로 하므로 **이 비로그인 경로에는 적용하지 않는다**(앱 심사용 기능이라 웹 가입과 무관하다).
+
+**AC (Given / When / Then)**
+
+- **정상 — 인증번호 발송**
+  Given 비로그인 상태에서 유효한 휴대폰 번호를 입력하고
+  When `POST /api/v1/auth/phone/signup/verification-code`에 `{ phoneNumber }`를 담아 호출하면
+  Then `200 OK` + `data.phoneNumber`(마스킹)·`data.expiresIn`(만료 초)을 반환하고 해당 번호로 SMS 인증번호를 발송한다. SMS 발송에 성공한 뒤에만 챌린지를 저장하며, 인증번호 원문은 저장·로그하지 않고 해시로만 보관한다.
+- **정상 — 인증번호 확인**
+  Given 발송된 인증번호가 유효(미만료·시도 미초과)하고
+  When `POST /api/v1/auth/phone/signup/verify`에 `{ phoneNumber, code }`를 담아 호출하면
+  Then `200 OK` + `data.phoneNumber`(마스킹)·`data.verified=true`를 반환하고 **정규화한 번호를 키로 검증 마커(TTL 30분)를 저장**해 웹 회원가입 제출(US-1-11)에서 대조할 수 있게 한다.
+- **비즈니스 규칙 — 인증번호 불일치/만료/시도 초과**
+  Given 잘못된 인증번호이거나 만료(미발송 포함)됐거나 검증 시도 상한(5회)을 넘겼으면
+  When `POST /api/v1/auth/phone/signup/verify`를 호출하면
+  Then `422` + `error.code=AUTH_PHONE_VERIFICATION_FAILED`를 반환하고 검증 마커를 저장하지 않는다.
+- **보안 — SMS 남용 방지(비로그인 경로 필수)**
+  Given 재발송 간격 60초를 지키지 않거나, **같은 번호로 1시간에 5회**를 넘겨 발송하거나, **같은 IP에서 1시간에 20회**를 넘겨 발송하면
+  When `POST /api/v1/auth/phone/signup/verification-code`를 호출하면
+  Then `429` + `error.code=TOO_MANY_REQUESTS`를 반환하고 SMS를 발송하지 않는다. 인증 없이 열린 경로라 문자 폭탄·발송비 남용 표면이 되므로 **번호 단위와 IP 단위 제한을 함께** 건다.
+- **장애 — SMS 발송 실패**
+  Given SMS provider 장애·타임아웃 등으로 인증번호 발송이 실패하면
+  When `POST /api/v1/auth/phone/signup/verification-code`를 호출하면
+  Then `502` + `error.code=UPSTREAM_ERROR`를 반환하고, 인증번호 챌린지를 저장하지 않아 클라이언트가 재시도하도록 유도한다(동기 발송 정책, US-1-10과 동일).
+- **입력 검증 실패**
+  Given `phoneNumber`가 누락·형식 위반(하이픈은 허용하고 서버가 정규화한다)이거나 확인 요청에 `code`가 빈 문자열이면
+  When 가입용 연락처 인증 API를 호출하면
+  Then `400` + `error.code=INVALID_INPUT`을 반환한다.
+- **개인정보 — 계정 존재 여부 비노출**
+  Given 이미 가입·연동 대상이 되는 번호든 가입 이력이 전혀 없는 번호든
+  When 발송·확인 API를 호출하면
+  Then **동일하게 발송·응답한다**. 응답만으로 그 번호의 가입 여부나 연동 대상 존재 여부를 알 수 없게 하며, 연동 판정은 가입 제출(US-1-11) 시점에만 이뤄진다.
+- **인증·권한 — 토큰이 필요 없다**
+  Given 이 두 엔드포인트는 `permitAll` 공개 경로이므로
+  When `Authorization` 헤더 없이 호출하면
+  Then 정상 처리한다. 만료된 토큰을 든 브라우저가 `401 TOKEN_EXPIRED`를 맞지 않도록 보안 설정의 `permitAll` matcher와 **공개 경로 목록 양쪽에** 등록한다.
+
+---
+
+### US-1-15 — 앱 임대인 온보딩에서 기존 웹 계정과 병합하기 (임대인 전용)
+
+> **US-1-14는 결번이다** — 웹 임대인 트랙을 US-1-11·US-1-12·US-1-13·US-1-15로 확정하면서 배정하지 않은 번호이며, 누락되거나 이연된 스토리가 아니다. 이 번호는 다른 스토리에 재사용하지 않는다.
+
+**As a** 웹에서 먼저 가입해 매물을 등록해 둔 임대인
+**I want** 앱에서 소셜 로그인해 임대인 온보딩을 마치면 웹 계정과 자동으로 하나가 되기를
+**So that** 웹에서 등록한 매물에 들어온 예약·(후속) 채팅을 앱에서 그대로 확인할 수 있다.
+
+- 우선순위: **High**(이게 없으면 계정 연동이 웹→앱 한 방향으로만 성립해 절반이 비어 있다)
+- 관련 NFR: 정합성(계정 병합 원자성), 보안(연락처 인증 없는 병합 차단)
+- 선행: 앱 소셜 로그인(US-1-1) → 약관 동의(US-1-7) → 연락처 인증(US-1-10). 반대 방향(웹 가입 시 앱 계정을 찾아 연결)은 US-1-11이 담당한다.
+- 백엔드 관점: **판정 지점은 로그인이 아니라 임대인 온보딩 제출(`POST /api/v1/auth/landlord/onboarding`, US-1-9)이다.** 소셜 로그인 시점에 서버가 아는 것은 provider·`providerUserId`·`email`·`name`뿐이고 휴대폰 번호는 모르는데, `users.phone_number`는 임대인 온보딩의 SMS 인증값으로만 채워지기 때문이다. 그 시점엔 이미 임시 `users` 행이 만들어진 뒤이므로 웹→앱 방향의 "연결"과 달리 앱→웹 방향은 **"병합"**이 된다.
+  - 병합은 기존 게이트(약관 동의 → 연락처 인증)를 통과한 뒤 실행하는 분기다 — 인증된 번호로 `id <> 현재 사용자` · `status='ACTIVE'` · `user_type='LANDLORD'`인 `users`를 `SELECT ... FOR UPDATE`로 잠가 조회하고, 찾으면 `social_accounts.user_id`를 그 계정으로 이전한 뒤 임시 계정 행을 삭제하고 **이전 대상 계정 기준으로** 정식 토큰과 프로필을 반환한다. 못 찾으면 US-1-9 기존 동작 그대로다.
+  - **병합 여부는 응답 필드 `linked`로 명시한다**(US-1-11 웹 가입 응답과 **같은 이름**이다 — 방향만 반대일 뿐 클라이언트에게는 둘 다 "계정이 하나로 합쳐졌다"는 한 가지 사실이라 어휘를 두 벌 익히게 하지 않는다). 이 필드가 없으면 앱은 *자기가 보낸 토큰에 박힌 `userId`* 를 꺼내 응답 `user.id`와 대조해야만 병합을 알 수 있는데, 그 비교를 빠뜨려도 화면은 정상으로 보이고 **다음 API 호출에서야** 사라진 계정의 토큰으로 깨진다. 세입자 온보딩(US-1-2)은 같은 응답 타입을 쓰지만 매칭 키인 번호를 수집하지 않아 병합 분기 자체가 없으므로 **항상 `false`** 다. 응답 필드 추가는 하위 호환이라 버전은 `/api/v1` 그대로다.
+  - `status`·`user_type` 조건은 지금은 사실상 중복이다(번호가 채워진 계정은 `ACTIVE` 임대인뿐이고 UNIQUE까지 걸리면 최대 1건이다) — 그럼에도 **명시한다.** 나중에 다른 경로가 `PENDING` 계정에 번호를 채워도 병합이 오작동하지 않아야 하며, 암묵적 불변식에 기대지 않는다.
+  - 임시 계정의 `users` 행은 **하드 삭제**한다. 병합이 안전한 이유는 그 계정이 방금 소셜 로그인으로 만들어져 **매물·예약·채팅이 하나도 없고 실제로 옮길 것이 `social_accounts` 행뿐**이기 때문이다. 두 계정이 같은 `user_id`로 수렴하므로 `listings`·`bookings`는 손댈 것이 없고, `chat`은 아직 영속 구현이 없어 병합 대상이 아니다. 매물 사진의 pending 업로드 키는 임대인 id를 품지만(`uploads/{landlordId}/…`) 온보딩 직후에는 진행 중 업로드가 없어 실무상 고아가 생기지 않는다.
+
+**AC (Given / When / Then)**
+
+- **정상 — 병합**
+  Given 웹에서 가입해 연락처 `01012345678`을 보유한 `ACTIVE`·`LANDLORD` 계정(id=42)이 있고, 같은 사람이 앱에서 소셜 로그인해 임시 계정(id=99, `TERMS_AGREED`)이 만들어졌으며 그 번호로 연락처 인증(US-1-10)을 통과했고
+  When `POST /api/v1/auth/landlord/onboarding`을 호출하면
+  Then `200 OK` + **id=42 기준의 임대인 프로필과 정식 `accessToken`/`refreshToken`**을 반환하고, `social_accounts`의 `user_id`가 42로 이전되며 임시 계정 99의 `users` 행은 삭제된다. 이후 앱 소셜 로그인은 항상 42로 귀결되어 웹에서 등록한 매물의 예약(US-4-6)이 앱에서 조회된다.
+- **정상 — 응답이 병합 사실을 알린다**
+  Given 위 병합이 수행되면
+  When 클라이언트가 응답을 받으면
+  Then 응답 `data.linked=true`로 **병합됐음을 명시**한다 — 앱이 `data.user.id`를 자기가 보낸 토큰의 `userId`와 비교해 **추론하게 두지 않는다**. 그 비교를 빠뜨리면 앱은 낡은 토큰을 계속 쓰다 다음 호출에서 깨지고, 방금 입력한 값 대신 살아남은 계정의 이름·이메일이 표시되는 이유도 설명할 수 없다. 앱은 이 플래그를 보고 ① 저장 토큰을 응답 값으로 교체하고 ② "기존 웹 계정과 연결되었습니다"를 안내한다. 필드명은 웹 가입(US-1-11)의 `linked`와 **같다** — 같은 개념에 두 단어를 두지 않는다. 응답 필드 추가는 하위 호환이라 **`/api/v1`을 유지**한다.
+- **정상 — 병합 대상이 없는 일반 온보딩**
+  Given 인증한 번호를 가진 다른 계정이 없으면
+  When 임대인 온보딩을 제출하면
+  Then **기존 동작 그대로** 자기 계정을 `ACTIVE`로 전이시키고 응답 `data.linked=false`를 반환한다(US-1-9는 변경되지 않는다). 세입자 온보딩(US-1-2)은 같은 응답 타입을 쓰지만 병합 매칭 키인 휴대폰 번호를 수집하지 않아 분기 자체가 없으므로 **언제나 `false`** 다.
+- **보안 — 연락처 인증 없는 병합 차단**
+  Given 제출 `phoneNumber`에 유효한 검증 마커가 없거나 인증한 번호와 다르면
+  When 온보딩을 제출하면
+  Then 기존 게이트대로 `422` + `error.code=AUTH_PHONE_NOT_VERIFIED`로 거절하고 **병합도 수행하지 않는다**. 번호만 알면 남의 웹 계정을 흡수할 수 있는 경로를 만들지 않는다.
+- **정합성 — 병합 원자성(DB 쓰기 한정)**
+  Given 병합 도중 어느 단계가 실패하면
+  When 온보딩을 제출하면
+  Then **DB 쓰기 전체를 롤백**한다 — 매핑 이전과 임시 행 삭제는 한 트랜잭션이다. `social_accounts`가 어느 계정에도 붙지 않은 상태를 남기면 앱 로그인이 영구히 깨진다.
+  **And** 그 보장은 **토큰 발급까지 덮지 않는다** — 아래 「알려진 제약」 참조.
+- **경계 — 옮기는 `social_accounts` 행 수를 가정하지 않는다**
+  Given 임시 계정은 방금 소셜 로그인으로 생성돼 `social_accounts`가 보통 정확히 1행이면
+  When `social_accounts.user_id`를 대상 계정으로 이전하면
+  Then 코드가 "1행"을 가정하지 않는다 — UPDATE는 N행이어도 안전하며 **영향 행 수를 단언하지 않는다**. **대상 계정 쪽은 여러 행이 될 수 있고 그게 정상이다** — 같은 사람이 Google로 병합한 뒤 Apple로도 앱 로그인해 다시 병합하면 한 계정에 `social_accounts` 2행이 붙으며, `(provider, providerUserId)` UNIQUE는 값이 달라 위반되지 않는다.
+- **경계 — 임시 계정의 진단 기록은 삭제하지 않는다**
+  Given 병합 대상 임시 계정이 진단 기록을 보유한 채로(진단 v2는 `permitAll`이라 온보딩 스코프 토큰으로도 생성될 수 있다)
+  When 병합이 수행되면
+  Then 병합은 **`users` 행만 삭제하고 진단 문서는 손대지 않는다**. 현재 탈퇴조차 진단을 지우지 않으므로 병합이 탈퇴보다 공격적으로 지우는 비대칭을 만들지 않는다. 그 결과 **사라진 계정을 가리키는 진단 문서가 남을 수 있으나** 조회 주체가 없어 실질 영향이 없는 알려진 제약으로 수용한다.
+- **경계 — 양쪽 모두 완주한 계정은 자동 병합하지 않는다**
+  Given 앱 계정이 이미 `ACTIVE`·`LANDLORD`이고 웹에도 같은 번호의 별도 계정이 존재하면(앱 온보딩 완료 후 웹에서 US-1-11 매칭이 실패한 이력 등)
+  When 그 사용자가 앱을 계속 사용하면
+  Then 온보딩 경로를 다시 타지 않아 **자동 병합 트리거가 없다**. 양쪽 모두 매물·예약을 보유했을 수 있어 데이터 이관 판단이 필요하므로 **운영 수동 처리 대상**으로 남기며, 이번 범위에서 병합 코드도 "계정 연결" 화면도 만들지 않는다.
+- **경계·동시성 — 같은 번호의 동시 온보딩·가입**
+  Given 같은 번호에 대해 두 건의 제출(앱 온보딩 두 기기, 또는 앱 온보딩과 웹 가입)이 거의 동시에 도착하면
+  When 양쪽이 대상 계정을 조회하면
+  Then 대상 `users` 행을 `SELECT ... FOR UPDATE`로 잠가 병합을 직렬화하고, 대상 계정이 아직 없는 경우는 `users.phone_number` UNIQUE 제약이 두 번째 확정을 실패시킨다. 실패한 쪽은 재시도하면 상대가 만든 계정을 발견해 정상 병합·연동된다.
+  **And** 그 제약 위반은 `500`이 아니라 **`409` + `error.code=RESOURCE_CONFLICT`** 로 내려간다 — 재시도하면 성공하는 상황이라 클라이언트가 그 신호를 받아야 하고, `500`은 어느 스펙 에러 카탈로그에도 없는 status다. 번역은 전역 예외 핸들러가 맡는다: 임대인 온보딩의 번호 기록은 **기존 행 UPDATE**라 위반이 커밋 시점(트랜잭션 프록시 반환 이후)에야 드러나므로 서비스 안의 `try/catch`로는 잡히지 않는다. 코드가 `AUTH_*`가 아닌 이유는 그 자리가 모듈 밖이기 때문이다.
+  **And** 번역 대상은 **문서화된 UNIQUE 제약**(`uq_users_phone_number` · `uq_local_accounts_email` · `uq_local_accounts_user_id`)의 중복 위반뿐이다 — 같은 예외 타입으로 오는 `NOT NULL` 위반·길이 초과는 재시도가 무의미한 서버 버그라 종전대로 **ERROR 로그 + `500`** 이다. 전부 409로 낮추면 클라이언트에 거짓 재시도 신호를 주고 로그 레벨이 WARN으로 떨어져 알림이 사라진다([error-response-guide §4](../api/error-response-guide.md)).
+- **알려진 제약 — 롤백돼도 refresh 해시는 Redis에 남는다**
+  Given 위 경합처럼 커밋 시점에 UNIQUE 위반이 나면
+  When 트랜잭션이 롤백돼 `409`가 나가면
+  Then **MySQL 쓰기만** 되돌아간다 — 토큰은 이미 발급된 뒤이고 refresh 해시는 Redis에 있어 롤백 대상이 아니므로, **쓰이지 않을 해시 하나가 14일 TTL로 남는다**. 원문은 응답으로 전달되지 않아 세션을 열 수 없고(악용 불가) 항목은 스스로 만료되지만, 그때까지 `refresh:user:{id}` 인덱스가 실제 세션 수보다 많아 보인다. 웹 회원가입(US-1-11)도 같은 모양이며, 토큰 발급을 트랜잭션 밖으로 들어내는 재구성은 문제 크기에 비해 변경이 커 하지 않는다(수용).
+
 ## 2. 맞춤 진단 & 매물 추천
 
 > 관련 API 스펙: [02-diagnosis-recommendation](../api/specs/02-diagnosis-recommendation.md)
 
 외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학 그룹·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소-최대) / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자 표시 언어로 번역되어 내려간다(US-2-5·US-2-6). 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
 
-- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(빈 집합, 대학 필터 미적용·지역 기반 매칭으로 폴백). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`가 `NO_ARC`(ARC 미발급)이면 서버가 추천용 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions`에 추가해 ARC 불요 매물만 매칭한다(사용자가 ④에서 직접 고르는 값 아님, 최대 3개 제한에서 제외).
-- MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 선택지로 허용하되, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
+- 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(펼칠 멤버 없음, 대신 목록 14곳 전체를 제외 조건으로 넘겨 여집합(`$nin`) 매칭 — 목록에 든 대학 근처 매물은 빠진다). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`는 파생 조건을 만들지 않고 매물 루트 `arcRequired`(`ArcRequirement`)로 직접 필터한다 — `NO_ARC`(ARC 미발급)이면 `arcRequired=NOT_REQUIRED`인 매물만 매칭하고, `ARC_ISSUED`면 이 필터를 적용하지 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `DiagnosisCondition`에 `NO_ARC`는 없으며, 최대 3개 제한은 사용자가 ④에서 고른 `conditions`에만 적용된다.
+- MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 매물 카탈로그 `CITY`에도 시드된 값이라 구조적으로 막혀 있지 않고 **해당 지역 매물이 아직 없을 뿐**이므로, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
 - 추천 결과의 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며, 일반 탐색의 `ListingSummaryResponse`와는 필드 구성이 다르다.
 - 진단·결과는 본인만 접근 가능하다(소유권 검증) — **회원은 `userId`가, 비회원(게스트)은 게스트 세션 키가 일치할 때만 통과하며, 신원 종류가 다르면(한쪽이 비어 있으면) 무조건 거절**한다(진단 id가 전역 순차 채번이라 소유권 검사가 유일한 방어선이다). **게스트 진단은 v2 경로에서만 만들어지고 조회되므로 게스트 쪽 판정도 v2 한정**이며, v1 진단 7개는 회원 전용이라 토큰 없는 요청이 애초에 닿지 못한다. 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
 - 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 음수 또는 `monthlyRentMin` > `monthlyRentMax`·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
@@ -717,7 +1011,7 @@
 
 - **우선순위**: High (진단 완주율·이탈 개선)
 - **관련 NFR**: 사용성(불필요한 단계 진행 차단·클라 로컬 분기 제거), 유지보수성(진행 흐름을 서버가 소유), 신뢰성(진행 상태 서버 보관)
-- **백엔드 관점**: 기존 v1(`/api/v1/diagnoses/*`, 클라이언트가 `step`·확정을 주도)은 **그대로 두고**, **서버 주도 대화형 흐름을 `/api/v2`에 신설**한다(하위 호환이 깨지는 변경이라 버전 상향 — [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). **서버는 질문과 분기만 주도하고, 진단을 시작할 시점과 매물을 받을 시점은 클라이언트가 결정한다** — 클라이언트가 **`POST /api/v2/diagnoses/start`**(본문 없음)로 진단을 시작하고 **`POST /api/v2/diagnoses/next`**로 현재 문항 답 1개씩을 이어 보내면, 서버는 `step`을 받지 않고 직전에 낸 문항에서 다음 질문을 결정하며 빌더가 다 채워지면 **자동 확정**한다. `/start`는 진행 중 세션이 있어도 **무조건 버리고** 새 세션(빈 draft·`pendingField=region`)을 만든다 — 진단하다 홈으로 갔다 다시 시작해도 서버가 기존 진단 정보를 보고 이어가지 않고 **언제나 처음부터**다. 진행 세션이 없는데 `/next`가 오면 서버가 임의로 흐름을 되살리지 않고 `400 DIAGNOSIS_SESSION_NOT_FOUND`로 막으며, 클라이언트는 `/start`로 복구한다. `/next`는 답(`field`)이 반드시 있어야 한다(없으면 `INVALID_INPUT`). 확정 응답에 추천 매물을 인라인으로 싣지 않고 **`diagnosisId`만** 담으며, **확정 시점에 매칭 유무조차 확인하지 않는다** — 매물은 클라이언트가 시점을 정해 **`GET /api/v2/diagnoses/{id}/recommendations`**(v1 §7과 같되 `suggestions` 없음)로 별도 조회하고, **매칭 0건은 그 응답의 `resultCode: NO_MATCH`로 드러난다**(흐름 응답엔 그 코드가 없다 — 미리 알려주려면 클라가 요청하지 않은 추천 쿼리를 서버가 돌려야 한다). ① 지역(`region`) 답 직후 매칭이 0건일 때만 서버가 예외적으로 미리 필터링해 "다른 지역 방을 찾아보시겠어요?" 문항을 끼워 넣는다 — 이 예외질문은 서버 코드에 하드코딩한 합성 문구가 아니라 **문항 카탈로그(`diagnosisQuestions`)의 일반 질문**(`step: 1`·`field: regionRetry`·`select: {type: SINGLE, max: 1}`·옵션 `YES`/`NO`)이라 별도 결과코드 없이 다른 문항과 똑같이 `NEXT_QUESTION`으로 내려가고 번역도 US-2-6과 동일 경로를 탄다(신규 환경은 order 0000 시드, 기배포 환경은 멱등 changeUnit order 0005로 적재). 그 예/아니오 응답에만 **클라이언트가 행할 행위**를 코드로 알린다 — 예=`RESTART`(클라가 `/start`로 처음부터 재시도) · 아니오=`TERMINATED`(진단 종료), 둘 다 세션을 삭제한다. 6단계까지 마친 뒤 매칭이 0건이면 `NO_MATCH`이며 **어떤 제안도 없다**(v1의 `suggestions` 기능·시드는 v1 전용으로 유지하되 v2는 참조하지 않는다). 매 응답은 정상 `200 OK`의 `data.resultCode`(태그드 유니온: `NEXT_QUESTION` / `RESTART` / `COMPLETED` / `TERMINATED`)로 표현한다(에러 아님). 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 v2 전용 세션(`diagnosisFlowSessions`)에 담고, 완료 시에만 정본 진단을 기존 `diagnoses`에 저장한다. **비회원(게스트)도 이 흐름을 그대로 타며, 여기가 게스트 진단의 정본 경로다**(#181 — 신규 `permitAll` 매처는 `/api/v2/diagnoses/**` 하나뿐이고 v1 진단 7개는 회원 전용으로 남는다) — 회원 세션이 `userId`를 키로 upsert되는 자리에서, 게스트는 `POST /api/v2/diagnoses/start`가 **서버가 발급해 응답에 실어 주는 게스트 세션 키**(값 형식 `anonymous<uuid>`)를 받아 이후 `/next`·추천 요청에 **`X-Guest-Session-Id` 헤더로 에코**한다. 문서에는 `userId`(회원)와 `guestSessionId`(게스트) 두 신원 필드를 두고 **정확히 하나만** 채우며, `diagnosisFlowSessions`의 `userId` UNIQUE 인덱스는 partial로 좁히고 `guestSessionId` partial UNIQUE를 별도로 신설한다(한 인덱스에 두 신원을 섞으면 게스트 문서의 빈 `userId`끼리 충돌한다). 게스트 세션 키는 **요청자마다 달라야 한다** — 진단 id가 전역 순차 채번이라 공용·상수 키를 쓰면 게스트 A가 id를 증가시키며 게스트 B의 진단을 읽을 수 있다. 클라이언트에는 키를 보관·에코할 의무가 새로 생기며, 키를 잃으면 진단을 처음부터 다시 해야 한다. **① 지역 0건으로 끝난 시도는 버리지 않는다** — 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 "어느 지역을 원했는데 매물이 없었나"를 수요 분석에 쓴다(재시도·종료 양쪽. 사용자 노출 경로 없음 — 이력·최근은 `COMPLETED`만, v1 초안 조회는 `IN_PROGRESS`만 본다). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다. 문항 카탈로그·번역·입력 enum·③ 분기 규칙은 v1과 동일 출처(US-2-5·US-2-6·[ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../adr/0029-diagnosis-i18n-strategy.md))를 공유한다. 시퀀스: [US-2-7 다이어그램](../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md), API: [02 스펙 v2 절](../api/specs/02-diagnosis-recommendation.md).
+- **백엔드 관점**: 기존 v1(`/api/v1/diagnoses/*`, 클라이언트가 `step`·확정을 주도)은 **그대로 두고**, **서버 주도 대화형 흐름을 `/api/v2`에 신설**한다(하위 호환이 깨지는 변경이라 버전 상향 — [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). **서버는 질문과 분기만 주도하고, 진단을 시작할 시점과 매물을 받을 시점은 클라이언트가 결정한다** — 클라이언트가 **`POST /api/v2/diagnoses/start`**(본문 없음)로 진단을 시작하고 **`POST /api/v2/diagnoses/next`**로 현재 문항 답 1개씩을 이어 보내면, 서버는 `step`을 받지 않고 직전에 낸 문항에서 다음 질문을 결정하며 빌더가 다 채워지면 **자동 확정**한다. `/start`는 진행 중 세션이 있어도 **무조건 버리고** 새 세션(빈 draft·`pendingField=region`)을 만든다 — 진단하다 홈으로 갔다 다시 시작해도 서버가 기존 진단 정보를 보고 이어가지 않고 **언제나 처음부터**다. 진행 세션이 없는데 `/next`가 오면 서버가 임의로 흐름을 되살리지 않고 `400 DIAGNOSIS_SESSION_NOT_FOUND`로 막으며, 클라이언트는 `/start`로 복구한다. `/next`는 답(`field`)이 반드시 있어야 한다(없으면 `INVALID_INPUT`). 확정 응답에 추천 매물을 인라인으로 싣지 않고 **`diagnosisId`만** 담으며, **확정 시점에 매칭 유무조차 확인하지 않는다** — 매물은 클라이언트가 시점을 정해 **`GET /api/v2/diagnoses/{id}/recommendations`**(v1 §7과 같되 `suggestions` 없음)로 별도 조회하고, **매칭 0건은 그 응답의 `resultCode: NO_MATCH`로 드러난다**(흐름 응답엔 그 코드가 없다 — 미리 알려주려면 클라가 요청하지 않은 추천 쿼리를 서버가 돌려야 한다). ① 지역(`region`) 답 직후 매칭이 0건일 때만 서버가 예외적으로 미리 필터링해 "다른 지역 방을 찾아보시겠어요?" 문항을 끼워 넣는다 — 이 예외질문은 서버 코드에 하드코딩한 합성 문구가 아니라 **문항 카탈로그(`diagnosisQuestions`)의 일반 질문**(`step: 1`·`field: regionRetry`·`select: {type: SINGLE, max: 1}`·옵션 `YES`/`NO`)이라 별도 결과코드 없이 다른 문항과 똑같이 `NEXT_QUESTION`으로 내려가고 번역도 US-2-6과 동일 경로를 탄다(신규 환경은 order 0000 시드, 기배포 환경은 멱등 정본 시드 `diagnosis-questions.json`에 포함). 그 예/아니오 응답에만 **클라이언트가 행할 행위**를 코드로 알린다 — 예=`RESTART`(클라가 `/start`로 처음부터 재시도) · 아니오=`TERMINATED`(진단 종료), 둘 다 세션을 삭제한다. 6단계까지 마친 뒤 매칭이 0건이면 `NO_MATCH`이며 **어떤 제안도 없다**(v1의 `suggestions` 기능·시드는 v1 전용으로 유지하되 v2는 참조하지 않는다). 매 응답은 정상 `200 OK`의 `data.resultCode`(태그드 유니온: `NEXT_QUESTION` / `RESTART` / `COMPLETED` / `TERMINATED`)로 표현한다(에러 아님). 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 v2 전용 세션(`diagnosisFlowSessions`)에 담고, 완료 시에만 정본 진단을 기존 `diagnoses`에 저장한다. **비회원(게스트)도 이 흐름을 그대로 타며, 여기가 게스트 진단의 정본 경로다**(#181 — 신규 `permitAll` 매처는 `/api/v2/diagnoses/**` 하나뿐이고 v1 진단 7개는 회원 전용으로 남는다) — 회원 세션이 `userId`를 키로 upsert되는 자리에서, 게스트는 `POST /api/v2/diagnoses/start`가 **서버가 발급해 응답에 실어 주는 게스트 세션 키**(값 형식 `anonymous<uuid>`)를 받아 이후 `/next`·추천 요청에 **`X-Guest-Session-Id` 헤더로 에코**한다. 문서에는 `userId`(회원)와 `guestSessionId`(게스트) 두 신원 필드를 두고 **정확히 하나만** 채우며, `diagnosisFlowSessions`의 `userId` UNIQUE 인덱스는 partial로 좁히고 `guestSessionId` partial UNIQUE를 별도로 신설한다(한 인덱스에 두 신원을 섞으면 게스트 문서의 빈 `userId`끼리 충돌한다). 게스트 세션 키는 **요청자마다 달라야 한다** — 진단 id가 전역 순차 채번이라 공용·상수 키를 쓰면 게스트 A가 id를 증가시키며 게스트 B의 진단을 읽을 수 있다. 클라이언트에는 키를 보관·에코할 의무가 새로 생기며, 키를 잃으면 진단을 처음부터 다시 해야 한다. **① 지역 0건으로 끝난 시도는 버리지 않는다** — 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 "어느 지역을 원했는데 매물이 없었나"를 수요 분석에 쓴다(재시도·종료 양쪽. 사용자 노출 경로 없음 — 이력·최근은 `COMPLETED`만, v1 초안 조회는 `IN_PROGRESS`만 본다). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다. 문항 카탈로그·번역·입력 enum·③ 분기 규칙은 v1과 동일 출처(US-2-5·US-2-6·[ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../adr/0029-diagnosis-i18n-strategy.md))를 공유한다. 시퀀스: [US-2-7 다이어그램](../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md), API: [02 스펙 v2 절](../api/specs/02-diagnosis-recommendation.md).
 
 **AC (Given / When / Then)**
 
@@ -824,13 +1118,15 @@
   - **Then** v1 동작·응답 계약이 바뀌지 않는다(예: `GET /api/v1/diagnoses/questions/1`은 `regionRetry` 문항이 같은 `step 1`에 있어도 ① 지역(`field=region`) 문항을 그대로 반환한다 — v2는 새 컨트롤러로만 추가되고 v1 로직을 건드리지 않는다)
   - **And** #181(비회원 접근)에서도 v1의 인가 계약은 그대로다 — `permitAll` 매처는 `/api/v2/diagnoses/**`에만 추가되고 v1은 계속 인증 필수이므로, v1 응답 DTO(`AnswerSavedResponse` 등)와 그 RestDocs 테스트도 바뀌지 않는다 — 게스트 세션 키를 발급하는 지점도 `POST /api/v2/diagnoses/start` 하나뿐이라 v1 응답에는 등장하지 않는다
 
-## 3. 매물 탐색 · 찜
+## 3. 매물 등록 · 탐색 · 찜
 
 > 관련 API 스펙: [03-listings-favorites](../api/specs/03-listings-favorites.md)
 
-외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 목록·지도·장소 후보·기존 키워드 검색·상세 조회는 가입 전에도 사용할 수 있는 공개 API이고, 찜 등록/해제·찜 목록·최근 본 목록만 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 요청 바인딩·필드 검증 실패는 가능한 경우 `error.errors[]`에 필드 상세를 담지만, 최소값>최대값 같은 서비스 계층의 교차 필드 검증은 `errors=[]`일 수 있다.
+외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름과, **임대인이 직접 매물을 등록해 관리자 승인 대기 상태로 올리는 흐름**(US-3-6)을 함께 다룬다. 목록·지도·장소 후보·기존 키워드 검색·상세 조회는 가입 전에도 사용할 수 있는 공개 API이고, 찜 등록/해제·찜 목록·최근 본 목록은 인증이 필수이며, 매물 등록은 온보딩을 마친(`ACTIVE`) **임대인 전용**이다. 세입자에게 노출되는 조회(목록·지도·상세·찜 목록·최근 본 목록)는 모두 **`PUBLISHED` 매물만** 대상으로 하므로, 등록 직후의 `PENDING` 매물은 어느 조회에도 나타나지 않는다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 요청 바인딩·필드 검증 실패는 가능한 경우 `error.errors[]`에 필드 상세를 담지만, 최소값>최대값 같은 서비스 계층의 교차 필드 검증은 `errors=[]`일 수 있다.
 
-> **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물/임대/성별/교통/건물/시설/조건)는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·재고·상태·통화와 요청 code는 번역하지 않는다.
+> **매물 API 버전 경계(조회 v1 종료 · v2 신설)**: 조회 5종(목록 `GET /listings` · 지도 `/listings/map` · 상세 `/listings/{listingId}` · 찜 토글 `POST`·`DELETE /listings/{listingId}/favorite` · 내 스코프 `/users/me/favorites`·`/users/me/recent-listings`)의 경로는 **`/api/v2`가 정본**이며, 아래 AC의 경로 표기도 v2를 따른다. v4 스키마 개편 이후 `/api/v1`의 같은 경로는 **개정 전(v3) 응답 구조를 그대로 복원한 `deprecated` 스텁**으로 **DB에 접근하지 않고 데이터 0건**만 반환한다 — 목록·찜 목록은 빈 페이지(`content: []`, `page.totalElements: 0`), 최근 본 목록은 빈 목록(`content: []` — 이 응답에는 `page` 객체가 없다), 지도는 빈 마커(`markers: []`, `total: 0`), 상세와 찜 토글은 `404 LISTING_NOT_FOUND`다. 출시된 구버전 앱은 "매물 없음" 화면을 보고 업데이트로 유도되며, 새 데이터로 옛 응답을 조립하지 않으므로 하위 호환용 값을 날조하지 않는다(v1 제거 시점은 미정). **예외로 `GET /api/v1/listings/places`(네이버 장소 검색, US-3-3)는 매물 데이터를 쓰지 않아 v1 그대로 동작한다.** 인가는 같은 네임스페이스 안에서 갈린다 — `/api/v2/listings/**`의 **GET은 공개(`permitAll`)**, 등록 `POST /api/v2/listings`·찜 토글·`me` 스코프 조회(`/api/v2/users/me/**`)는 **인증 필수(`ROLE_USER`)** 다.
+>
+> **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물 유형·임대 유형·ARC 요구·성별 정책·조건 태그·건물 형태·난방·교통·도시·자치구·주방·세탁·공용공간·생활 편의·보안·제공 물품·주변 시설·지원 언어·대학 19개 카테고리 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·상태·통화와 요청 code는 번역하지 않는다.
 
 ### US-3-1 — 매물 리스트 탐색(필터·정렬·페이지네이션)
 
@@ -844,9 +1140,9 @@
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 목록 조회
-  Given 활성 매물이 N건 존재하고
-  When 비로그인 사용자가 `GET /api/v1/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_OK&sort=PRICE_ASC&page=0&size=20`을 호출하면
-  Then `200 OK`로 공통 래퍼의 `data.content[]`에 가격 오름차순으로 매물 요약이 담기고 `data.page`에 `number/size/totalElements/totalPages/hasNext`가 포함된다
+  Given 관리자 승인을 받은 `PUBLISHED` 매물이 N건 존재하고(승인 대기 `PENDING`·반려 `REJECTED`·일시중지 `PAUSED`·삭제 `DELETED` 매물은 조회 대상이 아니다)
+  When 비로그인 사용자가 `GET /api/v2/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_OK&sort=PRICE_ASC&page=0&size=20`을 호출하면
+  Then `200 OK`로 공통 래퍼의 `data.content[]`에 가격 오름차순으로 **`PUBLISHED` 매물만** 담기고(임대인이 방금 등록해 `PENDING`인 매물은 `data.page.totalElements`에도 잡히지 않는다) `data.page`에 `number/size/totalElements/totalPages/hasNext`가 포함된다
 - 시나리오: 입력 검증 실패(필터 값 오류)
   Given 클라이언트가
   When `minBudget=700000&maxBudget=300000`(최소>최대) 또는 정의되지 않은 `conditions=UNKNOWN_TAG`, `sort=CHEAPEST`처럼 허용되지 않은 enum/범위를 보내면
@@ -881,7 +1177,7 @@
 
 - 시나리오: 정상 bbox 마커 조회
   Given 지도 영역이 유효 좌표로 주어지고
-  When `GET /api/v1/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05`를 호출하면
+  When `GET /api/v2/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05`를 호출하면
   Then `200 OK`로 `data.markers[]`(각 항목 `listingId/lat/lng`)를 반환한다
 - 시나리오: 입력 검증 실패(좌표 불완전/모순)
   Given 클라이언트가
@@ -903,7 +1199,7 @@
 **So that** 정확한 주소나 좌표를 몰라도 익숙한 장소 이름을 기준으로 집을 찾을 수 있다
 
 - 메타: 우선순위 **Mid**, 관련 NFR — 네이버 지역 검색 API 응답시간·가용성, 외부 API 인증정보 보호
-- 데이터 관점: `GET /api/v1/listings/places`는 네이버 장소 후보만 최대 5개 반환하고 MongoDB 매물은 조회하지 않는다. 백엔드는 `mapx/mapy`를 WGS84 `lng/lat`으로 변환하며, 사용자가 후보를 선택한 뒤 앱이 계산한 bounds로 기존 `/api/v1/listings`와 `/api/v1/listings/map`을 호출한다.
+- 데이터 관점: `GET /api/v1/listings/places`는 네이버 장소 후보만 최대 5개 반환하고 MongoDB 매물은 조회하지 않는다 — 매물 데이터를 쓰지 않으므로 조회 계열의 v2 이관 대상이 아니라 **v1 경로 그대로 유지**한다. 백엔드는 `mapx/mapy`를 WGS84 `lng/lat`으로 변환하며, 사용자가 후보를 선택한 뒤 앱이 계산한 bounds로 정본인 `/api/v2/listings`와 `/api/v2/listings/map`을 호출한다(한 흐름에 장소 검색 v1과 매물 조회 v2가 섞인다).
 
 **AC (Given / When / Then)**
 
@@ -913,7 +1209,7 @@
   Then `200 OK`로 `data.items[]`에 `title`·`address`·`roadAddress`·`lat`·`lng`를 포함한 장소 후보를 최대 5개 반환한다
 - 시나리오: 장소 선택 후 주변 매물 조회
   Given 사용자가 장소 후보 하나를 선택해 앱이 해당 `lat/lng`로 지도를 이동하고 현재 bounds를 계산하면
-  When 같은 `swLat`·`swLng`·`neLat`·`neLng`를 `/api/v1/listings`와 `/api/v1/listings/map`에 전달하면
+  When 같은 `swLat`·`swLng`·`neLat`·`neLng`를 `/api/v2/listings`와 `/api/v2/listings/map`에 전달하면
   Then 매물 목록(`data.content[]`)과 지도 마커(`data.markers[]`)를 각각 `200 OK`로 반환한다
 - 시나리오: 입력 검증 실패(빈/과도 키워드)
   Given 클라이언트가
@@ -932,31 +1228,31 @@
   When 장소 검색 API를 호출하면
   Then `502 Bad Gateway`, `error.code=UPSTREAM_ERROR`를 반환한다
 
-> 기존 `GET /api/v1/listings/search`는 호환성을 위해 유지하지만, 본 사용자 스토리의 신규 지도 검색 흐름에서는 사용하지 않는다.
+> 시드 POI 사전을 쓰던 옛 키워드 검색(`GET /listings/search`)은 **v1·v2 양쪽에서 제거됐다** — 이 스토리의 장소 검색 흐름이 그 자리를 대체했고 클라이언트가 호출하지 않았기 때문이다([ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)).
 
 ### US-3-4 — 매물 상세 조회 + 최근 본 매물 기록
 
 **As a** 후보 매물을 자세히 보려는 외국인 사용자
-**I want** 사진 갤러리·유형·방 상품별 가격/보증금/재고·계약기간·위치·편의시설이 담긴 상세를 보고, 로그인 상태면 본 매물이 최근 본 목록에 기록되기
+**I want** 사진 갤러리·유형·방 상품별 가격/보증금/계약기간·위치·편의시설이 담긴 상세를 보고, 로그인 상태면 본 매물이 최근 본 목록에 기록되기
 **So that** 매물을 충분히 검토하고 다시 쉽게 찾아올 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 최근 본 매물 DB 보관 사용자별 최대 30개·조회 응답 최대 10개
-- 데이터 관점: 임대인 연락처는 노출하지 않고 채팅으로만 연결, 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 상세 조회 성공 후 30개 초과 오래된 기록 삭제
+- 데이터 관점: 매물 담당 연락처(`contact`: 담당자명·지점 대표 전화)는 상세 응답에 공개하고, 임대인 개인 연락처(`users.phone_number`)는 노출하지 않고 채팅으로만 연결한다(둘은 별개 값이며, 개인 번호를 매물 문서에 복사하지 않는다 — [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended). 응답에서 제외하는 값은 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)이다. 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 상세 조회 성공 후 30개 초과 오래된 기록 삭제
 
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 상세 조회(로그인) 및 기록
   Given 인증된 사용자가 존재하는 매물을 조회하면
-  When `GET /api/v1/listings/{listingId}` (Authorization 포함)
-  Then `200 OK`로 상세(사진 `imageUrls[]`·`roomOffers[].roomImageUrls`, `type`, `rentalType`, 방 상품별 `roomOffers[].pricing`·`inventory`, 공통 계약기간 `contract`, `location`, `conditions[]`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다. 임대인 정보·연락처는 상세 응답에 포함하지 않는다
+  When `GET /api/v2/listings/{listingId}` (Authorization 포함)
+  Then `200 OK`로 상세(사진 `imageUrls[]`·`roomOffers[].roomImageUrls`, `type`, `rentalType`, `arcRequired`, 방 상품별 `roomOffers[].pricing`(`deposit`·`monthlyRent`)·`roomOffers[].contract`(방 상품별 계약기간), `location`, `conditions[]`, `languagesSupported`, `nearbyFacilities`, `contact`, `ageMin`/`ageMax`, `blogUrl`, `refundPolicy`(문장 하나), `description`·`extraNotes`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다. 매물 담당 연락처(`contact`)는 포함하되 임대인 개인 정보·연락처와 `businessRegistrationNumber`·설문 3종은 상세 응답에 포함하지 않는다
 - 시나리오: 한국어 사용자 표시
   Given 계정의 표시 언어를 한국어(`ko`)로 선택한 사용자가
   When 같은 매물 상세를 조회하면
   Then 영문 사용자와 동일한 `code`를 받되 고유 문구와 `{code,label}`의 label은 한국어로 반환된다. 프론트의 필터 요청 code는 언어에 따라 달라지지 않는다
 - 시나리오: 리소스 없음
-  Given 존재하지 않거나 비공개/삭제되었거나 ACTIVE 방 상품이 없는 매물 ID로
+  Given 존재하지 않거나 `PUBLISHED`가 아닌(승인 대기 `PENDING`·반려 `REJECTED`·일시중지 `PAUSED`·삭제 `DELETED`) 매물이거나 ACTIVE 방 상품이 없는 매물 ID로
   When 상세를 조회하면
-  Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
+  Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다. 임대인이 방금 등록한 자기 매물(`PENDING`)도 이 상세 API로는 조회되지 않는다 — 승인 전 매물을 임대인에게 보여 주는 경로는 후속 범위다
 - 시나리오: 공개 상세 조회
   Given 비로그인·온보딩 미완료 사용자 또는 위조 토큰을 보낸 사용자가
   When 상세를 조회하면
@@ -964,7 +1260,7 @@
 - 시나리오: 경계(최근 본 매물 30개 초과·동일 매물 재조회)
   Given 사용자가 이미 30개의 최근 본 매물을 가졌거나 같은 매물을 다시 보면
   When 상세를 조회하면
-  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, 30개 초과분은 오래된 기록부터 삭제되고, `GET /api/v1/users/me/recent-listings` 조회 시 `PUBLISHED`이면서 ACTIVE 방 상품이 있는 매물만 최신순 최대 10건 반환된다
+  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, 30개 초과분은 오래된 기록부터 삭제되고, `GET /api/v2/users/me/recent-listings` 조회 시 `PUBLISHED`이면서 ACTIVE 방 상품이 있는 매물만 최신순 최대 10건 반환된다
 
 ### US-3-5 — 찜 토글·찜 목록(인증 필수)
 
@@ -979,18 +1275,18 @@
 
 - 시나리오: 정상 찜 신규 등록(생성)
   Given 인증된 사용자가 찜하지 않은 매물에 대해
-  When `POST /api/v1/listings/{listingId}/favorite`를 호출하면
+  When `POST /api/v2/listings/{listingId}/favorite`를 호출하면
   Then `201 Created`로 `data={ "favorited": true, "favoriteCount": <증가값> }`를 반환한다
 - 시나리오: 정상 찜 해제
   Given 인증된 사용자가 이미 찜한 매물에 대해
-  When `DELETE /api/v1/listings/{listingId}/favorite`를 호출하면
+  When `DELETE /api/v2/listings/{listingId}/favorite`를 호출하면
   Then `200 OK`로 `data={ "favorited": false, "favoriteCount": <감소값> }`를 반환한다
 - 시나리오: 인증 실패
   Given 토큰이 없거나 만료된 사용자가
   When 찜 등록/해제 또는 찜 목록을 호출하면
   Then `401 Unauthorized`, `error.code=UNAUTHENTICATED`(또는 만료 시 `TOKEN_EXPIRED`)를 반환한다
 - 시나리오: 리소스 없음
-  Given 존재하지 않거나 비공개/삭제되었거나 ACTIVE 방 상품이 없는 매물 ID로
+  Given 존재하지 않거나 `PUBLISHED`가 아닌(승인 대기 `PENDING`·반려 `REJECTED`·일시중지 `PAUSED`·삭제 `DELETED`) 매물이거나 ACTIVE 방 상품이 없는 매물 ID로
   When 찜 등록을 호출하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
 - 시나리오: 경계·동시성(중복 찜·동시 요청 멱등)
@@ -999,8 +1295,147 @@
   Then 유니크 제약으로 중복 행이 생기지 않고, 추가 생성이 없으므로 `200 OK`로 현재 상태 `{ "favorited": true, "favoriteCount": <실제값> }`를 멱등하게 반환한다(별도 `LISTING_ALREADY_FAVORITED` 에러로 보지 않음). 마찬가지로 찜하지 않은 매물 해제는 멱등하게 `200 OK`, `{ "favorited": false, "favoriteCount": <실제값> }`를 반환한다
 - 시나리오: 정상 찜 목록 조회
   Given 인증된 사용자가 찜한 매물이 있고
-  When `GET /api/v1/users/me/favorites?page=0&size=20`을 호출하면
+  When `GET /api/v2/users/me/favorites?page=0&size=20`을 호출하면
   Then `200 OK`로 `data.content[]`(모두 `favorited=true`)와 `data.page`를 최근 찜한 순으로 반환하며, 찜이 없으면 빈 배열을 반환한다. 현재 찜 목록 조회는 `PUBLISHED`만 검사하므로 ACTIVE 방 상품이 없는 공개 매물이 빈 `roomOffers[]`로 포함될 수 있다
+
+### US-3-6 — 임대인 매물 등록
+
+**As a** 온보딩을 마친(`ACTIVE`) 임대인(`userType=LANDLORD`)
+**I want** 사진을 올리면서 진행 상황을 확인하고, 등록 폼이 받는 지점·건물·공용시설·주변시설·객실(방 상품) 정보와 함께 제출해 매물을 만들기
+**So that** 관리자 승인을 거쳐 내 매물이 세입자 탐색·검색에 노출되고 문의를 받을 수 있다
+
+- 메타: 우선순위 **High**, 관련 NFR — 보안(임대인 전용 인가·매물 문서에 저장되는 PII), 입력 검증(카탈로그 대조·교차 필드 검증)
+- 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(조회 계열도 뒤이어 v2로 이관됐다 — 위 **매물 API 버전 경계** 참고). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
+- 주소 관점: 주소 칸은 자유 입력이 아니라 **검색으로 채운다**([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). `GET /api/v1/listings/addresses`(임대인 전용)가 NCP Geocoding으로 표준 도로명 주소·좌표를 돌려주고, 임대인이 고른 후보의 `roadAddress`·`lat`·`lng`를 등록 요청의 `address.fullAddress`·`address.lat`·`address.lng`에 그대로 담는다. **후보를 거르지 않는다** — 등록도 전국을 받고, 카탈로그(`CITY`·`DISTRICT`)가 모르는 지역이면 행정구역을 `ETC`로 저장한다([ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)). 서버는 등록 시점에 지오코딩을 다시 하지 않는다 — 등록마다 외부 왕복과 502 경로가 늘기 때문이며, 좌표 위조는 `PENDING` + 관리자 승인 심사가 흡수한다.
+- 사진 관점: **두 단계**다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 먼저 `POST /api/v2/listings/images`로 사진을 **한 장씩** 올려 `{ key, url }`을 받고, 등록 요청(`application/json`)에 그 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)로 담는다. 요청을 파일마다 가르는 이유는 브라우저가 **요청 단위로만 진행률을 주기 때문**이다 — 한 요청에 몰아 실으면 파일별 진행률·속도를 만들 수 없고 실패한 파일만 다시 올릴 수도 없다. 사진과 방의 짝은 **JSON 구조**가 표현한다(배열 순서가 곧 표시 순서). 임시 사진은 `uploads/{landlordId}/{uuid}.{ext}`에 놓이고, 등록이 확정될 때 `listings/{listingId}/cover/…`·`listings/{listingId}/rooms/{roomOfferId}/…`로 복사된다 — 키가 식별자를 포함하므로 ObjectId를 저장 전에 발급한다. 응답의 URL은 **확정 위치 기준**이라 업로드 때 받은 미리보기 URL과 다르다.
+- 정합성 관점: 사진이 매물보다 **먼저** 저장되므로 폼을 버리면 임시 사진이 남는다 — `uploads/` prefix에만 **7일 만료**를 걸어 자동 정리한다. prefix가 갈리므로 만료 규칙이 살아 있는 매물 사진(`listings/`)을 건드릴 수 없다. 등록은 **키 검사 → 복사 → 문서 저장 → 임시본 삭제** 순이고, 복사나 저장이 실패하면 **복사본만** 걷어낸다 — 임시본은 남겨서 사용자가 그대로 다시 제출할 수 있게 한다.
+- 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `POST /api/v2/listings`와 `POST /api/v2/listings/images`를 한 매처로 묶어 **`hasRole("USER")` 명시 매처**로 둔다 — 매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰이 컨트롤러까지 도달한다(진단 v2가 `permitAll` 매처를 갖는 것과 달리 등록은 열지 않는다). 임대인 여부(`userType=LANDLORD`)는 매처로 표현할 수 없으므로 **두 엔드포인트 모두 서비스에서 재검사**해 세입자면 `403` + `FORBIDDEN`이다. 주소 검색(`GET /api/v1/listings/addresses`)도 같은 이중 인가를 쓰되, 매처를 **공개 조회 매처(`GET /api/v1/listings/*` `permitAll`)보다 먼저** 선언해야 한다 — 먼저 매칭된 규칙이 이기므로 뒤에 두면 인증 규칙이 무시되고 공개 API가 된다.
+- 파생·미구현 관점: 폼 한 칸이 스키마 두 필드로 갈라지는 값은 서버가 파싱한다 — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. `min ≤ max`와 `usedFloorMax ≤ totalFloors`를 함께 검증한다. 주소는 `address.fullAddress`에 **받은 값 그대로**(정규화 없음) 저장하고, `address.city`·`district`는 도로명 주소를 공백으로 끊어 카탈로그(`CITY`·`DISTRICT`) 한국어 라벨과 완전히 같은 토큰을 찾아 그 코드로 채운다 — 못 찾으면 `ETC`이고 등록은 성공한다(지원 지역 판단은 관리자 승인 심사, [ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)). **`location`(좌표)은 요청의 `address.lat`·`lng`로 채운다**([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 저장 계약에서도 **필수**이며 도메인 검증과 MongoDB validator가 함께 막는다(changeUnit `0116`). **`nearbyUniversityCodes`는 그 좌표에서 파생한다** — 서버가 대학 좌표 원장(`universities`, 14건)과 대조해 **반경 2km 안의 개별 대학 코드를 모두** 담는다(요청에 대학 칸은 없다). 대학가 밖이면 빈 배열이고 원장이 비어 있어도 등록은 성공한다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)).
+- 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드에서 빈 파일은 `400` + `LISTING_IMAGE_REQUIRED`, 10MB 초과는 `413` + `LISTING_IMAGE_TOO_LARGE`, 허용 형식(JPEG·PNG·WebP·HEIC) 밖은 `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`이다. 등록에서 키 개수 위반은 `400` + `LISTING_IMAGE_REQUIRED`, 남의 키·없는 키·만료된 키는 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`(셋을 구분해 알려주면 남의 키 존재 여부가 새어 나간다)다.
+- 사업자등록번호 관점: 등록 API는 사업자등록번호를 **형식(숫자 10자리)만 검증해 원문 저장**하고 **진위를 자동 검증하지 않는다** — 무상태 검증 API `POST /api/v1/auth/business/verify`(US-1-8)를 **호출하지 않으며**, 진위 확인은 **관리자가 승인 심사에서 수동으로** 한다(해당 엔드포인트 자체는 임대인이 직접 확인용으로 호출하도록 그대로 둔다). 원문은 매물 문서에만 저장하고 `user.businessRegistrationNumberHash`에는 쓰지 않는다(US-1-9와 일관, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) §3, [ADR-0033](../adr/0033-business-registry-verification.md)의 매물 문서 한정 개정).
+- 연락처 관점: 등록 폼이 받는 담당자 연락처는 **`contact`(담당자명·지점 대표 전화) 둘뿐**이다. 문자문의 칸은 받지 않는다 — 임대인이 거기 적게 되는 값은 온보딩에서 인증한 개인 번호(`users.phone_number`)라 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 마스킹 대상 PII가 매물 응답으로 평문 공개되고, 계정 단위 값이 매물마다 복제되며, 임대인 웹 로그인이 그 번호를 계정 매칭 키로 쓰기 시작하면(US-1-11·[ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) 사본이 늘수록 위험만 커진다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended). **임대인 개인 연락처는 매물 문서에 복사하지 않는다** — 필요해지면 저장이 아니라 조회 시점에 `user` 모듈에서 가져오고(booking이 신청자 프로필을 실시간 조인하는 방식), 가져온 번호는 여전히 마스킹 대상이라 세입자에게 평문으로 나가지 않는다.
+- 응답 관점: `201 Created` + 생성된 매물의 **상세 응답 구조(v4)** 를 반환한다. `contact`(담당자명·지점 대표 전화)는 세입자에게도 공개하므로 포함하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 US-3-4와 동일하게 **응답에서 제외**한다. `status`는 카탈로그 번역 대상이 아니라 **코드 문자열 그대로**(`"PENDING"`) 내려간다.
+- 후속(이번 범위 아님): 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API · 임대인 매물 수정(좌표가 바뀌면 `nearbyUniversityCodes`도 다시 파생해야 한다) · 등록 가능 지역 확대(`DISTRICT` 카탈로그와 enum을 함께 늘린다) · 재고.
+- 시퀀스: [US-3-6 다이어그램](../architecture/sequence-diagrams/03-listings-favorites/us-3-6-listing-registration.md), API: [03-listings-favorites](../api/specs/03-listings-favorites.md).
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 매물 등록
+  Given 온보딩을 마친(`ACTIVE`) 임대인(`userType=LANDLORD`)이 정식 access 토큰(`ROLE_USER`)을 보유하고
+  When 등록 폼 값(지점 정보·건물 정보·공용시설·주변시설·객실 1개 이상)을 담아 `POST /api/v2/listings`를 호출하면
+  Then `201 Created`로 생성된 매물의 상세 응답(v4)을 반환하고, 서버가 `_id`·`roomOffers[].roomOfferId`(ObjectId)·`schemaVersion=4`·`status="PENDING"`·`favoriteCount=0`·`createdAt`/`updatedAt`·`rentalType="MONTHLY_RENT"`·`pricing.currency="KRW"`·`roomOffers[].status="ACTIVE"`를 채운다. `landlordId`는 요청 본문이 아니라 토큰에서 얻은 값으로 저장된다
+- 시나리오: 등록 직후에는 세입자에게 보이지 않는다
+  Given 위에서 등록한 매물이 `PENDING` 상태로 저장되어 있고
+  When 세입자가 `GET /api/v2/listings`(목록)·`GET /api/v2/listings/map`(지도)·`GET /api/v2/listings/{listingId}`(상세)를 호출하면
+  Then 목록·지도에는 해당 매물이 포함되지 않고(`PUBLISHED`만 조회 — US-3-1·US-3-2), 상세는 `404 Not Found` + `error.code=LISTING_NOT_FOUND`다. 노출은 관리자 승인(`PENDING → PUBLISHED`, 후속)이 있어야 시작된다
+- 시나리오: 도로명 주소를 검색해 주소·좌표를 얻는다
+  Given 온보딩을 마친 임대인이 등록 폼의 주소 칸에 `신촌로 12`를 입력하고
+  When `GET /api/v1/listings/addresses?keyword=신촌로 12`를 호출하면
+  Then `200 OK`로 후보 최대 5건(`roadAddress`·`jibunAddress`·`englishAddress`·`lat`·`lng`)을 반환한다. 도로명이 없는 결과는 제외하며, 일치하는 주소가 없으면 `data.items=[]`(에러가 아니다)다
+- 시나리오: 등록할 수 없는 지역은 검색 단계에서 알려준다
+  Given 임대인이 카탈로그에 없는 지역(예: `분당구 불정로 6`)을 검색했고
+  When 응답 항목을 확인하면
+  Then 그 후보도 결과에 그대로 포함되고 등록할 수 있다 — 카탈로그가 모르는 지역이면 `address.city`·`district`가 `ETC`로 저장된다
+- 시나리오: 주소 검색은 임대인만 쓸 수 있다
+  Given 세입자(`userType=TENANT`)의 정식 토큰이거나 토큰이 없고
+  When `GET /api/v1/listings/addresses`를 호출하면
+  Then 각각 `403` + `FORBIDDEN`, `401` + `UNAUTHENTICATED`다. 같은 `/api/v1/listings/*` 아래지만 **공개 조회와 달리 인증이 필요**하다
+- 시나리오: 외부 지오코딩 장애
+  Given NCP Geocoding이 오류·타임아웃이거나 서버에 자격증명이 주입되지 않았고
+  When `GET /api/v1/listings/addresses`를 호출하면
+  Then `502` + `UPSTREAM_ERROR`다. 자격증명이 없으면 **외부로 요청을 보내지 않고** 같은 결과를 준다. 다른 기능은 정상 동작한다
+- 시나리오: 검색으로 받은 좌표가 그대로 저장된다
+  Given 임대인이 검색 결과의 `roadAddress`·`lat`·`lng`를 담아 등록에 성공했고
+  When 저장된 매물 문서를 확인하면
+  Then `address.fullAddress`는 보낸 값 그대로이고 `address.city`·`district`는 주소 토큰에서 찾은 카탈로그 코드(못 찾으면 `ETC`)이며, **`location`은 요청의 좌표(`{ type: "Point", coordinates: [lng, lat] }`)로 채워진다**. **`nearbyUniversityCodes`는 그 좌표 반경 2km 안의 대학 코드로 채워진다** — 예: 신촌 좌표는 `["YONSEI","EWHA","HONGIK"]`, 대학가 밖이면 빈 배열([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md))
+- 시나리오: 입력 검증 실패(좌표 누락·범위 위반)
+  Given `address.lat`·`address.lng`를 빠뜨렸거나 WGS84 범위 밖의 값을 보내고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 매물을 생성하지 않는다. 좌표는 주소 검색이 준 값을 되돌려 보내는 필수 값이다
+- 시나리오: 입력 검증 실패(주소에서 행정구역을 못 뽑음)
+  Given 지점 주소가 카탈로그에 없는 시·구여서 행정구역 코드를 판별할 수 없고
+  When `POST /api/v2/listings`를 호출하면
+  Then `201 Created`로 매물을 생성하되 `address.city`·`district`를 `ETC`로 저장한다. 주소를 이유로 등록을 거절하지 않는다 — 지원 지역인지는 관리자 승인 심사가 판단한다
+- 시나리오: 입력 검증 실패(필수값 누락)
+  Given 임대인이 지점명·주소·연락처·건물 총 층수·객실 정보 같은 필수값을 빠뜨리고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 `error.errors[]`에 `field`/`reason`을 담으며 매물을 생성하지 않는다. 본문 자체를 해석할 수 없으면(타입 불일치 등) `400` + `MALFORMED_REQUEST`다
+- 시나리오: 입력 검증 실패(카탈로그에 없는 코드)
+  Given 요청의 코드 필드(예: `type`·`genderPolicy`·`facilities.*`·`nearbyFacilities`·`languagesSupported`·`roomOffers[].filterTags`)에 `listingCatalog`의 `(category, code)`로 존재하지 않는 값이 섞여 있고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=LISTING_UNKNOWN_CATALOG_CODE`를 반환하고 매물을 생성하지 않는다(코드 집합의 정본은 `listingCatalog`다 — [ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)). 사용자가 오타를 낸 것이 아니라 앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다는 뜻이라 `INVALID_INPUT`과 분리하며, 프론트는 입력 교정 대신 코드 카탈로그 재조회를 안내한다
+- 시나리오: 입력 검증 실패(운영층·이용 연령대 `min~max` 형식)
+  Given 지점 운영층이나 이용 연령대를 `1~2`·`20~35` 형식이 아닌 값(`1-2`·`2~1`처럼 형식 위반이거나 최소>최대)으로 보내거나 `usedFloorMax`가 건물 총 층수(`totalFloors`)를 넘으면
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다. 형식 위반은 필드를 특정할 수 있으므로 `error.errors[]`에 담고, `min ≤ max`·`usedFloorMax ≤ totalFloors` 같은 교차 필드 검증은 `errors=[]`일 수 있다
+- 시나리오: 입력 검증 실패(객실 최소 개수)
+  Given `roomOffers`가 비어 있고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 매물을 생성하지 않는다(객실 최소 1개). 반면 지점 소개글·이용 조건 같은 자유 입력 문자열에는 **길이 상한을 두지 않아** 길다는 이유로 거절하지 않는다
+- 시나리오: 사진을 한 장씩 올려 키를 받는다
+  Given 임대인이 등록 폼에서 사진 한 장을 고르고
+  When `POST /api/v2/listings/images`에 그 파일 하나만 실어 호출하면
+  Then `201 Created`와 함께 `key`(`uploads/{내 landlordId}/{uuid}.{ext}` 형태)·`url`을 반환하고, 그 URL로 사진이 보인다. 매물은 아직 만들어지지 않는다
+- 시나리오: 업로드 검증 실패(빈 파일·크기·형식)
+  Given `file` part가 비었거나, 10MB를 넘거나, 형식이 JPEG·PNG·WebP·HEIC가 아니고(part 이름이 틀려 `file`이 아예 없으면 `400` + `MALFORMED_REQUEST`다)
+  When `POST /api/v2/listings/images`를 호출하면
+  Then 각각 `400` + `LISTING_IMAGE_REQUIRED`, `413` + `LISTING_IMAGE_TOO_LARGE`, `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`을 반환하고 **저장소에 아무것도 올라가지 않는다**(검증이 업로드보다 앞선다)
+- 시나리오: 올린 키로 등록하면 사진이 확정 위치로 옮겨 간다
+  Given 임대인이 지점 사진 2장과 객실 1개분 사진 2장을 미리 올려 키 4개를 받았고
+  When 그 키를 `imageKeys`·`roomOffers[].roomImageKeys`에 담아 `POST /api/v2/listings`를 호출하면
+  Then `201 Created`를 반환하고 응답의 `imageUrls`·`roomOffers[].roomImageUrls`가 `https://{CDN}/listings/{listingId}/cover/…`·`…/rooms/{roomOfferId}/…` 형태이며(보낸 순서 유지), 그 키로 실제 객체가 존재하고 **`uploads/`의 임시본은 사라진다**
+- 시나리오: 사진 키 개수 위반
+  Given `imageKeys`가 1~5개가 아니거나 어떤 방의 `roomImageKeys`가 2~5개가 아니고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=LISTING_IMAGE_REQUIRED`를 반환하고 매물을 생성하지 않는다(지점 6장 이상, 방 1장이거나 6장 이상). 다만 배열이 아예 비었거나 누락된 경우는 본문 검증(`@NotEmpty`)이 먼저 걸려 `400` + `INVALID_INPUT`이고 위반 필드가 `errors[]`에 실린다
+- 시나리오: 남의 키·없는 키·만료된 키
+  Given 등록 요청의 사진 키가 다른 임대인의 `uploads/…`를 가리키거나, 존재하지 않거나, 올린 지 7일이 지났고
+  When `POST /api/v2/listings`를 호출하면
+  Then 셋 다 `400 Bad Request`, `error.code=LISTING_IMAGE_KEY_NOT_FOUND`를 반환하고 매물을 생성하지 않는다. 구분해 알려주지 않는 것은 남의 키가 있는지 없는지가 새어 나가지 않게 하기 위해서다
+- 시나리오: 저장 실패 시 복사본만 되돌리고 임시본은 남긴다
+  Given 사진 복사는 성공했지만 매물 문서 저장이 실패했고
+  When 그 요청이 끝나면
+  Then 매물은 생성되지 않고 `listings/` 아래 복사본도 남지 않지만, **`uploads/`의 임시본은 그대로 남아** 사용자가 같은 키로 다시 제출할 수 있다. 복사가 원본을 찾지 못해 실패하면 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`이고, 그 밖의 저장소 실패만 `502` + `UPSTREAM_ERROR`다
+- 시나리오: 등록하지 않은 사진은 7일 뒤 사라진다
+  Given 임대인이 사진만 올리고 등록을 끝내지 않았고
+  When 7일이 지나면
+  Then 그 임시 사진은 자동으로 삭제되고, 같은 키로 등록을 시도하면 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`다. **`listings/` 아래의 확정된 사진은 이 규칙에 걸리지 않는다**
+- 시나리오: 사업자등록번호는 형식만 보고 저장한다
+  Given 형식(숫자 10자리)은 맞지만 실제로는 폐업·미등록일 수도 있는 사업자등록번호를 담아
+  When `POST /api/v2/listings`를 호출하면
+  Then 서버는 외부 검증 API(`POST /api/v1/auth/business/verify`, US-1-8)를 **호출하지 않고** `201 Created`로 매물을 `PENDING`으로 저장하며, 원문을 매물 문서에 보관하되 응답에는 포함하지 않는다. 진위는 관리자가 승인 심사에서 수동으로 확인한다. 형식 자체가 어긋나면(자릿수·숫자 아님) `400` + `INVALID_INPUT`이다
+- 시나리오: 인증·권한(임대인이 아닌 사용자)
+  Given 온보딩을 마친(`ACTIVE`) 세입자(`userType=TENANT`)가 정식 토큰으로
+  When `POST /api/v2/listings`나 `POST /api/v2/listings/images`를 호출하면
+  Then `403 Forbidden`, `error.code=FORBIDDEN`을 반환하고 매물도 임시 사진도 만들어지지 않는다(역할 검사는 SecurityConfig 매처가 아니라 서비스에서 수행한다)
+- 시나리오: 인증·권한(온보딩 미완료·토큰 없음/만료)
+  Given 온보딩 스코프(`PENDING`·`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰이거나 `Authorization` 헤더가 없거나 토큰이 위조·만료되었고
+  When `POST /api/v2/listings`를 호출하면
+  Then 온보딩 토큰은 `403` + `AUTH_ONBOARDING_REQUIRED`(SecurityConfig의 `hasRole("USER")` 명시 매처에서 차단 — 매처가 없으면 `anyRequest().authenticated()`로 떨어져 컨트롤러까지 도달한다), 토큰 부재·위조는 `401` + `UNAUTHENTICATED`, 만료는 `401` + `TOKEN_EXPIRED`다
+- 시나리오: 응답 노출 범위
+  Given 등록이 성공했고
+  When `201` 응답 본문을 보면
+  Then `contact`(담당자명·지점 대표 전화)는 포함되고(세입자에게도 공개하는 값 — US-3-4), 문자문의 번호는 요청·응답 어디에도 없으며, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 제외되며, `status`는 `{code,label}`이 아니라 코드 문자열 `"PENDING"` 그대로다
+- 시나리오: 역 이름으로 인근 역 검색
+  Given 임대인이 등록 폼의 역 칸에 "신촌"을 입력하고 주소 검색이 준 좌표를 함께 보내면
+  When `GET /api/v1/listings/stations?keyword=신촌&lat=…&lng=…`를 호출하면
+  Then `200 OK`로 `data.items[]`에 `name`·`roadAddress`·`lat`·`lng`·`distanceMeters`·`suggestedWalkMinutes`가 **거리순**으로 온다. 좌표를 빼면 정확도순이고 `distanceMeters`·`suggestedWalkMinutes`는 `null`이다
+- 시나리오: 좌표로 인근 역 목록
+  Given 임대인이 아무것도 입력하지 않았고
+  When `GET /api/v1/listings/stations/nearby?lat=…&lng=…`를 호출하면
+  Then `200 OK`로 반경 2km 안의 지하철역이 가까운 순으로 온다. 반경 내 역이 없으면 에러가 아니라 `data.items=[]`다
+- 시나리오: 역 검색 입력 검증
+  Given 클라이언트가
+  When `keyword`를 누락·공백으로 보내거나 50자를 넘기거나, `lat`·`lng` 중 **하나만** 보내거나 WGS84 범위를 벗어나면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다
+- 시나리오: 역 검색 인가
+  Given 세입자(`userType=TENANT`) 정식 토큰이거나 토큰이 없고
+  When 역 검색 API를 호출하면
+  Then 세입자는 `403 FORBIDDEN`, 토큰 없음·위조는 `401 UNAUTHENTICATED`다 — 같은 `/api/v1/listings/*` 아래지만 공개 조회와 달리 인증이 필요하다
+- 시나리오: `walkMinutes` 누락은 400이다
+  Given 등록 요청의 `nearestTransit`에서 `walkMinutes` 키를 빼고
+  When `POST /api/v2/listings`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`이고 `errors[]`에 `nearestTransit.walkMinutes`가 실린다(예전에는 조용히 `0`이 저장됐다)
 
 ## 4. 매물 예약(신청) · (후속) 문의·인앱 채팅
 
@@ -1032,7 +1467,7 @@
   - **When** `roomOfferId`나 `contractPeriod`를 누락하거나 `contractPeriod`가 양의 정수가 아니면(0·음수) → `400` + `INVALID_INPUT`(`errors[]`에 위반 필드). **When** `moveInDate`를 날짜 형식이 아닌 값/타입, 또는 `contractPeriod`를 숫자 아닌 타입으로 보내면 → `400` + `MALFORMED_REQUEST`.
   - **Then** 어느 경우에도 예약은 생성되지 않는다.
 - 비즈니스 규칙(입주일)
-  - **When** `moveInDate`가 (형식은 유효하나) 과거이거나 매물 입주 가능일 이전이면 → `422` + `BOOKING_INVALID_MOVE_IN_DATE`.
+  - **When** `moveInDate`가 (형식은 유효하나) 과거이면 → `422` + `BOOKING_INVALID_MOVE_IN_DATE`.
   - **Then** 이 경우 예약은 생성되지 않는다.
 - 인증·권한·상태 게이트
   - **Given** `Authorization` 헤더가 없거나 만료된 토큰이면 → `401` + `UNAUTHENTICATED`/`TOKEN_EXPIRED`. **Given** 인증은 됐으나 온보딩 미완료(비`ACTIVE`) 사용자면 → 다른 보호 엔드포인트와 동일한 **온보딩 상태 게이트 에러**로 차단한다(코드 게이트와 1:1 일치). **Given** `userType`이 세입자가 아니면(임대인) → `403` + `FORBIDDEN`(예약은 세입자 전용).

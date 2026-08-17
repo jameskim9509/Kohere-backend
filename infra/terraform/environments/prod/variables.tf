@@ -436,3 +436,24 @@ variable "naver_search_client_secret" {
   default     = ""
   sensitive   = true
 }
+
+variable "naver_geocode_client_id" {
+  description = "NCP Maps Geocoding API Client ID — SSM SecureString으로 저장·주입. 미설정 시 앱은 기동하고 주소 검색만 502"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "naver_geocode_client_secret" {
+  description = "NCP Maps Geocoding API Client Secret — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "kakao_rest_api_key" {
+  description = "카카오 로컬 API REST API 키 — SSM SecureString으로 저장·주입. 미설정 시 앱은 기동하고 인근 역 검색만 502, 등록의 인근 대학은 빈 배열"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

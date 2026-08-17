@@ -70,6 +70,7 @@
 > 예약 생성은 매물의 방 상품에 종속되는 액션이므로 `/listings/{listingId}` 하위 1단계 중첩으로 둔다(api-design-guide §2). 조회는 예약을 독립 컬렉션(`/bookings`)으로 두고 **별도 임대인 전용 경로 없이** 요청자 `userType`으로 반환 대상을 분기한다(세입자=내 예약, 임대인=내 소유 매물에 신청된 예약).
 > 차단·신고는 특정 예약을 맥락으로 삼는 액션이라 `/bookings/{bookingId}` 하위 동사형 서브경로로 둔다(api-design-guide §1). **차단 목록·해제는 여기 없다** — `GET`/`DELETE /api/v1/users/me/blocks`로 [01-auth-onboarding](01-auth-onboarding.md)이 담당한다(§5의 근거 참조).
 > `report-reasons`는 고정 메타라 `{bookingId}` 자리와 겹치지 않도록 **리터럴 세그먼트**로 둔다 — 라우팅은 리터럴 경로가 `{bookingId}` 템플릿보다 먼저 매칭되므로 충돌하지 않는다.
+> **예약 경로는 `/api/v1` 그대로다.** 매물 **조회** 계열 6종이 `/api/v2`로 이관되고 `/api/v1` 조회가 `deprecated` 스텁이 됐지만([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) · [03-listings-favorites](03-listings-favorites.md)), 예약 생성의 중첩 경로는 `POST /api/v1/listings/{listingId}/bookings`로 유지한다 — 예약은 매물 조회 HTTP 응답이 아니라 **`listing :: api` 모듈 공개 쿼리**로 매물·방 상품을 검증하므로 매물 조회 API의 버전 분리에 영향을 받지 않고, 예약 요청·응답 계약도 v4 개편으로 바뀌지 않았다. 다만 요청에 실을 `listingId`·`roomOfferId`는 이제 **`/api/v2` 조회 응답**에서 얻는다(v1 조회는 빈 결과·404라 예약 진입점이 v2 화면에만 있다).
 
 ---
 
@@ -78,7 +79,8 @@
 방 상품(`roomOffer`)에 타겟 입주일과 계약기간(개월수)으로 예약을 생성·저장한다. 신청 직후 상태는 `REQUESTED` 고정이다. **동일 세입자–동일 방 상품에 예약은 활성 1건만** 허용된다(UNIQUE `uq_bookings_tenant_room_offer`) — 이미 신청한 방 상품에 다시 신청하면 `409 BOOKING_ALREADY_EXISTS`다.
 
 - **인증**: 필수. 요청자는 `ACTIVE` 상태의 세입자(`userType=TENANT`)여야 한다. **예약은 세입자 전용** — 임대인(매물 소유자)은 예약할 수 없으며(비세입자 `403 FORBIDDEN`), 세입자가 자기 소유 매물을 예약하는 상황 자체가 성립하지 않으므로 본인 매물 차단은 두지 않는다.
-- 매물·방 상품 존재·공개 여부는 `listing :: api`로 검증한다(소유자 조회 불요; cross-store 조인 금지, ADR-0005).
+- 매물·방 상품 존재·공개 여부는 `listing :: api`로 검증한다(소유자 조회 불요; cross-store 조인 금지, ADR-0005). 이 검증은 모듈 공개 쿼리라 **매물 조회 API의 v1/v2 분리와 무관**하다 — `deprecated`된 `/api/v1` 조회 스텁이 빈 결과를 주더라도 예약 생성은 실데이터로 판정한다.
+- `listingId`·`roomOfferId`는 **`/api/v2` 매물 조회 응답**(상세 `GET /api/v2/listings/{listingId}`의 `listingId`·`roomOffers[].roomOfferId`)에서 얻은 값을 그대로 보낸다([03-listings-favorites](03-listings-favorites.md)).
 - **차단 가드(양방향)**: 요청자와 매물 소유자(`listing.landlordId`) 사이에 **어느 방향이든** 차단 관계가 있으면 `403 FORBIDDEN`이다(`user :: api`의 `isBlockedBetween(요청자, 소유자)`로 판정). 판정은 매물·방 상품 검증 뒤, 예약 저장 전에 한다.
 - **중복 신청 가드**: 요청자가 **이미 같은 방 상품(`roomOfferId`)에 신청한 예약**이 있으면 `409 BOOKING_ALREADY_EXISTS`다 — DB UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`가 저장 시점에 이를 보장하며, 제약 위반은 이 코드로 변환한다. 지금은 상태 전이가 없어 모든 예약이 활성(`REQUESTED`)이라 "활성 1건"이 곧 "전체 1건"이다(위 §1 [저장·조합 규약]의 중복 방지 bullet).
 
@@ -101,7 +103,7 @@
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
 | `roomOfferId` | string | 필수 | 예약 대상 방 상품 ID(ObjectId hex 문자열). 누락은 `INVALID_INPUT`(400) |
-| `moveInDate` | string(`YYYY-MM-DD`) | 필수 | 타겟 입주일. 날짜 형식(`YYYY-MM-DD`) 위반은 `MALFORMED_REQUEST`(400), 형식은 맞으나 과거/입주 가능일 이전이면 `BOOKING_INVALID_MOVE_IN_DATE`(422) |
+| `moveInDate` | string(`YYYY-MM-DD`) | 필수 | 타겟 입주일. 누락·형식 위반은 `INVALID_INPUT`(400, `errors[]`에 필드 반환), 형식은 맞으나 과거면 `BOOKING_INVALID_MOVE_IN_DATE`(422) |
 | `contractPeriod` | integer | 필수 | 계약 개월수(양의 정수, 1 이상). 누락·0·음수는 `INVALID_INPUT`(400), 숫자 아닌 타입은 `MALFORMED_REQUEST`(400) |
 
 #### 성공 Response — 201 Created
@@ -130,15 +132,15 @@
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필수값 누락(`roomOfferId`/`contractPeriod`), `contractPeriod`가 양의 정수 아님(0·음수) |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가 또는 필드 타입 불일치(예: `moveInDate` 날짜 형식 위반) |
+| 400 | `INVALID_INPUT` | 필수값 누락(`roomOfferId`/`contractPeriod`/`moveInDate`), `contractPeriod`가 양의 정수 아님(0·음수), `moveInDate`가 `YYYY-MM-DD` 형식이 아님 |
+| 400 | `MALFORMED_REQUEST` | 요청 본문을 JSON으로 해석할 수 없거나 필드 타입이 맞지 않음 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 | 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아닌 사용자(임대인)의 예약 시도 |
 | 403 | `FORBIDDEN` | 요청자와 매물 소유자 사이에 차단 관계(양방향 중 어느 쪽이든)가 존재 |
 | 404 | `LISTING_NOT_FOUND` | 매물 또는 방 상품이 없거나 비공개/삭제됨 |
 | 409 | `BOOKING_ALREADY_EXISTS` | 동일 세입자가 동일 방 상품에 이미 신청함 |
-| 422 | `BOOKING_INVALID_MOVE_IN_DATE` | `moveInDate`가 과거이거나 매물의 입주 가능일 이전 |
+| 422 | `BOOKING_INVALID_MOVE_IN_DATE` | `moveInDate`가 과거 |
 
 > 온보딩 미완료(비`ACTIVE`) 사용자는 다른 보호 엔드포인트와 동일한 온보딩 상태 게이트 에러로 차단한다(코드 게이트와 1:1 일치, [error-response-guide](../error-response-guide.md)).
 >
@@ -246,7 +248,8 @@
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `size` 범위 초과 등 페이지 파라미터 오류 |
+| 400 | `INVALID_INPUT` | `page`/`size` 범위 위반(음수 `page`, `size` 1 미만·100 초과). 보정하지 않고 거절한다 |
+| 400 | `MALFORMED_REQUEST` | `page`/`size`가 정수가 아님(쿼리 파라미터 타입 불일치) |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 
@@ -582,7 +585,7 @@
 | POST | `/api/v1/chat-rooms/{roomId}/messages` | 텍스트 메시지 전송 | 필수 | 201 |
 | POST | `/api/v1/chat-rooms/{roomId}/read` | 읽음 처리(마지막 읽은 메시지까지 갱신) | 필수 | 200 |
 
-> 문의는 매물에 종속되는 액션이므로 `/listings/{listingId}` 하위 1단계 중첩으로 둔다(api-design-guide §2). 채팅방·메시지는 독립 컬렉션으로 둔다.
+> 문의는 매물에 종속되는 액션이므로 `/listings/{listingId}` 하위 1단계 중첩으로 둔다(api-design-guide §2). 채팅방·메시지는 독립 컬렉션으로 둔다. 예약 생성과 같은 이유로 **경로는 `/api/v1`을 유지**한다 — 매물 조회 계열만 `/api/v2`로 이관됐고 문의는 `listing :: api` 모듈 공개 쿼리로 매물을 확인한다([03-listings-favorites](03-listings-favorites.md)). 재개 시 이 결정을 다시 확인한다.
 > **고정 메시지(pinned)**: 채팅방 상단에 고정되는 카드. `BOOKING_CARD`/`LISTING_CARD`가 `pinned: true`로 내려간다.
 
 ---
@@ -912,7 +915,7 @@
 
 | code | status | 의미 | 스코프 |
 | --- | --- | --- | --- |
-| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | 타겟 입주일이 과거이거나 매물의 입주 가능일 이전 | 1차 MVP |
+| `BOOKING_INVALID_MOVE_IN_DATE` | 422 | `moveInDate`가 과거 | 1차 MVP |
 | `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함. DB 유니크 제약 `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)` 위반. ErrorCode·messages 번들에 이미 선언돼 있던 코드가 본 결정으로 실사용된다 | 1차 MVP |
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물의 신청 아님), 또는 삭제(§4)·차단(§5)으로 요청자에게 숨겨짐 — 존재 여부를 노출하지 않도록 404로 통일. 삭제·차단·신고(§4~§6)에서 요청자가 참여자가 아닌 경우도 이 코드다(`403`이 아니다) | 1차 MVP |
 | `CHAT_ROOM_NOT_FOUND` | 404 | 채팅방이 존재하지 않음 | 후속·이연 |

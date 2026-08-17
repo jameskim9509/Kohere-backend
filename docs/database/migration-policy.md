@@ -4,7 +4,7 @@
 
 ## 목적
 
-폴리글랏(MySQL·MongoDB·Redis)에서 **누가·언제·어떻게 스키마를 바꿨는지**를 추적·재현하고, **로컬↔클라우드 동일 스키마**와 **무중단 배포**를 보장한다. 변경은 사람이 손으로 DB를 만지는 것이 아니라 **마이그레이션 산출물**로만 한다.
+폴리글랏(MySQL·MongoDB·Redis)에서 **누가·언제·어떻게 스키마를 바꿨는지**를 추적·재현하고, **로컬↔클라우드 동일 스키마**와 **무중단 배포**를 보장한다. 변경은 사람이 손으로 DB를 만지는 것이 아니라 **마이그레이션 산출물**로만 한다 — 유일한 예외는 [§8](#8-mongodb-변경-관리)에 범위·근거와 함께 명시한 MongoDB 1회 수동 재시드다.
 
 ## 0. 스토어별 개요
 
@@ -21,7 +21,7 @@
 ### 1. 기본 규칙
 
 - **forward-only**: 롤백 스크립트에 의존하지 않는다. 잘못된 변경은 되돌리는 새 마이그레이션(`V{n+1}`)으로 고친다.
-- **불변(immutable)**: 한 번 적용·머지된 마이그레이션 파일은 **수정하지 않는다**(체크섬 깨짐). 변경은 항상 새 버전.
+- **불변(immutable)**: 한 번 적용·머지된 마이그레이션 파일은 **수정하지 않는다**(체크섬 깨짐). 변경은 항상 새 버전. 이 조항의 근거는 Flyway의 체크섬 검증이므로 **MySQL/Flyway 전용**이다 — 체크섬이 없는 MongoDB(Mongock)에는 같은 조항이 없다([§8](#8-mongodb-변경-관리)).
 - **1 변경 = 1 파일**: 논리적으로 하나인 변경을 한 파일에 모으고, 무관한 변경을 섞지 않는다.
 - **DDL은 Flyway만**: 애플리케이션·사람이 직접 `ALTER` 하지 않는다. Hibernate는 `spring.jpa.hibernate.ddl-auto=validate`로 **검증만** 한다.
 - **결정성**: 모든 환경(로컬·CI·클라우드)이 같은 마이그레이션 집합으로 동일 스키마를 만든다.
@@ -42,6 +42,15 @@
 | **비호환(축소/변경)** | 컬럼 제거·rename·타입 변경, `NOT NULL` 전환, 제약 강화 | 구버전 앱을 깨뜨림 — **expand-contract**(§5)로 분리 |
 
 원칙: **한 릴리스에서는 호환 변경만**. 비호환 변경은 §5 절차로 여러 릴리스에 나눈다.
+
+> **적용된 예외 — `V23__users_phone_number_unique.sql`(제약 강화).** 임대인 웹 로그인·회원가입([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md))이 들어오면서 MySQL 체인에 둘이 추가됐다 — `V22__create_local_accounts.sql`은 **새 테이블이라 위 표의 호환(확장)**이지만, `V23__users_phone_number_unique.sql`의 `users.phone_number` UNIQUE(`uq_users_phone_number`)는 **제약 강화라 비호환**이다. 그럼에도 [§5](#5-expand-contract-패턴-무중단)로 나누지 않고 한 릴리스에 넣는다. 근거는 둘이다 — ① 임대인 계정에 **중복 번호를 만들 경로가 아직 없어** 정리 대상 행이 0건이라 expand-contract가 옮길 데이터가 없고, ② 이 제약이 웹 가입과 앱 임대인 온보딩의 동시 제출로 **같은 사람의 계정이 갈라지는 것을 막는 유일한 수단**이라(애플리케이션 조회는 아직 없는 행을 잠글 수 없다) 뒤로 미루면 그 사이 배포가 경쟁을 열어 둔 채로 남는다. 적용 전 아래로 중복 0건을 확인한다 — 있으면 제약 추가 자체가 실패한다.
+>
+> ```sql
+> SELECT phone_number, COUNT(*) FROM users
+>  WHERE phone_number IS NOT NULL GROUP BY phone_number HAVING COUNT(*) > 1;
+> ```
+>
+> 번호 정규화(숫자만 남김)는 **입력 경로에만** 넣고 기존 행은 백필하지 않으므로 V23에 `UPDATE`가 없다 — 하이픈으로 저장된 기존 번호가 매칭에서 누락될 수 있다는 **수용된 제약**이며, 두 테이블의 컬럼·제약 정본은 [database-design §4-1](./database-design.md#4-1-auth)(`local_accounts`)·[§4-2](./database-design.md#4-2-user)(`users.phone_number`)다.
 
 ### 4. NOT NULL 컬럼 추가 절차
 
@@ -86,9 +95,58 @@
 
 - **인덱스**: `2dsphere`(매물 지오)·UNIQUE(`favorites`/`recentListings`의 `(userId,listingId)`)·최신순 조회용 복합 인덱스는 **부트스트랩/마이그레이션 스크립트로 기동 시 멱등 생성**한다(이미 있으면 무시). 인덱스 정의 정본은 [database-design](./database-design.md) §4.
 - **문서 구조 진화**: 컬렉션 문서에 **`schemaVersion` 필드**를 두고, 읽을 때 구버전을 신버전으로 변환(**lazy**) 또는 **배치 마이그레이션**으로 점진 이행한다.
-- **초기 시드·1회성 마이그레이션 모두 Mongock changeUnit**([ADR-0032](../adr/0032-mongodb-migration-runner.md)): **최초 적재는 init changeUnit(order `0000`)이 레퍼런스 카탈로그(`diagnosisQuestions`·`diagnosisSuggestions`)를 비우고 캐노니컬 시드를 재적재**(Flyway V1 from-scratch 대응), 이후 **구조·데이터 진화는 order `0001`+ changeUnit**으로 둔다. 별도 `ApplicationRunner` 시더를 두지 않는다 — 생애주기를 Mongock 단일 메커니즘으로 통합한다. Mongock이 **자체 changelog 컬렉션에 적용 이력**을 남기고 기동 시 **미적용 changeUnit만 순서대로 1회 실행**한다(Flyway `flyway_schema_history`의 MongoDB 대응). 멀티 인스턴스 동시 기동은 Mongock **분산 락**으로 직렬화된다(자체 `_migrations`·유니크 `_id` 직렬화를 손수 구현하지 않는다). 각 `@ChangeUnit`은 **컬렉션을 소유한 모듈의 `infrastructure`**에 두어 소유권·이력을 모듈별로 유지한다(미래 MSA/DB-per-service 친화 — `common` 공유 골격 금지). Mongock은 `InitializingBean`으로 실행해 로컬 fixture·인덱스 초기화 `ApplicationRunner`보다 반드시 먼저 끝낸다. **사용자 데이터(`diagnoses`)는 컬렉션 drop 없이 영향 문서만 교체/이행**한다(레퍼런스 카탈로그 베이스라인 재적재는 예외 — 아래 파괴적 일괄 변경 금지 준수).
+- **스키마·문서 이행은 Mongock changeUnit**([ADR-0032](../adr/0032-mongodb-migration-runner.md)): `$jsonSchema` validator 적용·전이, 키가 바뀐 옛 인덱스 삭제, 폐기 컬렉션 드롭, 스키마 변경에 따른 기존 문서 이행을 맡는다. Mongock이 **자체 changelog 컬렉션에 적용 이력**을 남기고 기동 시 **미적용 changeUnit만 순서대로 1회 실행**한다(Flyway `flyway_schema_history`의 MongoDB 대응). 멀티 인스턴스 동시 기동은 Mongock **분산 락**으로 직렬화된다(자체 `_migrations`·유니크 `_id` 직렬화를 손수 구현하지 않는다). 각 `@ChangeUnit`은 **컬렉션을 소유한 모듈의 `infrastructure`**에 두어 소유권·이력을 모듈별로 유지한다(미래 MSA/DB-per-service 친화 — `common` 공유 골격 금지). Mongock은 `InitializingBean`으로 실행해 인덱스 초기화 `ApplicationRunner`보다 반드시 먼저 끝낸다. **사용자 데이터는 컬렉션 drop 없이 영향 문서만 교체/이행**한다.
+- **데이터 적재는 마이그레이션이 하지 않는다**: 카탈로그·원장 같은 레퍼런스 데이터는 **운영자가 정본 JSON을 `mongoimport`로 주입**한다([§8-1](#8-1-시드-주입-절차)). 시드를 코드가 소유하면 문구 한 줄에 재빌드·재배포가 필요하고, 운영이 DB에서 보강한 값을 다음 배포가 덮어쓴다. `ApplicationRunner` 시더도 두지 않는다.
 - **파괴적 일괄 변경 금지**([ADR-0005](../adr/0005-polyglot-persistence.md) D7): 컬렉션 전체를 멈추고 바꾸지 않고, 확장→점진 이행으로 처리한다.
 - 대형 인덱스 생성은 백그라운드/복제 지연을 고려한다.
+
+### 8-1. 시드 주입 절차
+
+레퍼런스·운영 데이터는 마이그레이션이 아니라 **운영자가 정본 JSON으로 주입**한다([ADR-0032](../adr/0032-mongodb-migration-runner.md) §4). 신규 환경 구축과 시드 갱신 모두 같은 절차다.
+
+**정본 JSON은 저장소가 버전 관리한다** — 위치는 [`src/test/resources/fixtures/`](../../src/test/resources/fixtures)다. 매물 계열은 통합 테스트가 **같은 파일**을 읽어 운영과 테스트가 서로 다른 데이터를 보지 않게 한다.
+
+| 컬렉션 | 정본 파일 | 건수 |
+| --- | --- | --- |
+| `listingCatalog` | `listing-catalog-v4.json` | 105 |
+| `listings` | `listings-v4.json` | 2 |
+| `universities` | `universities.json` | 14 |
+| `diagnosisQuestions` | `diagnosis-questions.json` | 8 |
+| `diagnosisSuggestions` | `diagnosis-suggestions.json` | 1 |
+| `quizzes` | `quizzes.json` | 5 |
+| `lifeTipTopics` | `life-tip-topics.json` | 5 |
+| `lifeTips` | `life-tips.json` | 6 |
+
+> **`--drop`을 쓰지 않는다.** 컬렉션을 지우면 **validator가 함께 사라지는데** 그것을 건 changeUnit은 1회성이라 재기동해도 다시 걸리지 않는다(부트스트랩은 인덱스만 만든다). 반드시 아래 순서를 지킨다.
+
+```js
+db.listingCatalog.deleteMany({})   // drop 금지 — 컬렉션과 validator를 유지한다
+db.listings.deleteMany({})
+db.universities.deleteMany({})
+```
+
+```bash
+mongoimport --db kohere --collection listingCatalog --jsonArray --file listing-catalog-v4.json
+mongoimport --db kohere --collection listings       --jsonArray --file listings-v4.json
+mongoimport --db kohere --collection universities   --jsonArray --file universities.json
+```
+
+- **모든 문서는 결정적 `_id`를 갖는다.** 재주입 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다 — 코드값(`SNU`·`MOVING_IN`·`region`)이나 고정 ObjectId를 쓴다.
+- **신규 환경은 시드 전까지 서비스가 되지 않는다.** 진단이 문항을 못 내려주고, 퀴즈·생활 팁 목록이 비고, 매물 응답의 라벨 자리에 코드값(`SHARE_HOUSE` 등)이 그대로 나가며, 등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠진다. **API는 실패하지 않으므로 조용히 나빠진다** — 배포 절차에 시드 단계를 반드시 포함한다.
+- 이미 validator가 걸린 컬렉션에 그 계약을 만족하는 문서를 넣는 것이므로 `validationLevel: off` 완화가 필요 없다. 넣기 전에 기동해도 되고, 기동 전에 넣어도 결과가 같다.
+- 정본 JSON과 코드(enum·검증)는 따로 움직인다 — 코드에 없는 코드값을 시드에 넣으면 런타임에야 드러난다. 코드 카탈로그를 고칠 때는 enum과 함께 본다.
+
+### 8-2. listing 마이그레이션 체인
+
+1. **v4 baseline으로 리셋했다.** `0099`~`0114` changeUnit을 **삭제**하고 `0115 listing-v4-baseline` 하나로 갈음한다 — [§1](#1-기본-규칙)이 인정하는 baseline 채택(`V1__baseline.sql` 대응)의 MongoDB 적용이다. v3 데이터를 폐기하는 이상 그 데이터를 v1→v2→v3로 옮기던 이력은 재현할 대상이 없다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)).
+   - 기존 환경의 changelog에는 지운 항목이 고아로 남지만, **대응 클래스가 없으면 실행 대상에서 빠질 뿐이라 무해하다**. changeUnit을 지우는 모든 정리가 이 성질에 기댄다.
+   - `0115`는 **스키마만** 다룬다 — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. v4 `$jsonSchema`는 `0115` 안에 **동결**하고 `ListingMongoIndexInitializer`의 정적 메서드를 호출하지 않는다(과거 `0105`가 그렇게 해서 `listingV2JsonSchema()` 죽은 사본이 생겼다).
+   - **`0116 listing-location-required`**: `0115`가 지오코딩이 없어 선택으로 뒀던 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 시드 주입 전이라 백필 대상이 0건이어서 [§4](#4-not-null-컬럼-추가-절차)의 확장→백필→축소가 그대로 성립한다. `0115`는 동결이므로 수정하지 않고 새 유닛이 자기 스키마 사본을 든다.
+   - **`0117 listing-search-place-drop`**: 키워드 검색 API 종료로 쓰이지 않게 된 `searchPlaces`를 드롭한다([ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)).
+   - **`0118 listing-university-collection`**: 대학 좌표 원장 `universities`의 validator를 세운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). 시드 14건은 [§8-1](#8-1-시드-주입-절차)로 주입한다.
+   - **`0119 listing-contact-sms-drop`**: 담당자 연락처에서 `contact.sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended) — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제한다. `0115`가 동결이라 `0116`과 같은 방식으로 **자기 스키마 사본**을 들고 `collMod`한다. 시드 주입 전이라 이행 대상 문서가 0건이므로 필드 삭제 배치도 없다.
+2. **인덱스 키를 바꿀 때는 새 이름으로 만든다.** 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다 — `listings_status_arc_required`(키 `status, propertyPolicies.arcRequired`)는 새 이름 `listings_status_arc_requirement`(키 `status, arcRequired`)로 만든다.
+3. **인덱스 소유는 부트스트랩이 유지**한다(`ListingMongoIndexInitializer`의 멱등 생성). changeUnit이 하는 일은 **옛 인덱스 2건**(`listings_status_arc_required`·`listings_status_room_available_count`)의 **삭제뿐**이며 `0115`가 1회 수행한다.
 
 ## 9. Redis 변경 관리
 
@@ -99,17 +157,17 @@
 ## 체크리스트
 
 - [ ] (MySQL) `V{버전}__{설명}.sql` 네이밍·`db/migration` 배치, 버전 단조 증가
-- [ ] 적용된(머지된) 마이그레이션 파일을 **수정하지 않았다**(forward-only·불변)
-- [ ] 이 릴리스의 변경이 **호환(확장)** 이다 — 비호환이면 [§5 expand-contract](#5-expand-contract-패턴-무중단)로 분리했다
+- [ ] (MySQL) 적용된(머지된) 마이그레이션 파일을 **수정하지 않았다**(forward-only·불변 — 체크섬이 근거인 Flyway 전용 항목이라 Mongock changeUnit에는 해당하지 않는다, [§1](#1-기본-규칙)·[§8-2](#8-2-listing-마이그레이션-체인))
+- [ ] 이 릴리스의 변경이 **호환(확장)** 이다 — 비호환이면 [§5 expand-contract](#5-expand-contract-패턴-무중단)로 분리했다. 점진 이행이 성립하지 않아 baseline 리셋이 필요하면 [§8-2](#8-2-listing-마이그레이션-체인)처럼 범위와 근거 ADR을 문서에 남겼다
 - [ ] `NOT NULL` 추가는 [§4 절차](#4-not-null-컬럼-추가-절차)(확장→백필→축소)를 따랐다
 - [ ] 대형 테이블 인덱스/타입 변경의 **락 영향**을 검토했다([§6](#6-인덱스-추가-시-락-주의))
 - [ ] 스키마가 [database-design](./database-design.md) 및 도메인 엔티티와 일치하고 JPA `validate`가 green이다
-- [ ] (MongoDB) 새 인덱스(`2dsphere`·UNIQUE·최신순 조회용 복합 인덱스 등)를 부트스트랩 스크립트에 **멱등** 추가했다
-- [ ] (MongoDB) 초기 시드(init changeUnit `0000`)·이미 적재된 컬렉션의 1회성 변경 모두 컬렉션 소유 모듈의 **Mongock `@ChangeUnit`**으로 처리했다(별도 `ApplicationRunner` 시더 금지 — [§8](#8-mongodb-변경-관리))
+- [ ] (MongoDB) 새 인덱스(`2dsphere`·UNIQUE·최신순 조회용 복합 인덱스 등)를 부트스트랩 스크립트에 **멱등** 추가했다. 기존 인덱스의 **키를 바꿀 때는 새 이름**으로 만들고(같은 이름·다른 키는 `IndexOptionsConflict`) 옛 인덱스 삭제만 changeUnit에 넣었다([§8-2](#8-2-listing-마이그레이션-체인))
+- [ ] (MongoDB) 스키마·문서 이행은 컬렉션 소유 모듈의 **Mongock `@ChangeUnit`**으로 처리했고, **changeUnit이 데이터를 적재하지 않는다**([§8](#8-mongodb-변경-관리)). 레퍼런스 데이터는 정본 JSON을 갱신하고 [§8-1](#8-1-시드-주입-절차)대로 `--drop` 없이 `deleteMany({})` 후 import한다(`ApplicationRunner` 시더 금지)
 - [ ] (Redis) 키 구조 변경 시 네임스페이스 버전/만료 교체 전략을 적었다
 - [ ] CI에서 빈 DB 전체 적용이 통과한다
 
 ## 관련 문서
 
-- [ADR-0008](../adr/0008-mysql-migration-flyway.md)(MySQL 마이그레이션 도구 결정) · [ADR-0032](../adr/0032-mongodb-migration-runner.md)(MongoDB=Mongock) · [ADR-0005](../adr/0005-polyglot-persistence.md)(폴리글랏) · [ADR-0006](../adr/0006-refresh-token-store-redis.md)(refresh=Redis)
+- [ADR-0008](../adr/0008-mysql-migration-flyway.md)(MySQL 마이그레이션 도구 결정) · [ADR-0032](../adr/0032-mongodb-migration-runner.md)(MongoDB=Mongock) · [ADR-0005](../adr/0005-polyglot-persistence.md)(폴리글랏) · [ADR-0006](../adr/0006-refresh-token-store-redis.md)(refresh=Redis) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)(매물 v4 재정의·1회 재시드 예외)
 - [database-design](./database-design.md)(스키마·인덱스 정본) · [system-overview §3-2·§1-3](../architecture/system-overview.md)(스택·배포)

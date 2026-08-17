@@ -11,7 +11,7 @@
 - **식별자·이미지·사진은 언어 무관 불변**: 주제·팁의 식별자(`code`/`id`), 주제 이미지(`LifeTipTopic.imageUrl`·`backgroundImageUrl`), 팁 사진(`LifeTip.imageUrl`)은 언어와 무관하게 동일하고, 표시 텍스트만 언어별이다. 응답 스키마도 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
 - **비페이지**: 두 목록 모두 **고정·소규모 카탈로그**라 페이지네이션 없이 전체 배열을 한 번에 반환한다(페이지 객체 없음 — api-design-guide §4 목록 규약 미적용, 신고 사유 목록 US-7-3과 동일 성격).
 - **읽기 전용**: 생활 팁 도메인은 조회만 제공하며, 발행/구독하는 도메인 이벤트가 없다(1차 MVP 이후 홈 부가 기능).
-- **저장소**: 문서형·가변 스키마·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../../adr/0005-polyglot-persistence.md) 폴리글랏, [ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). 카탈로그는 Mongock `@ChangeUnit`(모듈별)로 `lifeTipTopics`/`lifeTips`에 시드 적재한다(진단 카탈로그 시드와 동일 방식, [ADR-0032](../../adr/0032-mongodb-migration-runner.md)).
+- **저장소**: 문서형·가변 스키마·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../../adr/0005-polyglot-persistence.md) 폴리글랏, [ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). 카탈로그는 운영자가 정본 JSON을 `lifeTipTopics`/`lifeTips`에 주입한다(진단 카탈로그와 동일 방식 — [ADR-0032](../../adr/0032-mongodb-migration-runner.md) §4 · [migration-policy §8-1](../../database/migration-policy.md#8-1-시드-주입-절차)).
 
 공통 규약:
 

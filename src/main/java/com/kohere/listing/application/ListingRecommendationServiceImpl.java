@@ -31,7 +31,7 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
    *
    * <p>diagnosis는 모듈 경계를 넘기 위해 조건 태그와 대학 코드를 문자열로 전달한다. 이 서비스는 listing 도메인이 이해하는 {@link
    * ConditionTag}로 조건 태그만 변환하고, 대학 코드는 listing 저장 모델의 {@code nearbyUniversityCodes} 값과 같은 원시 코드라
-   * 그대로 저장소에 넘긴다.
+   * 그대로 저장소에 넘긴다 — 포함(선택 그룹의 멤버)과 제외("그 외 대학") 두 집합 모두 마찬가지다.
    */
   @Override
   public PageResponse<RecommendedListingView> recommendByCriteria(RecommendationCriteria criteria) {
@@ -49,8 +49,10 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
             criteria.monthlyRentMin(),
             criteria.monthlyRentMax(),
             parseConditionTags(criteria.conditions()),
-            criteria.universityCodes(),
+            criteria.includedUniversityCodes(),
+            criteria.excludedUniversityCodes(),
             criteria.district(),
+            criteria.arcStatus(),
             criteria.page(),
             criteria.size(),
             criteria.sort());

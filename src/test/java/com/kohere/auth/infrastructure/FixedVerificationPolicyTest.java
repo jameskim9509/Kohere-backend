@@ -10,7 +10,6 @@ import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -144,15 +143,15 @@ class FixedVerificationPolicyTest {
 
   @Test
   void isReviewAccount_noSocialAccount_isFalse() {
-    when(socialAccountRepository.findByUserId(OUTSIDER_USER_ID)).thenReturn(Optional.empty());
+    when(socialAccountRepository.findAllByUserId(OUTSIDER_USER_ID)).thenReturn(List.of());
 
     assertThat(policy.isReviewAccount(OUTSIDER_USER_ID)).isFalse();
   }
 
   @Test
   void isReviewAccount_nonGoogleProvider_isFalse() {
-    when(socialAccountRepository.findByUserId(TENANT_USER_ID))
-        .thenReturn(Optional.of(socialAccount(TENANT_USER_ID, Provider.APPLE, TENANT_GOOGLE)));
+    when(socialAccountRepository.findAllByUserId(TENANT_USER_ID))
+        .thenReturn(List.of(socialAccount(TENANT_USER_ID, Provider.APPLE, TENANT_GOOGLE)));
 
     assertThat(policy.isReviewAccount(TENANT_USER_ID)).isFalse();
   }
@@ -263,8 +262,8 @@ class FixedVerificationPolicyTest {
   }
 
   private void linkGoogleAccount(long userId, String googleEmail) {
-    when(socialAccountRepository.findByUserId(userId))
-        .thenReturn(Optional.of(socialAccount(userId, Provider.GOOGLE, googleEmail)));
+    when(socialAccountRepository.findAllByUserId(userId))
+        .thenReturn(List.of(socialAccount(userId, Provider.GOOGLE, googleEmail)));
   }
 
   private static SocialAccount socialAccount(long userId, Provider provider, String email) {

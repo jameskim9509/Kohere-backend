@@ -56,6 +56,18 @@ mail_from     = "noreply@kohere.app"
 # naver_search_client_id     = ""  # sensitive — SSM SecureString
 # naver_search_client_secret = ""  # sensitive — SSM SecureString
 
+# ----- NCP Maps Geocoding (도로명 주소 검색 — #223) -----
+# 매물 등록 폼의 주소 검색(GET /api/v1/listings/addresses)에 필요. 미설정 시 앱은 정상 기동하되 주소 검색만 502(UPSTREAM_ERROR).
+# 네이버 클라우드 플랫폼 콘솔에서 Maps Application 등록 후 Client ID/Secret 발급받아 채운다 — 위 검색 API(네이버 Developers)와 다른 값이다:
+# naver_geocode_client_id     = ""  # sensitive — SSM SecureString
+# naver_geocode_client_secret = ""  # sensitive — SSM SecureString
+
+# ----- 카카오 로컬 API (인근 역 검색 · 인근 대학 파생 — #224) -----
+# 매물 등록 폼의 역 검색(GET /api/v1/listings/stations)과 등록 시 nearbyUniversityCodes 파생에 필요.
+# 미설정 시 역 검색만 502(UPSTREAM_ERROR)이고 등록은 성공하되 인근 대학이 빈 배열이다.
+# 카카오 개발자 콘솔에서 앱 생성 → 로컬 API 활성화 후 REST API 키를 발급받아 채운다 — 네이버·NCP와 다른 콘솔이다:
+# kakao_rest_api_key = ""  # sensitive — SSM SecureString
+
 # ----- 테스트 마스터 계정/로그인 (dev·local 전용, 운영 미사용) -----
 # 기본 비활성. 우회 시크릿 TEST_LOGIN_SECRET 은 Terraform이 자동 생성한다(SSM SecureString) — 채우지 않는다.
 # 이 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다. 공유 EC2 백도어라 필요할 때만 켠다:
@@ -69,12 +81,15 @@ mail_from     = "noreply@kohere.app"
 # 그룹은 통째로 비거나 통째로 채운다 — 반쪽이면 앱이 기동을 거부한다. 한쪽 트랙만 쓰는 것은 허용.
 # 같은 Google 계정을 tenant·landlord 양쪽에 넣으면 역할이 모호해 기동이 막힌다.
 # 심사 노트에는 아래 값(로그인 Google 계정 / 인증 대상 / 고정 인증번호)을 그대로 적어야 한다 — 다른 값을 입력하면 거절된다.
+# 임대인 번호는 마스터 임대인 시드 번호(01000000000 — MasterAccountSeedRunner, test_login_enabled 로 함께 켜진다)와 달라야 한다.
+# users.phone_number 에 UNIQUE(V23, #229)가 걸린 뒤로 같은 번호를 쓰면 심사자가 임대인 온보딩을 끝내지 못한다 —
+# 중복 키로 실패하거나, 같은 번호 계정 병합(US-1-15)에 걸려 심사자 계정이 공용 마스터 계정으로 흡수된다.
 # fixed_verification_enabled                = true
 # fixed_verification_code                   = "000000"                    # sensitive — 자릿수는 app.email/phone.code-length(6)와 일치
 # fixed_verification_tenant_google_emails   = "review-tenant@gmail.com"    # sensitive — 콤마 구분
 # fixed_verification_tenant_emails          = "demo-tenant@example.com"    # sensitive — 콤마 구분
 # fixed_verification_landlord_google_emails = "review-landlord@gmail.com"  # sensitive — 콤마 구분
-# fixed_verification_landlord_phones        = "01000000000"                # sensitive — 콤마 구분
+# fixed_verification_landlord_phones        = "01099990000"                # sensitive — 콤마 구분 · 마스터 임대인 시드 번호와 겹치면 안 된다
 # 반영: apply → (refresh-env.sh 최초 변경이면 EC2 재생성 1회) → 배포(gh workflow run deploy.yml, ADR-0024).
 # 심사 종료 후 fixed_verification_enabled = false 로 되돌리고 apply → 배포한다.
 

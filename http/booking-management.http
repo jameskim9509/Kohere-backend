@@ -47,7 +47,9 @@ Content-Type: application/json
 }
 
 ### 3. (참고) 매물 목록 — 예약할 listingId·roomOfferId 확보 → 위 @listingId·@roomOfferId 에 복사
-GET {{baseUrl}}/api/v1/listings?page=0&size=5
+#     **경로는 /api/v2 다.** 조회 계열은 v2로 옮겼고 /api/v1/listings 는 빈 결과만 주는 스텁이다(ADR-0040).
+#     여기서 목록이 비어 있으면 매물 시드가 없는 것이다 — listing.http 의 "시드" 절을 먼저 실행한다.
+GET {{baseUrl}}/api/v2/listings?page=0&size=5
 Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 
 ### 4. 예약 생성 (세입자) — 201 Created. 이후 삭제·차단·신고의 대상 예약

@@ -3,6 +3,7 @@ package com.kohere.auth.infrastructure;
 import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -24,13 +25,26 @@ public class SocialAccountRepositoryImpl implements SocialAccountRepository {
   }
 
   @Override
-  public Optional<SocialAccount> findByUserId(Long userId) {
-    return jpaRepository.findByUserId(userId).map(SocialAccountRepositoryImpl::toDomain);
+  public List<SocialAccount> findAllByUserId(long userId) {
+    return jpaRepository.findAllByUserId(userId).stream()
+        .map(SocialAccountRepositoryImpl::toDomain)
+        .toList();
   }
 
   @Override
   public SocialAccount save(SocialAccount socialAccount) {
     return toDomain(jpaRepository.save(toEntity(socialAccount)));
+  }
+
+  /**
+   * 병합의 매핑 이전. {@code @Transactional}은 벌크 UPDATE가 트랜잭션을 요구하기 때문이며(없으면 {@code
+   * TransactionRequiredException}), 실제 호출은 {@code REQUIRED} 전파로 <b>병합 트랜잭션에 참여</b>한다 — 여기서 따로 커밋되면
+   * 뒤이은 {@code users} 삭제가 실패했을 때 매핑만 옮겨진 상태가 남아 앱 로그인이 어느 쪽으로도 붙지 않는다.
+   */
+  @Override
+  @Transactional
+  public void reassignUserId(long fromUserId, long toUserId) {
+    jpaRepository.reassignUserId(fromUserId, toUserId);
   }
 
   @Override

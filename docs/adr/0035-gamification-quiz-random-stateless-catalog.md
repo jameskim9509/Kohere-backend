@@ -30,7 +30,7 @@ Proposed (2026-07-02)
 2. **`GET /api/v1/quizzes/random`이 활성 풀에서 랜덤 1개를 번역해 반환한다.** `200 OK`, `data = { quizId, question, choices: [{ key: "A|B|C|D", text }] }`로, `question`·각 `choices[].text`는 사용자 언어로 번역된 표시 문자열이다. **`correctChoice`·`explanation`은 조회 응답에 포함하지 않는다**(채점 전 정답 노출 금지).
 3. **`POST /api/v1/quizzes/{quizId}/answer`가 서버 저장 정답과 대조해 채점한다.** 요청 `{ selectedChoice: "A|B|C|D" }`, 응답 `200 OK`. 서버가 해당 `quizId` 도큐먼트의 저장 `correctChoice`와 대조해 — 정답이면 `data = { quizId, selectedChoice, correct: true, explanation }`, 오답이면 `data = { quizId, selectedChoice, correct: false, correctChoice, explanation }`(`explanation` = 해설, 사용자 언어로 번역)로 응답한다. **`explanation`은 정답·오답 모두 반환**하고(#148 — 정답이어도 왜 그것이 정답인지 학습할 수 있어야 한다), **`correctChoice`는 오답에만** 반환한다(정답이면 `selectedChoice`가 곧 정답이라 불필요). **무상태·멱등·무제한**이며 **제출 기록·포인트를 남기지 않는다**(`201 Created`·`Location` 없음, 같은 요청을 반복해도 동일 결과).
 4. **i18n은 진단 방식을 재사용한다([ADR-0029](./0029-diagnosis-i18n-strategy.md)).** 문제 지문(`question`)·각 보기 텍스트(`choices[].text`)·해설(`explanation`)을 문항 도큐먼트 안에 **언어 코드를 키로 하는 맵**(`Map<lang, String>`, 예: `{ "en": …, "ja": …, "ko": … }`)으로 인라인 임베드한다. 표시 언어는 `user` 모듈 공개 query `getLanguage(userId)`(`users.lang`이 있으면 그 값, 없으면 `en`; [ADR-0029](./0029-diagnosis-i18n-strategy.md) #141 개정으로 국가→언어 도출은 폐기)로 취득한다. **보기 키 `A`~`D`는 언어 불변**이며 채점은 키로 수행한다(어느 언어로 표시돼도 같은 키로 채점).
-5. **영속은 MongoDB `quizzes` 문서 카탈로그다([ADR-0005](./0005-polyglot-persistence.md) 정합).** 퀴즈는 콘텐츠/문서라 진단 `diagnosisQuestions`([ADR-0028](./0028-diagnosis-questions-catalog-store.md))와 동일한 방식으로 MongoDB `quizzes` 컬렉션에 저장한다 — 각 도큐먼트가 `correctChoice`(A~D 키)와 지문·보기·오답 사유의 언어-키 맵, `active` 플래그를 담는다. **제출 테이블·포인트 테이블은 두지 않는다**(무상태 채점). 시드는 Mongock `@ChangeUnit`으로 적재하며, `active` 불리언이 랜덤 대상 풀을 게이팅한다(비활성 문항은 랜덤에서 제외).
+5. **영속은 MongoDB `quizzes` 문서 카탈로그다([ADR-0005](./0005-polyglot-persistence.md) 정합).** 퀴즈는 콘텐츠/문서라 진단 `diagnosisQuestions`([ADR-0028](./0028-diagnosis-questions-catalog-store.md))와 동일한 방식으로 MongoDB `quizzes` 컬렉션에 저장한다 — 각 도큐먼트가 `correctChoice`(A~D 키)와 지문·보기·오답 사유의 언어-키 맵, `active` 플래그를 담는다. **제출 테이블·포인트 테이블은 두지 않는다**(무상태 채점). 시드는 정본 시드 JSON 주입으로 적재하며, `active` 불리언이 랜덤 대상 풀을 게이팅한다(비활성 문항은 랜덤에서 제외).
 6. **제거를 명시한다.** 다음은 재설계로 **삭제**한다 — 오늘의 퀴즈/`daily`·`today` 개념, 하루 1회 제한, `(userId, quizDate)` unique 제약, `quizDate`·`submittedAt` 필드, 모든 포인트(`QUIZ_CORRECT`, `/points/summary`·`/points/histories`, `PointHistory`, `PointReason`, `totalPoint`·`earnedPoint`·`amount`), `201 Created` + `Location`, 제출 영속, `QUIZ_NOT_TODAY(422)`·`QUIZ_ALREADY_SUBMITTED(409)`.
 7. **에러코드를 재정의한다.** `QUIZ_NOT_FOUND(404)`(`quizId` 부재 또는 랜덤 조회 시 활성 풀이 비어 있음), `INVALID_INPUT(400)`(`selectedChoice`가 A~D가 아님), `MALFORMED_REQUEST(400)`, `UNAUTHENTICATED`/`TOKEN_EXPIRED(401)`, `AUTH_ONBOARDING_REQUIRED(403)`(비활성 사용자 — 온보딩 미완, [01-auth-onboarding](../api/specs/01-auth-onboarding.md) 교차 참조). `QUIZ_NOT_TODAY`·`QUIZ_ALREADY_SUBMITTED`는 **폐기**한다.
 
@@ -55,11 +55,11 @@ Proposed (2026-07-02)
   - `gamification → user` **동기 의존**이 생긴다(표시 언어 query `getLanguage`). 추후 서비스 분해 시 원격 호출이 되어 가용성 결합·타임아웃 처리가 필요하다([ADR-0002 Decision 7](./0002-inter-module-communication-via-events.md)).
   - 번역이 도큐먼트에 임베드돼 **신규 언어 추가 시 각 `quizzes` 도큐먼트의 언어-키 맵을 손봐야** 한다(언어별 행 추가가 아니라 맵 키 추가). 누락 언어 키는 `en`으로 폴백되므로 커버리지를 관측해야 한다.
   - **무상태**라 사용자의 학습 이력·정답률·진척을 서버가 보유하지 않는다 — 훗날 게이미피케이션·통계를 붙이려면 제출/집계 저장을 별도로 재도입해야 한다.
-  - 카탈로그 **시드/적재(Mongock)·번역 커버리지 관측**이 필요하고, MongoDB **도입 선행**이 필요하다.
+  - 카탈로그 **시드 주입·번역 커버리지 관측**이 필요하고, MongoDB **도입 선행**이 필요하다.
 - **후속 작업**
   - (완료) [specs/06-gamification.md](../api/specs/06-gamification.md)·[domain-model 8절](../architecture/domain-model.md)·[database-design 4-8절](../database/database-design.md)·[us-6-* 시퀀스 다이어그램](../architecture/sequence-diagrams/06-gamification/README.md)을 무상태 랜덤 학습 퀴즈로 갱신.
   - (완료) 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`)를 무상태 랜덤 채점·`quizzes` 카탈로그 조회로 **재구현**(오늘의 퀴즈·포인트·제출 코드 제거).
-  - (완료) `quizzes` 컬렉션 스키마 확정 + Mongock `@ChangeUnit` 시드(`question`·`choices[].text`·`explanation`을 언어-키 맵으로, `correctChoice`·`active` 포함).
+  - (완료) `quizzes` 컬렉션 스키마 확정 + 정본 시드 `quizzes.json`(`question`·`choices[].text`·`explanation`을 언어-키 맵으로, `correctChoice`·`active` 포함). 적재는 운영자 주입이다([ADR-0032](./0032-mongodb-migration-runner.md) §4).
   - (완료) `user` 모듈 표시 언어 조회 공개 query(`getLanguage`, `@NamedInterface`) 재사용 + `gamification` `allowedDependencies`에 `user :: api` 등록.
   - (완료 → **#181로 철회**) `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅 + 응용 계층 `userType=TENANT` 검사(`TenantOnlyException` → `403 FORBIDDEN`). 현재는 `permitAll` + 게이트 없음(위 Status 註).
   - 이슈 #78 본문을 무상태 랜덤 학습 퀴즈로 갱신(미완).

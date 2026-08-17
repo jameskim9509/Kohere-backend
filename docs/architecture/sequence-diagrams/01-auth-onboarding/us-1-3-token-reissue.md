@@ -15,7 +15,7 @@ sequenceDiagram
     Note over SEC: JWT 검증 (서명·만료·클레임)
     SEC-->>C: 401 TOKEN_EXPIRED
     Note over C: 저장된 refreshToken으로 재발급 시도
-    C->>AUTH: POST /api/v1/auth/reissue<br/>{ refreshToken }
+    C->>AUTH: POST /api/v1/auth/reissue<br/>{ refreshToken } — 앱은 본문(웹은 쿠키, us-1-12)
     Note over AUTH: refreshToken 만료·위조·무효화·재사용 검증
     AUTH->>DB: refreshToken 해시 조회·상태 확인
     DB-->>AUTH: 유효·무효
@@ -44,7 +44,8 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- 보호 API 호출 시 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증하다 만료를 감지해 `401 TOKEN_EXPIRED`를 반환하면, 앱이 저장된 `refreshToken`으로 `auth 모듈`의 `POST /api/v1/auth/reissue`를 호출한다(재발급 엔드포인트는 인증 불필요 — SEC를 거치지 않고 본문 refresh로 처리).
+- 보호 API 호출 시 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증하다 만료를 감지해 `401 TOKEN_EXPIRED`를 반환하면, 앱이 저장된 `refreshToken`으로 `auth 모듈`의 `POST /api/v1/auth/reissue`를 호출한다(재발급 엔드포인트는 인증 불필요 — SEC를 거치지 않는다).
+  > **이 문서는 앱(본문) 채널을 그린다.** 서버는 refresh를 **쿠키 우선 · 본문 fallback**으로 읽고 응답도 들어온 채널로 되돌려준다 — 쿠키로 왔으면 회전된 refresh를 `Set-Cookie`로 내리고 본문 `refreshToken`은 `null`이다. 그래서 앱 동작은 이 그림 그대로이며(v1 유지), 웹 채널은 [us-1-12-web-login](us-1-12-web-login.md)이 그린다. 쿠키·본문 어느 쪽에도 값이 없으면 `400 INVALID_INPUT`(`errors[].field=refreshToken`)이다([ADR-0048](../../../adr/0048-web-refresh-token-httponly-cookie.md) · 스펙 §6).
 - 서버는 Redis에서 **refreshToken 해시를 조회·상태 확인**해 유효하면 `200 OK`로 새 access·refresh(항상 회전) 토큰을 발급하면서 **제출 refresh를 ROTATED 전이(보존)하고 새 ACTIVE refresh를 저장**한다. 이후 새 accessToken으로 보호 API를 재호출하면 다시 SEC가 JWT를 검증한 뒤 모듈로 전달한다.
 - 검증 실패는 코드상 두 처리로 갈린다. **재사용 탐지**(`status = ROTATED` — 회전된 옛 refresh 재등장)만 Redis에 **사용자 refresh 일괄 무효화**를 실행한 뒤 `401 AUTH_INVALID_REFRESH_TOKEN`을 반환하고, **이미 무효화된 REVOKED**(로그아웃·탈퇴)·**만료**(ACTIVE이나 `expiresAt` 경과)·**위조·미존재**(해시 매칭 레코드 없음)는 추가 쓰기 없이 `401`만 반환해 다른 기기 세션을 보존한다. 어느 쪽이든 클라이언트는 재로그인으로 유도된다. (`AuthService.reissue`는 `status == ROTATED`에서만 `revokeAllByUserId`를 호출한다.)
 

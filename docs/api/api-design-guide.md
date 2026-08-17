@@ -28,17 +28,54 @@
 
 ## 2. 엔드포인트 규약
 
-- 모든 API는 **`/api/v1`** 프리픽스를 가진다. 하위 호환이 깨지는 변경은 `/api/v2`로 올린다.
+- 모든 API는 **경로 프리픽스로 버전을 가진다.** 신규 엔드포인트의 기본은 `/api/v1`이고, 하위 호환이 깨지는 변경만 `/api/v2`로 올린다. 어느 리소스가 어느 버전에 있는지와 구 버전을 끝내는 방식은 **§2-1이 정본**이다.
 - 리소스 식별자는 경로 변수로(`/listings/{listingId}`), 조회 조건은 쿼리 파라미터로 둔다.
 - 컬렉션과 단건을 구분한다: `GET /listings`(목록) ↔ `GET /listings/{id}`(단건).
 - 중첩은 **소유 관계가 분명할 때 1단계까지만** 허용한다. (`GET /posts/{postId}/comments`) 그 이상 깊어지면 쿼리 파라미터로 평탄화한다.
+
+### 2-1. 버전 정책
+
+버전은 **경로 프리픽스로만** 표현한다(헤더·쿼리 파라미터 버전을 두지 않는다). 버전을 올리는 기준은 하나다 — **이미 출시된 앱이 그대로는 파싱할 수 없는 응답 구조 변경.** 필드 추가처럼 하위 호환이 유지되는 변경은 버전을 올리지 않고 기존 경로에서 처리한다.
+
+현재 두 버전이 병존한다.
+
+| 리소스 | `/api/v1` | `/api/v2` |
+| --- | --- | --- |
+| 진단 | 클라이언트 주도 흐름 — 그대로 동작(회원 전용) | 서버 주도 흐름 `/api/v2/diagnoses/*` — 앱이 쓰는 흐름([ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) |
+| 매물 등록 | 없음 | `POST /api/v2/listings`([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)) |
+| 매물 조회·찜·내 스코프 | **deprecated 스텁** — 아래 참조. `GET /api/v1/listings/places`만 그대로 동작한다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)) | **정본** — 목록·지도·키워드 검색·상세·찜 토글 `/api/v2/listings*`, `/api/v2/users/me/favorites`·`/api/v2/users/me/recent-listings` |
+| 그 외 전부 | 정본 | 없음 |
+
+매물 조회 계열은 v4 스키마 개편([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))으로 응답 구조가 바뀌어 버전을 올렸다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)). 엔드포인트별 상세는 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이다.
+
+#### 구 버전을 끝내는 방식 — 구조는 유지, 데이터는 0건
+
+버전을 올린 리소스의 v1은 **개정 전 응답 구조를 그대로 유지하되 데이터를 반환하지 않는다.** 저장소를 아예 조회하지 않는다.
+
+- 목록·검색 계열 → **빈 페이지**(`content: []`, `totalElements: 0`)
+- 단건 조회·상태 변경 계열 → 해당 도메인의 `*_NOT_FOUND`(404)
+- **그 데이터를 쓰지 않는 경로는 버전을 옮기지 않는다** — 매물에서는 `GET /api/v1/listings/places`(네이버 장소 검색)가 유일한 예외다
+
+**새 데이터로 옛 모양을 조립하지 않는다.** 없어진 필드를 `deposit: 0`·빈 재고 같은 값으로 채우면 구버전 앱이 날조된 값을 정상으로 표시한다. 빈 결과를 주면 구버전 앱은 "매물 없음" 화면을 보고 업데이트로 유도된다.
+
+구 버전 경로는 `deprecated`로 표기하되 **제거 시점은 정하지 않는다.** 스펙 문서·Swagger에는 「폐지됐다」 같은 변경 이력이 아니라 **현재 동작**("이 경로는 항상 빈 목록을 반환한다. 매물 데이터는 `/api/v2/listings`에서 조회한다")으로 적는다([ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md) description 작성 규약).
+
+#### 버전을 올릴 때 함께 하는 것
+
+- **`SecurityConfig` 매처를 새 경로에 다시 깐다.** 매처는 경로 문자열 기준이라 v1 매처가 v2를 덮지 않는다. 빠뜨리면 `anyRequest().authenticated()`로 떨어져 **공개여야 할 조회가 401**이 된다 — `GET /api/v2/listings`·`/api/v2/listings/*`는 `permitAll`이다. 같은 네임스페이스라도 메서드로 갈린다: `POST /api/v2/listings`(등록)는 `hasRole("USER")`다. 찜 토글·내 스코프처럼 회원 전용인 경로도 v2에 **다시 명시**한다(§6 인가 매처).
+- **공통 응답 래퍼는 버전과 무관하다.** `ApiResponseWrapper`는 `com.kohere` 전체를 대상으로 반환 타입 기준으로 감싸므로 새 버전 컨트롤러도 그대로 래핑된다([ADR-0013](../adr/0013-response-auto-wrapping.md)).
+- **문서 테스트의 스니펫 identifier와 오퍼레이션 상수를 버전별로 나눈다.** 안 나누면 `operationId` 중복으로 빌드가 깨지거나 한쪽 설명이 반대쪽에 붙는다([test-strategy](../convention/test-strategy.md) §3-4).
 
 ### 엔드포인트 표 형식 (각 API 스펙 문서가 따르는 형식)
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
-| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 | 선택 | 200 |
-| POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록 | 필수 | 201 |
+| GET | `/api/v2/listings/{listingId}` | 매물 상세 조회 | 선택 | 200 |
+| POST | `/api/v2/listings/{listingId}/favorite` | 찜 등록 | 필수 | 201 |
+| POST | `/api/v2/listings` | 매물 등록(임대인) | 필수(`ROLE_USER` · `userType=LANDLORD`) | 201 |
+| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 — **deprecated**(항상 404) | 선택 | — |
+
+deprecated된 경로도 **표에서 지우지 않는다.** 설명에 `deprecated`와 현재 동작을 함께 적는다 — 구버전 앱을 들고 있는 클라이언트 개발자가 계약을 확인할 곳이 여기뿐이다.
 
 상세 스펙은 [docs/api/specs/](./specs/)에 도메인별로 둔다.
 
@@ -137,9 +174,10 @@
 
 | 항목 | 규약 |
 | --- | --- |
-| 버전 | 경로 프리픽스 `/api/v1` |
+| 버전 | 경로 프리픽스 `/api/v1`·`/api/v2`. 신규는 `/api/v1`이 기본이고 하위 호환이 깨지는 변경만 버전을 올린다. 구 버전은 구조를 유지한 채 **빈 결과**로 끝낸다(§2-1) |
 | 인증 헤더 | `Authorization: Bearer <accessToken>` (JWT). 갱신은 `POST /api/v1/auth/reissue` |
 | 인증 필요 표기 | 각 엔드포인트에 인증 **필수 / 선택 / 불필요**를 명시 |
+| 인가 매처 | 인증이 필요한 신규 경로는 `SecurityConfig`에 **명시 매처**(예: `hasRole("USER")`)를 둔다. `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 역할 조건(예: `userType=LANDLORD`)은 서비스에서 재검사해 `403` |
 | 날짜·시각 | **ISO-8601 UTC** (`2026-06-15T08:30:00Z`). 서버 저장은 UTC, 표시 변환은 클라이언트 책임. 날짜만은 `YYYY-MM-DD` |
 | 식별자 | 리소스 ID는 서버 생성. 본문/경로에서 숫자(Long) 또는 문자열로 일관되게 노출 |
 | 금액 | 원(KRW) 정수, 소수점 없음 (`budget: 500000`) |
@@ -152,8 +190,10 @@
 
 ## 체크리스트
 
-- [ ] 경로가 `/api/v1` + 복수 명사 + kebab-case이고 동사를 쓰지 않는다
+- [ ] 경로가 `/api/v1`(하위 호환이 깨져 신설했다면 `/api/v2`) + 복수 명사 + kebab-case이고 동사를 쓰지 않는다
+- [ ] 버전을 올렸다면 §2-1을 따랐다 — 구 버전은 **구조 유지 + 빈 결과**(목록은 빈 페이지, 단건은 404)이고, 새 경로에 `SecurityConfig` 매처를 다시 깔았고, 문서 테스트 identifier·오퍼레이션 상수를 버전별로 나눴다
 - [ ] 메서드·성공 status가 §1 표를 따른다 (생성 201 + Location, 삭제 204)
+- [ ] 인증이 필요한 경로는 `SecurityConfig`에 명시 매처(`hasRole("USER")` 등)를 두고, 역할·소유권 조건은 서비스에서 재검사한다(§6)
 - [ ] 응답을 공통 래퍼(`success`/`data`/`error`)로 감쌌고 엔티티를 직접 노출하지 않는다
 - [ ] 목록은 오프셋/커서 중 하나를 명시하고 §4 구조를 따른다
 - [ ] 입력은 Bean Validation으로 검증하고, 실패 시 [error-response-guide](./error-response-guide.md)의 `INVALID_INPUT`을 반환한다

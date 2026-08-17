@@ -47,6 +47,11 @@ app:
     refresh-pepper: ${REFRESH_PEPPER:local-dev-refresh-pepper} # SHA-256(token+pepper) (ADR-0006)
     email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 이메일 인증번호 해시 pepper
     phone-pepper: ${PHONE_PEPPER:local-dev-phone-pepper} # 연락처 인증번호 해시 pepper
+    web:
+      refresh-cookie:
+        # 로컬은 평문 http라 Secure 쿠키를 브라우저가 저장·전송하지 않는다 → 재발급이 조용히 깨지고 서버 로그엔
+        # "refresh 없음"으로만 남는다. base는 안전한 쪽(true)을 기본으로 두고 여기서만 내린다(ADR-0048 §2).
+        secure: false
     test-login:
       # 테스트 마스터 로그인 기능 — 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다.
       # localhost 전용이라 폴백 시크릿 무해(JWT_SECRET 로컬 폴백과 동일 논리).
@@ -90,3 +95,27 @@ app:
       # 로컬은 프로젝트 루트 .env에서 주입한다. 빈 값이면 다른 기능은 기동되고 장소 검색 호출만 502로 실패한다.
       client-id: ${NAVER_SEARCH_CLIENT_ID:}
       client-secret: ${NAVER_SEARCH_CLIENT_SECRET:}
+    geocode:
+      # NCP 콘솔에서 발급한 Maps 자격증명이다 — 위 search(네이버 Developers)와 다른 값이니 섞어 넣지 않는다.
+      # 빈 값이면 다른 기능은 기동되고 주소 검색 호출만 502로 실패한다.
+      client-id: ${NAVER_GEOCODE_CLIENT_ID:}
+      client-secret: ${NAVER_GEOCODE_CLIENT_SECRET:}
+  kakao:
+    local:
+      # 카카오 개발자 콘솔에서 발급한 REST API 키다 — 위 naver(Developers·NCP)와 다른 값이니 섞어 넣지 않는다.
+      # 빈 값이면 다른 기능은 기동되고 역 검색 호출만 502로 실패한다.
+      rest-api-key: ${KAKAO_REST_API_KEY:}
+  images:
+    # 매물 사진 저장소(ADR-0041) — docker compose의 MinIO를 쓴다. S3와 같은 API라 배포 환경과 같은 어댑터가 돌아간다.
+    #   인프라만 띄웠다면: docker compose up -d minio minio-init
+    # MinIO를 안 띄우고 다른 기능만 볼 땐 APP_IMAGES_ENABLED=false로 스텁 폴백(업로드 없이 URL만 생성)을 쓴다.
+    enabled: ${APP_IMAGES_ENABLED:true}
+    bucket: ${APP_IMAGES_BUCKET:kohere-local-images}
+    # 컨테이너 안(app 서비스)에서는 minio:9000, 호스트에서 bootRun 할 땐 localhost:9000이다.
+    endpoint: ${APP_IMAGES_ENDPOINT:http://localhost:9000}
+    # MinIO는 가상 호스트 스타일을 쓰면 bucket.localhost를 DNS로 찾지 못해 실패한다.
+    path-style-access: true
+    access-key: ${MINIO_ROOT_USER:minioadmin}
+    secret-key: ${MINIO_ROOT_PASSWORD:minioadmin}
+    # 응답 URL을 로컬 브라우저에서 그대로 열 수 있게 스킴·버킷 경로까지 지정한다(배포는 cdn-domain을 쓴다).
+    public-base-url: ${APP_IMAGES_PUBLIC_BASE_URL:http://localhost:9000/kohere-local-images}
