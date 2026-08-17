@@ -1,0 +1,434 @@
+# Kohere — 임대인 웹(로컬 자격증명) 인증 로컬 수동 테스트 — #229
+# 흐름: 가입용 SMS 발송 → SMS 확인 → 회원가입 → 로그인 → 재발급(쿠키) → 로그아웃(쿠키)
+# 스펙: docs/api/specs/01-auth-onboarding.md §1-1·§1-2·§1-3·§1-4·§6·§7
+# 유저스토리: US-1-11(웹 회원가입) · US-1-12(웹 로그인) · US-1-13(가입 전 연락처 인증) · US-1-15(앱 온보딩 시 병합)
+# 결정: ADR-0047(웹 로컬 자격증명 분리 · 휴대폰 번호 계정 공유) · ADR-0048(refresh HttpOnly 쿠키 채널)
+# (앱 소셜 트랙은 auth-onboarding-landlord.http — 이쪽은 소셜 로그인이 없다)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis
+#      (인증 흐름 자체는 mysql·redis 만 쓰지만 앱 기동에 Mongock 마이그레이션이 붙어 mongo 가 필요하다.
+#       메일·MinIO 는 이 흐름에 필요 없다 — 연락처 인증은 SMS 이고 사진 업로드가 없다.)
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#   3) 아래 @phone·@email 을 이 실행에서 처음 쓰는 값으로 바꾼다(둘 다 유일해야 한다 — 아래 「재실행」 참고).
+#   4) 0번부터 순서대로 "Send Request" 를 클릭한다. 1번 발송 뒤 **콘솔에서 인증번호를 읽어** @code 에 넣는다.
+#      토큰은 {{login.response.body.$.data.accessToken}} 처럼 이름붙은 응답으로 이어진다.
+#
+# ★★★ 인증번호는 응답에 없다 — "앱 콘솔 로그"에서 읽는다 ★★★
+#   로컬은 app.solapi.enabled=false 라 LoggingVerificationSmsSender 가 실제 발송 대신 WARN 한 줄을 찍는다.
+#   1번 발송 후 bootRun 콘솔에서 아래 형태의 줄을 찾아 **대괄호 안 6자리**를 @code 에 입력한다:
+#     [DEV SMS] SOLAPI 비활성 — 연락처 ***5678 인증번호 [482913] (실발송 안 함). 실연동은 app.solapi.enabled=true.
+#   (연락처는 뒤 4자리만 남기고 마스킹되므로, 여러 번호를 동시에 테스트 중이면 뒤 4자리로 줄을 구분한다.)
+#
+#   ※ 앱스토어 심사용 고정 인증번호 우회(app.auth.fixed-verification)는 **이 경로에 적용되지 않는다.**
+#     그 정책은 userId + Google 소셜 계정으로 판정하는데(FixedVerificationPolicy) 웹 가입은 둘 다 없는 단계이고,
+#     가입용 발급기(SignupPhoneVerificationCodeIssuerImpl)는 그 우회 빈을 아예 참조하지 않는다 —
+#     프로파일과 무관하게 **항상 실제 발급**한다. 그래서 콘솔이 인증번호를 얻는 유일한 경로다.
+#
+# ─────────────────────────── refresh 토큰은 쿠키로만 내려온다 (ADR-0048) ───────────────────────────
+# 가입(3)·로그인(4) 응답 **본문에는 refreshToken 이 없다.** 서버는 `Set-Cookie` 로만 내린다:
+#   Set-Cookie: refreshToken=rt_...; Path=/api/v1/auth; Max-Age=1209600; HttpOnly; SameSite=Lax
+#   (속성이 찍히는 순서는 다를 수 있다 — 값만 보면 된다.)
+#   · local 프로파일에서만 Secure 가 빠진다(base 기본값은 true) — 로컬이 평문 http 라서다.
+#   · Path=/api/v1/auth 라 재발급·로그아웃에만 실리고 /users/me 같은 다른 API 에는 딸려가지 않는다.
+#
+# **REST Client 는 쿠키를 실제로 저장·재전송한다.** 설정 `rest-client.rememberCookiesForSubsequentRequests`
+# 가 기본값 `true` 이고, 응답의 Set-Cookie 를 쿠키 저장소에 넣어 같은 호스트의 다음 요청에 자동으로 붙인다.
+# 즉 6-a·7-a 는 **Cookie 헤더를 손으로 적지 않아도** 동작한다. 다만 조건이 두 가지 붙는다:
+#   · 그 설정이 꺼져 있으면(설정에서 검색해 확인) 자동 전송이 없다 → 아래 「수동으로 나르기」로 간다.
+#   · 쿠키 속성을 그대로 따르므로 **Secure 쿠키는 http 로 보내지 않는다.** @baseUrl 을 local 프로파일이 아닌
+#     환경(secure=true)으로 바꿔 쓰면 6-a·7-a 가 400 INVALID_INPUT(refreshToken 없음)이 된다.
+#   · HttpOnly 는 브라우저 스크립트를 막는 속성이라 REST Client 에는 영향이 없다.
+#
+# 「수동으로 나르기」 — 본문 fallback(6-b·7-b)을 쓰는 경우:
+#   ⚠️ **쿠키가 저장돼 있으면 본문은 무시된다.** 서버가 쿠키를 먼저 보고 있으면 그 값을 쓰기 때문에
+#      (AuthController: 쿠키 우선 · 본문 fallback), 3·4번을 이미 돌린 상태에서 6-b 를 보내면 붙여넣은
+#      @refreshToken 이 아니라 저장된 쿠키로 처리되고 응답도 쿠키 채널로 나간다. 본문 채널을 실제로
+#      보려면 둘 중 하나가 먼저다:
+#        · `rest-client.rememberCookiesForSubsequentRequests` 를 끈다, 또는
+#        · 7-a(쿠키 로그아웃)를 먼저 보내 Max-Age=0 삭제 쿠키로 저장소를 비운다.
+#   ① 3번(또는 4번) 응답 패널의 **Set-Cookie 헤더**에서 `refreshToken=` 뒤의 `rt_...` 부분만 복사한다
+#      (본문에는 없다 — 헤더에서 읽어야 한다).
+#   ② 아래 @refreshToken 에 붙여넣고 **6-b·7-b(본문 fallback)** 를 쓴다.
+#   ③ 본문으로 보내면 응답도 본문 채널이 된다 — 회전된 refreshToken 이 **응답 본문에** 담기고(앱과 같은 모양),
+#      로그아웃은 삭제 쿠키(Max-Age=0)를 내리지 않는다. 쿠키로 보냈을 때와 응답 모양이 다른 것이 정상이다.
+#   · `Cookie: {{signup.response.headers.Set-Cookie}}` 처럼 헤더를 통째로 넘기지 않는다 — 그 값에는
+#     `; Path=...; HttpOnly` 가 붙어 있어 서버가 쿠키 목록으로 파싱하다 깨질 수 있다. 값만 잘라 쓴다.
+#
+# ─────────────────────────── 재실행 · 데이터 유일성 ───────────────────────────
+# 한 번 성공한 뒤 그대로 다시 돌리면 3번이 409 다. 유일해야 하는 값이 둘이다:
+#   · @email  → local_accounts.email UNIQUE (중복 시 409 AUTH_EMAIL_ALREADY_REGISTERED)
+#   · @phone  → users.phone_number UNIQUE (같은 번호에 이미 웹 계정이 있으면 409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS)
+# 재실행할 때는 둘 다 새 값으로 바꾸거나 로컬 DB 를 비운다(docker compose down -v 후 재기동).
+#
+# ─────────────────────────── 계정 연동을 눈으로 보려면 ───────────────────────────
+# auth-onboarding-landlord.http 를 **같은 @phone** 으로 먼저 완주해 앱 임대인 계정을 만들어 두면,
+# 3번 응답이 `linked: true` 로 바뀌고 `users` 행이 새로 생기지 않는다(자격증명만 붙는다 — US-1-11).
+# 이때 응답의 email·name 은 폼에 적은 값이 아니라 **users 의 값(소셜 진본)** 이다 — 표시 규칙이라 의도된 동작이다.
+# 반대 방향(웹 먼저 → 앱 온보딩에서 병합, US-1-15)은 3번까지 마친 뒤 auth-onboarding-landlord.http 를
+# 같은 번호로 돌리면 된다 — 임대인 온보딩 응답의 user.id 가 웹 계정 id 로 바뀐다.
+
+@baseUrl = http://localhost:8080
+
+# ↓ 이 실행에서 처음 쓰는 휴대폰 번호(하이픈 있어도 된다 — 서버가 숫자만 남긴다)
+@phone = 01012345678
+# ↓ 웹 로그인 ID. local_accounts.email UNIQUE 라 재실행마다 새 값이어야 한다
+@email = kim@work.com
+# ↓ 비밀번호 정책: 영문자 1+ · 숫자 1+ · ASCII 특수문자 1+ · 길이 8~10 · 공백/한글 불가
+@password = Kohere1!
+@name = 김임대
+@birthDate = 1990-01-01
+
+### 0. 헬스 체크 (인증 불필요)
+GET {{baseUrl}}/actuator/health
+
+### 1. 가입용 인증번호 발송 (비로그인 · permitAll) — 발송 후 "앱 콘솔 로그"의 [DEV SMS] 줄에서 6자리를 @code 에 입력
+#    번호 키 챌린지(signup-phone:code:{정규화번호}) — 앱 트랙(userId 키)과 다른 경로다.
+#    한도: 재발송 60초 · 같은 번호 5회/1시간 · 같은 IP 20회/1시간 → 초과 시 429 TOO_MANY_REQUESTS.
+#    가입 이력 유무와 무관하게 같은 응답이다(계정 존재 여부 비노출). 발송 실패면 502 이고 챌린지를 저장하지 않는다.
+# @name signupSmsSend
+POST {{baseUrl}}/api/v1/auth/phone/signup/verification-code
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{phone}}"
+}
+
+### --- 앱 콘솔 [DEV SMS] 로그에서 받은 인증번호로 교체 ---
+@code = 000000
+
+### 2. 가입용 인증번호 확인 (비로그인) — 성공 시 검증 마커(TTL 30분) 저장. 그 안에 3번을 제출해야 한다
+#    불일치·만료·시도 5회 초과·챌린지 부재를 **모두 422 AUTH_PHONE_VERIFICATION_FAILED** 한 코드로 응답한다
+#    (앱 트랙 §4-2 가 시도 초과를 429 로 가르는 것과 다르다 — 비로그인 경로라 인증 시도 상태를 노출하지 않는다).
+# @name signupSmsVerify
+POST {{baseUrl}}/api/v1/auth/phone/signup/verify
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{phone}}",
+  "code": "{{code}}"
+}
+
+### 3. 회원가입 (비로그인) — 한 트랜잭션으로 ACTIVE 까지 완주. refresh 는 응답 본문이 아니라 Set-Cookie 로 온다
+#    게이트 순서: ① 인증 마커 부재 422 → ② 필수 약관 미동의 422 → ③ 이메일 중복 409 → ④ 이미 웹 계정 있음 409.
+#    응답의 linked 가 연동 여부다 — 같은 번호의 앱 임대인 계정을 찾으면 true(users 행을 만들지 않는다).
+#    ★ 응답 패널의 Set-Cookie 헤더를 확인한다: refreshToken=rt_...; Path=/api/v1/auth; HttpOnly; SameSite=Lax
+# @name signup
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "{{phone}}",
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### 4. 로그인 (비로그인) — 이메일·비밀번호. 응답은 3번에서 linked 만 뺀 모양이고 refresh 는 다시 쿠키로 온다
+#    잠금 판정이 비밀번호 대조보다 먼저다 — 잠긴 계정은 비밀번호가 맞아도 423 이다.
+#    시도 레이트리밋이 조회·해시보다 먼저 걸린다: 같은 IP 30회/1시간 · 같은 이메일 10회/1시간 → 429.
+# @name login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+### 5. 내 프로필 조회 (4번 access 토큰) — userType=LANDLORD · country=KR · lang=ko(서버 고정)
+#    연동된 계정이면 email 이 로그인에 쓴 주소가 아니라 소셜 진본일 수 있다(표시 규칙).
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 6-a. 토큰 재발급 — 쿠키 채널(정상 경로). **본문이 없다** — 쿠키를 REST Client 가 자동으로 붙인다
+#    쿠키로 온 요청은 응답 본문의 refreshToken 이 null 이고 회전된 값은 Set-Cookie 로만 내려온다.
+#    항상 회전한다 — 옛 refresh 를 다시 내면 재사용 탐지로 그 사용자의 전 세션이 무효화된다(401).
+#    쿠키가 붙지 않으면 400 INVALID_INPUT(errors[].field=refreshToken) 이다 → 6-b 로 간다.
+# @name reissue
+POST {{baseUrl}}/api/v1/auth/reissue
+
+### --- 6-b 를 쓸 때만: 3·4·6-a 응답의 Set-Cookie 에서 `refreshToken=` 뒤 값만 복사해 붙여넣는다 ---
+@refreshToken = rt_PASTE_FROM_SET_COOKIE_HEADER
+
+### 6-b. 토큰 재발급 — 본문 fallback(수동). 쿠키 자동 전송이 안 되는 환경용이며 앱이 쓰는 채널과 같다
+#    본문으로 오면 응답도 본문 채널이라 회전된 refreshToken 이 data 안에 담긴다(쿠키를 내리지 않는다).
+#    6-a 를 이미 성공시켰다면 그때 회전돼 이 값은 무효다 — 최신 Set-Cookie 값으로 다시 채운다.
+POST {{baseUrl}}/api/v1/auth/reissue
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### 7-a. 로그아웃 — 쿠키 채널. **access 토큰이 필요하다**(logout 은 permitAll 이 아니라 ROLE_USER 다)
+#    204 No Content + 삭제 쿠키(refreshToken=; Max-Age=0)를 함께 내린다 — 서버에서만 지우면 브라우저에
+#    죽은 쿠키가 남아 다음 재발급이 401 이 된다. 이미 무효화된 토큰으로 재호출해도 멱등하게 204 다.
+#    (6-a 를 돌렸다면 쿠키는 회전된 최신 값이라 그대로 로그아웃된다.)
+POST {{baseUrl}}/api/v1/auth/logout
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 7-b. 로그아웃 — 본문 fallback(수동). 본문으로 온 요청에는 삭제 쿠키를 내리지 않는다(앱 동작 그대로)
+POST {{baseUrl}}/api/v1/auth/logout
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+# ══════════════════════════════ 에러 케이스 ══════════════════════════════
+# 아래는 각각 독립 요청이다. 순서대로 다 보내지 말고 필요한 것만 클릭한다 —
+# 특히 E6(계정 잠금)은 **되돌릴 수 없다**(해제 API 가 없다 — 그 절의 경고를 먼저 읽는다).
+
+# ── E1: 이메일 중복(409) ──
+# 가입 게이트 순서가 「인증 마커 → 약관 → 이메일 중복 → 웹 계정 중복」이라, 이메일 중복까지 도달하려면
+# **그 요청이 쓰는 번호의 인증 마커가 살아 있어야 한다.** 그래서 다른 번호로 1·2번을 한 번 더 통과시킨다.
+# (마커 없이 보내면 409 가 아니라 422 AUTH_PHONE_NOT_VERIFIED 가 먼저 나온다.)
+
+@altPhone = 01099998888
+
+### E1-a. (선행) 다른 번호로 가입용 인증번호 발송 — 콘솔에서 6자리를 읽어 @altCode 에 넣는다
+POST {{baseUrl}}/api/v1/auth/phone/signup/verification-code
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{altPhone}}"
+}
+
+### --- 앱 콘솔 [DEV SMS] 로그(뒤 4자리 8888)에서 받은 인증번호로 교체 ---
+@altCode = 000000
+
+### E1-b. (선행) 다른 번호 인증번호 확인
+POST {{baseUrl}}/api/v1/auth/phone/signup/verify
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{altPhone}}",
+  "code": "{{altCode}}"
+}
+
+### E1-c. 이메일 중복 → 409 AUTH_EMAIL_ALREADY_REGISTERED
+#    번호는 새 값(@altPhone)이라 연동·중복에 걸리지 않고 **이메일만** 겹친다.
+#    검사 대상은 local_accounts.email 뿐이다 — users.email 은 보지 않는다(소셜과 같은 이메일로 가입하는
+#    것이 가장 흔한 정상 경로라 거기까지 유일하게 걸면 본인이 본인 이메일로 가입하다 막힌다).
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "{{altPhone}}",
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+# ── E2: 이미 웹 계정이 있는 번호(409) ──
+# 3번을 성공시킨 뒤 **같은 @phone 의 마커를 다시 만들어야** 한다 — 가입 성공이 마커를 소비(삭제)했기 때문이다.
+# 재발송 쿨다운 60초가 지났는지, 같은 번호 5회/1시간 한도에 여유가 있는지만 확인하고 보낸다.
+
+### E2-a. (선행) 같은 번호로 인증번호 재발송 — 콘솔에서 새 6자리를 읽어 @code 를 갱신한다
+POST {{baseUrl}}/api/v1/auth/phone/signup/verification-code
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{phone}}"
+}
+
+### E2-b. (선행) 같은 번호 인증번호 확인 — 위에서 갱신한 @code 를 쓴다
+POST {{baseUrl}}/api/v1/auth/phone/signup/verify
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{phone}}",
+  "code": "{{code}}"
+}
+
+### E2-c. 이미 웹 계정이 있는 번호 → 409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS
+#    번호로 계정을 찾은 것까지는 linked=true 와 같고, 그 계정에 이미 자격증명이 붙어 있어 갈린다.
+#    남은 동작은 기존 자격증명 덮어쓰기(=로그인 ID 교체)뿐이라 가입이 할 일이 아니다 → 로그인(4)으로 간다.
+#    응답에는 그 계정의 이메일을 **마스킹해서도 싣지 않는다**(code·message 만 — #229 D4).
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "{{phone}}",
+  "email": "another-{{email}}",
+  "password": "{{password}}",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### E3. 인증 마커 없음 → 422 AUTH_PHONE_NOT_VERIFIED
+#    1·2번을 거치지 않은 번호로 바로 가입한다. **계정 생성도 연동도 하지 않는다** — 번호는 비밀이 아니므로
+#    인증 없이 번호만으로 자격증명을 붙일 수 있으면 그 계정의 매물·예약·신청자 PII 가 통째로 넘어간다.
+#    마커는 TTL 30분이고 가입 성공 시 소비(삭제)되므로, 2번 후 30분이 지났거나 이미 가입했으면 같은 코드다.
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "01077776666",
+  "email": "never-verified@work.com",
+  "password": "{{password}}",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### E4. 비밀번호 정책 위반 → 400 INVALID_INPUT (errors[].field=password)
+#    아래 "kohere12" 는 특수문자가 없다. 다른 위반도 같은 코드다 — 8자 미만·11자 이상·공백 포함·한글 포함.
+#    (형식 위반이라 400 이고, 약관 미동의 같은 비즈니스 규칙 위반은 422 다.)
+#    ※ 게이트 순서상 Bean Validation 이 가장 먼저라 인증 마커가 없어도 이 400 이 먼저 난다.
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "{{phone}}",
+  "email": "weak-password@work.com",
+  "password": "kohere12",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### E4-1. 필수 약관 미동의 → 422 AUTH_REQUIRED_AGREEMENT_MISSING
+#    @NotNull 은 필드의 "존재"만 강제한다 — false 는 형식이 아니라 규칙 위반이라 400 이 아니라 422 다.
+#    (인증 마커 게이트가 먼저이므로, 마커가 없으면 422 AUTH_PHONE_NOT_VERIFIED 가 대신 나온다.)
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "{{phone}}",
+  "email": "no-terms@work.com",
+  "password": "{{password}}",
+  "termsOfServiceAgreed": false,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### E5. 비밀번호 불일치 → 401 AUTH_INVALID_CREDENTIALS
+#    **등록되지 않은 이메일도 똑같은 401 이다** — 응답을 가르면 그 자체가 "이 이메일은 가입돼 있다"는
+#    계정 열거 신호가 된다. 그래서 계정이 없어도 서버는 비밀번호를 한 번 해싱하고 버린다(타이밍 차 제거).
+#    ※ 이 요청은 **본 계정(@email)의 실패 카운터를 1 올린다.** 5번 누르면 본 계정이 잠긴다(해제 불가) —
+#      한 번만 눌러 401 을 확인하고, 반복은 E6 의 일회용 계정으로 한다. 성공 로그인은 카운터를 0으로 되돌린다.
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "Wrong99!"
+}
+
+# ── ☠☠☠ E6: 5회 연속 실패 → 계정 잠금 423 AUTH_ACCOUNT_LOCKED ☠☠☠ ──
+#
+#   ★★ 경고: **잠금 해제 경로가 없다.** 해제 API 도, 시간 경과 자동 해제도 없다.
+#      한 번 잠기면 그 계정은 **영영 로그인할 수 없다** — 유일한 복구는 DB 에서 직접 비우는 것이다:
+#          docker compose exec mysql mysql -ukohere -pkohere kohere \
+#            -e "UPDATE local_accounts SET locked_at = NULL WHERE email = 'lock-test@work.com';"
+#      (기본 자격증명 기준 — .env 로 바꿨으면 그 값으로. locked_at 만 비우면 그것으로 완전한 해제다.
+#       failed_login_attempts 는 함께 지우지 않아도 된다 — 잠기지 않았는데 카운터가 상한 이상인 계정은
+#       다음 실패를 1부터 다시 세므로 오타 한 번에 재잠금되지 않는다.)
+#      그러니 **본 계정(@email)으로 시도하지 않는다.** 아래는 잠겨도 되는 일회용 계정을 따로 만들어 쓴다.
+#
+#   ※ 잠금은 **등록된 계정에만** 걸린다 — 없는 이메일로 아무리 틀려도 401 만 반복되고 잠기지 않는다
+#     (올릴 카운터가 없다). 그래서 E6-a~c 로 일회용 계정을 먼저 가입시킨다.
+
+@lockPhone = 01055554444
+@lockEmail = lock-test@work.com
+
+### E6-a. (선행) 일회용 계정용 인증번호 발송 — 콘솔에서 6자리를 읽어 @lockCode 에 넣는다
+POST {{baseUrl}}/api/v1/auth/phone/signup/verification-code
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{lockPhone}}"
+}
+
+### --- 앱 콘솔 [DEV SMS] 로그(뒤 4자리 4444)에서 받은 인증번호로 교체 ---
+@lockCode = 000000
+
+### E6-b. (선행) 일회용 계정용 인증번호 확인
+POST {{baseUrl}}/api/v1/auth/phone/signup/verify
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{lockPhone}}",
+  "code": "{{lockCode}}"
+}
+
+### E6-c. (선행) 일회용 계정 가입 — 이 계정을 잠글 것이다
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "잠금테스트",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "{{lockPhone}}",
+  "email": "{{lockEmail}}",
+  "password": "{{password}}",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### E6-d. 틀린 비밀번호로 반복 로그인 → 1~5회 401, **6회째부터 423 AUTH_ACCOUNT_LOCKED**
+#    5회째 요청이 카운터를 5로 올리며 locked_at 을 기록하지만, 그 요청 자체의 응답은 아직 401 이다
+#    (잠금 검사는 요청 진입 시점에 하고 기록은 대조 실패 후이므로 한 박자 늦다). 6회째부터 423 이다.
+#    그 뒤로는 **비밀번호를 맞게 보내도 423** 이다 — 잠금 판정이 자격증명 대조보다 먼저다(직접 확인해 보라).
+#    ※ 로그인 시도 한도는 같은 이메일 10회/1시간이고 **성공한 시도도 함께 센다** — E6-c 이후 이 이메일로
+#      6~7회면 충분하지만, 429 TOO_MANY_REQUESTS 가 나오면 그 이메일로는 한 시간을 기다려야 한다.
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{lockEmail}}",
+  "password": "Wrong99!"
+}
+
+### E6-e. 잠긴 계정에 **올바른** 비밀번호 → 그래도 423 AUTH_ACCOUNT_LOCKED
+#    잠금이 대조보다 우선한다는 계약을 눈으로 확인하는 요청이다(E6-d 를 6회 이상 보낸 뒤에 클릭한다).
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{lockEmail}}",
+  "password": "{{password}}"
+}
+
+### E7. refresh 를 어디서도 찾지 못함 → 400 INVALID_INPUT (errors[].field=refreshToken)
+#    쿠키도 본문도 없는 재발급이다. **본문을 아예 보내지 않는 것 자체는 오류가 아니다**(쿠키 채널의 정상 경로) —
+#    쿠키까지 없을 때만 이 코드다(#229 D12 로 종전 MALFORMED_REQUEST 에서 바뀌었다).
+#    쿠키가 저장돼 있으면 이 요청도 성공해 버리므로, 재현하려면 로그아웃(7) 뒤에 보내거나
+#    rest-client.rememberCookiesForSubsequentRequests 를 잠시 끈다.
+#    ※ 반대로 **본문을 보냈는데 깨진 JSON**이면 종전대로 400 MALFORMED_REQUEST 다.
+POST {{baseUrl}}/api/v1/auth/reissue
+
+### E8. 가입용 SMS 재발송 간격 미달 → 429 TOO_MANY_REQUESTS (선행 조건 있음 — 여기서 그냥 보내면 200이다)
+#    ⚠️ **1번을 보낸 뒤 2번을 아직 보내지 않은 상태에서, 60초 안에** 다시 보내야 429다.
+#    쿨다운은 살아 있는 챌린지에서 계산하는데 2번(확인) 성공이 그 챌린지를 지우기 때문이다 —
+#    이 위치에서 순서대로 실행했다면 챌린지가 이미 없어 재발송이 그냥 성공한다(번호 한도도 아직 안 찼다).
+#    재현하려면 1번으로 올라가 두 번 연속 보내라.
+#    같은 번호 5회/1시간·같은 IP 20회/1시간 초과도 같은 코드다 — 어느 축에 걸렸는지 구분해 알리지
+#    않는다(한도 역산 방지).
+POST {{baseUrl}}/api/v1/auth/phone/signup/verification-code
+Content-Type: application/json
+
+{
+  "phoneNumber": "{{phone}}"
+}
