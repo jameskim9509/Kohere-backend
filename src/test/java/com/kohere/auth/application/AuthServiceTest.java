@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -60,6 +61,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -641,6 +643,35 @@ class AuthServiceTest {
     verify(phoneVerificationService, never()).assertVerified(anyLong(), any());
     verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
     verify(refreshTokenRepository, never()).save(any());
+  }
+
+  @Test
+  void landlordOnboarding_sameNumberWebAccountFound_mergesIntoTargetAndIssuesTargetTokens() {
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
+    // 인증한 번호로 자기가 아닌 ACTIVE·LANDLORD 계정이 잡히면 웹에서 먼저 가입한 같은 사람이다(US-1-15 병합 분기).
+    when(userAccountService.findActiveLandlordProfileByPhoneNumberExcluding("01012345678", 40L))
+        .thenReturn(Optional.of(landlordProfileView(77L)));
+    when(jwtTokenService.issueAccessToken(77L)).thenReturn("target-access-token");
+    when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
+    when(refreshTokenHasher.hash(any())).thenReturn("hash");
+
+    OnboardingResponse response = authService.landlordOnboarding(40L, landlordOnboardingRequest());
+
+    // 순서가 계약이다 — 임시 계정을 먼저 지우면 옮길 매핑의 출처가 사라진다. 두 쓰기는 한 트랜잭션이라
+    // 사이에서 실패하면 함께 롤백되지만, 순서가 뒤집힌 코드는 롤백으로 구제되지 않는다.
+    InOrder order = inOrder(socialAccountRepository, userAccountService);
+    order.verify(socialAccountRepository).reassignUserId(40L, 77L);
+    order.verify(userAccountService).deleteAccount(40L);
+    // 대상 계정은 이미 ACTIVE·LANDLORD다 — 상태 전이도, 폼 값으로 프로필을 덮어쓰는 일도 없다(ADR-0047 §6).
+    verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
+    // 토큰과 응답 프로필은 둘 다 대상 계정 기준이어야 한다 — 임시 계정으로 발급하면 방금 지운 행을 가리키는
+    // 토큰이 나가고, 클라이언트는 그것을 정상 세션으로 저장한다.
+    assertThat(response.user().id()).isEqualTo(77L);
+    assertThat(response.accessToken()).isEqualTo("target-access-token");
+    ArgumentCaptor<RefreshToken> refreshCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+    verify(refreshTokenRepository).save(refreshCaptor.capture());
+    assertThat(refreshCaptor.getValue().getUserId()).isEqualTo(77L);
   }
 
   private static SocialAccount socialAccount(long userId) {
