@@ -45,7 +45,7 @@ sequenceDiagram
         Note over AUTH: 정식 accessToken+refreshToken 발급
         AUTH->>RDS: refreshToken 해시 저장
         RDS-->>AUTH: 저장 완료
-        AUTH-->>C: 200 OK<br/>{ user{ status: ACTIVE, name, nickname, country, countryName, countryFlag, occupation(설정 시), email, lang(설정 시), ... },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
+        AUTH-->>C: 200 OK<br/>{ linked: false(세입자는 병합 분기 없음 — US-1-15), user{ status: ACTIVE, name, nickname, country, countryName, countryFlag, occupation(설정 시), email, lang(설정 시), ... },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
         C-->>U: 가입 완료, 서비스 진입
     end
 ```

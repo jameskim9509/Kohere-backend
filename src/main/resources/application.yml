@@ -56,6 +56,31 @@ app:
     onboarding-ttl-seconds: 1800 # 온보딩 임시 토큰 30분 (ADR-0011)
   auth:
     refresh-ttl-seconds: 1209600 # refresh 14일 (ADR-0011)
+    web:
+      # 임대인 웹 로컬 로그인 정책(ADR-0047). 웹 refresh TTL은 위 refresh-ttl-seconds를 그대로 쓴다.
+      login-max-failed-attempts: 5 # 비밀번호 연속 실패 상한 — 도달 시 계정 잠금(자동 해제 없음)
+      login:
+        # 로그인 시도 레이트리밋(US-1-12). 위 잠금 임계값이 "한 계정을 잠그는" 값이라면 이쪽은 "요청을 받아 주는" 값이다.
+        # 두 가지를 동시에 막는다 — ① 남의 이메일로 5회 틀려 잠그는 DoS(해제 경로가 없어 피해가 영구적이다)
+        # ② permitAll 경로에서 선행 조건 없이 BCrypt 라운드를 강제하는 CPU 증폭(가입은 SMS 인증 마커 뒤에 있다).
+        # 그래서 카운터는 자격증명 조회·해시 대조보다 먼저 올린다 — 막힌 요청은 해시 비용을 치르지 않는다.
+        ip-max-per-hour: 30 # 같은 IP에서 1시간에 허용하는 시도(초과 시 429). 공유 IP(사무실 NAT)를 감안해 이메일보다 넉넉하다
+        email-max-per-hour: 10 # 같은 이메일로 1시간에 허용하는 시도(초과 시 429). 잠금 임계값 5보다 크게 둬 정상 오타를 막지 않는다
+      refresh-cookie:
+        # 웹 refresh 토큰의 전송 채널(ADR-0048). 앱은 응답 본문으로 받지만 브라우저는 XSS 한 번에 14일 세션이
+        # 통째로 넘어가므로 스크립트가 읽을 수 없는 HttpOnly 쿠키로만 내린다. HttpOnly는 끌 수 있으면 안 되는
+        # 값이라 설정으로 빼지 않는다(RefreshTokenCookies가 상수로 고정). Max-Age도 키를 만들지 않고 위
+        # refresh-ttl-seconds(14일)를 그대로 따라간다 — 값이 갈리면 진짜 만료가 두 벌이 된다.
+        name: refreshToken # 본문 필드명과 같은 이름 — 재발급·로그아웃이 쿠키·본문 어느 쪽에서 읽든 같은 값이다
+        path: /api/v1/auth # 재발급·로그아웃 경로에만 실린다(매물·사진·진단 요청에 refresh가 딸려가지 않는다)
+        same-site: Lax # 크로스사이트 POST에 쿠키가 실리지 않는다 → csrf.disable() 유지의 근거(동일 오리진 전제)
+        secure: true # 평문 구간 유출 방지. local 프로파일에서만 false로 내린다(로컬은 http)
+    signup-phone:
+      # 비로그인 가입용 연락처 SMS 인증(US-1-13)의 남용 방지 한도. 인증번호 자릿수·TTL·시도 상한·재발송 간격은
+      # 온보딩용과 같은 정책이라 아래 app.phone.*를 그대로 재사용하고, 여기엔 이 경로에만 필요한 값만 둔다 —
+      # permitAll이라 토큰으로 주체를 묶을 수 없어 번호·IP가 유일한 식별자다(문자 폭탄·발송비 방어).
+      phone-max-per-hour: 5 # 같은 번호로 1시간에 허용하는 발송 시도(초과 시 429)
+      ip-max-per-hour: 20 # 같은 IP에서 1시간에 허용하는 발송 시도(초과 시 429)
     test-login:
       # dev·local 테스트 마스터 로그인 우회(운영 미사용). 기본 비활성 — 프로파일(local·dev) + 이 토글 이중 게이트.
       # 활성화·시크릿은 프로파일별 파일에서만 주입한다(base엔 운영-위험 기본값을 두지 않음).

@@ -9,13 +9,14 @@ import static org.mockito.Mockito.when;
 
 import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.AppleUpstreamException;
+import com.kohere.auth.domain.LocalAccountRepository;
 import com.kohere.auth.domain.Provider;
 import com.kohere.auth.domain.RefreshTokenRepository;
 import com.kohere.auth.domain.SocialAccount;
 import com.kohere.auth.domain.SocialAccountRepository;
 import com.kohere.user.api.UserWithdrawnEvent;
 import java.time.Instant;
-import java.util.Optional;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,11 +28,17 @@ import org.mockito.junit.jupiter.MockitoExtension;
 /**
  * {@link UserWithdrawnEventListener} 단위 테스트 — Apple 연동 폐기는 매핑 삭제 <b>전에</b> 일어나고(ADR-0031 #5),
  * best-effort라 폐기 실패가 탈퇴(로컬 정리)를 막지 않으며, Apple 토큰이 없으면(Google·미저장) 폐기를 스킵한다.
+ *
+ * <p>어느 경로로 들어와도 <b>자격증명 두 채널(social_accounts·local_accounts)이 함께</b> 지워지는지도 함께 본다 — 한쪽만 지우면 탈퇴자가
+ * 남은 채널로 다시 로그인한다(ADR-0047의 대칭).
+ *
+ * <p>매핑 조회가 리스트인 것은 병합(US-1-15) 이후 <b>한 회원에 여러 매핑</b>이 정상이기 때문이다 — 단건 조회였다면 그 상태에서 탈퇴가 예외로 롤백된다.
  */
 @ExtendWith(MockitoExtension.class)
 class UserWithdrawnEventListenerTest {
 
   @Mock private SocialAccountRepository socialAccountRepository;
+  @Mock private LocalAccountRepository localAccountRepository;
   @Mock private RefreshTokenRepository refreshTokenRepository;
   @Mock private AppleAuthClient appleAuthClient;
 
@@ -41,27 +48,36 @@ class UserWithdrawnEventListenerTest {
   void setUp() {
     listener =
         new UserWithdrawnEventListener(
-            socialAccountRepository, refreshTokenRepository, appleAuthClient);
+            socialAccountRepository,
+            localAccountRepository,
+            refreshTokenRepository,
+            appleAuthClient);
   }
 
   @Test
   void appleUser_revokesRefreshTokenBeforeDeletingMapping() {
-    when(socialAccountRepository.findByUserId(1L))
-        .thenReturn(Optional.of(appleAccount(1L, "apple-rt-1")));
+    when(socialAccountRepository.findAllByUserId(1L))
+        .thenReturn(List.of(appleAccount(1L, "apple-rt-1")));
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(1L));
 
     // 매핑이 지워지면 토큰을 못 읽으므로 revoke가 deleteByUserId보다 먼저여야 한다
-    InOrder inOrder = inOrder(appleAuthClient, socialAccountRepository, refreshTokenRepository);
+    InOrder inOrder =
+        inOrder(
+            appleAuthClient,
+            socialAccountRepository,
+            localAccountRepository,
+            refreshTokenRepository);
     inOrder.verify(appleAuthClient).revokeRefreshToken("apple-rt-1");
     inOrder.verify(socialAccountRepository).deleteByUserId(1L);
+    inOrder.verify(localAccountRepository).deleteByUserId(1L);
     inOrder.verify(refreshTokenRepository).revokeAllByUserId(1L);
   }
 
   @Test
   void revokeFailure_doesNotBlockWithdrawal() {
-    when(socialAccountRepository.findByUserId(2L))
-        .thenReturn(Optional.of(appleAccount(2L, "apple-rt-2")));
+    when(socialAccountRepository.findAllByUserId(2L))
+        .thenReturn(List.of(appleAccount(2L, "apple-rt-2")));
     Mockito.doThrow(new AppleUpstreamException(new RuntimeException("timeout")))
         .when(appleAuthClient)
         .revokeRefreshToken("apple-rt-2");
@@ -71,39 +87,43 @@ class UserWithdrawnEventListenerTest {
 
     // 폐기 실패라도 로컬 정리는 계속 — 탈퇴 차단 금지(ADR-0014/0031 #5)
     verify(socialAccountRepository).deleteByUserId(2L);
+    verify(localAccountRepository).deleteByUserId(2L);
     verify(refreshTokenRepository).revokeAllByUserId(2L);
   }
 
   @Test
   void googleUser_skipsRevoke() {
-    when(socialAccountRepository.findByUserId(3L)).thenReturn(Optional.of(googleAccount(3L)));
+    when(socialAccountRepository.findAllByUserId(3L)).thenReturn(List.of(googleAccount(3L)));
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(3L));
 
     verify(appleAuthClient, never()).revokeRefreshToken(any());
     verify(socialAccountRepository).deleteByUserId(3L);
+    verify(localAccountRepository).deleteByUserId(3L);
     verify(refreshTokenRepository).revokeAllByUserId(3L);
   }
 
   @Test
   void appleUserWithoutStoredToken_skipsRevokeButStillCleansUp() {
-    when(socialAccountRepository.findByUserId(4L)).thenReturn(Optional.of(appleAccount(4L, null)));
+    when(socialAccountRepository.findAllByUserId(4L)).thenReturn(List.of(appleAccount(4L, null)));
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(4L));
 
     verify(appleAuthClient, never()).revokeRefreshToken(any());
     verify(socialAccountRepository).deleteByUserId(4L);
+    verify(localAccountRepository).deleteByUserId(4L);
     verify(refreshTokenRepository).revokeAllByUserId(4L);
   }
 
   @Test
   void noSocialAccount_cleansUpWithoutRevoke() {
-    when(socialAccountRepository.findByUserId(5L)).thenReturn(Optional.empty());
+    when(socialAccountRepository.findAllByUserId(5L)).thenReturn(List.of());
 
     listener.onUserWithdrawn(new UserWithdrawnEvent(5L));
 
     verify(appleAuthClient, never()).revokeRefreshToken(any());
     verify(socialAccountRepository).deleteByUserId(5L);
+    verify(localAccountRepository).deleteByUserId(5L);
     verify(refreshTokenRepository).revokeAllByUserId(5L);
   }
 

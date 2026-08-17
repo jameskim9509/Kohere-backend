@@ -123,8 +123,7 @@ class ListingRegisterDocsTest {
         "type": "GOSHIWON",
         "contact": {
           "managerName": "김운영",
-          "phone": "+82) 10-1234-5678",
-          "sms": "+82) 10-1234-5679"
+          "phone": "+82) 10-1234-5678"
         },
         "businessRegistrationNumber": "1234567890",
         "blogUrl": "https://blog.naver.com/kohere-goshiwon",

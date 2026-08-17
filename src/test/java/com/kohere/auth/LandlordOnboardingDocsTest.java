@@ -129,6 +129,14 @@ class LandlordOnboardingDocsTest {
   private static final String MALFORMED_BODY = "{ \"oops\" }";
   private static final String PHONE = "01012345678";
 
+  /**
+   * 에러 스니펫용 ACTIVE 임대인({@code err-l-active})의 연락처. {@code users.phone_number}에 UNIQUE(V23)가 걸려 성공
+   * 예시 계정({@code docs-landlord-1})의 {@link #PHONE}을 재사용할 수 없다 — 같은 컨텍스트·같은 DB에서 임대인 온보딩을 두 번 완주하므로
+   * 두 번째 INSERT가 제약에 걸린다(#229). 뒤 4자리를 맞춰 마스킹 결과({@code 010-****-5678})는 {@link #PHONE}과 같게 뒀다 — 이
+   * 흐름은 스니펫을 남기지 않지만 마스킹 예시가 갈리지 않게 한다.
+   */
+  private static final String ACTIVE_LANDLORD_PHONE = "01044445678";
+
   /** SMS 인증을 거치지 않은 번호 — 임대인 프로필 연락처 변경의 422 예시에 쓴다(어떤 테스트도 이 번호로 발송하지 않는다). */
   private static final String UNVERIFIED_PHONE = "01033332222";
 
@@ -264,6 +272,9 @@ class LandlordOnboardingDocsTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(landlordJson(PHONE)))
             .andExpect(status().isOk())
+            // 이 흐름에는 같은 번호의 웹 계정이 없으므로 병합 분기를 타지 않는다 — 스니펫에 실리는 예시가
+            // 일반 온보딩(US-1-9)이라는 뜻이고, 병합 예시는 WebLandlordAccountLinkingFlowTest가 맡는다.
+            .andExpect(jsonPath("$.data.linked").value(false))
             .andExpect(jsonPath("$.data.user.userType").value("LANDLORD"))
             .andExpect(jsonPath("$.data.user.gender").doesNotExist())
             .andExpect(jsonPath("$.data.user.occupation").doesNotExist())
@@ -713,7 +724,8 @@ class LandlordOnboardingDocsTest {
         BUSINESS_502);
 
     // ===== landlord/onboarding =====
-    // phoneNumber 빈값(@NotBlank) — 번호 형식 검증은 없다. birthDate 는 @NotNull·@Past 라 미래 날짜도 여기로 온다.
+    // phoneNumber 빈값 — @NotBlank·@Pattern(휴대폰 형식, #229)을 동시에 위반하지만 응답 코드는 같은 INVALID_INPUT이다.
+    // birthDate 는 @NotNull·@Past 라 미래 날짜도 여기로 온다.
     perform(
         post("/api/v1/auth/landlord/onboarding")
             .header(HttpHeaders.AUTHORIZATION, bearer(pendingToken))
@@ -816,7 +828,8 @@ class LandlordOnboardingDocsTest {
 
     // ===== PATCH /users/me (임대인 연락처 변경) =====
     // 현재 번호와 다른 새 번호를 보내면 그 번호의 SMS 재인증 마커를 확인한다 — 미인증·불일치는 422(§9, ADR-0034).
-    // 이 계정의 검증 마커는 온보딩에 쓴 PHONE이라 다른 번호로는 통과하지 못한다. 서비스 단계 판정이라 유효 본문이 필요하다.
+    // 이 계정의 검증 마커는 온보딩에 쓴 ACTIVE_LANDLORD_PHONE이라 다른 번호로는 통과하지 못한다.
+    // 서비스 단계 판정이라 유효 본문이 필요하다.
     perform(
         patch("/api/v1/users/me")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
@@ -905,18 +918,22 @@ class LandlordOnboardingDocsTest {
         .andExpect(status().isOk());
   }
 
-  /** 신규 소셜 로그인 → 약관 동의 → 연락처 인증 → 임대인 온보딩까지 수행하고 정식 access 토큰을 돌려준다(사업자번호는 온보딩과 무관). */
+  /**
+   * 신규 소셜 로그인 → 약관 동의 → 연락처 인증 → 임대인 온보딩까지 수행하고 정식 access 토큰을 돌려준다(사업자번호는 온보딩과 무관). 성공 예시가 쓰는
+   * {@link #PHONE}이 아니라 {@link #ACTIVE_LANDLORD_PHONE}으로 완주한다 — 두 흐름이 같은 번호를 쓰면 {@code
+   * users.phone_number} UNIQUE(V23)에 걸린다.
+   */
   private String onboardLandlordCompletely(String subject) throws Exception {
     String token = read(socialLogin(subject), "data", "accessToken");
     agreeTerms(token);
-    sendAndVerifyPhone(token, PHONE);
+    sendAndVerifyPhone(token, ACTIVE_LANDLORD_PHONE);
     String body =
         mockMvc
             .perform(
                 post("/api/v1/auth/landlord/onboarding")
                     .header(HttpHeaders.AUTHORIZATION, bearer(token))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(landlordJson(PHONE)))
+                    .content(landlordJson(ACTIVE_LANDLORD_PHONE)))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()

@@ -8,7 +8,6 @@ import com.kohere.auth.domain.SocialAccountRepository;
 import jakarta.annotation.PostConstruct;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,9 +19,13 @@ import org.springframework.util.StringUtils;
  * 고정 인증번호 적용 여부 판별(이슈 #180). 요청 주체가 <b>그 채널의 심사 계정</b>인지, 그리고 제출값이 그 그룹의 허용목록에 있는지를 함께 확인한다 — 어느
  * 한쪽만으로는 적용되지 않는다.
  *
- * <p>요청 주체는 JWT의 {@code userId}만 알 수 있으므로 {@link SocialAccountRepository#findByUserId}로 소셜 신원을 되짚어
- * 설정된 심사 계정과 대조한다. 심사 계정은 시드된 테스트 마스터가 아니라 <b>실제 Google 계정</b>이므로 {@code TestMasterAccount}와는 무관한
- * 경로다.
+ * <p>요청 주체는 JWT의 {@code userId}만 알 수 있으므로 {@link SocialAccountRepository#findAllByUserId}로 소셜 신원을
+ * 되짚어 설정된 심사 계정과 대조한다. 심사 계정은 시드된 테스트 마스터가 아니라 <b>실제 Google 계정</b>이므로 {@code TestMasterAccount}와는
+ * 무관한 경로다.
+ *
+ * <p><b>매핑은 여러 행일 수 있다</b> — 병합(US-1-15) 이후 한 회원에 Google·Apple 매핑이 함께 붙는 것이 정상이므로, 신원 대조는 <b>Google
+ * 매핑 중 하나라도</b> 허용목록에 있으면 성립한다({@link #requesterGoogleEmails}). 첫 행만 보면 Apple이 먼저 잡힌 심사 계정이 조용히
+ * 비심사로 판정돼 실제 발송으로 흘러간다.
  *
  * <p><b>역할별로 채널을 가둔다.</b> 임차인 그룹 계정은 이메일 인증만, 임대인 그룹 계정은 SMS 인증만 고정 인증번호를 받는다. 반대 채널 요청은 {@link
  * #isReviewAccount}가 참이므로 실제 발송으로 흘러가지 않고 거절된다 — 심사자는 외부 수신을 할 수 없어 흘려보내야 얻는 것이 없다.
@@ -118,8 +121,7 @@ class FixedVerificationPolicy {
    * 무관하게 false다(역할 밖 채널).
    */
   boolean appliesToEmail(long userId, String submittedEmail) {
-    String requester = requesterGoogleEmail(userId).orElse(null);
-    if (requester == null || !tenantGoogleEmails().contains(requester)) {
+    if (!isInGroup(userId, tenantGoogleEmails())) {
       return false;
     }
     String submitted = FixedVerificationProperties.normalizeEmail(submittedEmail);
@@ -131,8 +133,7 @@ class FixedVerificationPolicy {
    * 무관하게 false다(역할 밖 채널).
    */
   boolean appliesToPhone(long userId, String submittedPhoneNumber) {
-    String requester = requesterGoogleEmail(userId).orElse(null);
-    if (requester == null || !landlordGoogleEmails().contains(requester)) {
+    if (!isInGroup(userId, landlordGoogleEmails())) {
       return false;
     }
     String submitted = FixedVerificationProperties.normalizePhoneNumber(submittedPhoneNumber);
@@ -146,12 +147,9 @@ class FixedVerificationPolicy {
    * 수신할 수 없으므로 흘려보내면 "코드가 오지 않는" 막다른 길이 되고(SOLAPI 장애 시엔 500), 원인도 드러나지 않는다.
    */
   boolean isReviewAccount(long userId) {
-    return requesterGoogleEmail(userId)
-        .map(
-            requester ->
-                tenantGoogleEmails().contains(requester)
-                    || landlordGoogleEmails().contains(requester))
-        .orElse(false);
+    List<String> requesters = requesterGoogleEmails(userId);
+    return requesters.stream().anyMatch(tenantGoogleEmails()::contains)
+        || requesters.stream().anyMatch(landlordGoogleEmails()::contains);
   }
 
   /** 발급할 고정 인증번호. */
@@ -159,14 +157,24 @@ class FixedVerificationPolicy {
     return properties.getCode();
   }
 
-  /** userId → 소셜 신원 → 정규화된 Google 계정 이메일. Google 계정이 아니면 빈 Optional. */
-  private Optional<String> requesterGoogleEmail(long userId) {
-    return socialAccountRepository
-        .findByUserId(userId)
+  /** 요청 주체의 Google 매핑 중 <b>하나라도</b> 그룹 허용목록에 있으면 그 역할의 심사 계정으로 본다. */
+  private boolean isInGroup(long userId, List<String> groupGoogleEmails) {
+    return requesterGoogleEmails(userId).stream().anyMatch(groupGoogleEmails::contains);
+  }
+
+  /**
+   * userId → 소셜 신원 → 정규화된 Google 계정 이메일 <b>전부</b>. Google 매핑이 없으면 빈 리스트다.
+   *
+   * <p>단건이 아닌 이유는 매핑이 단건이 아니기 때문이다 — 병합(US-1-15)으로 한 회원에 여러 provider 행이 붙을 수 있고, {@code user_id} 단건
+   * 조회는 그 정상 상태에서 예외를 던진다. 여기서는 리스트를 그대로 받아 <b>Google 행만</b> 남긴다.
+   */
+  private List<String> requesterGoogleEmails(long userId) {
+    return socialAccountRepository.findAllByUserId(userId).stream()
         .filter(socialAccount -> socialAccount.getProvider() == Provider.GOOGLE)
         .map(SocialAccount::getEmail)
         .map(FixedVerificationProperties::normalizeEmail)
-        .filter(Objects::nonNull);
+        .filter(Objects::nonNull)
+        .toList();
   }
 
   private List<String> tenantGoogleEmails() {

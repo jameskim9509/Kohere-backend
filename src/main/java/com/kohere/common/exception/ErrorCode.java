@@ -18,6 +18,12 @@ public enum ErrorCode {
   FORBIDDEN(HttpStatus.FORBIDDEN, "권한이 없습니다."),
   RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다."),
   METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않은 메서드입니다."),
+  // 거의 동시에 도착한 다른 요청과 UNIQUE 제약에서 충돌했다 — 재시도가 유효한 복구다.
+  // 도메인이 미리 판정할 수 있는 충돌은 각자의 코드(BOOKING_ALREADY_EXISTS 등)를 쓰고, 이 코드는
+  // 애플리케이션 조회로 막을 수 없는 경합만 받는다. 전역 핸들러가 문서화된 UNIQUE 제약(V22·V23) 위반만
+  // 골라 번역하며, 그 밖의 제약 위반(NOT NULL·길이 초과 등)은 서버 버그라 500 그대로다
+  // (GlobalExceptionHandler#RETRYABLE_UNIQUE_CONSTRAINTS).
+  RESOURCE_CONFLICT(HttpStatus.CONFLICT, "다른 요청과 충돌했습니다. 잠시 후 다시 시도해 주세요."),
   TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "요청이 너무 많습니다."),
   PAYLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "요청 크기가 허용 범위를 넘었습니다."),
   INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "일시적인 오류가 발생했습니다."),
@@ -39,6 +45,11 @@ public enum ErrorCode {
   AUTH_ONBOARDING_REQUIRED(HttpStatus.FORBIDDEN, "온보딩을 완료해야 합니다."),
   AUTH_ONBOARDING_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 온보딩을 완료했습니다."),
   AUTH_INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."),
+  // 임대인 웹 로컬 자격증명(ADR-0047). 로그인 실패는 이메일 미존재와 비밀번호 불일치를 한 코드로 묶는다(계정 존재 여부 비노출).
+  AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),
+  AUTH_ACCOUNT_LOCKED(HttpStatus.LOCKED, "비밀번호를 여러 번 틀려 계정이 잠겼습니다."),
+  AUTH_EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
+  AUTH_WEB_ACCOUNT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 웹 계정이 존재합니다. 로그인해 주세요."),
   USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
   USER_ALREADY_WITHDRAWN(HttpStatus.CONFLICT, "이미 탈퇴한 사용자입니다."),
 

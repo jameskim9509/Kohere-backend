@@ -5,13 +5,47 @@
 
 ## 개요
 
-소셜 로그인(Apple/Google) 검증 후 서버 자체 JWT(access+refresh)를 발급하고(이때 provider에서 받은 **이름·이메일을 `User`에 즉시 채운다** — 애플 심사 대응, #192), 신규 회원의 온보딩 필수정보 수집·약관 동의, **임대인 온보딩 중 연락처(SMS) 인증**, **정식(ACTIVE) 사용자의 이메일 인증**, 토큰 재발급/로그아웃, 회원 탈퇴, 내 프로필 조회·수정, **내 차단 목록 조회·해제**를 다룬다. 인증 헤더는 `Authorization: Bearer <accessToken>`, 토큰 갱신은 `POST /api/v1/auth/reissue`다.
+소셜 로그인(Apple/Google) 검증 후 서버 자체 JWT(access+refresh)를 발급하고(이때 provider에서 받은 **이름·이메일을 `User`에 즉시 채운다** — 애플 심사 대응, #192), 신규 회원의 온보딩 필수정보 수집·약관 동의, **임대인 온보딩 중 연락처(SMS) 인증**, **정식(ACTIVE) 사용자의 이메일 인증**, **임대인 웹의 이메일·비밀번호 회원가입·로그인과 그 선행 단계인 가입용 연락처(SMS) 인증**, 토큰 재발급/로그아웃, 회원 탈퇴, 내 프로필 조회·수정, **내 차단 목록 조회·해제**를 다룬다. 인증 헤더는 `Authorization: Bearer <accessToken>`, 토큰 갱신은 `POST /api/v1/auth/reissue`다(웹은 refresh를 응답 본문이 아니라 **HttpOnly 쿠키**로 받아 같은 엔드포인트로 갱신한다 — 아래 §웹 임대인 트랙).
 
-상태 모델: 사용자는 `PENDING`(소셜 검증만 완료) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`(탈퇴)로 전이한다. **약관 동의와 온보딩은 분리된 단계**로, 약관 동의(`POST /auth/terms`)가 온보딩 제출(`POST /auth/onboarding`)을 선행한다.
+상태 모델: 사용자는 `PENDING`(소셜 검증만 완료) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`(탈퇴)로 전이한다. **약관 동의와 온보딩은 분리된 단계**로, 약관 동의(`POST /auth/terms`)가 온보딩 제출(`POST /auth/onboarding`)을 선행한다. **임대인 웹 회원가입(§1-3)은 같은 체인을 한 트랜잭션 안에서 연속 전이시켜 `ACTIVE`까지 한 번에 완주**한다 — 상태 모델·도메인 전이는 앱과 동일하고(앱 계정과 데이터 모양이 같아야 계정 연동이 성립한다) 웹에 부분 완료 상태가 남지 않을 뿐이다.
 
 ### 임대인 트랙
 
 사용자는 **세입자(`TENANT`, 외국인)** 와 **임대인(`LANDLORD`)** 두 역할로 나뉜다. **소셜 로그인·약관 동의까지는 두 역할이 공통 흐름**이고, **이후 온보딩 단계에서 분기**한다 — 세입자는 곧바로 `POST /auth/onboarding`(§5), 임대인은 연락처 SMS 인증(§4-1·§4-2) 후 `POST /auth/landlord/onboarding`(§5-2)으로 제출한다(세입자의 이메일은 소셜 로그인 시 provider 값으로 확정되므로 온보딩에서 재입력·인증하지 않는다 — #192). **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 온보딩 제출에 포함하지 않는다 — 온보딩을 마친(ACTIVE) 임대인이 **매물 등록(`POST /api/v2/listings` — [03-listings-favorites](03-listings-favorites.md))에서 입력**하며, 등록 API는 이를 **형식 검증만 하고 매물 문서에 저장**한다(별도 검증 API(§5-1)를 자동 호출하지 않고, 진위는 관리자가 승인 심사에서 수동으로 확인한다). **`userType`은 온보딩 제출 엔드포인트로 확정되고 이후 불변**이다(소셜 로그인·약관 단계에서는 미확정). **임대인의 이메일은 세입자와 동일하게 소셜 로그인 시 provider(Apple/Google) 값으로 캡처·보유하되(더는 미수집 아님), 본인 확인은 연락처(휴대폰) SMS 인증으로 한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#192) — 이메일은 인증 대상 아닌 미검증 연락처). 관련 유저 스토리: US-1-8(사업자번호 검증)·US-1-9(임대인 온보딩)·US-1-10(임대인 연락처 인증).
+
+### 웹 임대인 트랙(로컬 자격증명)
+
+임대인은 앱과 별개로 **매물을 등록하는 웹 클라이언트**로도 들어온다. 웹은 소셜 로그인을 지원하지 않고 **이메일(로그인 ID) + 비밀번호**로 가입·로그인한다 — 앱 자격증명(`social_accounts`)과 웹 자격증명(`local_accounts`)이 **하나의 `users` 행에 병렬로 매달리는** 구조다([ADR-0047](../../adr/0047-web-local-credentials-and-phone-based-account-linking.md)). 웹 트랙의 엔드포인트는 §1-1(가입용 SMS 발송) · §1-2(가입용 SMS 확인) · §1-3(회원가입) · §1-4(로그인) 넷이고, **모두 비로그인 진입점이라 인증이 불필요(permitAll)** 하다. 관련 유저 스토리: US-1-11(웹 회원가입)·US-1-12(웹 로그인)·US-1-13(가입용 연락처 인증)·US-1-15(앱 온보딩 시 웹 계정 병합).
+
+**계정 연동은 곧 `user_id` 공유다.** 웹에서 등록한 매물의 `landlordId`가 앱 소셜 로그인 시의 `userId`와 같아야 예약([04-booking-inquiry-chat](04-booking-inquiry-chat.md))·채팅이 앱에서 그대로 보인다. 그래서 웹 회원가입은 "계정 생성"이 아니라 **"자격증명 추가"** 로 설계한다 — 기존 계정을 찾으면 그 `user_id`에 `local_accounts` 행만 붙이고(§1-3 `linked=true`), 못 찾으면 새 `users` 행을 만든다. **매칭 키는 SMS 인증을 통과한 휴대폰 번호 단독**이며(이름은 조건이 아니다) 번호는 *조회 키*이지 인증 수단이 아니다 — 소유 증명은 전적으로 §1-2의 SMS 인증이 담당한다. 연동은 양방향이지만 판정 시점이 비대칭이다: **웹 → 앱**은 가입 제출(§1-3)에서 **연결**, **앱 → 웹**은 소셜 로그인 시점에 서버가 번호를 모르므로 임대인 온보딩 제출(§5-2)에서 **병합**한다. **어느 방향이든 그 사실은 응답의 `linked` 필드 하나로 알린다** — 구현(자격증명 INSERT / 계정 병합)은 다르지만 클라이언트에게는 둘 다 "계정이 하나로 합쳐졌다"는 같은 사실이라 어휘를 두 벌 두지 않는다. 두 필드 모두 응답에 **추가**된 것이라 하위 호환이 깨지지 않고 `/api/v1`을 유지한다.
+
+> **표시 규칙 — 모든 응답의 `name`·`email`은 `users`의 값이다.** `local_accounts`가 보관하는 웹 폼 스냅샷(`name`·`birth_date`)은 **어떤 응답에도 싣지 않는다**(`social_accounts.name`과 같은 취급 — 저장은 하되 표시는 `users`). 따라서 **연동된 계정은 로그인에 쓴 웹 이메일이 아니라 소셜 진본 이메일이 응답에 나갈 수 있다 — 의도된 동작**이다. 신규 가입일 때만 폼 이메일이 `users.email`에도 기록되어 두 값이 같아진다.
+
+**refresh 토큰 쿠키**(웹 전용 채널 — [ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md)): §1-3·§1-4는 refresh를 **응답 본문에 싣지 않고** `Set-Cookie`로만 내린다. 속성은 한 벌로 고정한다. 쿠키를 **지우는** 자리는 §7(로그아웃)·§10(탈퇴) 둘이고, 삭제 쿠키도 이름과 `Path`가 발급 때와 같아야 브라우저가 같은 쿠키로 보고 지운다.
+
+| 속성 | 값 | 이유 |
+| --- | --- | --- |
+| 이름 | `refreshToken` | 본문 필드명과 같은 이름을 쓴다(§6·§7이 쿠키·본문 어느 쪽에서 읽든 같은 값) |
+| `HttpOnly` | 설정 | 스크립트가 읽을 수 없다(XSS로 refresh가 유출되지 않는다) |
+| `Secure` | 설정 | **`local` 프로파일에서만 끈다** — 로컬 개발이 평문 http라 켜 두면 브라우저가 쿠키를 저장하지 않는다. 기본 설정값은 `true`이고 `application-local.yml`에서만 `false`로 내린다 |
+| `SameSite` | `Lax` | 크로스사이트 요청에 쿠키가 실리지 않는다 → 별도 CSRF 토큰을 두지 않고 `csrf.disable()`을 유지한다 |
+| `Path` | `/api/v1/auth` | 재발급·로그아웃 경로에만 전송한다(다른 API 호출에 refresh가 딸려가지 않는다) |
+| `Max-Age` | `1209600`(14일) | refresh TTL과 같은 값 — **앱과 동일**하며 별도 설정키를 두지 않는다(`app.auth.refresh-ttl-seconds` 재사용) |
+
+> `SameSite=Lax`로 CSRF를 대신하는 것은 **웹과 API를 같은 오리진에 배치한다는 전제** 위에 성립한다. 이 전제는 현재 인프라 구성(`docker-compose.yml`·리버스 프록시)에 웹 클라이언트 서비스가 없어 **코드로 확인되지 않는다** — 다른 호스트로 배포하면 `csrf.disable()` + 쿠키 refresh가 CSRF 구멍이 되므로 배치 전에 반드시 확인한다([ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md)의 전제 조건).
+
+**앱 동작은 전혀 바뀌지 않는다.** §6·§7은 쿠키를 **우선**해 읽고 없으면 **종전대로 본문**에서 읽으며, 본문으로 온 요청에는 회전된 refresh를 종전대로 본문에 담아 돌려준다. 하위 호환이 깨지지 않으므로 **v2를 신설하지 않고 `/api/v1`을 유지**한다.
+
+**알려진 제약**(설계상 수용한 한계 — 해당 절에서 다시 짚는다):
+
+- **번호 정규화 백필 없음** — 정규화(숫자만 남김)는 **입력 경로에만** 적용하고 기존 데이터는 손대지 않는다. 하이픈으로 저장된 기존 임대인 번호는 연동·병합 매칭에서 누락될 수 있다(§1-3·§5-2).
+- **계정 잠금 해제 경로 없음** — 5회 실패로 잠긴 계정은 운영자가 DB에서 `locked_at`을 비우는 것 외에 풀 방법이 없다. 시간 경과 자동 해제도 없다(§1-4). 다만 **`locked_at`만 비우면 그것으로 완전한 해제**다 — `failed_login_attempts`를 함께 지울 필요가 없다(§1-4).
+- **의도적 계정 잠금(DoS)** — 남의 이메일로 5회 틀리면 그 계정을 잠글 수 있다. 로그인 시도 레이트리밋(IP 30회/시간·이메일 10회/시간)으로 완화하나 완전히 막을 수 없다(§1-4).
+- **세입자 → 임대인 전환 불가** — 세입자는 `phone_number`가 NULL이라 구조적으로 매칭 후보에서 빠진다. 앱 세입자가 웹에 임대인으로 가입하면 별개 계정이 생기며, 서버는 두 계정이 동일인인지 알 수 없다(§1-3).
+- **양쪽 모두 완주한 계정은 자동 병합 없음** — 앱·웹 양쪽에 같은 번호의 `ACTIVE` 계정이 각각 있으면 병합 트리거가 없다. 운영 수동 처리 대상이다(§5-2).
+- **병합 시 진단 기록 미삭제** — 병합은 임시 `users` 행만 삭제하고 진단 문서는 남긴다(§5-2).
+
+시퀀스: [US-1-11](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-11-web-signup.md) · [US-1-12](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-12-web-login.md) · [US-1-13](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-13-signup-phone-verification.md) · [US-1-15](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-15-landlord-account-merge.md).
 
 ### 핵심 개념·enum
 
@@ -25,11 +59,13 @@
 | 비자정보 `visaType` | `SHORT_TERM_VISIT`(단기방문), `STUDENTS_TRAINEES`(유학·연수), `NON_PROFESSIONAL_WORKERS`(비전문취업), `WORKING_HOLIDAY_WORK_AND_VISIT`(워킹홀리데이·방문취업), `OVERSEAS_KOREANS`(재외동포), `FAMILY_MARRIAGE_MIGRANTS`(방문동거·거주·결혼이민), `PERMANENT_RESIDENTS`(영주), `PROFESSIONALS`(전문인력), `DIPLOMATIC_OFFICIAL_AND_OTHERS`(외교·공무·기타), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). API는 상수명, DB 저장은 표시 라벨 |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
 | 표시 언어 `lang` | ISO 639-1 소문자 코드 — 지원값 `en`, `ko`, `ja` | **세입자 온보딩·프로필 수정 모두 선택** · 사용자가 앱 지구본 아이콘에서 직접 고른다. `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`이다. 지원 목록(`en`·`ko`·`ja`)으로 서버가 검증하고 목록 밖 값은 `INVALID_INPUT`이다(값은 소문자 코드로 주고받되 서버는 내부적으로 `Language` enum으로 모델링한다). **임대인은 서버가 `ko`로 고정 부여하며 변경할 수 없다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) |
-| 이메일 `email` | 이메일 문자열 | **세입자** 소셜 로그인 시 provider(Apple/Google) 진본으로 확정 — 요청 `email`이 토큰 `email` 클레임과 일치해야 하며(§1) 온보딩에서 재수집·재인증하지 않는다(#192). 정식(ACTIVE) 사용자의 이메일 인증 API는 §3·§4(접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈). 임대인도 소셜 로그인 시 provider 값을 `User.email`에 보유한다(더는 미수집·NULL 아님 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192): 수집 폼이 아니라 소셜 로그인 provider 값 보유이며 인증 대상 아님, 수정은 후속 이슈) |
+| 이메일 `email` | 이메일 문자열 | **세입자** 소셜 로그인 시 provider(Apple/Google) 진본으로 확정 — 요청 `email`이 토큰 `email` 클레임과 일치해야 하며(§1) 온보딩에서 재수집·재인증하지 않는다(#192). 정식(ACTIVE) 사용자의 이메일 인증 API는 §3·§4(접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈). 임대인도 소셜 로그인 시 provider 값을 `User.email`에 보유한다(더는 미수집·NULL 아님 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192): 수집 폼이 아니라 소셜 로그인 provider 값 보유이며 인증 대상 아님, 수정은 후속 이슈). **임대인 웹 트랙에서는 이메일이 곧 로그인 ID**라 유일성이 필요하지만, 그 유일성은 **`local_accounts.email`에만** 걸고 **`users.email`에는 걸지 않는다**(§1-3 — 앱 소셜 이메일과 같은 주소로 웹 가입하는 것이 가장 흔한 정상 경로다) |
 | 닉네임 `nickname` | `형용사 + 사물` 문자열 | 서버가 자동 배정(사용자 입력·수정 불가), 전역 유니크 |
 | 사용자 역할 `userType` | `TENANT`(세입자·외국인), `LANDLORD`(임대인) | 온보딩 제출 엔드포인트(세입자 `/auth/onboarding` · 임대인 `/auth/landlord/onboarding`)로 확정·이후 불변. 소셜·약관 단계에서는 미확정 |
 | 이름 `name` | 문자열 | **세입자·임대인 공통** · 성·이름을 합친 **단일 이름**(#192에서 세입자의 `firstName`/`lastName`을 단일 `name`으로 통합해 임대인과 완전히 통일). 빈 문자열 불가. API 필드명·저장 모두 단일 `name`(`FullName` VO의 단일 `name` 속성 · `users.name` 컬럼). 세입자·임대인 모두 소셜 로그인 시 provider 값으로 채우고(§1) 이후 `PATCH /users/me`(§9)로 수정한다(#192에서 임대인도 온보딩 수집을 폐지해 세입자와 수집 시점까지 완전히 통일) |
-| 연락처 `phoneNumber` | 전화번호 문자열 | **임대인 온보딩 필수** · SMS 인증번호로 사전 검증(§4-1·§4-2) 필요. 응답·로그 마스킹(예 `010-****-5678`) |
+| 연락처 `phoneNumber` | 전화번호 문자열 | **임대인 온보딩 필수** · SMS 인증번호로 사전 검증(§4-1·§4-2) 필요. 응답·로그 마스킹(예 `010-****-5678`). **웹 트랙에서는 계정 연동의 유일한 매칭 키**이므로 입력 경로에서 **숫자만 남겨 정규화**해 저장·조회한다(§1-1·§1-3, `users.phone_number` UNIQUE) |
+| 비밀번호 `password` | 문자열 | **임대인 웹 전용**(소셜 트랙에는 없다) · 영문자(`A-Za-z`) 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~10**, 공백 불허(한글 불허). 위반은 `INVALID_INPUT`(400). **BCrypt 해시로만 보관**하고 원문은 저장·로그·응답 어디에도 남기지 않는다 |
+| 연동 여부 `linked` | boolean | **웹 회원가입(§1-3) 응답 전용** · 같은 번호의 기존 앱 계정을 찾아 그 `user_id`에 자격증명만 붙였으면 `true`(새 `users` 행 없음), 못 찾아 새 계정을 만들었으면 `false` |
 | 사업자등록번호 `businessRegistrationNumber` | 숫자 10자리 문자열 | **임대인 전용** · **온보딩 제출에는 미포함**(온보딩은 약관·연락처 인증만으로 완료). 온보딩 후 **매물 등록(`POST /api/v2/listings`) 요청 본문**으로 받아 **형식(숫자 10자리)만 검증하고 매물 문서에 저장**한다 — 등록 시점에 별도 검증 API(§5-1)를 자동 호출하지 않으며 진위는 관리자 승인 심사에서 수동 확인한다. 응답·로그 마스킹(매물 응답에서는 아예 제외) |
 
 - 날짜만 표기는 `YYYY-MM-DD`(예: `birthDate`), 시각은 ISO-8601 UTC(예: `2026-06-15T08:30:00Z`).
@@ -44,6 +80,10 @@
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
 | POST | `/api/v1/auth/social-login` | 소셜 자격 검증 후 서버 JWT 발급(기존 로그인/신규 온보딩 분기) — Google은 `idToken`, **Apple은 `authorizationCode`**([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)) | 불필요 | 200 |
+| POST | `/api/v1/auth/phone/signup/verification-code` | 가입용 연락처 SMS 인증번호 발송(임대인 웹·비로그인) — 번호 키 챌린지 | 불필요 | 200 |
+| POST | `/api/v1/auth/phone/signup/verify` | 가입용 인증번호 확인(임대인 웹·비로그인) → 번호 키 검증 마커 저장 | 불필요 | 200 |
+| POST | `/api/v1/auth/signup` | 임대인 웹 회원가입(한 트랜잭션으로 ACTIVE 완주 + 같은 번호의 기존 앱 계정과 연동), refresh는 쿠키 | 불필요 | 200 |
+| POST | `/api/v1/auth/login` | 임대인 웹 로그인(이메일·비밀번호, 5회 실패 잠금), refresh는 쿠키 | 불필요 | 200 |
 | POST | `/api/v1/auth/terms` | 약관 동의 제출(이용약관·개인정보처리방침·마케팅), 약관 동의 완료(TERMS_AGREED 전이) | 필수(온보딩 토큰) | 200 |
 | POST | `/api/v1/auth/email/verification-code` | 이메일로 인증번호 발송(세입자) — 정식(ACTIVE) 사용자 전용(#192) | 필수(정식 토큰(ACTIVE, ROLE_USER)) | 200 |
 | POST | `/api/v1/auth/email/verify` | 인증번호 확인(세입자) — 접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈 | 필수(정식 토큰(ACTIVE, ROLE_USER)) | 200 |
@@ -51,17 +91,18 @@
 | POST | `/api/v1/auth/phone/verify` | 인증번호 확인 → 연락처 검증 완료 처리(임대인 전용) — 온보딩·프로필 변경 공용 | 필수(온보딩 토큰/정식 토큰) | 200 |
 | POST | `/api/v1/auth/onboarding` | 세입자 온보딩 필수정보 제출(약관 동의 선행), 가입 완료(ACTIVE 전이) | 필수(온보딩 토큰, TERMS_AGREED) | 200 |
 | POST | `/api/v1/auth/business/verify` | 사업자등록번호 외부 검증(임대인 전용·온보딩 완료 후 무상태 검증), 결과 미저장·응답 body에만 반환 | 필수(정식 토큰(ACTIVE, ROLE_USER)) | 200 |
-| POST | `/api/v1/auth/landlord/onboarding` | 임대인 온보딩 제출(약관·연락처 인증 선행), 가입 완료(ACTIVE 전이 + userType=LANDLORD 확정) | 필수(온보딩 토큰, TERMS_AGREED) | 200 |
-| POST | `/api/v1/auth/reissue` | refresh 토큰으로 access 토큰 재발급 | 불필요(본문 refresh) | 200 |
-| POST | `/api/v1/auth/logout` | 현재 세션 refresh 토큰 무효화 | 필수 | 204 |
+| POST | `/api/v1/auth/landlord/onboarding` | 임대인 온보딩 제출(약관·연락처 인증 선행), 가입 완료(ACTIVE 전이 + userType=LANDLORD 확정) — 같은 번호의 웹 계정이 있으면 **병합** | 필수(온보딩 토큰, TERMS_AGREED) | 200 |
+| POST | `/api/v1/auth/reissue` | refresh 토큰으로 access 토큰 재발급(refresh는 쿠키 우선 · 본문 fallback) | 불필요 | 200 |
+| POST | `/api/v1/auth/logout` | 현재 세션 refresh 토큰 무효화(refresh는 쿠키 우선 · 본문 fallback, 쿠키로 온 요청은 삭제 쿠키 동반) | 필수 | 204 |
 | GET | `/api/v1/users/me` | 내 프로필 조회 | 필수 | 200 |
 | PATCH | `/api/v1/users/me` | 내 프로필 부분 수정 | 필수 | 200 |
-| DELETE | `/api/v1/users/me` | 회원 탈퇴(WITHDRAWN 전이, 토큰 일괄 무효화) | 필수 | 204 |
+| DELETE | `/api/v1/users/me` | 회원 탈퇴(WITHDRAWN 전이, 토큰 일괄 무효화, 삭제 쿠키 동반) | 필수 | 204 |
 | GET | `/api/v1/users/me/blocks` | 내가 차단한 사용자 목록(해제용) | 필수 | 200 |
 | DELETE | `/api/v1/users/me/blocks/{userId}` | 차단 해제(멱등) | 필수 | 204 |
 
 > 차단 **생성**은 이 문서에 없다 — 예약 문맥 전용 `POST /api/v1/bookings/{bookingId}/block`([04-booking-inquiry-chat](04-booking-inquiry-chat.md))이 유일한 생성 경로이고, 목록 조회(§11)·해제(§12)만 `user` 모듈이 맡는다(§11 근거 블록쿼트 참조).
-> `auth/onboarding`은 신규 리소스 생성이 아니라 약관 동의를 마친 `TERMS_AGREED` 사용자를 `ACTIVE`로 전이하는 상태 액션이므로 `200`을 쓴다(api-design-guide §1 — "생성 아닌 액션").
+> `auth/onboarding`은 신규 리소스 생성이 아니라 약관 동의를 마친 `TERMS_AGREED` 사용자를 `ACTIVE`로 전이하는 상태 액션이므로 `200`을 쓴다(api-design-guide §1 — "생성 아닌 액션"). 임대인 웹 회원가입(§1-3)도 같은 이유로 `200`이다 — 응답이 리소스 URI가 아니라 토큰·세션이고, 기존 계정에 연동되는 경우에는 새 `users` 행조차 만들지 않는다.
+> **웹 트랙 4개 경로(§1-1~§1-4)는 인증 불필요(permitAll)** 다 — 계정이 없거나 로그인 이전 단계라서다. 보안 설정에서는 `SecurityConfig`의 permitAll 매처와 **`PublicPaths.ALL` 두 곳 모두에 등록**해야 한다. 후자를 빠뜨리면 만료된 access 토큰을 들고 있는 브라우저가 `/auth/login`에서 `401 TOKEN_EXPIRED`를 맞는다(#181이 고친 것과 같은 버그).
 > 인증 "필수" 엔드포인트는 access 토큰 만료 시 `401 TOKEN_EXPIRED`로 재발급을 유도한다. **온보딩 토큰**(`ROLE_ONBOARDING` — `onboardingCompleted=false`, 상태 `PENDING`/`TERMS_AGREED` 공통)으로 `GET`/`PATCH /users/me`·`POST /auth/logout`·`POST /auth/email/verification-code`·`POST /auth/email/verify`(세입자 이메일 인증 — #192에서 온보딩 단계 전용→정식(ACTIVE) 전용으로 반전)(모두 `ROLE_USER` 필요) 보호 API에 접근하면 `403 AUTH_ONBOARDING_REQUIRED`를 반환한다(단, `DELETE /users/me`(탈퇴)·`POST /auth/terms`(약관 동의)·`POST /auth/phone/verification-code`·`POST /auth/phone/verify`(임대인 연락처 인증)·`POST /auth/onboarding`·`POST /auth/landlord/onboarding`(임대인 온보딩)은 온보딩 흐름이라 온보딩 토큰도 허용). 단 `/auth/phone/**`(연락처 인증)는 프로필 연락처 변경(US-1-5)을 위해 **정식 토큰(`ROLE_USER`)도 함께 허용**한다(온보딩 토큰·정식 토큰 양쪽 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) §6·§8). 반대로 `POST /auth/business/verify`(사업자번호 검증)는 온보딩 흐름이 아니라 **온보딩을 완료한(ACTIVE) 임대인이 정식 토큰(`ROLE_USER`)으로만 호출**하는 무상태 검증 API로, 온보딩 토큰으로 접근하면 `403 AUTH_ONBOARDING_REQUIRED`다(§5-1). 상태 전이 순서는 `POST /auth/terms`(PENDING→TERMS_AGREED) → `POST /auth/onboarding`(TERMS_AGREED→ACTIVE)이며, 약관 미동의 상태(`PENDING`)에서 온보딩을 제출하면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`다.
 
 ---
@@ -174,6 +215,275 @@ provider별로 **자격 필드 하나**를 채우고(Google은 `idToken`, Apple�
 | 502 | `UPSTREAM_ERROR` | Apple `/auth/token` 인가코드 교환의 일시 장애(타임아웃·5xx·I/O). 자격 문제(401)가 아니므로 그대로 재시도할 수 있다(아래 노트) |
 
 > **연동 실패 처리(현행)**: `OidcTokenVerifierImpl`은 JWKS 조회 실패·provider 응답 오류를 포함한 모든 OIDC 검증 실패를 `401 AUTH_INVALID_SOCIAL_TOKEN`으로 변환한다. Apple `/auth/token` 교환 호출의 인증 실패(`invalid_grant`/`invalid_client`)도 `401`로 통합하고, Apple 측 일시 장애·타임아웃 등 I/O·5xx는 `502 UPSTREAM_ERROR`로 분리한다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)). Google 경로는 종전대로 `502`/`503`을 내지 않는다(시퀀스 [US-1-1](../../architecture/sequence-diagrams/01-auth-onboarding/us-1-1-social-login.md)·REST Docs 스니펫과 정합). 외부 연동 견고화(타임아웃·재시도·서킷브레이커) 확대는 [error-response-guide](../error-response-guide.md) §3 참고.
+
+---
+
+### 1-1. POST `/api/v1/auth/phone/signup/verification-code` — 가입용 연락처 인증번호 발송(임대인 웹·비로그인)
+
+웹 회원가입(§1-3) **전에** 본인 소유 번호임을 증명하기 위해 입력한 연락처(휴대폰)로 SMS 인증번호를 발송한다(US-1-13). 인증번호 정책(6자리·코드 TTL 5분·검증 마커 TTL 30분·검증 시도 5회·재발송 간격 60초)과 `VerificationSmsSender` 포트는 임대인 온보딩용 §4-1과 **동일하게 재사용**하지만, **챌린지 키가 다르다** — §4-1은 `phone-verify:code:{userId}`라 로그인이 선행돼야 하는데 웹 가입자는 아직 계정이 없다. 그래서 이 경로는 **번호 키 챌린지**(`signup-phone:code:{정규화번호}`)를 쓰고 **인증 불필요(permitAll)** 경로로 연다. 서버는 입력 번호에서 **숫자만 남겨 정규화**한 뒤 키로 쓴다(하이픈 입력을 허용한다).
+
+SMS는 §4-1과 같이 **동기 발송**하며 **발송에 성공한 뒤에만** 챌린지를 저장한다 — provider 장애·타임아웃이면 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다.
+
+> **비로그인 permitAll 경로라 SMS 남용 방지가 필수다.** 문자 폭탄·발송비 남용 표면이므로 **번호 단위 + IP 단위 이중 레이트리밋**을 건다 — 재발송 간격 60초(§4-1과 동일), **같은 번호 5회/1시간**, **같은 IP 20회/1시간**. 초과는 모두 `429 TOO_MANY_REQUESTS`다.
+> **계정 존재 여부를 노출하지 않는다** — 가입 이력이 있는 번호든 없는 번호든 동일하게 발송하고 동일한 응답을 준다. 이 응답으로 연동 대상 계정의 유무를 알 수 없다.
+> **앱 심사용 고정 인증번호 우회는 이 경로에 적용하지 않는다** — 그 정책은 `userId`와 Google 소셜 계정을 기준으로 판정하는데 웹 가입은 둘 다 없는 단계다(앱 심사용 기능이라 웹과 무관하다).
+
+- **인증**: 불필요(permitAll — 계정이 없는 가입 전 단계).
+- Path/Query 파라미터: 없음.
+
+#### Request Body
+
+```json
+{
+  "phoneNumber": "01012345678"
+}
+```
+
+| 필드 | 타입 | 필수 | 검증 |
+| --- | --- | --- | --- |
+| `phoneNumber` | string | 필수 | 휴대폰 번호 형식(`@NotBlank` + `@Pattern`). **하이픈 허용** — 서버가 숫자만 남겨 정규화한 값을 챌린지 키로 쓴다. 빈 문자열 불가 |
+
+#### 성공 Response — 200 OK
+
+```json
+{
+  "success": true,
+  "data": {
+    "phoneNumber": "010-****-5678",
+    "expiresIn": 300
+  },
+  "error": null
+}
+```
+
+> `expiresIn`은 인증번호 만료까지의 초(seconds). `phoneNumber`는 마스킹해 반환한다(§4-1과 동일). 인증번호 원문은 응답·로그에 노출하지 않는다.
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `phoneNumber` 누락/빈값/형식 위반 |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 429 | `TOO_MANY_REQUESTS` | 재발송 간격 60초 미만, 같은 번호 5회/1시간 초과, 같은 IP 20회/1시간 초과 |
+| 502 | `UPSTREAM_ERROR` | SMS 발송 실패(provider 장애·타임아웃). 챌린지 미저장, 클라이언트 재시도 유도(공통 코드 — [error-response-guide](../error-response-guide.md) §3) |
+
+---
+
+### 1-2. POST `/api/v1/auth/phone/signup/verify` — 가입용 인증번호 확인(임대인 웹·비로그인)
+
+§1-1로 발송된 인증번호를 검증한다(US-1-13). 성공하면 **번호 키 검증 마커**(`signup-phone:verified:{정규화번호}`, TTL 1800초)를 저장하고, 가입 제출(§1-3)이 그 마커를 대조한 뒤 **소비(삭제)** 한다. 마커의 소비처가 §1-3 하나뿐이라 용도 구분 필드를 두지 않는다.
+
+> **챌린지 부재(미발송·만료·이미 검증)**: 해당 번호의 챌린지(`signup-phone:code:{정규화번호}`)가 없으면 — 인증번호를 한 번도 요청하지 않았거나, TTL 만료, 이미 검증 완료로 소멸, 발송 실패(`502`)로 미저장 — 올릴 `attempts` 레코드 자체가 없으므로 **즉시 `422 AUTH_PHONE_VERIFICATION_FAILED`** 로 거절하고 인증번호 (재)요청(§1-1)을 유도한다.
+> **불일치·만료·시도 상한(5회) 초과를 모두 `422` 한 코드로 응답**한다 — 시도 초과를 `429`로 분리하는 앱 트랙(§4-2)과 다른 점이다. 비로그인 경로라 챌린지의 존재·시도 상태를 응답으로 구분해 주지 않는다(계정·인증 시도 상태 비노출).
+
+- **인증**: 불필요(permitAll — 계정이 없는 가입 전 단계).
+- Path/Query 파라미터: 없음.
+
+#### Request Body
+
+```json
+{
+  "phoneNumber": "01012345678",
+  "code": "482913"
+}
+```
+
+| 필드 | 타입 | 필수 | 검증 |
+| --- | --- | --- | --- |
+| `phoneNumber` | string | 필수 | 인증번호를 발송한 번호와 일치해야 함(정규화 후 비교 — 하이픈 유무는 무관) |
+| `code` | string | 필수 | 발송된 인증번호. 빈 문자열 불가 |
+
+#### 성공 Response — 200 OK
+
+```json
+{
+  "success": true,
+  "data": {
+    "phoneNumber": "010-****-5678",
+    "verified": true
+  },
+  "error": null
+}
+```
+
+> 검증 마커는 30분간 유효하다 — 그 안에 §1-3을 제출해야 하며, 만료되면 가입 제출이 `422 AUTH_PHONE_NOT_VERIFIED`로 거절되고 §1-1부터 다시 한다. **이 응답은 연동 대상 계정의 유무를 알려주지 않는다** — 웹 가입 폼은 연동 여부와 무관하게 항상 전체 필드를 받는다.
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `phoneNumber`/`code` 누락/빈값 |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 422 | `AUTH_PHONE_VERIFICATION_FAILED` | 코드 불일치, 만료, **검증 시도 상한(5회) 초과**, 또는 챌린지 부재(미발송·만료·이미 검증) — 앱 트랙(§4-2)과 달리 시도 초과도 이 코드다 |
+
+---
+
+### 1-3. POST `/api/v1/auth/signup` — 임대인 웹 회원가입(로컬 자격증명·비로그인)
+
+임대인 웹 가입 폼 한 페이지의 값을 받아 **한 트랜잭션에서 `ACTIVE`까지 완주**한다(US-1-11). 앱의 3단계(소셜 로그인 → 약관 → 온보딩)는 *소셜이 이름·이메일만 주고 나머지를 나중에 받아야 하는* 제약에서 나온 구조인데 웹 폼에는 그 제약이 없다 — 웹에 `PENDING`/`TERMS_AGREED` 같은 부분 완료 상태를 남기면 **온보딩 재개 화면이 없어 로그인해도 갈 곳이 없는 죽은 계정**이 된다. 다만 **상태 체인과 도메인 전이는 앱과 똑같이 태운다**(`PENDING` → `TERMS_AGREED` → `ACTIVE`를 한 트랜잭션 안에서 연속 전이) — 앱 계정과 데이터 모양이 같아야 계정 연동이 성립하기 때문이다. 그래서 응답은 항상 `onboardingRequired=false`·`status="ACTIVE"`다.
+
+**선행 조건은 §1-1·§1-2의 SMS 인증**이다. 제출된 번호의 검증 마커가 없으면 `422 AUTH_PHONE_NOT_VERIFIED`로 거절하고 **계정 생성도 연동도 하지 않는다** — 번호는 비밀이 아니므로, 인증 없이 번호만으로 기존 계정에 자격증명을 붙일 수 있으면 그 계정의 매물·예약·신청자 PII까지 통째로 탈취된다. 소유 증명은 전적으로 SMS 인증이 담당한다.
+
+**연동 판정**은 정규화된 번호 **단독**으로 한다(이름은 매칭 조건이 아니다 — 앱 이름은 소셜 SDK 표기, 웹 이름은 직접 입력이라 불일치가 자연스럽고, 불일치로 계정이 갈리면 사용자는 "앱에서 내 매물의 예약이 안 보인다"만 겪고 원인을 알 수 없다). 그 번호의 `ACTIVE`·`LANDLORD` `users` 행을 잠금 조회해서 **있으면 그 `user_id`에 `local_accounts` 행만 추가**하고(`linked=true`, `users`는 건드리지 않는다), **없으면 새 `users` 행을 만들어** 위 전이를 태운다(`linked=false`). 서버 고정값은 앱과 같다 — `country=KR` · `lang=ko` · 닉네임 자동 배정 · `userType=LANDLORD`. 사업자등록번호는 가입에서 받지 않는다 — 앱 임대인과 동일하게 **매물 등록(`POST /api/v2/listings`) 요청 본문**에 담는다([03-listings-favorites](03-listings-favorites.md)).
+
+> **검증 게이트 우선순위**: ① 제출 `phoneNumber`의 가입용 인증 마커 부재 → `422 AUTH_PHONE_NOT_VERIFIED` → ② 필수 약관 2종 미동의 → `422 AUTH_REQUIRED_AGREEMENT_MISSING` → ③ `local_accounts.email` 중복 → `409 AUTH_EMAIL_ALREADY_REGISTERED` → ④ 번호로 매칭된 계정에 이미 `local_accounts` 행이 있음 → `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS` 순으로 판정한다. 어느 단계에서 실패하든 **DB 쓰기 전체를 롤백**해 `users` 행만 생기고 자격증명이 없는(= 로그인 불가) 상태나 그 반대를 남기지 않는다. 이 원자성은 **MySQL 쓰기에만** 걸린다 — 커밋 시점에 실패하는 요청(아래 `409 RESOURCE_CONFLICT`)은 토큰이 이미 발급된 뒤라 **쓰이지 않을 refresh 해시 하나가 Redis에 14일 TTL로 남는다**(원문은 응답으로 나가지 않아 악용 불가, 항목은 스스로 만료 — §5-2 알려진 제약과 같은 모양이다).
+> **`linked=true`(성공)와 `AUTH_WEB_ACCOUNT_ALREADY_EXISTS`(409)는 같은 조회의 서로 다른 가지**다 — 번호로 기존 계정을 찾은 것까지는 같고, **그 계정에 웹 자격증명이 이미 붙어 있는지**에서 갈린다. 앱만 쓰던 사람이 웹에 처음 가입하면 붙일 자리가 비어 있으니 연동 성공이고, 웹 계정이 있는 사람이 또 가입하면 자리가 이미 찼으니 409다. 후자에 제출된 이메일·비밀번호로 할 수 있는 일은 기존 자격증명을 **덮어쓰는 것**뿐인데, 그건 가입이 아니라 자격증명 교체이며(로그인 ID까지 조용히 바뀐다) 가입 엔드포인트가 할 일이 아니다 — 로그인 화면(§1-4)으로 보낸다.
+> **이메일 중복 검사는 `local_accounts.email`만 본다.** `users.email`은 보지 않고 UNIQUE도 걸지 않는다 — 임대인 대다수는 **앱 소셜 계정과 같은 이메일로 웹 가입**할 것이고, `users.email`까지 유일하게 걸면 본인이 본인 이메일로 가입하려다 409를 맞는다. 소셜 로그인은 `(provider, providerUserId)`로 판정하므로 `users.email`은 로그인에 쓰이지 않는다. 유일해야 하는 것은 **로그인 ID**뿐이고 그건 `local_accounts.email`이다.
+> **폼의 `name`·`birthDate`는 `local_accounts`에 스냅샷으로 저장**하고(`social_accounts.name`과 같은 성격), **연동 시 `users`를 덮어쓰지 않는다** — 기존 값은 온보딩을 마친 확정 값이고 폼 값은 방금 입력한 미검증 값이다. 덮어쓰면 "가입했더니 내 프로필이 바뀌었다"는 놀라운 동작이 된다. 신규 가입일 때만 폼의 `name`·`email`·`birthDate`가 `users`에도 기록된다. **응답에는 언제나 `users`의 값이 나간다**(표시 규칙 — §개요 웹 임대인 트랙).
+
+> **알려진 제약**
+> — **온보딩 미완료 앱 계정은 매칭되지 않는다(정상 동작).** 소셜 로그인만 하고 임대인 온보딩을 마치지 않은 계정은 `phone_number`가 NULL이라 걸리지 않아 **새 계정으로 가입**된다(`linked=false`). 그 앱 계정이 나중에 임대인 온보딩을 마칠 때 §5-2가 병합하므로 최종적으로 하나로 수렴한다.
+> — **세입자 계정은 매칭 대상이 아니다.** 세입자는 정의상 `phone_number`가 NULL이므로 구조적으로 후보에서 빠진다(역할 검사·거부 분기를 따로 두지 않는다). 앱 세입자가 웹에 임대인으로 가입하면 **별개 계정**이 생기고, 서버는 두 계정이 동일인인지 알 수 없어 안내도 하지 않는다(세입자→임대인 전환 미지원 — `userType`은 온보딩 확정 후 불변).
+> — **번호 정규화 백필이 없다.** 정규화는 입력 경로에만 적용하므로 **하이픈으로 저장된 기존 임대인 번호는 매칭에서 누락**될 수 있다(연동되지 않고 별개 계정이 생긴다).
+> — **남이 쓰는 소셜 이메일로 웹 가입하는 것을 막지 않는다.** 번호가 다르면 매칭되지 않아 별개 계정이 생기고 `users.email`이 같은 사용자가 둘 존재할 수 있다. 매물·예약은 `user_id`로 갈리므로 섞이지 않으며, 이메일은 **웹 로그인 ID일 뿐 계정 복구 수단이 아니라** 계정 탈취로 이어지지 않는다.
+
+- **인증**: 불필요(permitAll — 계정이 없는 가입 단계).
+- Path/Query 파라미터: 없음.
+
+#### Request Body
+
+**폼은 연동 여부와 무관하게 항상 전체 필드를 받는다** — 기획된 화면이 하나이고 분기가 없다.
+
+```json
+{
+  "name": "김임대",
+  "birthDate": "1990-01-01",
+  "phoneNumber": "01012345678",
+  "email": "kim@work.com",
+  "password": "Kohere1!",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+```
+
+| 필드 | 타입 | 필수 | 검증 |
+| --- | --- | --- | --- |
+| `name` | string | 필수 | 성·이름을 합친 단일 이름(`@NotBlank`). 빈 문자열 불가. 신규 가입이면 `users.name`에 기록하고, **연동이면 `local_accounts.name` 스냅샷으로만 저장**한다(`users` 미갱신) |
+| `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) — 온보딩(§5·§5-2)과 동일 규칙. `name`과 같이 연동 시에는 스냅샷으로만 저장 |
+| `phoneNumber` | string | 필수 | 휴대폰 번호 형식(하이픈 허용 — 서버가 숫자만 남겨 정규화). **§1-1·§1-2로 인증된 번호**여야 함(마커 부재·만료 `AUTH_PHONE_NOT_VERIFIED` 422). 신규 가입이면 정규화 값을 `users.phone_number`에 기록한다(그래야 반대 방향 §5-2에서 이 계정이 매칭 후보가 된다) |
+| `email` | string | 필수 | 이메일 형식(`@NotBlank`·`@Email`). **웹 로그인 ID** — `local_accounts.email`에 UNIQUE이며 중복이면 `AUTH_EMAIL_ALREADY_REGISTERED`(409). **신규 가입일 때만** `users.email`에도 함께 기록하고, 연동이면 소셜 진본을 유지한다(`users.email` 미갱신) |
+| `password` | string | 필수 | 영문자(`A-Za-z`) 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~10**, 공백 불허(`@NotBlank`·`@Pattern`). 위반은 `INVALID_INPUT`(400, `errors[].field=password`). **BCrypt 해시로만 보관**하고 원문은 저장·로그하지 않는다 |
+| `termsOfServiceAgreed` | boolean | 필수 | 이용약관 동의. `false`면 `AUTH_REQUIRED_AGREEMENT_MISSING`(422). 앱 `POST /auth/terms`(§2)와 같은 3필드를 가입 폼이 대신 받는다 |
+| `privacyPolicyAgreed` | boolean | 필수 | 개인정보처리방침 동의. `false`면 `AUTH_REQUIRED_AGREEMENT_MISSING`(422) |
+| `marketingAgreed` | boolean | 선택 | 마케팅 수신 동의(기본 `false`). 이후 `PATCH /users/me`(§9)로 변경한다 |
+
+> **화면 고지와 기록의 일치**: 웹 가입 화면에는 **개인정보 수집·이용 동의 체크박스만** 두고 서비스 이용약관은 **가입 버튼 문구**("가입하기를 누르면 서비스 이용약관에 동의하는 것으로 봅니다")로 갈음한다 — 화면에 고지가 있어야 `termsOfServiceAgreed=true` 기록이 허위가 아니다. 서버 기록은 앱(§2)과 동일하므로(`termsVersion`·`agreedAt` 포함) 계정 연동에도 영향이 없다.
+
+#### 성공 Response — 200 OK
+
+```json
+{
+  "success": true,
+  "data": {
+    "linked": false,
+    "onboardingRequired": false,
+    "status": "ACTIVE",
+    "tokenType": "Bearer",
+    "accessToken": "eyJ...access",
+    "expiresIn": 3600,
+    "email": "kim@work.com",
+    "name": "김임대"
+  },
+  "error": null
+}
+```
+
+refresh 토큰은 **응답 본문에 없고** `Set-Cookie` 헤더로만 내려간다(속성은 §개요 웹 임대인 트랙의 표 — `local` 프로파일에서만 `Secure`를 뺀다).
+
+```http
+Set-Cookie: refreshToken=rt_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=1209600
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `linked` | boolean | 기존 앱 계정에 자격증명만 붙였으면 `true`(새 `users` 행을 만들지 않았다), 새 계정을 만들었으면 `false` |
+| `onboardingRequired` | boolean | **항상 `false`** — 웹 가입은 한 트랜잭션으로 `ACTIVE`까지 완주한다 |
+| `status` | string(enum) | **항상 `"ACTIVE"`** — 웹에는 부분 완료 상태가 없다 |
+| `accessToken`·`tokenType`·`expiresIn` | string·string·number | 정식 access 토큰(`ROLE_USER`)과 만료까지의 초. 소셜 로그인과 같은 발급 로직을 쓴다 |
+| `email` | string | **`users.email`** 값(표시 규칙) — 연동된 계정이면 폼에 적은 웹 이메일이 아니라 **소셜 진본 이메일**이 나갈 수 있다(의도된 동작). 폼 이메일은 `local_accounts.email`에만 남는다 |
+| `name` | string \| null | **`users.name`** 값(표시 규칙). 연동 시에는 폼 값이 아니라 기존 값이 나가며, 기존 값이 없으면 `null` |
+
+> 응답 본문에 `refreshToken` 필드를 두지 않는다 — 웹은 refresh를 스크립트가 읽을 수 없는 쿠키로만 보관한다. 이후 갱신은 §6, 로그아웃은 §7이며 둘 다 쿠키를 우선해 읽는다.
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `name`·`birthDate`·`phoneNumber`·`email`·`password` 누락·빈값·형식 위반, 약관 필수 2종 누락(`@NotNull`). 위반 필드는 `errors[]`로 반환한다(비밀번호 정책 위반은 `field=password`) |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 409 | `AUTH_EMAIL_ALREADY_REGISTERED` | 같은 이메일의 `local_accounts` 행이 이미 있음(웹 로그인 ID 중복 — `users.email`은 검사하지 않는다) |
+| 409 | `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 번호로 매칭된 계정에 이미 웹 자격증명이 붙어 있음 → 로그인(§1-4)으로 유도. **그 계정의 이메일은 마스킹해서도 응답에 싣지 않는다**(공통 에러 스키마의 `code`·`message`만) |
+| 409 | `RESOURCE_CONFLICT` | 같은 번호의 앱 임대인 온보딩(§5-2)이 거의 동시에 계정을 확정해 `uq_users_phone_number`(V23)·`uq_local_accounts_*`(V22)에 걸림. 트랜잭션은 통째로 롤백되므로 계정이 갈라지지 않으며, **그대로 다시 제출하면** 상대가 만든 계정을 발견해 `linked=true`로 연동된다(재시도가 유효한 유일한 409다) |
+| 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`의 가입용 인증 마커가 없거나 만료(§1-1·§1-2 선행) — 계정 생성·연동 모두 하지 않는다 |
+| 422 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 필수 약관(이용약관/개인정보처리방침) 미동의 |
+
+---
+
+### 1-4. POST `/api/v1/auth/login` — 임대인 웹 로그인(이메일·비밀번호)
+
+`local_accounts.email`로 계정을 특정하고 BCrypt 해시로 비밀번호를 검증한다(US-1-12). 기존 `/auth/social-login`(§1)에 `provider=LOCAL`을 끼워넣지 않는다 — 소셜 요청 DTO가 이미 provider별 조건부 자격 필드로 복잡해 `password`까지 섞으면 검증 분기가 3중이 된다. **토큰 발급·회전·재사용 탐지는 소셜 로그인과 같은 로직을 그대로 재사용**하며(규칙을 두 벌로 만들지 않는다), refresh만 응답 본문이 아니라 **HttpOnly 쿠키**로 내려간다.
+
+**웹 계정은 항상 `ACTIVE`다** — 웹 가입이 한 트랜잭션으로 완주하므로(§1-3) 로그인에 **온보딩 재개 분기가 없다**. `onboardingRequired`는 항상 `false`, `status`는 항상 `"ACTIVE"`이며 앱처럼 `PENDING`/`TERMS_AGREED`로 로그인하는 경로가 존재하지 않는다.
+
+> **자격증명 오류는 한 코드로 수렴한다** — 등록되지 않은 이메일과 비밀번호 불일치를 **동일하게 `401 AUTH_INVALID_CREDENTIALS`** 로 응답해 이메일 존재 여부를 노출하지 않는다.
+> **비밀번호 5회 연속 실패 시 계정을 잠근다** — 5회째 실패에서 `failed_login_attempts=5`·`locked_at`을 기록하고, 이후에는 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED`다(잠금 판정이 자격증명 검증보다 우선한다). 로그인에 성공하면 실패 카운터를 0으로 되돌린다. 실패 횟수·잠금 시각은 **`local_accounts`의 컬럼**에 둔다 — Redis TTL로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책이 깨진다.
+> **시도 자체에 레이트리밋을 건다** — 자격증명 조회·해시 대조보다 **먼저** IP 30회/시간·이메일 10회/시간을 세고, 어느 한쪽이라도 넘으면 `429 TOO_MANY_REQUESTS`다. 두 가지를 동시에 막는다: ① 남의 이메일로 5회 틀려 잠그는 DoS(해제 경로가 없어 피해가 영구적이다) ② 선행 조건 없이 BCrypt 라운드를 강제할 수 있는 `permitAll` 경로의 CPU 증폭(가입은 SMS 인증 마커 게이트 뒤에 있다). **한도를 먼저 보는 순서가 계약**이다 — 뒤에서 보면 막힌 요청도 이미 해시 비용을 치른 뒤라 ②를 막지 못한다. IP 축은 `X-Forwarded-For`가 호출자 손에 있어 위조 가능하므로 비용 가드일 뿐이고, 잠금 DoS를 실제로 묶는 것은 **이메일 축**이다.
+
+> **알려진 제약**
+> — **잠금 해제 경로가 없다.** 해제 API도, 시간 경과 자동 해제도 구현하지 않는다. 잠긴 계정은 **운영자가 DB에서 `locked_at`을 비우는 것 외에 풀 방법이 없으므로**, 잠긴 임대인이 연락할 창구와 해제 절차를 운영에서 정해 두어야 한다(코드 변경 없음). **`locked_at`만 비우면 그것으로 끝이다** — 잠기지 않았는데 카운터가 이미 상한 이상인 계정은 다음 실패를 `1`부터 다시 세므로, `failed_login_attempts`를 함께 지우는 것을 잊어 다음 오타 한 번에 재잠금되는 일은 없다.
+> — **의도적 계정 잠금(DoS)이 가능하다.** 남의 이메일로 5회 틀리면 그 계정을 잠글 수 있다. 잠금 정책의 고전적 부작용이며 시도 레이트리밋(IP 30회/시간·이메일 10회/시간)으로 완화하나 완전히 막을 수 없다 — 수용하고 진행한다.
+
+- **인증**: 불필요(permitAll — 로그인 이전 단계).
+- Path/Query 파라미터: 없음.
+
+#### Request Body
+
+```json
+{
+  "email": "kim@work.com",
+  "password": "Kohere1!"
+}
+```
+
+| 필드 | 타입 | 필수 | 검증 |
+| --- | --- | --- | --- |
+| `email` | string | 필수 | 이메일 형식(`@NotBlank`·`@Email`). 빈 문자열 불가. 누락·형식 위반은 `INVALID_INPUT`(400)이고, **형식은 맞지만 등록되지 않은 주소는 `AUTH_INVALID_CREDENTIALS`(401)** 다 |
+| `password` | string | 필수 | 빈 문자열 불가(`@NotBlank`). 누락·빈값은 `INVALID_INPUT`(400), 값이 틀리면 `AUTH_INVALID_CREDENTIALS`(401) |
+
+#### 성공 Response — 200 OK
+
+```json
+{
+  "success": true,
+  "data": {
+    "onboardingRequired": false,
+    "status": "ACTIVE",
+    "tokenType": "Bearer",
+    "accessToken": "eyJ...access",
+    "expiresIn": 3600,
+    "email": "kim@work.com",
+    "name": "김임대"
+  },
+  "error": null
+}
+```
+
+```http
+Set-Cookie: refreshToken=rt_3b1e7c5a2f9d04e8b6c1a07f5d2e93b4c8a16f0d; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=1209600
+```
+
+> 필드 구성은 §1-3에서 `linked`만 뺀 것과 같다. `email`·`name`은 **`users`의 값**(표시 규칙)이라 **연동된 계정은 로그인에 쓴 이메일과 응답 `email`이 다를 수 있다** — 로그인 ID는 `local_accounts.email`이고 응답은 프로필의 정본을 보여 준다. refresh는 본문에 없고 쿠키로만 내려가며 속성은 §1-3과 동일하다.
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `email`/`password` 누락·빈값, `email` 형식 위반 |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 401 | `AUTH_INVALID_CREDENTIALS` | 등록되지 않은 이메일 **또는** 비밀번호 불일치 — 둘을 구분하지 않는다(계정 존재 여부 비노출) |
+| 423 | `AUTH_ACCOUNT_LOCKED` | 비밀번호 5회 연속 실패로 잠긴 계정(`locked_at` 기록됨) — **비밀번호가 맞아도** 잠금이 우선하며 해제 경로가 없다 |
+| 429 | `TOO_MANY_REQUESTS` | 로그인 시도 한도 초과 — 같은 IP 30회/시간 또는 같은 이메일 10회/시간. **자격증명을 조회하기 전에** 판정하므로 이메일 존재 여부와 무관하고, 어느 축에 걸렸는지도 구분해 알리지 않는다(한도 역산 방지) |
 
 ---
 
@@ -466,6 +776,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 {
   "success": true,
   "data": {
+    "linked": false,
     "user": {
       "id": 1024,
       "name": "Minh Nguyen",
@@ -494,6 +805,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```
 
 > 응답의 `occupation`은 **미설정(NULL)이면 필드 자체가 생략**된다(응답 뷰가 null 필드를 직렬화하지 않음 — 프로필 조회 §8도 동일). 따라서 REST Docs의 응답 필드 `occupation`은 **optional**로 선언한다(`lang`과 동일 — #187).
+>
+> **`linked`는 세입자 응답에서 항상 `false`다 — 버그가 아니다.** 임대인 온보딩(§5-2)과 응답 타입을 공유해 필드가 함께 나갈 뿐이고, 계정 병합의 매칭 키는 SMS로 인증한 휴대폰 번호 단독인데 **세입자는 온보딩에서 번호를 수집하지 않아**(`phone_number`가 NULL) 대조할 열쇠 자체가 없다. 즉 세입자 트랙에는 병합 분기에 닿을 경로가 존재하지 않는다(§개요 웹 임대인 트랙의 "세입자 → 임대인 전환 불가"와 같은 구조적 이유다).
 
 #### 발생 가능한 에러
 
@@ -566,6 +879,22 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 > **검증 게이트 우선순위**: 약관 미동의(`PENDING`) → `422 AUTH_TERMS_AGREEMENT_REQUIRED`(이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`) → 제출 `phoneNumber` 미검증·불일치 → `422 AUTH_PHONE_NOT_VERIFIED` 순으로 판정한다(약관 → 연락처, 사업자번호 게이트 없음). 약관 동의·`termsVersion`은 §2에서 이미 기록되므로 이 요청 본문에 약관 필드를 담지 않는다. `phoneNumber`는 §4-1·§4-2로 검증 완료된 값과 일치해야 한다. `nickname`은 서버가 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가).
 
+**웹 계정 병합(US-1-15)** — 위 게이트를 통과한 뒤 **병합 분기**가 하나 붙는다. 앱 → 웹 방향 연동은 소셜 로그인 시점에 서버가 휴대폰 번호를 몰라 판정할 수 없고(소셜은 `name`·`email`만 준다) 그때는 이미 임시 `users` 행이 만들어진 뒤이므로, **판정 지점이 로그인이 아니라 이 온보딩 제출이고 동작은 연결이 아니라 병합**이다(§개요 웹 임대인 트랙). 서버는 인증된 정규화 번호로 **자기 자신이 아닌 `ACTIVE`·`LANDLORD` `users` 행**을 `SELECT … FOR UPDATE`로 조회한다.
+
+- **없으면 기존 동작 그대로** 자기 계정을 `ACTIVE`로 전이한다(US-1-9 무변경 — 앱만 쓰는 임대인의 정상 경로). 응답은 `linked=false`.
+- **있으면** 그 계정이 웹에서 먼저 가입한 같은 사람이므로 병합한다 — 앱 로그인의 열쇠인 `social_accounts.user_id`를 대상 계정으로 옮기고, 방금 만들어진 임시 `users` 행을 **하드 삭제**한 뒤, **대상 계정 기준으로 토큰을 발급하고 응답의 `user`도 대상 계정 값으로 채우며 `linked=true`로 그 사실을 알린다**(요청 토큰의 `userId`가 아니다). 이후 앱 소셜 로그인은 항상 대상 계정으로 귀결돼, 웹에서 등록한 매물의 예약([04-booking-inquiry-chat](04-booking-inquiry-chat.md))이 앱에서 그대로 조회된다. 두 DB 쓰기(매핑 이전·행 삭제)는 한 트랜잭션이며 실패 시 함께 롤백한다 — `social_accounts`가 어느 쪽에도 붙지 않는 상태가 되면 앱 로그인이 영구히 깨진다. **토큰 발급은 그 트랜잭션에 들어오지 않는다**(아래 알려진 제약).
+
+> **병합 여부는 응답 필드로 명시한다 — `user.id` 비교로 추론하게 두지 않는다.** 종전에는 클라이언트가 *자기가 보낸 토큰에 박힌 `userId`* 를 꺼내 응답 `data.user.id`와 대조해야만 병합을 알 수 있었는데, 그 비교를 빠뜨려도 화면은 정상으로 보이고 **다음 API 호출에서야** 사라진 계정의 토큰으로 401을 맞는다. 병합은 서버가 확실히 아는 사실이므로 서버가 말한다. 필드명은 웹 가입(§1-3)의 `linked`와 **같은 단어**다 — 방향(연결/병합)과 구현은 다르지만 클라이언트에게는 둘 다 "계정이 하나로 합쳐졌다"는 한 가지 사실이고, 같은 개념에 두 단어를 쓸 이유가 없다. **응답 필드 추가는 하위 호환이라 `/api/v1`을 유지한다**(버전 정책은 [api-design-guide §2-1](../api-design-guide.md)).
+
+> 병합해도 옮길 것은 `social_accounts` 행뿐이다 — 임시 계정은 방금 소셜 로그인으로 만들어져 매물·예약·채팅이 하나도 없다. 옮기는 행 수는 단언하지 않는다(UPDATE가 N행이어도 안전하다). 대상 계정에 `social_accounts`가 여러 행이 되는 것은 **정상**이다(한 사람이 Google·Apple로 각각 앱 로그인해 차례로 병합한 경우). 인증 마커가 없으면 `422 AUTH_PHONE_NOT_VERIFIED`가 선행해 **병합도 하지 않는다** — 번호만 알면 남의 웹 계정을 흡수하는 경로가 생기지 않아야 한다. 조회 조건의 `status='ACTIVE' AND user_type='LANDLORD'`는 지금은 중복이지만(번호가 채워진 계정은 사실상 `ACTIVE` 임대인뿐이다) **명시적으로 건다** — 암묵적 불변식에 기대지 않는다. 동시에 도착한 웹 가입과 앱 온보딩이 계정을 갈라 놓는 것은 `users.phone_number` UNIQUE가 막는다 — 둘째 트랜잭션이 DB 제약으로 실패하며, 그 실패는 **`409 RESOURCE_CONFLICT`로 번역해 내려간다**(500이 아니다 — 재시도하면 성공하는 상황이라 클라이언트가 그 신호를 받아야 한다). 재시도하면 상대가 만든 계정을 발견해 정상 병합된다. 번역 대상은 **문서화된 UNIQUE 제약의 중복 위반뿐**이며 `NOT NULL` 위반 등 다른 제약 위반은 종전대로 `500`이다([error-response-guide §4](../error-response-guide.md)).
+
+> **알려진 제약**
+> — **롤백돼도 refresh 해시는 Redis에 남는다.** 한 트랜잭션 보장은 MySQL 쓰기에만 걸린다. 토큰 발급은 트랜잭션 안에서 일어나지만 refresh 해시는 Redis에 남고 롤백되지 않으므로, 위 `409 RESOURCE_CONFLICT`(커밋 시점 UNIQUE 위반)처럼 늦게 실패하는 요청은 **쓰이지 않을 해시 하나를 14일 TTL로 남긴다**. 원문은 응답으로 나가지 않아 세션을 열 수 없고(악용 불가) 항목은 스스로 만료된다 — 그때까지 `refresh:user:{id}` 인덱스가 실제 세션보다 많아 보이는 것이 유일한 영향이다. §1-3 웹 회원가입도 같다.
+> — **임시 계정의 진단 기록은 삭제하지 않는다.** 병합은 `users` 행만 지우므로 사라진 계정을 가리키는 진단 문서가 남을 수 있다(조회 주체가 없어 실질 영향은 없다). 현재 탈퇴조차 진단을 지우지 않으므로, 병합이 탈퇴보다 공격적으로 지우는 비대칭을 만들지 않는다.
+> — **앱·웹 양쪽 모두 완주한 계정은 자동 병합하지 않는다.** 같은 번호의 `ACTIVE` 계정이 양쪽에 각각 있으면 온보딩 경로를 다시 타지 않아 트리거가 없고, 양쪽이 매물·예약을 보유했을 수 있어 데이터 이관 판단이 필요하다 — 운영 수동 처리 대상이다(화면·코드를 두지 않는다).
+> — **번호 정규화 백필이 없다.** 하이픈으로 저장된 기존 임대인 번호는 병합 조회에서 누락될 수 있다.
+> — 매물 사진의 pending 업로드 S3 키가 `landlordId`를 품으므로, 병합으로 id가 바뀌면 **진행 중이던 pending 업로드는 고아가 된다**. 병합은 앱 가입 직후에만 일어나 그 시점에 진행 중 업로드가 없으므로 실무상 무해하다.
+
 - **인증**: 필수 — 소셜 로그인 단계에서 받은 온보딩 토큰(`onboardingCompleted=false`). 상태는 `TERMS_AGREED`여야 한다.
 - Path/Query 파라미터: 없음.
 
@@ -589,6 +918,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 {
   "success": true,
   "data": {
+    "linked": false,
     "user": {
       "id": 2048,
       "name": "Kim Minsu",
@@ -614,7 +944,15 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 임대인 응답은 세입자와 달리 `gender`·`occupation`·`visaType`을 포함하지 않는다. **`email`은 세입자와 동일하게 소셜 로그인 시 provider 값으로 확정돼 임대인도 보유하므로 응답에 포함한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192) — 이메일은 인증 대상 아닌 미검증 연락처). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 서버가 고정 부여한 값(`KR`·`ko`)이라 임대인 응답에도 포함한다**(요청 본문에는 없다 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 매물 등록에서 입력·저장 — §5-1은 임대인이 직접 부르는 별도 무상태 검증). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `linked` | boolean | **계정 병합 여부**(US-1-15). `true`면 같은 번호의 기존 웹 임대인 계정과 합쳐진 것이라 아래 `user`와 토큰이 **요청 토큰의 계정이 아니라 살아남은 웹 계정 기준**이고 `user.id`가 요청 토큰의 `userId`와 다르다. 병합 대상이 없던 일반 온보딩은 `false`이며, 세입자 온보딩(§5)은 병합 분기가 없어 언제나 `false`다 |
+| `user` | object | 완성된 회원 프로필. `linked=true`면 **폼에 적은 값이 아니라 살아남은 계정의 값**이다(생년월일도 대상 계정 값 — 병합은 대상 프로필을 한 칼럼도 덮어쓰지 않는다) |
+| `accessToken`·`refreshToken`·`tokenType`·`expiresIn` | string·string·string·number | 정식 토큰(`ROLE_USER`)과 만료까지의 초. **`linked=true`면 이 토큰은 요청에 쓴 계정이 아닌 다른 계정의 것**이므로 클라이언트는 반드시 저장 중인 토큰을 이 값으로 교체해야 한다 — 요청에 쓴 임시 계정 행은 이미 삭제됐다 |
+
+> **클라이언트가 `linked=true`에서 할 일은 둘이다** — ① 저장된 access·refresh 토큰을 응답 값으로 교체하고 ② 프로필 화면의 이름·이메일을 응답의 `user` 값으로 갱신하며 "기존 웹 계정과 연결되었습니다" 류의 안내를 띄운다(방금 입력한 값이 그대로 반영되지 않는 것이 의도된 동작임을 사용자가 알아야 한다).
+>
+> 임대인 응답은 세입자와 달리 `gender`·`occupation`·`visaType`을 포함하지 않는다. **`email`은 세입자와 동일하게 소셜 로그인 시 provider 값으로 확정돼 임대인도 보유하므로 응답에 포함한다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192) — 이메일은 인증 대상 아닌 미검증 연락처). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 서버가 고정 부여한 값(`KR`·`ko`)이라 임대인 응답에도 포함한다**(요청 본문에는 없다 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 매물 등록에서 입력·저장 — §5-1은 임대인이 직접 부르는 별도 무상태 검증). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다. **웹 계정 병합(US-1-15)이 일어난 경우 응답의 `user`와 토큰은 모두 대상(웹) 계정 기준**이므로 `user.id`가 요청 토큰의 `userId`와 다르며, 그 사실은 `linked=true`로 응답에 명시된다 — 클라이언트는 이 응답의 토큰으로 교체해야 하며, 그 뒤 앱 소셜 로그인은 항상 같은 계정으로 귀결된다.
 
 #### 발생 가능한 에러
 
@@ -624,6 +962,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 `ACTIVE`인 사용자의 온보딩 재요청(동시 요청 포함 — 한 요청만 성공) |
+| 409 | `RESOURCE_CONFLICT` | 같은 번호의 웹 회원가입(§1-3)이 거의 동시에 계정을 확정해 `uq_users_phone_number`(V23)에 걸림 — **병합 대상이 아직 없을 때**의 경합이라 `SELECT … FOR UPDATE`로는 막을 수 없다(없는 행은 잠글 수 없다). 트랜잭션 전체가 롤백돼 계정이 갈라지지 않으며, **그대로 다시 제출하면** 상대가 만든 계정을 발견해 병합으로 수렴한다 |
 | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 온보딩 제출(약관 동의 §2 선행 — 우선 판정) |
 | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`가 미검증이거나 검증한 번호와 불일치(연락처 인증 §4-1·§4-2 선행) |
 
@@ -633,10 +972,12 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 유효한 refresh 토큰으로 새 access 토큰을 재발급한다. 항상 회전한다 — 새 refresh 토큰도 함께 발급하고 제출한 refresh는 무효화(ROTATED)한다([ADR-0006](../../adr/0006-refresh-token-store-redis.md)). 폐기된 토큰을 다시 제출하는 재사용이 탐지되면 해당 사용자의 모든 refresh 토큰을 무효화한다.
 
-- **인증**: 불필요(헤더 access 토큰 없이 본문 refresh 토큰으로 처리). 만료된 access 토큰 보유 클라이언트가 이 엔드포인트로 갱신한다.
+**refresh는 쿠키(`refreshToken`) 우선 · 요청 본문 fallback으로 읽는다**([ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md)). 웹(브라우저)은 HttpOnly 쿠키가 자동 첨부되므로 **본문 없이** 호출하고, 앱은 종전대로 본문에 담아 보낸다. **응답도 요청이 온 채널을 따른다** — 쿠키로 왔으면 회전된 refresh를 다시 `Set-Cookie`로 내리고, 본문으로 왔으면 종전대로 응답 본문에 담는다. **앱 동작은 전혀 바뀌지 않으므로 v2를 신설하지 않고 v1을 유지**한다(회전·재사용 탐지 규칙도 채널과 무관하게 동일하다).
+
+- **인증**: 불필요(헤더 access 토큰 없이 쿠키 또는 본문의 refresh 토큰으로 처리). 만료된 access 토큰 보유 클라이언트가 이 엔드포인트로 갱신한다.
 - Path/Query 파라미터: 없음.
 
-#### Request Body
+#### Request Body — 선택(쿠키로 보내면 생략)
 
 ```json
 {
@@ -646,9 +987,11 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `refreshToken` | string | 필수 | 서버가 발급·보관(해시) 중인 **불투명(opaque) refresh 토큰**. 빈 문자열 불가 |
+| `refreshToken` | string | 선택 | 서버가 발급·보관(해시) 중인 **불투명(opaque) refresh 토큰**. **쿠키 `refreshToken`이 있으면 쿠키 값을 쓰고 본문은 보지 않는다.** 쿠키·본문 어느 쪽에도 값이 없거나 공백이면 `400 INVALID_INPUT`(`errors[].field=refreshToken`) |
 
-#### 성공 Response — 200 OK
+> 본문 자체를 생략할 수 있다(웹의 정상 경로 — 쿠키만 보낸다). **종전에는 본문 없는 요청이 `MALFORMED_REQUEST`였으나, 본문이 선택이 되면서 값을 어디서도 찾지 못한 경우는 `INVALID_INPUT`으로 바뀐다.** 반면 **본문을 보냈는데 JSON으로 해석할 수 없으면 종전대로 `MALFORMED_REQUEST`** 다 — 깨진 본문은 여전히 요청 자체가 깨진 것이다.
+
+#### 성공 Response — 본문으로 제출(앱) (200 OK)
 
 ```json
 {
@@ -663,14 +1006,33 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> reissue는 항상 회전한다: 제출한 refresh는 무효화(ROTATED)하고 새 access·refresh를 함께 발급한다([ADR-0006](../../adr/0006-refresh-token-store-redis.md)).
+#### 성공 Response — 쿠키로 제출(웹) (200 OK)
+
+```json
+{
+  "success": true,
+  "data": {
+    "tokenType": "Bearer",
+    "accessToken": "eyJ...new-access",
+    "refreshToken": null,
+    "expiresIn": 3600
+  },
+  "error": null
+}
+```
+
+```http
+Set-Cookie: refreshToken=rt_3b1e7c5a2f9d04e8b6c1a07f5d2e93b4c8a16f0d; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=1209600
+```
+
+> reissue는 항상 회전한다: 제출한 refresh는 무효화(ROTATED)하고 새 access·refresh를 함께 발급한다([ADR-0006](../../adr/0006-refresh-token-store-redis.md)). **쿠키 경로에서는 응답 본문의 `refreshToken`을 비우고(`null`) 회전된 값을 `Set-Cookie`로만 내린다** — 스크립트가 읽을 수 있는 곳에 refresh를 두지 않는다. 쿠키 속성은 §개요 웹 임대인 트랙의 표와 동일하며, 회전할 때마다 `Max-Age`가 다시 14일로 갱신된다.
 
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `refreshToken` 누락/빈값 |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 400 | `INVALID_INPUT` | 쿠키·본문 어느 쪽에도 `refreshToken`이 없거나 공백(`errors[].field=refreshToken`) |
+| 400 | `MALFORMED_REQUEST` | 보낸 본문을 JSON으로 해석할 수 없음/타입 불일치. **본문을 아예 보내지 않는 것은 오류가 아니다**(쿠키 경로) |
 | 401 | `AUTH_INVALID_REFRESH_TOKEN` | refresh 토큰 만료/위조/무효화/재사용 탐지 |
 
 ---
@@ -679,10 +1041,12 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 전달된 refresh 토큰을 서버에서 무효화해 더는 재발급에 쓰지 못하게 한다. 이미 무효화된 토큰이면 멱등하게 `204`로 처리한다.
 
+**refresh를 읽는 규칙은 §6과 같다 — 쿠키(`refreshToken`) 우선 · 요청 본문 fallback**이며 본문은 선택이다([ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md)). 요청이 **쿠키로 왔으면 서버 무효화와 함께 `Max-Age=0` 삭제 쿠키를 내려** 브라우저에서도 지운다 — 서버에서만 지우면 브라우저에 죽은 쿠키가 남아 다음 재발급이 `401`로 실패한다. 본문으로 온 요청(앱)에는 쿠키를 내리지 않는다. **앱 동작은 전혀 바뀌지 않는다.**
+
 - **인증**: 필수.
 - Path/Query 파라미터: 없음.
 
-#### Request Body
+#### Request Body — 선택(쿠키로 보내면 생략)
 
 ```json
 {
@@ -692,18 +1056,24 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `refreshToken` | string | 필수 | 무효화할 refresh 토큰. 빈 문자열 불가 |
+| `refreshToken` | string | 선택 | 무효화할 refresh 토큰. **쿠키 `refreshToken`이 있으면 쿠키 값을 쓰고 본문은 보지 않는다.** 쿠키·본문 어느 쪽에도 값이 없거나 공백이면 `400 INVALID_INPUT`(`errors[].field=refreshToken`) |
+
+> §6과 동일하게, **본문 없는 요청은 오류가 아니고**(쿠키 경로) 값을 어디서도 찾지 못한 경우가 `INVALID_INPUT`이다(종전 `MALFORMED_REQUEST`에서 변경). **보낸 본문이 깨진 JSON이면 종전대로 `MALFORMED_REQUEST`** 다.
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 이미 무효화된 토큰으로 재호출해도 멱등하게 `204`를 반환한다.
+본문 없음. 이미 무효화된 토큰으로 재호출해도 멱등하게 `204`를 반환한다. 쿠키로 온 요청에는 삭제 쿠키를 함께 내린다(값을 비우고 `Max-Age=0` — 나머지 속성은 발급 때와 같아야 브라우저가 같은 쿠키로 인식해 지운다).
+
+```http
+Set-Cookie: refreshToken=; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=0
+```
 
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `refreshToken` 누락/빈값 |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
+| 400 | `INVALID_INPUT` | 쿠키·본문 어느 쪽에도 `refreshToken`이 없거나 공백(`errors[].field=refreshToken`) |
+| 400 | `MALFORMED_REQUEST` | 보낸 본문을 JSON으로 해석할 수 없음/타입 불일치. **본문을 아예 보내지 않는 것은 오류가 아니다**(쿠키 경로) |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | access 토큰 누락/위조 / 만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(PENDING·TERMS_AGREED) 토큰으로 접근(logout은 `ROLE_USER` 필요) |
 
@@ -863,7 +1233,15 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 개인정보(세입자: 이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·국적·표시 언어·이메일·닉네임)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). 임대인 `business_registration_number_hash` 컬럼도 익명화 대상에 포함하지만(방어적 처리 — [database-design](../../database/database-design.md) §4-2) **실제로는 온보딩·매물 등록 어느 경로에서도 채우지 않아 항상 NULL**이라 지울 값이 없다. 임대인이 매물 등록에 입력한 사업자등록번호는 매물 문서가 원문으로 보유하며, 탈퇴 시 매물 문서 PII 처리는 **후속** 설계 대상이다. Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
+본문 없음. **§7(로그아웃)과 마찬가지로 `Max-Age=0` 삭제 쿠키를 함께 내려** 브라우저에 남은 refresh 쿠키까지 지운다([ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md) §3).
+
+```http
+Set-Cookie: refreshToken=; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=0
+```
+
+> **§7과 달리 조건 없이 내린다.** 로그아웃은 요청이 쿠키로 왔을 때만 붙이지만, 쿠키 `Path`가 `/api/v1/auth`라 브라우저는 이 요청(`/api/v1/users/me`)에 refresh 쿠키를 **애초에 싣지 않는다** — 요청만 봐서는 보유 여부를 알 수 없으므로 항상 내린다. **쿠키를 가진 적 없는 앱 클라이언트에는 아무 영향이 없다**(`Max-Age=0`은 「지금 만료」라 지울 것이 없다). 서버에서는 이미 모든 refresh가 무효화되므로 이 헤더는 보안이 아니라 **잔여물 정리**다 — 지우지 않으면 죽은 쿠키가 최대 14일 남아 재발급 재시도가 설명 불가능한 `401`을 받는다.
+
+개인정보(세입자: 이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·국적·표시 언어·이메일·닉네임)는 탈퇴 시 즉시 익명화하고, 자격증명 두 벌(`social_accounts` 매핑 · 웹 `local_accounts` 행)을 **함께 삭제**한다([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md) · [ADR-0047](../../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) — 웹 자격증명이 남으면 `users` 행이 보존되는 탈퇴 특성상 탈퇴한 임대인이 §1-4로 다시 로그인할 수 있고, `local_accounts.email` UNIQUE 때문에 같은 이메일 재가입도 막힌다. 임대인 `business_registration_number_hash` 컬럼도 익명화 대상에 포함하지만(방어적 처리 — [database-design](../../database/database-design.md) §4-2) **실제로는 온보딩·매물 등록 어느 경로에서도 채우지 않아 항상 NULL**이라 지울 값이 없다. 임대인이 매물 등록에 입력한 사업자등록번호는 매물 문서가 원문으로 보유하며, 탈퇴 시 매물 문서 PII 처리는 **후속** 설계 대상이다. Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 #### 발생 가능한 에러
 
@@ -983,22 +1361,26 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 ## 도메인 에러 코드
 
-> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `RESOURCE_NOT_FOUND` 등)는 [error-response-guide](../error-response-guide.md) §3·§4를 따르며 여기서 재정의하지 않는다. provider/idToken 등 입력 형식 위반은 별도 도메인 코드 없이 공통 코드로 처리한다 — Bean Validation 위반(누락·빈값)은 `INVALID_INPUT`, 역직렬화 실패(허용 외 enum 문자열 등)는 `MALFORMED_REQUEST`. 아래는 auth/user 도메인 고유 코드만 정의한다. prefix는 `AUTH` / `USER`.
+> 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `RESOURCE_NOT_FOUND` 등)는 [error-response-guide](../error-response-guide.md) §3·§4를 따르며 여기서 재정의하지 않는다. provider/idToken 등 입력 형식 위반은 별도 도메인 코드 없이 공통 코드로 처리한다 — Bean Validation 위반(누락·빈값)은 `INVALID_INPUT`, 역직렬화 실패(허용 외 enum 문자열 등)는 `MALFORMED_REQUEST`. 아래는 auth/user 도메인 고유 코드만 정의한다. prefix는 `AUTH` / `USER`. 임대인 웹 트랙에서 추가된 4코드(`AUTH_INVALID_CREDENTIALS`·`AUTH_ACCOUNT_LOCKED`·`AUTH_EMAIL_ALREADY_REGISTERED`·`AUTH_WEB_ACCOUNT_ALREADY_EXISTS`)도 같은 카탈로그에 누적하며, **`AUTH_ACCOUNT_LOCKED`의 `423 Locked`는 이 프로젝트가 처음 쓰는 status**다(status↔코드 매핑은 [error-response-guide](../error-response-guide.md) §3·§4에도 함께 반영한다).
 
 | code | status | 의미 |
 | --- | --- | --- |
 | `AUTH_MISSING_CREDENTIAL` | 400 | provider의 자격 필드 누락(Google `idToken` 또는 Apple `authorizationCode` 미전송) |
 | `AUTH_INVALID_SOCIAL_TOKEN` | 401 | Google `idToken` 검증 실패(서명/`aud`/`iss`/`exp`), 또는 Apple `authorizationCode` 교환 실패·교환 `id_token` 검증 실패(위조·만료·앱 불일치·재사용 코드) |
+| `AUTH_INVALID_CREDENTIALS` | 401 | 임대인 웹 로그인(`POST /auth/login`) 실패 — 등록되지 않은 이메일 **또는** 비밀번호 불일치(둘을 구분하지 않는다: 계정 존재 여부 비노출) |
+| `AUTH_ACCOUNT_LOCKED` | 423 | 임대인 웹 로그인에서 비밀번호 5회 연속 실패로 잠긴 계정(비밀번호가 맞아도 잠금이 우선 — 해제 경로 없음) |
 | `AUTH_EMAIL_REQUIRED` | 422 | 소셜 로그인(`POST /auth/social-login`) 시 토큰의 `email` 클레임·요청 `email` 어느 쪽에도 이메일이 없음(provider 진본 이메일 확정 불가) |
 | `AUTH_EMAIL_MISMATCH` | 422 | 소셜 로그인 요청 `email`이 토큰의 `email` 클레임과 불일치(email은 provider 진본으로 확정) |
 | `AUTH_EMAIL_VERIFICATION_FAILED` | 422 | 이메일 인증번호 불일치 또는 만료(미발송·만료·오입력) — 세입자(정식(ACTIVE) 사용자 이메일 인증 §3·§4) |
-| `AUTH_PHONE_VERIFICATION_FAILED` | 422 | 연락처(SMS) 인증번호 불일치 또는 만료(미발송·만료·오입력) — 임대인 |
-| `AUTH_PHONE_NOT_VERIFIED` | 422 | 임대인 온보딩 제출 또는 프로필 연락처 변경 시 `phoneNumber`가 미검증이거나 검증한 번호와 불일치 |
+| `AUTH_PHONE_VERIFICATION_FAILED` | 422 | 연락처(SMS) 인증번호 불일치 또는 만료(미발송·만료·오입력) — 임대인. **가입용 인증(§1-2, 번호 키)에서는 검증 시도 상한 초과도 이 코드**다(온보딩용 §4-2는 시도 초과를 `429`로 분리) |
+| `AUTH_PHONE_NOT_VERIFIED` | 422 | 임대인 온보딩 제출 또는 프로필 연락처 변경 시 `phoneNumber`가 미검증이거나 검증한 번호와 불일치. **임대인 웹 회원가입(§1-3)에서 가입용 인증 마커가 없거나 만료된 경우도 포함** |
 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 422 | 필수 약관(이용약관/개인정보처리방침) 미동의(약관 동의 `POST /auth/terms`) |
 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 422 | 약관 미동의(`PENDING`) 상태로 온보딩 제출 또는 연락처 인증(약관 동의 선행 필요) |
 | `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED` | 422 | 사업자번호 검증(`POST /auth/business/verify`) 시 검증 서비스 조회 결과 미등록·휴업·폐업(진위·상태 검증 실패) |
 | `AUTH_ONBOARDING_REQUIRED` | 403 | 온보딩 미완료(`PENDING`/`TERMS_AGREED`) 상태로 보호 API 접근 |
 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 409 | 이미 온보딩 완료(ACTIVE)된 사용자가 온보딩 재요청 |
+| `AUTH_EMAIL_ALREADY_REGISTERED` | 409 | 임대인 웹 회원가입(`POST /auth/signup`)에서 그 이메일의 `local_accounts` 행이 이미 있음(웹 로그인 ID 중복 — `users.email`은 검사하지 않는다) |
+| `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 409 | 임대인 웹 회원가입에서 번호로 매칭된 계정에 이미 웹 자격증명이 붙어 있음(연동이 이미 끝난 상태 → 로그인으로 유도. 그 계정의 이메일은 응답에 싣지 않는다) |
 | `AUTH_INVALID_REFRESH_TOKEN` | 401 | refresh 토큰 만료/위조/무효화/재사용 탐지 |
 | `USER_NOT_FOUND` | 404 | 대상 사용자가 없거나 탈퇴되어 조회 불가 |
 | `USER_ALREADY_WITHDRAWN` | 409 | 이미 탈퇴(WITHDRAWN)된 사용자에 대한 탈퇴 재요청 |

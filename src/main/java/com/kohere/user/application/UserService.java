@@ -1,6 +1,7 @@
 package com.kohere.user.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.PhoneNumbers;
 import com.kohere.common.request.RequestDates;
 import com.kohere.user.api.PhoneVerificationChecker;
 import com.kohere.user.api.UserWithdrawnEvent;
@@ -103,13 +104,18 @@ public class UserService {
   /**
    * 임대인 프로필 수정 — 이름·연락처·마케팅 동의. 연락처를 새 번호로 바꿀 때는 그 번호가 SMS로 사전 재인증(§4-1·§4-2)됐는지 확인하고(미인증·불일치 422
    * AUTH_PHONE_NOT_VERIFIED), 검증 완료된 경우에만 반영한다(ADR-0034).
+   *
+   * <p>번호는 저장 전에 표준형으로 접는다({@link PhoneNumbers}) — 온보딩과 같은 형태라야 {@code users.phone_number}의
+   * UNIQUE(V23)가 표기 차이로 뚫리지 않는다(#229 D10). 백필을 하지 않아 기존 행이 하이픈으로 남아 있으면 「변경 없음」 판정이 어긋나 재인증을 요구하게
+   * 되는데, 인증을 한 번 더 받게 할 뿐 잘못 반영되지는 않으므로 그대로 둔다(그 시점에 표준형으로 접힌다).
    */
   private User updateLandlordProfile(User user, UpdateProfileRequest request) {
-    if (request.phoneNumber() != null && !request.phoneNumber().equals(user.getPhoneNumber())) {
-      phoneVerificationChecker.assertPhoneVerified(user.getId(), request.phoneNumber());
+    String phoneNumber = PhoneNumbers.normalize(request.phoneNumber());
+    if (phoneNumber != null && !phoneNumber.equals(user.getPhoneNumber())) {
+      phoneVerificationChecker.assertPhoneVerified(user.getId(), phoneNumber);
     }
     return user.updateLandlordProfile(
-        request.name(), request.phoneNumber(), request.marketingAgreed(), Instant.now());
+        request.name(), phoneNumber, request.marketingAgreed(), Instant.now());
   }
 
   @Transactional

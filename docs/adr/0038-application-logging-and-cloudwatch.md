@@ -91,7 +91,7 @@ Proposed
 | `pathVars` | 현 매핑의 경로 변수는 전부 id·코드(`bookingId`·`listingId`·`postId`·`commentId`·`userId`·`diagnosisId`·`quizId`·`roomId`·`step`·`topicCode`) — 마스킹 불필요. 비-id를 경로에 두는 엔드포인트가 생기면 `LogMasker` 경유가 전제다 |
 | 토큰·Apple private key | 어떤 레벨에서도 금지 |
 | 이메일·전화·실명·여권·사업자번호 | `common`의 `LogMasker`로 마스킹(`mask(phone)` 선례 승격) |
-| 매물 등록 본문의 `businessRegistrationNumber`·`contact.phone`·`contact.sms` | `LogMasker`로 마스킹. `POST /api/v2/listings` 요청 본문이 싣는 임대인 PII로, 매물 문서에는 원문·평문으로 저장되지만([ADR-0039](./0039-listing-schema-v4-registration-form.md)) **로그에는 어떤 레벨에서도 원문을 남기지 않는다** — `LISTING_REGISTERED` 이벤트·검증 실패 경로·`toString` 모두 해당한다 |
+| 매물 등록 본문의 `businessRegistrationNumber`·`contact.phone` | `LogMasker`로 마스킹. `POST /api/v2/listings` 요청 본문이 싣는 임대인 PII로, 매물 문서에는 원문·평문으로 저장되지만([ADR-0039](./0039-listing-schema-v4-registration-form.md)) **로그에는 어떤 레벨에서도 원문을 남기지 않는다** — `LISTING_REGISTERED` 이벤트·검증 실패 경로·`toString` 모두 해당한다 |
 | 인증번호 | `LoggingVerificationSmsSender`가 `code`를 평문 WARN으로 찍는다 — 제거. 고정 인증번호 발급자 2종은 `userId`만 남겨 이미 안전하다 |
 
 ### 용도 1 — 사용자 활동 추적
@@ -120,7 +120,7 @@ Proposed
 | `PROFILE_UPDATED` | 바뀐 필드명 목록만(값은 PII), `lang`은 값까지(번역을 좌우) | `UserService.updateMyProfile` |
 | `LISTING_REGISTERED` | `listingId`, `roomOfferCount`, `status`(항상 `PENDING`) | 매물 등록 서비스(`POST /api/v2/listings`) — 발급된 `listingId`가 경로에 없어 접근 로그로 복원되지 않는다 |
 
-**`LISTING_REGISTERED`는 임대인 PII가 실린 유일한 데이터 변경 이벤트다.** 요청 본문의 `businessRegistrationNumber`·`contact.phone`·`contact.sms`는 이벤트에 담지 않고, 어쩔 수 없이 값이 필요한 경로에서는 `LogMasker`를 거친다(위 PII 표). 저장은 원문·평문이지만([ADR-0039](./0039-listing-schema-v4-registration-form.md)) 로그는 그 예외를 따라가지 않는다.
+**`LISTING_REGISTERED`는 임대인 PII가 실린 유일한 데이터 변경 이벤트다.** 요청 본문의 `businessRegistrationNumber`·`contact.phone`은 이벤트에 담지 않고, 어쩔 수 없이 값이 필요한 경로에서는 `LogMasker`를 거친다(위 PII 표). 저장은 원문·평문이지만([ADR-0039](./0039-listing-schema-v4-registration-form.md)) 로그는 그 예외를 따라가지 않는다.
 
 **아래는 접근 로그로 충분해 이벤트를 만들지 않는다.**
 

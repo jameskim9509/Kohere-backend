@@ -36,6 +36,13 @@ public final class AuthDocsFields {
 
   private AuthDocsFields() {}
 
+  /**
+   * 웹 가입·로그인 응답의 {@code status} 허용값. {@link UserStatus} 전체가 아니라 <b>ACTIVE 하나</b>인 것이 계약이다(스펙
+   * §1-3·§1-4) — 웹 가입은 한 트랜잭션으로 완주해 {@code PENDING}·{@code TERMS_AGREED}로 응답할 자리가 없다. {@code
+   * enumField}로 적으면 도달할 수 없는 값 셋이 문서에 남는다.
+   */
+  private static final List<String> WEB_ACCOUNT_STATUSES = List.of("ACTIVE");
+
   // ── 소셜 로그인 — POST /api/v1/auth/social-login ────────────────────────────
 
   public static final String SOCIAL_LOGIN_SUMMARY = "소셜 로그인";
@@ -194,6 +201,7 @@ public final class AuthDocsFields {
       **응답 주의사항**
 
       - 응답 `data.user`의 `phoneNumber`는 세입자 미수집이라 값이 null이 아니라 **필드 자체가 생략**된다.
+      - `data.linked`는 **항상 `false`**다 — 임대인과 같은 응답 타입을 쓸 뿐이고, 계정 병합의 매칭 키인 휴대폰 번호를 세입자는 수집하지 않아 병합 분기 자체가 없다.
 
       **에러 코드**
 
@@ -218,26 +226,35 @@ public final class AuthDocsFields {
 
   public static final String REISSUE_DESCRIPTION =
       """
-      본문의 refresh 토큰으로 access 토큰을 재발급한다. refresh 토큰은 항상 회전한다.
+      refresh 토큰으로 access 토큰을 재발급한다. refresh 토큰은 항상 회전한다.
 
       **헤더**
 
       - 인증 불필요 — 토큰 없이 호출한다.
       - 만료된 access 토큰이 붙어 있어도 401로 막지 않는다 — 모든 요청에 토큰을 붙이는 클라이언트가 이 호출만 헤더를 벗길 필요가 없다.
 
+      **요청 주의사항**
+
+      - refresh 토큰은 **쿠키(`refreshToken`) 우선 · 요청 본문 fallback**으로 읽는다 — 쿠키가 있으면 본문은 보지 않는다.
+      - 웹(브라우저)은 HttpOnly 쿠키가 자동으로 실리므로 **본문 없이** 호출한다. 앱은 종전대로 본문에 담아 보내며 동작이 바뀌지 않는다.
+      - 본문을 아예 보내지 않는 것은 오류가 아니다 — 쿠키·본문 어느 쪽에도 값이 없거나 공백일 때만 400 `INVALID_INPUT`이다.
+
       **응답 주의사항**
 
-      - 응답의 새 refresh 토큰으로 반드시 교체한다. 이전 토큰은 즉시 무효가 되고, 다시 쓰면 탈취로 간주해 그 사용자의 모든 세션이 끊긴다.
+      - **응답 채널이 요청 채널을 따른다** — 쿠키로 보냈으면 회전된 refresh가 `Set-Cookie`로만 오고 본문 `refreshToken`은 null이다. 본문으로 보냈으면 종전대로 본문에 담겨 오고 `Set-Cookie`는 붙지 않는다.
+      - 응답의 새 refresh 토큰으로 반드시 교체한다(쿠키 경로는 브라우저가 교체한다). 이전 토큰은 즉시 무효가 되고, 다시 쓰면 탈취로 간주해 그 사용자의 모든 세션이 끊긴다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `refreshToken` 누락·빈값 |
-      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 400 | `INVALID_INPUT` | 쿠키·본문 어느 쪽에도 `refreshToken`이 없거나 공백 |
+      | 400 | `MALFORMED_REQUEST` | 보낸 요청 본문을 JSON으로 해석할 수 없음(본문을 보내지 않는 것은 오류가 아니다) |
       | 401 | `AUTH_INVALID_REFRESH_TOKEN` | 제출한 refresh 토큰의 만료·위조·무효화·재사용 탐지 — 넷을 구분하지 않고 이 코드 하나로 응답한다 |
       """;
 
+  // 400의 두 코드가 가리키는 상황이 갈렸다(#229 D12) — 값을 못 찾은 것은 INVALID_INPUT, 본문이 깨진 것은
+  // MALFORMED_REQUEST다. 본문 없는 요청은 이제 어느 쪽도 아니다(쿠키 경로의 정상 모양).
   public static final String[] REISSUE_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
   public static final String[] REISSUE_401 = {"AUTH_INVALID_REFRESH_TOKEN"};
 
@@ -253,16 +270,22 @@ public final class AuthDocsFields {
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
 
+      **요청 주의사항**
+
+      - refresh 토큰을 읽는 규칙은 재발급과 같다 — **쿠키(`refreshToken`) 우선 · 요청 본문 fallback**이며 쿠키가 있으면 본문은 보지 않는다.
+      - 본문을 아예 보내지 않는 것은 오류가 아니다 — 쿠키·본문 어느 쪽에도 값이 없거나 공백일 때만 400 `INVALID_INPUT`이다.
+
       **응답 주의사항**
 
+      - 쿠키로 보낸 요청에는 `Max-Age=0` 삭제 쿠키를 함께 내려 브라우저에 남은 refresh까지 지운다. 본문으로 보낸 요청에는 쿠키를 내리지 않는다.
       - 로그아웃해도 access 토큰은 무효화되지 않는다 — 남은 만료 시간까지 그대로 API가 호출되므로 클라이언트가 직접 지운다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `refreshToken` 누락·빈값 |
-      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 400 | `INVALID_INPUT` | 쿠키·본문 어느 쪽에도 `refreshToken`이 없거나 공백 |
+      | 400 | `MALFORMED_REQUEST` | 보낸 요청 본문을 JSON으로 해석할 수 없음(본문을 보내지 않는 것은 오류가 아니다) |
       | 401 | `UNAUTHENTICATED` | access token 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(`PENDING`·`TERMS_AGREED`) 토큰으로 접근 |
@@ -293,7 +316,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값 |
+      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값이거나 휴대폰 번호 형식 위반(하이픈은 선택) |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -324,7 +347,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `phoneNumber`·`code` 누락·빈값 |
+      | 400 | `INVALID_INPUT` | `phoneNumber`·`code` 누락·빈값이거나 `phoneNumber`가 휴대폰 번호 형식 위반 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -396,26 +419,186 @@ public final class AuthDocsFields {
 
       - 국적·표시 언어는 서버가 `KR`·`ko`로 고정 부여한다.
       - 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 값이 null이 아니라 **필드 자체가 생략**되고, `phoneNumber`는 마스킹된다.
+      - **`data.linked`가 계정 병합 여부다** — `true`면 아래 「계정 병합」이 일어난 것이라 `data.user`와 토큰이 요청에 쓴 계정이 아닌 웹 계정 기준이다. `user.id`를 요청 토큰과 비교해 추론하지 말고 이 필드를 본다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값, `birthDate` 누락이거나 `YYYY-MM-DD` 형식이 아니거나 미래 날짜 |
+      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값·휴대폰 번호 형식 위반, `birthDate` 누락이거나 `YYYY-MM-DD` 형식이 아니거나 미래 날짜 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩을 완료(`ACTIVE`)한 사용자의 재요청 |
+      | 409 | `RESOURCE_CONFLICT` | 같은 번호의 임대인 웹 회원가입(`POST /api/v1/auth/signup`)이 거의 동시에 계정을 확정해 연락처 유니크 제약에 걸림 — **그대로 다시 제출하면** 그 계정과 병합돼 성공한다 |
       | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태에서 제출 |
       | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출한 `phoneNumber`가 미인증이거나 사전 인증한 번호와 불일치 |
+
+      **계정 병합**
+
+      - 인증한 연락처로 **이미 웹에서 가입한 임대인 계정**(같은 번호의 다른 `ACTIVE`·`LANDLORD` 계정)이 발견되면 두 계정을 하나로 합친다 — 앱 소셜 자격 매핑을 그 계정으로 옮기고 방금 만들어진 임시 계정은 삭제한다.
+      - 병합이 일어나면 **`data.linked=true`** 다(일반 온보딩은 `false`). 이때 응답의 `data.user`와 토큰은 **합쳐진(웹) 계정 기준**이라 `data.user.id`가 요청 토큰의 사용자와 다르다. 클라이언트는 **응답의 토큰으로 교체**해야 하며(요청에 쓴 토큰의 계정은 더 이상 존재하지 않는다), 표시할 이름·이메일도 살아남은 계정의 값이다. 이후 소셜 로그인은 항상 같은 계정으로 귀결된다.
+      - `linked`는 웹 회원가입(`POST /api/v1/auth/signup`)의 같은 이름 필드와 **의미가 같다** — 방향만 반대(연결/병합)이고 클라이언트에게는 둘 다 "계정이 하나로 합쳐졌다"는 한 가지 사실이다. 응답 필드 추가는 하위 호환이라 버전은 `/api/v1` 그대로다.
       """;
 
   public static final String[] LANDLORD_ONBOARDING_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
   public static final String[] LANDLORD_ONBOARDING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
-  public static final String[] LANDLORD_ONBOARDING_409 = {"AUTH_ONBOARDING_ALREADY_COMPLETED"};
+  public static final String[] LANDLORD_ONBOARDING_409 = {
+    "AUTH_ONBOARDING_ALREADY_COMPLETED", "RESOURCE_CONFLICT"
+  };
   public static final String[] LANDLORD_ONBOARDING_422 = {
     "AUTH_TERMS_AGREEMENT_REQUIRED", "AUTH_PHONE_NOT_VERIFIED"
   };
+
+  // ── 가입용 인증번호 발송 — POST /api/v1/auth/phone/signup/verification-code ──
+
+  public static final String SIGNUP_PHONE_CODE_SUMMARY = "가입용 연락처 인증번호 발송";
+
+  public static final String SIGNUP_PHONE_CODE_DESCRIPTION =
+      """
+      임대인 웹 회원가입(`POST /api/v1/auth/signup`) 전에 번호 소유를 증명하도록 SMS 인증번호를 발송한다. 응답 `phoneNumber`는 마스킹된다(예 `010-****-5678`).
+
+      **헤더**
+
+      - 인증 불필요 — 계정이 아직 없는 가입 전 단계라 토큰 없이 호출한다.
+
+      **요청 주의사항**
+
+      - 온보딩용 발송(`POST /api/v1/auth/phone/verification-code`)과 정책(6자리·5분 만료·시도 5회·재발송 60초)은 같지만 **챌린지 키가 번호**라 로그인이 필요 없다.
+      - 가입 이력이 있는 번호든 없는 번호든 **응답이 같다** — 이 응답으로 계정 존재 여부를 알 수 없다.
+      - 발송이 실패하면(SMS provider 장애·타임아웃) 인증번호가 새로 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `phoneNumber` 누락·빈값이거나 휴대폰 번호 형식 위반(하이픈은 선택) |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 429 | `TOO_MANY_REQUESTS` | 재발송 간격 60초 미달, 같은 번호 5회/1시간 초과, 같은 IP 20회/1시간 초과 — 어느 축에 걸렸는지 구분해 알리지 않는다 |
+      | 502 | `UPSTREAM_ERROR` | SMS provider 장애·타임아웃으로 발송 실패 |
+      """;
+
+  public static final String[] SIGNUP_PHONE_CODE_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] SIGNUP_PHONE_CODE_429 = {"TOO_MANY_REQUESTS"};
+  public static final String[] SIGNUP_PHONE_CODE_502 = {"UPSTREAM_ERROR"};
+
+  // ── 가입용 인증번호 확인 — POST /api/v1/auth/phone/signup/verify ──────────────
+
+  public static final String SIGNUP_PHONE_VERIFY_SUMMARY = "가입용 연락처 인증번호 확인";
+
+  public static final String SIGNUP_PHONE_VERIFY_DESCRIPTION =
+      """
+      발송된 인증번호를 확인해 가입용 연락처 인증을 완료한다. 임대인 웹 회원가입(`POST /api/v1/auth/signup`)의 선행 단계다.
+
+      **헤더**
+
+      - 인증 불필요 — 계정이 아직 없는 가입 전 단계라 토큰 없이 호출한다.
+
+      **응답 주의사항**
+
+      - 인증 마커는 **30분간만** 유효하다 — 그 안에 회원가입을 제출해야 하고, 넘기면 422 `AUTH_PHONE_NOT_VERIFIED`라 발송부터 다시 한다.
+      - 마커는 가입 제출이 **1회 소비**한다 — 같은 인증으로 두 번 가입할 수 없다.
+      - 이 응답은 **연동 대상 계정의 유무를 알려주지 않는다** — 가입 폼은 연동 여부와 무관하게 항상 전체 필드를 받는다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `phoneNumber`·`code` 누락·빈값이거나 `phoneNumber`가 휴대폰 번호 형식 위반 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 422 | `AUTH_PHONE_VERIFICATION_FAILED` | 코드 불일치·만료·시도 상한(5회) 초과, 또는 인증번호를 받은 적이 없음 — 비로그인 경로라 **시도 초과도 429가 아니라 이 코드**이며 어느 쪽인지 구분해 주지 않는다 |
+      """;
+
+  public static final String[] SIGNUP_PHONE_VERIFY_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] SIGNUP_PHONE_VERIFY_422 = {"AUTH_PHONE_VERIFICATION_FAILED"};
+
+  // ── 임대인 웹 회원가입 — POST /api/v1/auth/signup ────────────────────────────
+
+  public static final String WEB_SIGNUP_SUMMARY = "임대인 웹 회원가입";
+
+  public static final String WEB_SIGNUP_DESCRIPTION =
+      """
+      가입 폼 한 페이지의 값을 받아 한 트랜잭션에서 `ACTIVE`까지 완주한다. 같은 번호의 앱 임대인 계정이 있으면 새 계정을 만들지 않고 그 계정에 웹 자격증명만 붙인다(`linked=true`).
+
+      **헤더**
+
+      - 인증 불필요 — 계정이 아직 없는 가입 단계라 토큰 없이 호출한다.
+
+      **요청 주의사항**
+
+      - **선행 조건은 `POST /api/v1/auth/phone/signup/verification-code`·`/verify`** 다. 제출 번호의 인증 마커가 없으면 422이고 계정 생성도 연동도 하지 않는다.
+      - 연동 판정 키는 **정규화한 `phoneNumber` 단독**이다 — 이름은 매칭 조건이 아니다(앱 이름과 웹 이름이 달라도 연동된다).
+      - 이메일 중복은 **웹 로그인 ID(`local_accounts.email`)** 에만 건다 — 앱 소셜 계정과 같은 이메일로 가입하는 것은 정상이다.
+      - `password`는 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~10**, 공백 불가다. 위반은 400 `INVALID_INPUT`이며 `errors[].field=password`로 온다.
+      - 폼은 연동 여부와 무관하게 항상 전체 필드를 받는다(화면이 하나다).
+
+      **응답 주의사항**
+
+      - **refresh 토큰은 응답 본문에 없다** — `Set-Cookie: refreshToken=…; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=1209600`으로만 내려간다. 브라우저가 자동 보관하므로 클라이언트가 저장할 것이 없다(`local` 프로파일에서만 `Secure`가 빠진다).
+      - `onboardingRequired`는 항상 `false`, `status`는 항상 `"ACTIVE"`다 — 웹에는 부분 완료 상태가 없다.
+      - `email`·`name`은 **회원 프로필(`users`)의 값**이다 — 연동된 계정이면 폼에 적은 웹 이메일이 아니라 소셜 진본 이메일이 나갈 수 있다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 필수 필드 누락·빈값, `email` 형식 위반, `phoneNumber` 형식 위반, `birthDate` 형식 위반·미래 날짜, **비밀번호 정책 위반**(`errors[].field=password`) |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 409 | `AUTH_EMAIL_ALREADY_REGISTERED` | 같은 이메일의 웹 자격증명이 이미 있음(로그인 ID 중복) |
+      | 409 | `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 번호로 매칭된 계정에 이미 웹 자격증명이 붙어 있음 → 로그인으로 유도한다. 그 계정의 이메일은 마스킹해서도 응답에 싣지 않는다 |
+      | 409 | `RESOURCE_CONFLICT` | 같은 번호의 앱 임대인 온보딩(`POST /api/v1/auth/landlord/onboarding`)이 거의 동시에 계정을 확정해 연락처 유니크 제약에 걸림 — **그대로 다시 제출하면** 그 계정과 연동돼 성공한다 |
+      | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`의 가입용 인증 마커가 없거나 만료(이미 가입에 소비한 마커 포함) |
+      | 422 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 필수 동의 2종(`termsOfServiceAgreed`·`privacyPolicyAgreed`) 중 하나라도 `false` |
+      """;
+
+  public static final String[] WEB_SIGNUP_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] WEB_SIGNUP_409 = {
+    "AUTH_EMAIL_ALREADY_REGISTERED", "AUTH_WEB_ACCOUNT_ALREADY_EXISTS", "RESOURCE_CONFLICT"
+  };
+  public static final String[] WEB_SIGNUP_422 = {
+    "AUTH_PHONE_NOT_VERIFIED", "AUTH_REQUIRED_AGREEMENT_MISSING"
+  };
+
+  // ── 임대인 웹 로그인 — POST /api/v1/auth/login ───────────────────────────────
+
+  public static final String WEB_LOGIN_SUMMARY = "임대인 웹 로그인";
+
+  public static final String WEB_LOGIN_DESCRIPTION =
+      """
+      웹 로그인 ID(이메일)와 비밀번호로 정식 토큰을 발급한다. 앱 소셜 로그인과 같은 발급·회전 로직을 쓰고 refresh만 쿠키로 내려간다.
+
+      **헤더**
+
+      - 인증 불필요 — 로그인 이전 단계라 토큰 없이 호출한다.
+
+      **요청 주의사항**
+
+      - 로그인 ID는 회원 프로필 이메일이 아니라 **가입할 때 정한 웹 이메일**이다.
+      - **등록되지 않은 이메일과 비밀번호 불일치는 똑같은 401**이다 — 계정 존재 여부를 노출하지 않는다.
+      - **비밀번호 5회 연속 실패면 계정이 잠긴다**(423). 잠긴 뒤에는 **비밀번호가 맞아도** 423이며 시간이 지나도 자동으로 풀리지 않는다 — 해제는 운영자만 할 수 있다.
+      - 시도 자체에 한도가 있다 — 자격증명을 조회하기 **전에** 같은 IP 30회/시간·같은 이메일 10회/시간을 세고 초과하면 429다.
+
+      **응답 주의사항**
+
+      - **refresh 토큰은 응답 본문에 없다** — 회원가입과 같은 속성의 `Set-Cookie: refreshToken`으로만 내려간다.
+      - `onboardingRequired`는 항상 `false`, `status`는 항상 `"ACTIVE"`다 — 웹 로그인에는 온보딩 재개 분기가 없다.
+      - `email`·`name`은 **회원 프로필(`users`)의 값**이라 로그인에 쓴 이메일과 다를 수 있다(앱 계정에 연동된 임대인).
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `email`·`password` 누락·빈값이거나 `email` 형식 위반 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 401 | `AUTH_INVALID_CREDENTIALS` | 등록되지 않은 이메일 **또는** 비밀번호 불일치 — 둘을 구분하지 않는다. 탈퇴 등으로 `ACTIVE`가 아닌 계정도 같은 코드다 |
+      | 423 | `AUTH_ACCOUNT_LOCKED` | 비밀번호 5회 연속 실패로 잠긴 계정 — 비밀번호가 맞아도 잠금이 우선하며 자동 해제 경로가 없다 |
+      | 429 | `TOO_MANY_REQUESTS` | 로그인 시도 한도 초과(IP 30회/시간 또는 이메일 10회/시간) — 자격증명 조회 전에 판정하므로 이메일 존재 여부와 무관하고, 어느 축에 걸렸는지 구분해 알리지 않는다 |
+      """;
+
+  public static final String[] WEB_LOGIN_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] WEB_LOGIN_401 = {"AUTH_INVALID_CREDENTIALS"};
+  public static final String[] WEB_LOGIN_423 = {"AUTH_ACCOUNT_LOCKED"};
+  public static final String[] WEB_LOGIN_429 = {"TOO_MANY_REQUESTS"};
 
   // ---- 성공 응답/요청 필드 기술자 ----
 
@@ -522,8 +705,13 @@ public final class AuthDocsFields {
         optCodeField("lang", LANG_CODES, "표시 언어 ISO 639-1 소문자(선택 — 보내지 않으면 설정하지 않고 표시는 en으로 폴백)"));
   }
 
+  /**
+   * 재발급·로그아웃 요청 본문의 {@code refreshToken}. <b>선택 필드다</b> — 서버가 쿠키({@code refreshToken}) 우선 · 본문
+   * fallback으로 읽으므로 브라우저는 본문 자체를 보내지 않는다(#229 D12 · ADR-0048 §3). 채널별 차이는 호출부가 {@code
+   * description}으로 적는다.
+   */
   public static List<FieldDescriptor> refreshTokenRequestField(String description) {
-    return List.of(field("refreshToken", JsonFieldType.STRING, description));
+    return List.of(optField("refreshToken", JsonFieldType.STRING, description));
   }
 
   public static List<FieldDescriptor> reissueResponseFields() {
@@ -531,10 +719,10 @@ public final class AuthDocsFields {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"),
         field("data.accessToken", JsonFieldType.STRING, "새 access 토큰(JWT)"),
-        field(
+        optField(
             "data.refreshToken",
             JsonFieldType.STRING,
-            "새 refresh 토큰. 이 값으로 교체해야 하며 제출한 토큰은 즉시 무효가 된다"),
+            "새 refresh 토큰. 이 값으로 교체해야 하며 제출한 토큰은 즉시 무효가 된다. 쿠키로 제출한 요청(웹)에서는 null이고 회전된 값이 Set-Cookie로만 내려간다"),
         field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
         errorNull());
   }
@@ -544,7 +732,7 @@ public final class AuthDocsFields {
         field(
             "phoneNumber",
             JsonFieldType.STRING,
-            "인증번호를 받을 휴대폰 번호(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다)"));
+            "인증번호를 받을 휴대폰 번호(필수, 빈값 불가 — 하이픈은 선택이며 서버가 숫자만 남겨 정규화한다)"));
   }
 
   public static List<FieldDescriptor> phoneCodeResponseFields() {
@@ -594,7 +782,124 @@ public final class AuthDocsFields {
         field(
             "phoneNumber",
             JsonFieldType.STRING,
-            "사전 SMS 인증된 연락처와 일치(필수, 빈값 불가 — 번호 형식 자체를 검증하지는 않는다). 불일치·미인증은 422"),
+            "사전 SMS 인증된 연락처와 일치(필수, 빈값 불가 — 하이픈 표기 차이는 정규화로 흡수한다). 불일치·미인증은 422"),
         field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(필수, 과거 날짜만 — 형식 위반·미래는 400)"));
+  }
+
+  /**
+   * 가입용 발송·확인은 온보딩용({@link #phoneCodeRequestFields})과 응답 모양이 같지만 <b>기술자를 공유하지 않는다</b> — path가 달라 다른
+   * 오퍼레이션이고, 같은 문구를 쓰면 "로그인이 필요 없다"·"마커 30분" 같은 이 경로만의 계약을 적을 자리가 사라진다.
+   */
+  public static List<FieldDescriptor> signupPhoneCodeRequestFields() {
+    return List.of(
+        field(
+            "phoneNumber",
+            JsonFieldType.STRING,
+            "인증번호를 받을 휴대폰 번호(필수, 빈값 불가 — 하이픈은 선택이며 서버가 숫자만 남겨 정규화한다). 이 번호가 곧 챌린지 키라 로그인이 필요 없다"));
+  }
+
+  public static List<FieldDescriptor> signupPhoneCodeResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
+        field("data.expiresIn", JsonFieldType.NUMBER, "인증번호 만료까지 초"),
+        errorNull());
+  }
+
+  public static List<FieldDescriptor> signupPhoneVerifyRequestFields() {
+    return List.of(
+        field("phoneNumber", JsonFieldType.STRING, "인증번호를 발송한 번호와 일치(필수 — 하이픈 표기 차이는 정규화로 흡수한다)"),
+        field("code", JsonFieldType.STRING, "발송된 인증번호(필수, 빈값 불가)"));
+  }
+
+  public static List<FieldDescriptor> signupPhoneVerifyResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
+        field(
+            "data.verified",
+            JsonFieldType.BOOLEAN,
+            "검증 완료 여부 — 성공 응답은 항상 true. 인증 마커는 30분만 유지되므로 그 안에 회원가입을 제출해야 하고, 넘기면 422 AUTH_PHONE_NOT_VERIFIED라 다시 인증해야 한다"),
+        errorNull());
+  }
+
+  public static List<FieldDescriptor> webSignupRequestFields() {
+    return List.of(
+        field("name", JsonFieldType.STRING, "성·이름을 합친 단일 이름(필수, 빈값 불가, 200자 이내)"),
+        field("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD(필수, 과거 날짜만 — 형식 위반·미래는 400)"),
+        field(
+            "phoneNumber",
+            JsonFieldType.STRING,
+            "가입용 SMS 인증을 마친 휴대폰 번호(필수 — 하이픈은 선택이며 서버가 정규화한다). 미인증·만료는 422이고, 이 값이 기존 앱 계정과의 유일한 연동 키다"),
+        field(
+            "email",
+            JsonFieldType.STRING,
+            "웹 로그인 ID(필수, 이메일 형식, 255자 이내). 중복이면 409 AUTH_EMAIL_ALREADY_REGISTERED다. 신규 가입일 때만 회원 프로필 이메일로도 기록한다"),
+        field(
+            "password",
+            JsonFieldType.STRING,
+            "비밀번호(필수) — 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, 길이 8~10, 공백 불가. 위반은 400 INVALID_INPUT(errors[].field=password)"),
+        field("termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의(필수). false면 422"),
+        field("privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의(필수). false면 422"),
+        optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택, 보내지 않으면 false)"));
+  }
+
+  /**
+   * 가입 성공 응답. <b>{@code data.refreshToken}이 없는 것이 계약이다</b>(ADR-0048) — 회전 대상 refresh는 {@code
+   * Set-Cookie}로만 내려가므로 여기에 기술자를 추가하면 안 된다.
+   */
+  public static List<FieldDescriptor> webSignupResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.linked",
+            JsonFieldType.BOOLEAN,
+            "기존 앱 계정에 웹 자격증명만 붙였으면 true(새 회원을 만들지 않았다), 새 계정을 만들었으면 false"),
+        field(
+            "data.onboardingRequired",
+            JsonFieldType.BOOLEAN,
+            "온보딩 필요 여부 — 웹 가입은 한 번에 완주해 항상 false"),
+        codeField("data.status", WEB_ACCOUNT_STATUSES, "사용자 상태 — 웹 계정은 부분 완료가 없어 항상 ACTIVE"),
+        codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"),
+        field("data.accessToken", JsonFieldType.STRING, "정식 access 토큰(JWT)"),
+        field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
+        field(
+            "data.email",
+            JsonFieldType.STRING,
+            "회원 프로필 이메일 — 연동된 계정이면 폼에 적은 웹 이메일이 아니라 소셜 진본 이메일이 나갈 수 있다"),
+        optField(
+            "data.name",
+            JsonFieldType.STRING,
+            "회원 프로필 이름 — 연동 시에는 폼 값이 아니라 기존 값이며, 기존 값이 없으면 null이다"),
+        errorNull());
+  }
+
+  public static List<FieldDescriptor> webLoginRequestFields() {
+    return List.of(
+        field(
+            "email",
+            JsonFieldType.STRING,
+            "웹 로그인 ID(필수, 이메일 형식, 빈값 불가). 형식은 맞지만 등록되지 않은 주소는 400이 아니라 401이다"),
+        field("password", JsonFieldType.STRING, "비밀번호(필수, 빈값 불가). 값이 틀리면 401이다"));
+  }
+
+  /** 로그인 성공 응답. {@link #webSignupResponseFields}에서 {@code linked}만 뺀 모양이며 refresh가 없는 이유도 같다. */
+  public static List<FieldDescriptor> webLoginResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.onboardingRequired",
+            JsonFieldType.BOOLEAN,
+            "온보딩 필요 여부 — 웹 로그인은 재개 분기가 없어 항상 false"),
+        codeField("data.status", WEB_ACCOUNT_STATUSES, "사용자 상태 — 웹 계정은 부분 완료가 없어 항상 ACTIVE"),
+        codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"),
+        field("data.accessToken", JsonFieldType.STRING, "정식 access 토큰(JWT)"),
+        field("data.expiresIn", JsonFieldType.NUMBER, "access 토큰 만료까지 초(3600)"),
+        field(
+            "data.email",
+            JsonFieldType.STRING,
+            "회원 프로필 이메일 — 로그인 ID가 아니라 프로필의 정본이라 앱 계정에 연동된 임대인은 로그인에 쓴 주소와 다를 수 있다"),
+        optField("data.name", JsonFieldType.STRING, "회원 프로필 이름 — 아직 이름이 없으면 null이다"),
+        errorNull());
   }
 }

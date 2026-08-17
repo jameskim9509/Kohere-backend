@@ -263,7 +263,7 @@ class ListingServiceTest {
         .id(LISTING_ID)
         .schemaVersion(4)
         .landlordId(1L)
-        .contact(new Listing.Contact("김담당", "+82) 10-1111-2222", "+82) 10-1111-2223"))
+        .contact(new Listing.Contact("김담당", "+82) 10-1111-2222"))
         .businessRegistrationNumber("1112233344")
         .blogUrl(null)
         .ageMin(20)

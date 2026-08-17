@@ -1,6 +1,7 @@
 package com.kohere.user.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.PhoneNumbers;
 import com.kohere.user.api.ApplicantProfileView;
 import com.kohere.user.api.LandlordOnboardingProfile;
 import com.kohere.user.api.OnboardingProfile;
@@ -20,6 +21,7 @@ import com.kohere.user.domain.UserRepository;
 import com.kohere.user.domain.UserType;
 import com.kohere.user.domain.VisaType;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -97,6 +99,11 @@ public class UserAccountServiceImpl implements UserAccountService {
     return toProfileView(userRepository.save(active));
   }
 
+  /**
+   * 임대인 온보딩 완료. 연락처는 저장 직전에 한 번 더 표준형으로 접는다({@link PhoneNumbers}) — 호출자(앱 온보딩·웹 가입·테스트 시드)가 이미 접어
+   * 넘기지만, {@code users.phone_number}의 UNIQUE(V23)는 표기가 하나라도 어긋나면 계정이 갈라지는 것을 막지 못하므로 규약이 아니라 <b>쓰기
+   * 경계</b>에서 불변식을 세운다. {@code normalize}는 멱등이라 겹쳐 불러도 결과가 같다(#229 D10).
+   */
   @Override
   @Transactional
   public UserProfileView completeLandlordOnboarding(
@@ -105,8 +112,55 @@ public class UserAccountServiceImpl implements UserAccountService {
     String nickname = nicknameGenerator.generateUnique();
     User active =
         user.completeLandlordOnboarding(
-            profile.phoneNumber(), profile.birthDate(), nickname, Instant.now());
+            PhoneNumbers.normalize(profile.phoneNumber()),
+            profile.birthDate(),
+            nickname,
+            Instant.now());
     return toProfileView(userRepository.save(active));
+  }
+
+  /**
+   * 연동 대상 조회 + 행 잠금. 번호는 <b>읽기 경계에서도</b> 한 번 더 표준형으로 접는다({@link PhoneNumbers}) — 쓰기 경계({@link
+   * #completeLandlordOnboarding})와 같은 형태로 접어야 저장된 값과 조회 키가 어긋나지 않는다. {@code normalize}는 멱등이라 이미 접힌
+   * 값을 다시 넣어도 결과가 같다(#229 D10).
+   *
+   * <p><b>{@code readOnly = true}가 아니다.</b> 잠금 조회는 읽기처럼 보이지만 {@code SELECT … FOR UPDATE}라 읽기 전용
+   * 트랜잭션에서는 실행할 수 없다(MySQL은 READ ONLY 트랜잭션에서 거부한다). 실제 호출은 {@code REQUIRED} 전파로 웹 가입의 쓰기 트랜잭션에
+   * 참여하지만, 단독 호출에도 성립하도록 여기서 읽기 전용을 선언하지 않는다.
+   */
+  @Override
+  @Transactional
+  public Optional<Long> findActiveLandlordIdByPhoneNumber(String normalizedPhoneNumber) {
+    return userRepository.findActiveLandlordIdByPhoneNumberForUpdate(
+        PhoneNumbers.normalize(normalizedPhoneNumber));
+  }
+
+  /**
+   * 병합 대상 조회 + 행 잠금(자기 제외). 번호를 읽기 경계에서 다시 접는 이유와 {@code readOnly}를 걸지 않는 이유는 {@link
+   * #findActiveLandlordIdByPhoneNumber}와 같다.
+   *
+   * <p>잠금으로 읽은 행을 그대로 {@link UserProfileView}로 매핑한다 — 온보딩 완료 응답과 <b>같은 매퍼</b>({@link
+   * #toProfileView})를 쓰므로 병합 응답의 {@code user}가 일반 온보딩 응답과 한 필드도 다르지 않다(연락처 마스킹 규칙까지 같다).
+   */
+  @Override
+  @Transactional
+  public Optional<UserProfileView> findActiveLandlordProfileByPhoneNumberExcluding(
+      String normalizedPhoneNumber, long excludedUserId) {
+    return userRepository
+        .findActiveLandlordByPhoneNumberExcludingForUpdate(
+            PhoneNumbers.normalize(normalizedPhoneNumber), excludedUserId)
+        .map(this::toProfileView);
+  }
+
+  /**
+   * 병합에서 진 임시 계정의 행을 지운다. 상태를 확인하지 않는 것은 의도다 — 지울지 말지는 <b>호출자(병합 판정)</b>가 정하고, 여기서 "PENDING만 지운다"
+   * 같은 조건을 덧붙이면 판정이 두 곳으로 갈려 한쪽만 고친 버그가 숨는다. 탈퇴 이벤트를 발행하지 않는 이유는 포트 {@link
+   * UserAccountService#deleteAccount} 참조(자격증명은 지우는 것이 아니라 옮기는 중이다).
+   */
+  @Override
+  @Transactional
+  public void deleteAccount(long userId) {
+    userRepository.deleteById(userId);
   }
 
   @Override

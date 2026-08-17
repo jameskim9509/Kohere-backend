@@ -31,14 +31,13 @@ import com.kohere.auth.presentation.dto.BusinessVerifyRequest;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LandlordOnboardingRequest;
-import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
 import com.kohere.auth.presentation.dto.PhoneVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
-import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.request.PhoneNumbers;
 import com.kohere.common.request.RequestDates;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.LandlordOnboardingProfile;
@@ -49,6 +48,7 @@ import com.kohere.user.api.UserAccountView;
 import com.kohere.user.api.UserProfileView;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Base64;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -73,6 +73,14 @@ public class AuthService {
   private static final String STATUS_ACTIVE = "ACTIVE";
   private static final String STATUS_PENDING = "PENDING";
   private static final String USER_TYPE_LANDLORD = "LANDLORD";
+
+  /**
+   * 세입자 온보딩 응답의 {@code linked} — <b>상수 false다.</b> 병합 매칭 키는 SMS로 인증한 휴대폰 번호 단독인데 세입자는 온보딩에서 번호를
+   * 수집하지 않아 대조할 열쇠가 없다(ADR-0047 §3). 리터럴 {@code false}를 그냥 넘기면 "아직 안 붙인 것"과 구분되지 않으므로, 값이 아니라 이름으로
+   * 이유를 남긴다.
+   */
+  private static final boolean TENANT_NEVER_MERGES = false;
+
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final OidcTokenVerifier oidcTokenVerifier;
@@ -274,8 +282,14 @@ public class AuthService {
                 request.visaType(),
                 request.lang()));
     TokenResponse tokens = issueFullTokens(userId);
+    // 세입자는 병합 분기가 아예 없다 — 응답 타입을 임대인과 공유할 뿐이다(상수 javadoc 참조).
     return new OnboardingResponse(
-        user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
+        TENANT_NEVER_MERGES,
+        user,
+        tokens.tokenType(),
+        tokens.accessToken(),
+        tokens.refreshToken(),
+        tokens.expiresIn());
   }
 
   /**
@@ -318,28 +332,109 @@ public class AuthService {
    * AUTH_PHONE_NOT_VERIFIED. 통과 시 user에 TERMS_AGREED→ACTIVE 전이(userType=LANDLORD 확정)를 위임하고 정식 토큰을
    * 발급한다. 사업자등록번호는 온보딩에서 수집하지 않으며, 온보딩 후 별도 검증 API(POST /auth/business/verify)로 검증한다(ADR-0033, 시퀀스
    * US-1-9).
+   *
+   * <p><b>게이트를 통과한 뒤 병합 분기가 하나 붙는다</b>(US-1-15) — 인증된 번호로 <b>자기가 아닌</b> ACTIVE·LANDLORD 계정이 잡히면 웹에서
+   * 먼저 가입한 같은 사람이므로 계정을 합친다({@link #mergeIntoExistingLandlord}). 못 찾으면 US-1-9 동작이 그대로다.
+   *
+   * <p><b>분기 순서가 곧 보안 계약이다.</b> 병합은 반드시 SMS 인증 게이트 <b>뒤</b>여야 한다 — 앞에 두면 번호만 아는 사람이 남의 웹 계정을 흡수하는
+   * 경로가 열린다. 번호는 조회 키일 뿐 인증 수단이 아니고, 소유 증명은 전적으로 {@link PhoneVerificationService}가 담당한다(ADR-0047
+   * §3). 인증 마커가 없으면 병합 판정 자체에 닿지 않는다.
+   *
+   * <p><b>생년월일은 분기 전에 파싱한다.</b> 병합 경로는 대상 프로필을 덮어쓰지 않아 이 값을 버리지만(ADR-0047 §6), 파싱을 완료 호출 안으로 미루면
+   * <b>같은 잘못된 요청이 한쪽에선 400, 다른 쪽에선 200</b>이 되어 "무엇이 유효한 요청인가"가 병합 여부에 따라 갈린다. 게이트 순서(약관 → 연락처 → 본문
+   * 날짜)는 종전 그대로 유지한다.
+   *
+   * <p><b>토큰과 응답 프로필은 언제나 같은 계정 기준이다</b> — {@code issueFullTokens(user.id())}가 그것을 구조로 못박는다. 병합이면
+   * {@code user.id()}가 요청 토큰의 {@code userId}와 다르며(대상 계정), 클라이언트는 응답의 토큰으로 교체해야 한다(스펙 §5-2). 두 값을 따로
+   * 넘겨받는 코드였다면 병합 분기에서 <b>토큰만 임시 계정으로 발급</b>하는 실수가 조용히 성립한다 — 방금 지운 행을 가리키는 토큰이다.
+   *
+   * <p><b>병합 여부는 응답의 {@code linked}로 명시해서 알린다</b>(US-1-15). 종전에는 {@code user.id()}가 요청 토큰의 {@code
+   * userId}와 다른 것을 클라이언트가 스스로 눈치채야 병합을 알 수 있었는데, 그 비교를 빠뜨려도 화면은 멀쩡해 보이고 낡은 토큰으로 다음 호출을 하고 나서야 깨진다.
+   * 그래서 서버가 아는 사실을 필드로 내린다 — 이름은 반대 방향({@code SignupResponse.linked})과 <b>같은 단어</b>다.
    */
   @Transactional
   public OnboardingResponse landlordOnboarding(long userId, LandlordOnboardingRequest request) {
     assertTermsAgreed(userId);
     phoneVerificationService.assertVerified(userId, request.phoneNumber());
+    // users.phone_number·병합 조회 모두 인증 마커와 같은 표준형을 쓴다 — UNIQUE(V23)가 표기 차이로 뚫리지 않게(#229 D10).
+    String verifiedPhoneNumber = PhoneNumbers.normalize(request.phoneNumber());
+    LocalDate birthDate = RequestDates.parsePast("birthDate", request.birthDate());
+    // 분기 판정을 Optional 하나로 묶어 둔다 — linked와 실제로 실행한 경로가 같은 값에서 나오므로 둘이 갈릴 수 없다.
+    // (프로필만 받아 두고 linked를 따로 계산하면 "id가 다르면 병합" 같은 추정 규칙이 서버 안에 생긴다.)
+    Optional<UserProfileView> mergeTarget =
+        userAccountService.findActiveLandlordProfileByPhoneNumberExcluding(
+            verifiedPhoneNumber, userId);
+    boolean linked = mergeTarget.isPresent();
     UserProfileView user =
-        userAccountService.completeLandlordOnboarding(
-            userId,
-            new LandlordOnboardingProfile(
-                request.phoneNumber(), RequestDates.parsePast("birthDate", request.birthDate())));
-    TokenResponse tokens = issueFullTokens(userId);
+        mergeTarget
+            .map(target -> mergeIntoExistingLandlord(userId, target))
+            .orElseGet(
+                () ->
+                    userAccountService.completeLandlordOnboarding(
+                        userId, new LandlordOnboardingProfile(verifiedPhoneNumber, birthDate)));
+    // 토큰은 여전히 user.id()에서만 나온다 — linked를 도입해도 "토큰은 임시 계정, 응답은 대상 계정"이
+    // 성립할 자리를 만들지 않는다(위 javadoc의 불변식).
+    TokenResponse tokens = issueFullTokens(user.id());
     return new OnboardingResponse(
-        user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
+        linked,
+        user,
+        tokens.tokenType(),
+        tokens.accessToken(),
+        tokens.refreshToken(),
+        tokens.expiresIn());
+  }
+
+  /**
+   * 웹 계정 병합(US-1-15) — 같은 번호의 기존 임대인 계정으로 <b>앱 로그인의 열쇠를 옮기고 임시 계정을 지운다</b>. 대상 계정은 이미
+   * ACTIVE·LANDLORD이므로 상태 전이도, 프로필 덮어쓰기도 없다. 옮기는 것은 {@code social_accounts} 행뿐이며 응답 프로필은 잠금 조회가 읽어
+   * 둔 대상 값 그대로다.
+   *
+   * <p><b>병합이 안전한 이유는 임시 계정이 비어 있기 때문이다.</b> 실제로 이 id를 참조할 수 있는 것이 무엇인지 전부 훑으면 — {@code
+   * social_accounts}(여기서 옮긴다) · {@code local_accounts}(웹 가입은 ACTIVE 임대인에만 붙으므로 임시 계정에는 생길 수 없다) ·
+   * {@code bookings}·{@code booking_reports}·{@code user_blocks}·매물({@code
+   * listings.landlordId})·찜·최근 본 매물(전부 {@code hasRole("USER")} 게이트라 온보딩 스코프 토큰이 닿지 못한다) · refresh
+   * 토큰(정식 토큰을 받은 적이 없어 {@code refresh:user:{id}} 인덱스가 비어 있다) · {@code chat}·{@code
+   * community}·{@code report}(영속 구현이 아직 없다)가 남고, <b>실제로 남는 것은 두 가지뿐</b>이다.
+   *
+   * <p>① <b>진단 문서(MongoDB {@code diagnoses}·{@code diagnosisFlowSessions})는 지우지 않는다</b>(#229 D3).
+   * v2 진단이 permitAll이라 온보딩 스코프로도 문서가 만들어질 수 있어 사라진 계정을 가리키는 고아 문서가 남지만, <b>현재는 탈퇴조차 진단을 지우지
+   * 않는다</b>({@link UserWithdrawnEventListener} 하나뿐인 구독자가 자격증명·refresh만 정리한다). 병합이 탈퇴보다 공격적으로 지우는
+   * 비대칭을 만들지 않으며, 그 문서를 조회할 주체가 없어 실질 영향도 없다(수용한 제약).<br>
+   * ② <b>Redis 연락처 인증 마커({@code phone-verify:verified:{임시 id}})</b>는 TTL(30분)로 자연 소멸한다. {@code
+   * users.id}는 AUTO_INCREMENT라 지운 값이 재사용되지 않으므로 다른 계정이 이 마커를 주워 갈 수 없다.
+   *
+   * <p><b>소유권 사슬은 병합으로 흔들리지 않는다.</b> {@code listings.landlordId}·{@code bookings.landlord_id}·사진 S3
+   * 키 접두사({@code uploads/{landlordId}/…})가 모두 id를 품지만, 병합이 <b>살리는 쪽이 이미 그 매물을 소유한 계정</b>이고 지우는 쪽은
+   * 아무것도 가진 적이 없다 — 그래서 다시 쓸 데이터가 한 건도 없다. 유일한 실제 엣지는 <b>임시 계정 id로 진행 중이던 pending 업로드</b>가 고아가 되는
+   * 것인데(키에 id가 박혀 있다), 병합은 소셜 로그인 직후 온보딩 제출에서만 일어나고 그 시점엔 업로드가 있을 수 없다(매물 등록·사진 업로드가 ACTIVE 전용이다).
+   *
+   * <p><b>두 DB 쓰기는 한 트랜잭션이다</b>(호출자 {@link #landlordOnboarding}의 트랜잭션에 {@code REQUIRED}로 참여). 매핑
+   * 이전과 행 삭제 사이에서 실패해 커밋되면 {@code social_accounts}가 어느 계정에도 붙지 않아 <b>그 사용자의 앱 로그인이 영구히 깨진다</b> —
+   * 그래서 삭제가 실패하면 이전도 함께 되돌아가는 것이 이 메서드가 보장하는 전부다.
+   *
+   * <p><b>그 보장은 DB 쓰기에서 끝난다.</b> {@link #issueFullTokens} 호출 자체는 이 트랜잭션 안에 있지만, 그 안에서 refresh 해시를
+   * 쓰는 곳이 Redis라 <b>MySQL 롤백에 함께 되돌아가지 않는다</b>. 실제로 갈리는 순간은 {@code uq_users_phone_number} 경합이 <b>커밋
+   * 시점</b>에 터질 때다 — 그때는 이미 토큰이 발급된 뒤라 DB만 되돌아가고 <b>refresh 토큰 해시가 14일 TTL로 Redis에 남는다</b>. 원문은 409
+   * 응답으로 대체돼 클라이언트에 전달되지 않으므로 그 항목으로 세션을 열 수 없고(악용 불가), TTL로 자연 소멸한다. 대신 그 사이 {@code
+   * refresh:user:{id}} 인덱스가 실제 세션보다 많아 보인다 — <b>수용한 한계</b>이며, 없애려면 토큰 발급을 두 트랜잭션 메서드 밖으로 들어내야 해서 문제
+   * 크기에 비해 변경이 크다(US-1-15 시퀀스 문서의 알려진 제약).
+   */
+  private UserProfileView mergeIntoExistingLandlord(long temporaryUserId, UserProfileView target) {
+    socialAccountRepository.reassignUserId(temporaryUserId, target.id());
+    userAccountService.deleteAccount(temporaryUserId);
+    return target;
   }
 
   /**
    * 재발급. 항상 회전 — 제출 토큰을 ROTATED로 폐기한다. <b>ROTATED 재제출(재사용 탐지)</b>은 탈취 정황이므로 사용자 전 토큰을 일괄 무효화하고,
    * <b>REVOKED(로그아웃·탈퇴)·만료</b>는 권한이 이미 0이라 해당 요청만 거부해 다른 기기 세션을 보존한다(OAuth 2.0 reuse detection).
+   *
+   * <p><b>인자는 채널이 이미 정해진 refresh 원문이다</b> — 쿠키에서 왔는지 요청 본문에서 왔는지는 컨트롤러가 흡수하고 여기서는 구분하지 않는다(ADR-0048
+   * §3). 판정 규칙이 채널마다 갈리지 않게 하는 것이 이 분업의 목적이며, 그래서 서블릿 타입도 이 계층까지 오지 않는다.
    */
   @Transactional
-  public TokenResponse reissue(ReissueRequest request) {
-    String tokenHash = refreshTokenHasher.hash(request.refreshToken());
+  public TokenResponse reissue(String refreshToken) {
+    String tokenHash = refreshTokenHasher.hash(requireRefreshToken(refreshToken));
     RefreshToken token =
         refreshTokenRepository
             .findByTokenHash(tokenHash)
@@ -358,13 +453,31 @@ public class AuthService {
     return issueFullTokens(token.getUserId());
   }
 
-  /** 로그아웃. 제출 refresh를 REVOKED로 무효화(이미 무효화돼도 멱등). */
+  /**
+   * 로그아웃. 제출 refresh를 REVOKED로 무효화(이미 무효화돼도 멱등). 인자의 출처(쿠키·본문)를 구분하지 않는 것은 {@link #reissue}와 같다.
+   */
   @Transactional
-  public void logout(LogoutRequest request) {
-    String tokenHash = refreshTokenHasher.hash(request.refreshToken());
+  public void logout(String refreshToken) {
+    String tokenHash = refreshTokenHasher.hash(requireRefreshToken(refreshToken));
     refreshTokenRepository
         .findByTokenHash(tokenHash)
         .ifPresent(token -> refreshTokenRepository.save(token.revoke()));
+  }
+
+  /**
+   * 쿠키·본문 어느 쪽에서도 refresh를 찾지 못한 요청을 거른다 — 400 {@code INVALID_INPUT} + {@code
+   * errors[].field=refreshToken}(#229 D12). 종전에는 본문 없는 요청이 {@code MALFORMED_REQUEST}였는데, 본문이 선택이 된
+   * 뒤로는 본문이 깨진 것이 아니라 <b>값이 빠진 것</b>이라 코드가 바뀐다.
+   *
+   * <p><b>DTO의 {@code @NotBlank}로는 이 판정을 대신할 수 없다.</b> 본문 없는 요청은 Bean Validation을 아예 타지 않고(인자가
+   * null이면 검증을 건너뛴다), 반대로 제약을 남겨 두면 쿠키에 멀쩡한 토큰이 있는데 본문의 빈 문자열 때문에 거절되는 <b>한 채널이 다른 채널을 막는</b> 상황이
+   * 생긴다. 그래서 두 채널을 합친 뒤 한 곳에서 판정한다.
+   */
+  private static String requireRefreshToken(String refreshToken) {
+    if (!StringUtils.hasText(refreshToken)) {
+      throw new InvalidInputException("refreshToken", "validation.refreshTokenRequired");
+    }
+    return refreshToken;
   }
 
   /**
@@ -418,7 +531,15 @@ public class AuthService {
         name);
   }
 
-  private TokenResponse issueFullTokens(long userId) {
+  /**
+   * 정식 토큰 발급 — access(JWT)와 불투명 refresh를 만들고 refresh 해시를 저장소에 남긴다(ADR-0003/0006/0011).
+   *
+   * <p><b>package-private인 것은 의도다.</b> 임대인 웹 트랙({@link WebAuthService})도 같은 토큰을 발급해야 하는데, 발급·회전·재사용
+   * 탐지 규칙이 두 벌이 되면 <b>한쪽만 고친 버그가 조용히 살아남는다</b>(ADR-0048 §3). 그렇다고 {@code public}으로 올리면 auth 밖에서도
+   * 토큰을 찍어낼 수 있는 문이 생기므로, 같은 패키지의 응용 서비스만 닿는 최소 가시성으로 연다. 웹과 앱이 실제로 다른 것은 refresh를 <b>본문으로 내리느냐 쿠키로
+   * 내리느냐</b>뿐이고 그건 컨트롤러 한 겹의 일이다.
+   */
+  TokenResponse issueFullTokens(long userId) {
     String accessToken = jwtTokenService.issueAccessToken(userId);
     String rawRefresh = generateRefreshToken();
     Instant now = Instant.now();

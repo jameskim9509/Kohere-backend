@@ -77,6 +77,9 @@ import static com.kohere.docs.UserDocsFields.WITHDRAW_SUMMARY;
 import static com.kohere.docs.UserDocsFields.meResponseFields;
 import static com.kohere.docs.UserDocsFields.onboardingResponseFields;
 import static com.kohere.docs.UserDocsFields.patchRequestFields;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -90,6 +93,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -109,6 +113,7 @@ import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsTags;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.http.Cookie;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -124,6 +129,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
 import org.springframework.test.context.ActiveProfiles;
@@ -304,6 +310,9 @@ class AuthOnboardingDocsTest {
                     .content(onboardingJson()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.user.phoneNumber").doesNotExist())
+            // 세입자 응답의 linked는 상수 false다 — 임대인과 응답 타입만 공유할 뿐 병합 분기가 없다.
+            // 여기서 단정해 두지 않으면 세입자 경로에 병합 판정이 새로 붙어도 아무도 알아채지 못한다.
+            .andExpect(jsonPath("$.data.linked").value(false))
             .andDo(
                 document(
                     "auth-onboarding",
@@ -319,25 +328,31 @@ class AuthOnboardingDocsTest {
     String accessToken = read(onboarding, "data", "accessToken");
     String refreshToken = read(onboarding, "data", "refreshToken");
 
-    // 기존 회원(ACTIVE) 재로그인 — 정식 access+refresh 발급(status=ACTIVE, onboardingRequired=false)
-    mockMvc
-        .perform(
-            post("/api/v1/auth/social-login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"provider\":\"GOOGLE\",\"idToken\":\"docs-sub-1\"}"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.status").value("ACTIVE"))
-        .andExpect(jsonPath("$.data.onboardingRequired").value(false))
-        .andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
-        .andDo(
-            document(
-                "auth-social-login-active",
-                resourceDetails()
-                    .tag(ApiDocsTags.AUTH)
-                    .summary(SOCIAL_LOGIN_SUMMARY)
-                    .description(SOCIAL_LOGIN_DESCRIPTION),
-                requestFields(socialLoginRequestFields()),
-                responseFields(socialLoginResponseFields())));
+    // 기존 회원(ACTIVE) 재로그인 — 정식 access+refresh 발급(status=ACTIVE, onboardingRequired=false).
+    // 이 refresh는 아래 재발급 사슬과 독립적이라 본문 채널 로그아웃 예시에 쓴다(사슬 쪽은 쿠키 채널이 이어받는다).
+    String reLogin =
+        mockMvc
+            .perform(
+                post("/api/v1/auth/social-login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"provider\":\"GOOGLE\",\"idToken\":\"docs-sub-1\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.data.onboardingRequired").value(false))
+            .andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
+            .andDo(
+                document(
+                    "auth-social-login-active",
+                    resourceDetails()
+                        .tag(ApiDocsTags.AUTH)
+                        .summary(SOCIAL_LOGIN_SUMMARY)
+                        .description(SOCIAL_LOGIN_DESCRIPTION),
+                    requestFields(socialLoginRequestFields()),
+                    responseFields(socialLoginResponseFields())))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    String appRefreshToken = read(reLogin, "data", "refreshToken");
 
     // 이메일 인증번호 발송 — 정식(ACTIVE) 토큰 전용(#192에서 온보딩 단계 전용→정식 전용으로 반전)
     mockMvc
@@ -410,7 +425,8 @@ class AuthOnboardingDocsTest {
                 requestFields(patchRequestFields()),
                 responseFields(meResponseFields())));
 
-    // 재발급(회전)
+    // 재발급(회전) — 본문 채널(앱). 응답도 요청 채널을 따르므로 회전된 refresh가 본문에 담기고 Set-Cookie는 붙지 않는다.
+    // 이 두 단정이 「앱 동작 무변경」(v2를 파지 않은 근거, ADR-0048 §3)의 회귀 방어다.
     String reissue =
         mockMvc
             .perform(
@@ -418,6 +434,8 @@ class AuthOnboardingDocsTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"refreshToken\":\"" + refreshToken + "\"}"))
             .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
+            .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
             .andDo(
                 document(
                     "auth-reissue",
@@ -426,7 +444,8 @@ class AuthOnboardingDocsTest {
                         .summary(REISSUE_SUMMARY)
                         .description(REISSUE_DESCRIPTION),
                     requestFields(
-                        refreshTokenRequestField("서버가 발급·보관(해시) 중인 불투명 refresh 토큰(빈값 불가)")),
+                        refreshTokenRequestField(
+                            "서버가 발급·보관(해시) 중인 불투명 refresh 토큰(선택 — 쿠키 refreshToken이 있으면 쿠키 값을 쓰고 본문은 보지 않는다). 쿠키·본문 어느 쪽에도 값이 없거나 공백이면 400 INVALID_INPUT")),
                     responseFields(reissueResponseFields())))
             .andReturn()
             .getResponse()
@@ -449,14 +468,41 @@ class AuthOnboardingDocsTest {
             .getContentAsString();
     newRefreshToken = read(staleAccessReissue, "data", "refreshToken");
 
-    // 로그아웃
+    // 재발급 — 쿠키 채널(웹). 본문 없이 refreshToken 쿠키만 보내면 회전된 값이 Set-Cookie로만 돌아오고
+    // 본문 refreshToken은 null이다(ADR-0048 §3). 스크립트가 읽을 수 있는 자리에 refresh를 두지 않는다는
+    // 계약이라, 본문에 값이 다시 실리는 회귀는 여기서만 잡힌다.
+    MockHttpServletResponse cookieReissue =
+        mockMvc
+            .perform(post("/api/v1/auth/reissue").cookie(refreshCookie(newRefreshToken)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+            .andExpect(jsonPath("$.data.refreshToken").value(nullValue()))
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, startsWith("refreshToken=rt_")))
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=Lax")))
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/api/v1/auth")))
+            .andDo(
+                document(
+                    "auth-reissue-cookie",
+                    resourceDetails()
+                        .tag(ApiDocsTags.AUTH)
+                        .summary(REISSUE_SUMMARY)
+                        .description(REISSUE_DESCRIPTION),
+                    responseFields(reissueResponseFields())))
+            .andReturn()
+            .getResponse();
+    // 회전된 값은 본문이 아니라 쿠키에만 있다 — 그 값으로 다음 요청(로그아웃)을 이어야 「쿠키 왕복」이 실제로 성립한다.
+    String rotatedCookieToken = cookieReissue.getCookie("refreshToken").getValue();
+
+    // 로그아웃 — 본문 채널(앱). 재로그인으로 받은 독립 refresh를 무효화하며 Set-Cookie는 붙지 않는다.
     mockMvc
         .perform(
             post("/api/v1/auth/logout")
                 .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"refreshToken\":\"" + newRefreshToken + "\"}"))
+                .content("{\"refreshToken\":\"" + appRefreshToken + "\"}"))
         .andExpect(status().isNoContent())
+        .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
         .andDo(
             document(
                 "auth-logout",
@@ -464,12 +510,45 @@ class AuthOnboardingDocsTest {
                     .tag(ApiDocsTags.AUTH)
                     .summary(LOGOUT_SUMMARY)
                     .description(LOGOUT_DESCRIPTION),
-                requestFields(refreshTokenRequestField("무효화할 refresh 토큰(빈값 불가)"))));
+                requestFields(
+                    refreshTokenRequestField(
+                        "무효화할 refresh 토큰(선택 — 쿠키 refreshToken이 있으면 쿠키 값을 쓰고 본문은 보지 않는다). 쿠키로 온 요청에는 Max-Age=0 삭제 쿠키를 함께 내린다"))));
 
-    // 탈퇴
+    // 로그아웃 — 쿠키 채널(웹). 서버 무효화와 함께 Max-Age=0 삭제 쿠키를 내려 브라우저에 남은 refresh까지 지운다.
+    // 삭제 쿠키의 이름·Path가 발급 때와 같아야 브라우저가 같은 쿠키로 보고 지운다.
+    mockMvc
+        .perform(
+            post("/api/v1/auth/logout")
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .cookie(refreshCookie(rotatedCookieToken)))
+        .andExpect(status().isNoContent())
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, startsWith("refreshToken=;")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/api/v1/auth")))
+        .andDo(
+            document(
+                "auth-logout-cookie",
+                resourceDetails()
+                    .tag(ApiDocsTags.AUTH)
+                    .summary(LOGOUT_SUMMARY)
+                    .description(LOGOUT_DESCRIPTION)));
+
+    // 쿠키로 무효화한 refresh는 실제로 죽었다 — 같은 값을 다시 내면 401이다(멱등한 204와 갈리는 지점).
+    mockMvc
+        .perform(post("/api/v1/auth/reissue").cookie(refreshCookie(rotatedCookieToken)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_REFRESH_TOKEN"));
+
+    // 탈퇴 — 로그아웃과 같은 Max-Age=0 삭제 쿠키를 함께 내린다(ADR-0048 §3). 로그아웃과 달리 조건이 없다:
+    // 쿠키 Path가 /api/v1/auth라 브라우저가 /users/me 요청에는 refresh 쿠키를 싣지 않아 "쿠키로 온
+    // 요청인가"를 판정할 수 없다. 그래서 이 요청에 쿠키를 붙이지 않았는데도 삭제 쿠키가 나오는 것이 계약이며,
+    // 아래 단정이 그 회귀 방어다(속성이 발급 때와 어긋나면 브라우저가 다른 쿠키로 보고 지우지 않는다).
     mockMvc
         .perform(delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
         .andExpect(status().isNoContent())
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, startsWith("refreshToken=;")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/api/v1/auth")))
         .andDo(
             document(
                 "user-withdraw",
@@ -993,17 +1072,25 @@ class AuthOnboardingDocsTest {
         ONBOARDING_409);
 
     // ===== reissue =====
-    perform(
-        post("/api/v1/auth/reissue")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"refreshToken\":\"\"}"),
-        status().isBadRequest(),
-        "INVALID_INPUT",
-        "auth-reissue-invalid-input",
-        ApiDocsTags.AUTH,
-        REISSUE_SUMMARY,
-        REISSUE_DESCRIPTION,
-        REISSUE_400);
+    // 값을 어디서도 찾지 못한 요청은 Bean Validation과 같은 모양으로 나간다 — errors[].field가 "refreshToken"이라야
+    // 클라이언트가 "무엇이 빠졌는지"를 코드가 아니라 필드로 읽는다(#229 D12). error.code만 단정하면 필드가 사라지는
+    // 회귀(핸들러가 message만 남기는 분기로 흘러가는 것)를 놓친다.
+    mockMvc
+        .perform(
+            post("/api/v1/auth/reissue")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\":\"\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andExpect(jsonPath("$.error.errors[0].field").value("refreshToken"))
+        .andDo(
+            errorSnippet(
+                "auth-reissue-invalid-input",
+                ApiDocsTags.AUTH,
+                REISSUE_SUMMARY,
+                REISSUE_DESCRIPTION,
+                REISSUE_400));
 
     perform(
         post("/api/v1/auth/reissue")
@@ -1017,15 +1104,20 @@ class AuthOnboardingDocsTest {
         REISSUE_DESCRIPTION,
         REISSUE_401);
 
-    assertError(
-        mockMvc,
+    // 본문 없는 요청은 더 이상 "깨진 요청"이 아니다 — 쿠키 경로(웹)의 정상 모양이라 본문 부재 자체는 오류가 아니고,
+    // 쿠키에도 값이 없을 때 비로소 "값이 빠졌다"는 뜻의 INVALID_INPUT이 된다(#229 D12 · ADR-0048 §3).
+    // 스니펫은 만들지 않는다 — 같은 (오퍼레이션, status, code)를 auth-reissue-invalid-input이 이미 문서화한다.
+    // 두 경로(본문 빈 값 · 본문 자체 없음)가 같은 필드 이름을 내는 것까지가 계약이다.
+    mockMvc
+        .perform(post("/api/v1/auth/reissue").contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andExpect(jsonPath("$.error.errors[0].field").value("refreshToken"));
+    // 반면 보낸 본문이 JSON으로 해석되지 않으면 종전대로 MALFORMED_REQUEST다 — 값이 빠진 게 아니라 요청 자체가 깨졌다.
+    perform(
         post("/api/v1/auth/reissue")
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
-        status().isBadRequest(),
-        "MALFORMED_REQUEST");
-    perform(
-        post("/api/v1/auth/reissue").contentType(MediaType.APPLICATION_JSON),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-reissue-malformed",
@@ -1059,31 +1151,39 @@ class AuthOnboardingDocsTest {
         LOGOUT_DESCRIPTION,
         LOGOUT_403);
 
-    perform(
-        post("/api/v1/auth/logout")
-            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"refreshToken\":\"\"}"),
-        status().isBadRequest(),
-        "INVALID_INPUT",
-        "auth-logout-invalid-input",
-        ApiDocsTags.AUTH,
-        LOGOUT_SUMMARY,
-        LOGOUT_DESCRIPTION,
-        LOGOUT_400);
+    // 재발급과 같은 판정이라 필드 이름도 같아야 한다 — 두 엔드포인트가 갈리면 클라이언트가 한쪽만 처리하게 된다.
+    mockMvc
+        .perform(
+            post("/api/v1/auth/logout")
+                .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\":\"\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andExpect(jsonPath("$.error.errors[0].field").value("refreshToken"))
+        .andDo(
+            errorSnippet(
+                "auth-logout-invalid-input",
+                ApiDocsTags.AUTH,
+                LOGOUT_SUMMARY,
+                LOGOUT_DESCRIPTION,
+                LOGOUT_400));
 
-    assertError(
-        mockMvc,
+    // 재발급과 같다 — 본문 없는 요청은 쿠키 경로의 정상 모양이라, 쿠키에도 값이 없을 때 INVALID_INPUT이다(#229 D12).
+    mockMvc
+        .perform(
+            post("/api/v1/auth/logout")
+                .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+                .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andExpect(jsonPath("$.error.errors[0].field").value("refreshToken"));
+    perform(
         post("/api/v1/auth/logout")
             .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
             .contentType(MediaType.APPLICATION_JSON)
             .content(MALFORMED_BODY),
-        status().isBadRequest(),
-        "MALFORMED_REQUEST");
-    perform(
-        post("/api/v1/auth/logout")
-            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
-            .contentType(MediaType.APPLICATION_JSON),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "auth-logout-malformed",
@@ -1296,6 +1396,20 @@ class AuthOnboardingDocsTest {
         WITHDRAW_SUMMARY,
         WITHDRAW_DESCRIPTION,
         WITHDRAW_409);
+
+    // 삭제 쿠키는 성공(204)에만 실린다 — 컨트롤러가 withdraw()가 반환한 뒤에 헤더를 붙이기 때문이다.
+    // 문서·주석이 "조건 없이 내린다"라고 적혀 있어 헤더 추가를 서비스 호출 위로 끌어올리는 리팩터링이
+    // 자연스러운데, 그러면 두 번째 탭·더블클릭으로 나는 409가 아직 살아 있는 세션의 쿠키를 지운다.
+    // 위 perform 헬퍼는 status·code만 보므로 여기서 헤더 부재를 따로 못박는다.
+    mockMvc
+        .perform(
+            delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(withdrawAccess)))
+        .andExpect(status().isConflict())
+        .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+    mockMvc
+        .perform(delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(ghostToken)))
+        .andExpect(status().isNotFound())
+        .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
   }
 
   // ---- helpers ----
@@ -1321,6 +1435,15 @@ class AuthOnboardingDocsTest {
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
         .andDo(errorSnippet(identifier, tag, summary, description, errorCodes));
+  }
+
+  /**
+   * 브라우저가 자동으로 싣는 refresh 쿠키를 흉내 낸다. 이름은 설정값({@code app.auth.web.refresh-cookie.name})과 같아야 서버가 읽는다
+   * — 서블릿 {@link Cookie}로 보내는 것은 <b>요청</b>이 그렇게 파싱되기 때문이고, 응답 쪽 조립은 {@code ResponseCookie}(속성 포함)라
+   * 헤더 문자열로 단정한다.
+   */
+  private static Cookie refreshCookie(String value) {
+    return new Cookie("refreshToken", value);
   }
 
   private String socialLogin(String subject) throws Exception {

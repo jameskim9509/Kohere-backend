@@ -6,11 +6,25 @@
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-08-12 |
 | 기준 코드 | `feature/220-listing-registration-api` @ `04913ea`. 본 ADR의 수치·파일 참조는 전부 이 시점 기준이며, 재검증 없이 인용하지 않는다 |
-| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0008](./0008-mysql-migration-flyway.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0015](./0015-sensitive-column-encryption.md), [ADR-0028](./0028-diagnosis-questions-catalog-store.md), [ADR-0032](./0032-mongodb-migration-runner.md), [ADR-0033](./0033-business-registry-verification.md), [ADR-0034](./0034-landlord-phone-sms-verification.md), [ADR-0036](./0036-diagnosis-v2-server-driven-flow.md), [ADR-0037](./0037-listing-localization-and-code-catalog.md), [migration-policy](../database/migration-policy.md), [database-design](../database/database-design.md) |
+| 관련 문서 | [ADR-0001](./0001-bounded-context-module-decomposition.md), [ADR-0002](./0002-inter-module-communication-via-events.md), [ADR-0005](./0005-polyglot-persistence.md), [ADR-0008](./0008-mysql-migration-flyway.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0015](./0015-sensitive-column-encryption.md), [ADR-0028](./0028-diagnosis-questions-catalog-store.md), [ADR-0032](./0032-mongodb-migration-runner.md), [ADR-0033](./0033-business-registry-verification.md), [ADR-0034](./0034-landlord-phone-sms-verification.md), [ADR-0036](./0036-diagnosis-v2-server-driven-flow.md), [ADR-0037](./0037-listing-localization-and-code-catalog.md), [ADR-0047](./0047-web-local-credentials-and-phone-based-account-linking.md), [migration-policy](../database/migration-policy.md), [database-design](../database/database-design.md) |
 
 ## Status
 
-Proposed
+Proposed · **Amended(담당자 연락처에서 `sms` 제거, 2026-08-16)**
+
+> **Amended — `contact.sms`를 뺀다. 담당자 연락처는 `contact{managerName, phone}` 둘이다.**
+>
+> v4는 셋을 전부 필수로 받아 전부 세입자에게 공개했다. 그 근거가 아래 §3의 "매물별 담당 연락처는 임대인 개인 연락처(`users.phone_number`)와 **별개 값**"인데, **`sms`에 관해서만은 그 전제가 성립하지 않는다** — 임대인이 문자문의 번호 칸에 적는 값은 온보딩에서 SMS 인증을 통과한 바로 그 번호, 즉 `users.phone_number` 자신이다. 그렇다면 `sms`는 (1) [ADR-0034](./0034-landlord-phone-sms-verification.md)가 **마스킹 대상**으로 정한 PII를 매물 응답 경로로 **평문 공개**하는 통로이고, (2) 계정 단위 값 하나를 **매물마다 복제**하는 중복이며, (3) 임대인 웹 로그인이 붙은 뒤로는 그 번호가 **계정 매칭의 유일한 키**([ADR-0047](./0047-web-local-credentials-and-phone-based-account-linking.md) — `users.phone_number` UNIQUE)라 사본을 늘릴수록 위험만 커진다.
+>
+> 남는 `phone`은 **지점 대표 전화**다. 매물(지점)마다 다른 값이라 §3의 "별개 값" 근거가 그제서야 참이 된다 — 개정 전에는 셋 중 하나가 그 근거를 스스로 깨고 있었다.
+>
+> **원칙: 임대인 개인 연락처를 매물 문서에 복사하지 않는다.** 소비자가 그 번호를 실제로 필요로 하게 되면 저장이 아니라 **조회 시점에 `user :: api`로 가져온다** — booking이 신청자 프로필을 실시간 조인하는 것과 같은 방식이다(`UserAccountService.getApplicantProfile(long)`, [ADR-0002](./0002-inter-module-communication-via-events.md) 공개 API 협력). 시그니처는 `getLandlordContact(long userId)`로 **합의만 해 두고 지금은 만들지 않는다** — 현재 `contact.sms`를 읽는 업무 로직이 **하나도 없기 때문**이다(도메인 검증·저장 매핑·응답 echo가 전부다). 그렇게 가져온 번호는 여전히 [ADR-0034](./0034-landlord-phone-sms-verification.md)의 **마스킹 대상**이므로 세입자에게 평문으로 나가서는 안 된다.
+>
+> **이행 — validator 개정은 새 changeUnit `0119 listing-contact-sms-drop`이 진다.** `0115 listing-v4-baseline`은 [migration-policy §8-2](../database/migration-policy.md#8-2-listing-마이그레이션-체인)가 **동결**로 못박은 파일이라 고치지 않고, `0116 listing-location-required`가 세운 선례대로 새 유닛이 **자기 스키마 사본**을 들고 `collMod`로 갈아 끼운다(`contact.required`에서 `sms` 제거 · `properties.contact.sms` 삭제). [§1의 "적용된 마이그레이션 불변" 조항](../database/migration-policy.md#1-기본-규칙)은 체크섬이 근거인 **Flyway 전용**이라 Mongock에 걸리지 않지만, `0115` 동결은 그와 별개로 §8-2가 유지하는 규칙이다.
+>
+> **지금은 필드 삭제, 나중이면 계약 파괴였다.** 시드 주입 전이라 `listings` 실문서가 **0건**이므로 백필도 점진 이행도 없다([migration-policy §8-1](../database/migration-policy.md#8-1-시드-주입-절차)). 반면 상세·목록·찜·최근 본 응답의 `contact`에서 키가 사라지는 것은 **하위 호환을 깨는 변경**이다 — 문서가 0건인 지금 처리하는 이유가 이것이다. 아래 **§1 필드 목록과 §3 PII 문단은 이 항목으로 갈음한다.**
+>
+> **이 개정의 기준 코드는 헤더와 다르다.** 헤더의 `feature/220-listing-registration-api` @ `04913ea`는 **작성 시점** 앵커이고, 위 Amended 항목의 코드 주장(`contact.sms`를 읽는 업무 로직 부재 · `0115` 동결 · `0116` 선례 · 다음 order가 `0119`)은 전부 **`feature/229-web-landlord-auth` @ `86654fb`** 기준으로 재검증했다. 본문 §1~§4의 수치·파일 참조는 여전히 `04913ea` 기준이며, 재검증 없이 인용하지 않는 규칙도 그대로다.
 
 ## Context
 
@@ -38,7 +52,7 @@ Proposed
 ### 1. 스키마 v4 (루트 34필드)
 
 - **삭제** — `propertyPolicies`(VO 전체) · `roomOffers[].inventory` · `descriptions`(VO) · `RefundPolicy`(VO) · `CommonSpace.count` · 매물 공통 `contract`
-- **추가** — `contact{managerName, phone, sms}` · `businessRegistrationNumber` · `blogUrl` · `ageMin` · `ageMax` · `rejectionReason` · `languagesSupported` · `nearbyFacilities` · `preferredNationalities` · `contractDifficulties` · `serviceFeedback` · `roomOffers[].contract`
+- **추가** — `contact{managerName, phone}`(작성 시점에는 `sms`를 포함한 셋이었다 — 위 Amended) · `businessRegistrationNumber` · `blogUrl` · `ageMin` · `ageMax` · `rejectionReason` · `languagesSupported` · `nearbyFacilities` · `preferredNationalities` · `contractDifficulties` · `serviceFeedback` · `roomOffers[].contract`
 - **이동·변형** — `arcRequired`를 루트로 승격(boolean → `ArcRequirement` enum) · `contract`를 `roomOffers[]` 하위로 · `description`/`extraNotes` 분리 · `refundPolicy`를 `LocalizedText` 문장 하나로 · `facilities.commonSpaces`를 `Set<CommonSpaceType>`으로
 - `roomOffers[].pricing.deposit`은 **유지한다.** booking의 `totalAmount = deposit + monthlyRent × 계약 개월수` 계약이 이 값을 전제하므로, 등록 폼에 보증금 입력을 추가하는 쪽으로 맞춘다.
 - `imageUrls`·`roomOffers[].roomImageUrls`는 **저장 스키마에는 그대로 남지만 요청 본문에서는 빠졌다.** 등록 요청은 URL 문자열 대신 미리 올려 둔 사진의 저장 키(`imageKeys`·`roomOffers[].roomImageKeys`)를 받고, 서버가 그 사진을 확정 위치로 옮긴 뒤 URL을 채운다 — [ADR-0041](./0041-listing-image-upload-to-s3.md)이 이 부분을 개정한다. 저장 형태·불변식(`roomImageUrls` 최소 2장)은 바뀌지 않는다.
@@ -62,9 +76,9 @@ Proposed
 
 ### 3. PII를 매물 문서에 저장한다
 
-`businessRegistrationNumber`는 **원문**을, `contact.phone`/`sms`/`managerName`은 평문을 `listings` 문서에 저장한다. [ADR-0033](./0033-business-registry-verification.md)의 "원문 비저장·해시로만 영속"을 **매물 문서 한정으로 개정**한다(온보딩·`users` 테이블에는 여전히 미채택, `auth`의 검증은 무상태 유지).
+`businessRegistrationNumber`는 **원문**을, `contact.phone`/`managerName`은 평문을 `listings` 문서에 저장한다. [ADR-0033](./0033-business-registry-verification.md)의 "원문 비저장·해시로만 영속"을 **매물 문서 한정으로 개정**한다(온보딩·`users` 테이블에는 여전히 미채택, `auth`의 검증은 무상태 유지).
 
-`contact`는 **세입자 응답에 공개**한다. 매물별 담당 연락처는 임대인 개인 연락처(`users.phone_number`, 마스킹 대상 — [ADR-0034](./0034-landlord-phone-sms-verification.md))와 **별개 값**이므로 마스킹 대상이 아니다. `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에서 제외한다.
+`contact`는 **세입자 응답에 공개**한다. 매물별 담당 연락처는 임대인 개인 연락처(`users.phone_number`, 마스킹 대상 — [ADR-0034](./0034-landlord-phone-sms-verification.md))와 **별개 값**이므로 마스킹 대상이 아니다. `phone`은 지점 대표 전화라 이 근거가 성립하지만, **계정 번호를 그대로 옮겨 적게 되는 `sms`는 성립하지 않아 개정으로 뺐다**(위 Amended). `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에서 제외한다.
 
 ### 4. 이행 — listing 마이그레이션 체인을 v4 baseline으로 리셋한다
 

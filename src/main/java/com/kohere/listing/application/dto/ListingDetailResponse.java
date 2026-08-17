@@ -48,8 +48,13 @@ public record ListingDetailResponse(
     Instant createdAt,
     Instant updatedAt) {
 
-  /** 세입자가 매물 문의에 쓰는 담당자 연락처다. 임대인 계정 연락처와는 별개 값이라 마스킹하지 않는다. */
-  public record ContactResponse(String managerName, String phone, String sms) {}
+  /**
+   * 세입자가 매물 문의에 쓰는 담당자 연락처다. {@code phone}은 지점 대표 전화라 임대인 개인 연락처와 별개 값이고, 그래서 마스킹하지 않는다.
+   *
+   * <p>임대인 개인 번호는 애초에 매물 문서에 복사되지 않으므로 이 응답으로 새어 나갈 수 없다 — 그 통로였던 문자문의 번호({@code sms})를 저장 계약에서
+   * 제거했다(ADR-0039 Amended · ADR-0034 §6).
+   */
+  public record ContactResponse(String managerName, String phone) {}
 
   /** 프론트 지도 컴포넌트에서 바로 쓰는 위도·경도 값이다. */
   public record GeoPoint(double lat, double lng) {}

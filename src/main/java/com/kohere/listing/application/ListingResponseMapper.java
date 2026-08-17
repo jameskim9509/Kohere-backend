@@ -251,11 +251,15 @@ final class ListingResponseMapper {
         listing.getUpdatedAt());
   }
 
-  /** 담당자 연락처를 그대로 응답에 싣는다. 임대인 계정 연락처(마스킹 대상)와는 별개 값이다. */
+  /**
+   * 담당자 연락처를 그대로 응답에 싣는다. {@code phone}이 지점 대표 전화라 마스킹 없이 내보내도 되는 것이지, 연락처 일반이 공개 대상이어서가 아니다.
+   *
+   * <p>임대인 개인 연락처는 매물 문서에 복사하지 않으므로 여기서 마스킹을 판단할 값 자체가 없다(ADR-0039 Amended · ADR-0034 §6). 나중에 그
+   * 번호가 필요해지면 저장이 아니라 조회 시점에 {@code user :: api}로 가져와 마스킹해 내보낸다.
+   */
   private static ListingDetailResponse.ContactResponse toContact(Listing listing) {
     Listing.Contact contact = listing.getContact();
-    return new ListingDetailResponse.ContactResponse(
-        contact.managerName(), contact.phone(), contact.sms());
+    return new ListingDetailResponse.ContactResponse(contact.managerName(), contact.phone());
   }
 
   /**

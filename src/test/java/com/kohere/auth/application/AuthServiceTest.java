@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -41,11 +42,9 @@ import com.kohere.auth.presentation.dto.BusinessVerifyRequest;
 import com.kohere.auth.presentation.dto.EmailVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.EmailVerifyRequest;
 import com.kohere.auth.presentation.dto.LandlordOnboardingRequest;
-import com.kohere.auth.presentation.dto.LogoutRequest;
 import com.kohere.auth.presentation.dto.OnboardingRequest;
 import com.kohere.auth.presentation.dto.PhoneVerificationCodeRequest;
 import com.kohere.auth.presentation.dto.PhoneVerifyRequest;
-import com.kohere.auth.presentation.dto.ReissueRequest;
 import com.kohere.auth.presentation.dto.SocialLoginRequest;
 import com.kohere.auth.presentation.dto.TermsRequest;
 import com.kohere.common.security.JwtTokenService;
@@ -62,6 +61,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -400,6 +400,8 @@ class AuthServiceTest {
     assertThat(response.user().nickname()).isEqualTo("BraveOtter");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
+    // 세입자 응답의 linked는 상수 false다 — 매칭 키인 휴대폰 번호를 수집하지 않아 병합 분기가 없다(US-1-15).
+    assertThat(response.linked()).isFalse();
     // 온보딩은 이름·이메일을 받지 않고(소셜 로그인 캡처), 이메일 인증 선행 게이트도 없다(#192).
     verify(userAccountService).completeOnboarding(eq(40L), any(OnboardingProfile.class));
     verify(refreshTokenRepository).save(any(RefreshToken.class));
@@ -428,7 +430,7 @@ class AuthServiceTest {
     when(jwtTokenService.issueAccessToken(50L)).thenReturn("new-access");
     when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
 
-    TokenResponse response = authService.reissue(new ReissueRequest("raw-refresh"));
+    TokenResponse response = authService.reissue("raw-refresh");
 
     assertThat(response.accessToken()).isEqualTo("new-access");
     assertThat(response.refreshToken()).isNotNull();
@@ -443,7 +445,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(rotated));
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     verify(refreshTokenRepository).revokeAllByUserId(60L);
@@ -456,7 +458,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(revoked));
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     verify(refreshTokenRepository, never()).revokeAllByUserId(anyLong());
@@ -467,7 +469,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
@@ -479,7 +481,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(expired));
 
-    assertThatThrownBy(() -> authService.reissue(new ReissueRequest("raw-refresh")))
+    assertThatThrownBy(() -> authService.reissue("raw-refresh"))
         .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
@@ -490,7 +492,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.of(active));
 
-    authService.logout(new LogoutRequest("raw-refresh"));
+    authService.logout("raw-refresh");
 
     verify(refreshTokenRepository).save(any(RefreshToken.class));
   }
@@ -500,7 +502,7 @@ class AuthServiceTest {
     when(refreshTokenHasher.hash("raw-refresh")).thenReturn("hash");
     when(refreshTokenRepository.findByTokenHash("hash")).thenReturn(Optional.empty());
 
-    authService.logout(new LogoutRequest("raw-refresh"));
+    authService.logout("raw-refresh");
 
     verify(refreshTokenRepository, never()).save(any());
   }
@@ -586,6 +588,9 @@ class AuthServiceTest {
   void landlordOnboarding_completesAndIssuesFullTokensWithLandlordProfile() {
     when(userAccountService.getAccount(40L))
         .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
+    // 같은 번호의 다른 ACTIVE 임대인이 없으면 병합 분기를 타지 않는다 — US-1-9 기존 동작 그대로다(US-1-15).
+    when(userAccountService.findActiveLandlordProfileByPhoneNumberExcluding("01012345678", 40L))
+        .thenReturn(Optional.empty());
     when(userAccountService.completeLandlordOnboarding(
             eq(40L), any(LandlordOnboardingProfile.class)))
         .thenReturn(landlordProfileView(40L));
@@ -601,6 +606,8 @@ class AuthServiceTest {
     assertThat(response.user().userType()).isEqualTo("LANDLORD");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
+    // 병합하지 않은 정상 온보딩은 linked=false다 — 이 단정이 없으면 무조건 true를 내려도 초록이다.
+    assertThat(response.linked()).isFalse();
     // 게이트 통과 순서: 약관 → 연락처(사업자번호는 온보딩에서 수집하지 않음)
     verify(phoneVerificationService).assertVerified(40L, "01012345678");
     ArgumentCaptor<LandlordOnboardingProfile> captor =
@@ -640,6 +647,38 @@ class AuthServiceTest {
     verify(phoneVerificationService, never()).assertVerified(anyLong(), any());
     verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
     verify(refreshTokenRepository, never()).save(any());
+  }
+
+  @Test
+  void landlordOnboarding_sameNumberWebAccountFound_mergesIntoTargetAndIssuesTargetTokens() {
+    when(userAccountService.getAccount(40L))
+        .thenReturn(new UserAccountView(40L, "TERMS_AGREED", null, null));
+    // 인증한 번호로 자기가 아닌 ACTIVE·LANDLORD 계정이 잡히면 웹에서 먼저 가입한 같은 사람이다(US-1-15 병합 분기).
+    when(userAccountService.findActiveLandlordProfileByPhoneNumberExcluding("01012345678", 40L))
+        .thenReturn(Optional.of(landlordProfileView(77L)));
+    when(jwtTokenService.issueAccessToken(77L)).thenReturn("target-access-token");
+    when(jwtTokenService.accessTtlSeconds()).thenReturn(3600L);
+    when(refreshTokenHasher.hash(any())).thenReturn("hash");
+
+    OnboardingResponse response = authService.landlordOnboarding(40L, landlordOnboardingRequest());
+
+    // 순서가 계약이다 — 임시 계정을 먼저 지우면 옮길 매핑의 출처가 사라진다. 두 쓰기는 한 트랜잭션이라
+    // 사이에서 실패하면 함께 롤백되지만, 순서가 뒤집힌 코드는 롤백으로 구제되지 않는다.
+    InOrder order = inOrder(socialAccountRepository, userAccountService);
+    order.verify(socialAccountRepository).reassignUserId(40L, 77L);
+    order.verify(userAccountService).deleteAccount(40L);
+    // 대상 계정은 이미 ACTIVE·LANDLORD다 — 상태 전이도, 폼 값으로 프로필을 덮어쓰는 일도 없다(ADR-0047 §6).
+    verify(userAccountService, never()).completeLandlordOnboarding(anyLong(), any());
+    // 토큰과 응답 프로필은 둘 다 대상 계정 기준이어야 한다 — 임시 계정으로 발급하면 방금 지운 행을 가리키는
+    // 토큰이 나가고, 클라이언트는 그것을 정상 세션으로 저장한다.
+    assertThat(response.user().id()).isEqualTo(77L);
+    assertThat(response.accessToken()).isEqualTo("target-access-token");
+    // 병합했다는 사실 자체를 응답으로 알린다 — id 비교로 추론하게 두면 클라이언트가 토큰 교체를 놓친다.
+    // 이 값은 병합 분기를 고른 그 Optional에서 나오므로 실제 실행 경로와 갈릴 수 없다.
+    assertThat(response.linked()).isTrue();
+    ArgumentCaptor<RefreshToken> refreshCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+    verify(refreshTokenRepository).save(refreshCaptor.capture());
+    assertThat(refreshCaptor.getValue().getUserId()).isEqualTo(77L);
   }
 
   private static SocialAccount socialAccount(long userId) {

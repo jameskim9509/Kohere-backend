@@ -81,12 +81,15 @@ mail_from     = "noreply@kohere.app"
 # 그룹은 통째로 비거나 통째로 채운다 — 반쪽이면 앱이 기동을 거부한다. 한쪽 트랙만 쓰는 것은 허용.
 # 같은 Google 계정을 tenant·landlord 양쪽에 넣으면 역할이 모호해 기동이 막힌다.
 # 심사 노트에는 아래 값(로그인 Google 계정 / 인증 대상 / 고정 인증번호)을 그대로 적어야 한다 — 다른 값을 입력하면 거절된다.
+# 임대인 번호는 마스터 임대인 시드 번호(01000000000 — MasterAccountSeedRunner, test_login_enabled 로 함께 켜진다)와 달라야 한다.
+# users.phone_number 에 UNIQUE(V23, #229)가 걸린 뒤로 같은 번호를 쓰면 심사자가 임대인 온보딩을 끝내지 못한다 —
+# 중복 키로 실패하거나, 같은 번호 계정 병합(US-1-15)에 걸려 심사자 계정이 공용 마스터 계정으로 흡수된다.
 # fixed_verification_enabled                = true
 # fixed_verification_code                   = "000000"                    # sensitive — 자릿수는 app.email/phone.code-length(6)와 일치
 # fixed_verification_tenant_google_emails   = "review-tenant@gmail.com"    # sensitive — 콤마 구분
 # fixed_verification_tenant_emails          = "demo-tenant@example.com"    # sensitive — 콤마 구분
 # fixed_verification_landlord_google_emails = "review-landlord@gmail.com"  # sensitive — 콤마 구분
-# fixed_verification_landlord_phones        = "01000000000"                # sensitive — 콤마 구분
+# fixed_verification_landlord_phones        = "01099990000"                # sensitive — 콤마 구분 · 마스터 임대인 시드 번호와 겹치면 안 된다
 # 반영: apply → (refresh-env.sh 최초 변경이면 EC2 재생성 1회) → 배포(gh workflow run deploy.yml, ADR-0024).
 # 심사 종료 후 fixed_verification_enabled = false 로 되돌리고 apply → 배포한다.
 

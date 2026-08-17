@@ -270,8 +270,7 @@ Content-Type: application/json
   "type": "SHARE_HOUSE",
   "contact": {
     "managerName": "김담당",
-    "phone": "02-1234-5678",
-    "sms": "010-1234-5678"
+    "phone": "02-1234-5678"
   },
   "businessRegistrationNumber": "1234567890",
   "blogUrl": "https://blog.example.com/sinchon",
@@ -395,7 +394,7 @@ Content-Type: application/json
 {
   "title": "세입자가 등록 시도",
   "type": "SHARE_HOUSE",
-  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
   "businessRegistrationNumber": "1234567890",
   "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
@@ -453,7 +452,7 @@ Content-Type: application/json
 {
   "title": "층 범위 형식 오류",
   "type": "SHARE_HOUSE",
-  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
   "businessRegistrationNumber": "1234567890",
   "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2층에서 4층", "parkingAvailable": false, "elevatorAvailable": true },
@@ -502,7 +501,7 @@ Content-Type: application/json
 {
   "title": "카탈로그에 없는 도시",
   "type": "SHARE_HOUSE",
-  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
   "businessRegistrationNumber": "1234567890",
   "address": { "fullAddress": "대전광역시 유성구 대학로 99", "detail": "3층", "lat": 36.3620, "lng": 127.3560 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
@@ -550,7 +549,7 @@ Content-Type: application/json
 {
   "title": "사진 키 부족",
   "type": "SHARE_HOUSE",
-  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
   "businessRegistrationNumber": "1234567890",
   "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },
@@ -596,7 +595,7 @@ Content-Type: application/json
 {
   "title": "남의 사진 키",
   "type": "SHARE_HOUSE",
-  "contact": { "managerName": "김담당", "phone": "02-1234-5678", "sms": "010-1234-5678" },
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
   "businessRegistrationNumber": "1234567890",
   "address": { "fullAddress": "서울특별시 서대문구 신촌로 12", "detail": "3층", "lat": 37.5559918, "lng": 126.9368647 },
   "building": { "type": "VILLA", "totalFloors": 5, "usedFloorRange": "2~4", "parkingAvailable": false, "elevatorAvailable": true },

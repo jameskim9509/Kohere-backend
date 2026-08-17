@@ -154,6 +154,7 @@ public final class UserDocsFields {
 
       - 성공 응답에는 본문이 없다(204).
       - Apple로 가입한 계정은 Apple 쪽 앱 연동까지 함께 해제된다 — Apple 장애로 해제가 실패해도 탈퇴는 그대로 완료되고 에러를 돌려주지 않는다.
+      - `Set-Cookie: refreshToken=; Max-Age=0; Path=/api/v1/auth` 를 함께 내려 **임대인 웹의 refresh 쿠키를 브라우저에서도 지운다**.
 
       **에러 코드**
 
@@ -305,7 +306,10 @@ public final class UserDocsFields {
         optField(
             "phoneNumber",
             JsonFieldType.STRING,
-            "연락처(임대인만·선택) — 지금 번호와 다른 값이면 그 번호를 SMS로 재인증한 뒤에만 반영되고, 미인증·불일치면 422. 지금 번호와 같은 값은 재인증 없이 통과한다"),
+            "연락처(임대인만·선택) — 휴대폰 번호 형식만 받는다(하이픈 선택, 예 01012345678·010-1234-5678). 형식 위반은 400 INVALID_INPUT."
+                + " 서버는 숫자만 남긴 표준형으로 접어 저장·비교하므로 「지금 번호와 같은지」도 하이픈 표기가 아니라 표준형으로 판정한다."
+                + " 표준형이 지금 번호와 다르면 그 번호를 SMS로 재인증한 뒤에만 반영되고, 미인증·불일치면 422. 같으면 재인증 없이 통과한다."
+                + " 표준형은 계정마다 유일해야 하므로 다른 계정이 쓰는 번호로는 바꿀 수 없다"),
         optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택)"));
   }
 
@@ -313,10 +317,22 @@ public final class UserDocsFields {
    * 온보딩 응답의 {@code data.user}({@code UserProfileView})와 정식 토큰 3종. 세입자 {@code POST
    * /auth/onboarding}과 임대인 {@code POST /auth/landlord/onboarding}이 같은 응답 타입({@code
    * OnboardingResponse})을 쓴다.
+   *
+   * <p>{@code data.linked}는 <b>임대인 병합(US-1-15)에서만 true가 될 수 있지만 기술자는 두 오퍼레이션이 공유한다</b> — 같은 응답 타입이라
+   * 세입자 응답에도 필드가 나가고, 기술자를 한쪽에만 두면 다른 쪽 스니펫이 "문서화되지 않은 필드"로 실패한다. 그래서 설명 문구가 두 경로를 모두 덮는다.
    */
   public static List<FieldDescriptor> onboardingResponseFields() {
     List<FieldDescriptor> descriptors = new ArrayList<>();
     descriptors.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    descriptors.add(
+        field(
+            "data.linked",
+            JsonFieldType.BOOLEAN,
+            "기존 웹 임대인 계정과 병합됐으면 true. true면 data.user와 아래 토큰이 모두 요청에 쓴 계정이 아니라"
+                + " 합쳐진 웹 계정 기준이며 그 계정의 id는 data.user.id다 — 요청에 쓴 임시 계정은 삭제됐으므로"
+                + " 클라이언트는 반드시 이 응답의 accessToken·refreshToken으로 교체해야 하고, 화면에 표시할 이름·이메일도"
+                + " 방금 입력한 값이 아니라 살아남은 계정의 값이다(예: \"기존 웹 계정과 연결되었습니다\" 안내)."
+                + " 세입자 온보딩(POST /auth/onboarding)은 매칭 키인 휴대폰 번호를 수집하지 않아 병합 분기 자체가 없어 항상 false다"));
     descriptors.addAll(profileFields("data.user."));
     descriptors.add(codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"));
     descriptors.add(field("data.accessToken", JsonFieldType.STRING, "access 토큰(JWT)"));

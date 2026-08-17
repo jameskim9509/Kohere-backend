@@ -13,7 +13,7 @@
 
 | 모듈 | 스토어 | 테이블/컬렉션(키스페이스) | MVP |
 | --- | --- | --- | --- |
-| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}` / `social_accounts` | ✅ |
+| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}`·`signup-phone:code:{정규화번호}`·`signup-phone:verified:{정규화번호}`·`signup-phone:rate:phone:{정규화번호}`·`signup-phone:rate:ip:{IP}`(가입용 SMS 인증·레이트리밋) / `social_accounts`·`local_accounts`(웹 로컬 자격증명) | ✅ |
 | [`user`](#4-2-user) | **MySQL** | `users`·`user_blocks`(사용자 차단, US-4-8)·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안)·`diagnosisFlowSessions`(v2 서버 주도 진행 세션) — 인라인 언어-키 맵 번역, US-2-5·US-2-6·US-2-7 | ✅ |
@@ -71,7 +71,7 @@
 ### 2-4. 제약·무결성 (공통)
 
 - **FK는 같은 모듈 안에서만.** 교차 모듈 참조는 **store가 같아도 FK 금지** — 식별자 값만 보유한다(Modulith 독립성·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 교차 스토어 조인·FK·분산 트랜잭션 금지([ADR-0005](../adr/0005-polyglot-persistence.md) D5·D6) → 애플리케이션 레벨 조인/이벤트.
-- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_report_reasons(code,lang)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
+- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `local_accounts(email)` · `local_accounts(user_id)` · `users(nickname)` · `users(phone_number)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_report_reasons(code,lang)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
 - **카운트 정합**(`community` like/comment/share, `listings.favoriteCount`)은 단일 store 트랜잭션 또는 원자적 증감 + 배치 재계산으로 유지(음수 방지).
 - **민감정보**(비자·이메일·토큰 원문·인증번호 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
 
@@ -87,7 +87,7 @@
 
 ### 4-1. `auth`
 
-> 스토어: **Redis**(refresh, [ADR-0006](../adr/0006-refresh-token-store-redis.md)) + **MySQL**(소셜 연동). domain-model: `RefreshToken`·`SocialAccount`.
+> 스토어: **Redis**(refresh, [ADR-0006](../adr/0006-refresh-token-store-redis.md)) + **MySQL**(소셜 연동·웹 로컬 자격증명). domain-model: `RefreshToken`·`SocialAccount`·`LocalAccount`.
 
 #### (A) Redis — refresh 토큰
 
@@ -138,6 +138,7 @@
 - **검증**: 입력 인증번호 해시가 `codeHash`와 일치하고 미만료·시도 미초과면 `phone-verify:verified:{userId}`에 연락처 기록(코드 키는 만료/삭제). 불일치·만료는 `422 AUTH_PHONE_VERIFICATION_FAILED`.
 - **임대인 온보딩 제출**: `auth`가 `phone-verify:verified:{userId}`의 연락처와 제출 `phoneNumber`를 대조 → 일치해야 `user` 온보딩 완료 명령 진행. 확정 `phoneNumber`는 `users.phone_number`로 영속(아래 §4-2), 인증 흔적은 TTL로 소멸한다(영속 안 함).
 - **민감정보**: `phoneNumber`는 응답·로그 마스킹(예 `010-****-5678`), 인증번호 원문은 보관·로그하지 않는다(해시만).
+- **가입 전(비로그인) 인증은 별도 키스페이스다**: 임대인 웹 회원가입의 선행 인증은 `userId`가 없어 이 키를 쓸 수 없다 — 아래 **(A-5)** `signup-phone:*` 참조.
 
 #### (A-4) 사업자번호 검증(`POST /api/v1/auth/business/verify`) — 무상태, Redis 마커 없음
 
@@ -148,6 +149,26 @@
 - **검증**: `POST /api/v1/auth/business/verify`가 `BusinessRegistryVerifier`로 동기 검증한다. 정상(계속) 사업자면 `verified:true`. 미등록·휴폐업·진위 실패는 `422 AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`, 외부 장애·타임아웃은 공통 `502 UPSTREAM_ERROR`(재시도 유도). 검증 서비스 회신 상호·대표자는 검증 응답 표시용으로만 쓰며 저장하지 않는다. 레이트리밋 임계값 미정(확인 필요).
 - **인가**: 정식 토큰(`ACTIVE`, `ROLE_USER`) 필수. 온보딩 토큰(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`)으로 호출 시 `403 AUTH_ONBOARDING_REQUIRED`, 임대인이 아닌(`userType=TENANT`) `ACTIVE` 사용자면 `403 FORBIDDEN`. 온보딩 제출과는 무관하다(온보딩 게이트에 사업자번호 항목 없음 — §4-2·§4-1 A-3).
 - **민감정보**: 사업자번호 원문은 보관·로그하지 않고, 응답엔 마스킹값(예 `****567890`)만 노출한다.
+
+#### (A-5) Redis — 가입용 연락처 인증(`SignupPhoneVerification`, 임대인 웹·비로그인)
+
+임대인 웹 회원가입(§4-1 C `local_accounts` · [ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) **제출 전에** 수행하는 번호 소유 인증(US-1-13). 인증번호 정책(6자리·코드 TTL 5분·검증 마커 30분·검증 시도 5회·재발송 간격 60초 — `app.phone.*`)과 발송 포트 `VerificationSmsSender`, 해시(SHA-256+pepper)는 **(A-3)과 그대로 공유**한다. 원본 차이는 **키와 접근 통제 둘**이다 — 가입 전 단계라 `userId`가 없어 **정규화(숫자만)한 휴대폰 번호가 곧 키**이고, 두 엔드포인트가 **permitAll**이다. 나머지 차이(번호·IP 이중 레이트리밋, 검증 실패를 `422` 한 코드로 통일)는 그 둘에서 따라 나온다 — 토큰으로 주체를 묶을 수 없으니 남는 식별자로 한도를 걸어야 하고, 응답 차이가 곧 챌린지 상태 노출이 되니 구분하지 않는다. domain-model `SignupPhoneVerification`.
+
+**키스페이스** (Redis · AWS ElastiCache)
+
+| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
+| --- | --- | --- | --- | --- |
+| `signup-phone:code:{정규화번호}` | Hash | `codeHash` · `attempts`(int) · `issuedAt` · `expiresAt` | 인증번호 만료(A-3과 동일 — 5분) | 인증번호 발송·검증. 대조 대상 번호는 **값이 아니라 키**다(A-3은 키가 `userId`라 번호를 값으로 들지만 여기선 중복이 된다) |
+| `signup-phone:verified:{정규화번호}` | String | 상수 `"1"`(존재 자체가 의미) | 검증 마커 만료(A-3과 동일 — 30분) | 웹 회원가입 제출이 대조하고 **성공 시 소비(삭제)** 한다. 소비처가 하나뿐이라 용도 구분 필드가 없다 |
+| `signup-phone:rate:phone:{정규화번호}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 같은 번호로의 발송 남용 차단 — 초과 시 `429 TOO_MANY_REQUESTS` |
+| `signup-phone:rate:ip:{IP}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 번호를 바꿔가며 발송비를 태우는 남용 차단 — 초과 시 `429` |
+
+- **발송**: (A-3)과 같이 **동기 발송**하고 **발송에 성공한 뒤에만** `signup-phone:code:{정규화번호}`를 (재)설정한다(발송 실패 시 챌린지 미저장 + `502 UPSTREAM_ERROR`). 저장 전에 **재발송 쿨다운 60초 → 번호·IP 시간당 한도** 순으로 판정하며, 셋 중 무엇을 어겨도 응답은 `429 TOO_MANY_REQUESTS` 하나다.
+- **레이트리밋 한도**(`app.auth.signup-phone.*`): **번호 5회/1시간 · IP 20회/1시간**(#229 D6). 카운터는 `INCR` + 첫 증가에서만 `EXPIRE`를 거는 **고정 창**이고, **발송 성공이 아니라 시도**를 센다 — 성공분만 세면 provider 장애를 반복시키는 것만으로 한도를 무력화할 수 있다. IP는 리버스 프록시(Caddy) 뒤라 `X-Forwarded-For` 최좌측 값을 쓰며, 그 값은 호출자가 위조할 수 있으므로 **IP 한도는 비용 가드이지 인가가 아니다**(우회 불가한 방어는 번호 한도·쿨다운).
+- **검증**: 입력 인증번호 해시가 `codeHash`와 일치하고 미만료·시도 미초과면 `signup-phone:verified:{정규화번호}`에 마커를 남기고 코드 키를 삭제한다. **챌린지 부재·불일치·만료·시도 상한 초과가 모두 `422 AUTH_PHONE_VERIFICATION_FAILED`** 로, 시도 초과를 `429`로 구분하는 (A-3)과 다르다 — 비로그인 경로에서는 응답의 차이 자체가 챌린지 존재·시도 잔량을 알려 주는 신호가 된다.
+- **계정 존재 여부 비노출**: 발송·확인 어느 쪽도 `users`를 조회하지 않는다. 가입 이력이 있는 번호든 없는 번호든 같은 응답이며, 연동 판정은 가입 제출 시점에만 이뤄진다.
+- **앱 심사용 고정 인증번호 우회(`FixedVerificationPolicy`) 미적용**: 그 우회는 `userId` + Google 소셜 계정으로 판정하는데 가입 전 단계에는 둘 다 없다. 이 경로는 프로파일과 무관하게 항상 실제 발급·발송을 타며, 로컬은 `LoggingVerificationSmsSender`가 인증번호를 콘솔에 찍는다.
+- **민감정보**: 번호·IP가 **키에 실리지만** 전부 TTL(코드 5분·마커 30분·카운터 1시간)로 소멸해 영속하지 않는다. 응답·로그의 번호는 마스킹(예 `010-****-5678`), 인증번호 원문은 보관·로그하지 않는다(해시만).
 
 #### (B) MySQL — 소셜 연동(`social_accounts`)
 
@@ -173,6 +194,58 @@
 - **Apple refresh token**: 1급 민감정보 — 로그·응답·`toString` 비노출. MVP는 평문(RDS 저장소 암호화 의존, [ADR-0015](../adr/0015-sensitive-column-encryption.md))이며 컬럼 암호화 도입 시 후보. 전진 마이그레이션(Flyway)으로 추가하며, 탈퇴 시 매핑 삭제로 함께 제거된다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)).
 - **이름 스냅샷 컬럼 — 전진 마이그레이션 V20**: `social_accounts`에 `name VARCHAR(200) NULL` 추가(#192, provider 스냅샷). 기존 행은 NULL(과거 로그인의 provider name 미보유)이며 다음 로그인 시 upsert로 채워진다(소비처가 없어 NULL이어도 무방; 필요 시 `users.name`에서 1회 백필 가능). Apple 기존 계정은 재로그인 때 이름을 주지 않아 NULL로 남을 수 있다.
 
+#### (C) MySQL — 웹 로컬 자격증명(`local_accounts`)
+
+임대인 웹(앱과 별개 클라이언트)의 **이메일 + 비밀번호** 자격증명을 회원에 묶는다(domain-model `LocalAccount`, [ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)). `social_accounts`(앱 소셜 로그인)와 **대칭**인 두 번째 자격증명 채널이며, 둘은 같은 `users` 행에 매달린다 — 한 사람은 `users` 한 행이고 로그인 수단만 둘이다. 자격증명은 `auth` 소관이라 `users`에 `password_hash`·`failed_login_attempts`·`locked_at`을 붙이지 않는다([ADR-0001](../adr/0001-bounded-context-module-decomposition.md) 모듈 경계 · 부수 효과로 세입자 다수의 `users` 행에 영원히 NULL인 컬럼 넷이 생기지 않는다).
+
+`local_accounts`
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `id` | BIGINT | PK, AUTO_INCREMENT |
+| `user_id` | BIGINT | NOT NULL · **UNIQUE**(`uq_local_accounts_user_id`) · → user `users.id`(FK 아님, 값 참조) |
+| `email` | VARCHAR(255) | NOT NULL · **UNIQUE**(`uq_local_accounts_email`) · 웹 로그인 ID · 민감정보(PII) · `users.email`과 별개 값(아래 註) |
+| `password_hash` | VARCHAR(100) | NOT NULL · **BCrypt 해시**(60자 + 여유) · 원문은 저장·로그 어디에도 남기지 않는다 |
+| `name` | VARCHAR(200) | NULL · 가입 폼이 준 이름(**폼 스냅샷**) — `users.name`(정본)과 별개 · 민감정보(PII) |
+| `birth_date` | DATE | NULL · 가입 폼이 준 생년월일(**폼 스냅샷**) · 민감정보(PII) |
+| `failed_login_attempts` | INT | NOT NULL DEFAULT 0 · 연속 로그인 실패 횟수 · 성공 시 0으로 초기화 |
+| `locked_at` | DATETIME(6) | NULL · 잠금 시각 — 5회 연속 실패 시 기록. 채워져 있으면 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED` |
+| `created_at` | DATETIME(6) | NOT NULL |
+| `updated_at` | DATETIME(6) | NOT NULL |
+
+**인덱스**: PK `id` / **UNIQUE `email`**(`uq_local_accounts_email` — 웹 로그인 ID 유일성 겸 로그인 등치 조회) / **UNIQUE `user_id`**(`uq_local_accounts_user_id` — "한 계정에 웹 자격증명 하나"를 DB 레벨로 강제. 이 유니크가 `user_id` 인덱스를 겸하므로 별도 보조 인덱스를 두지 않는다).
+
+- **교차 모듈 no-FK**: `user_id`는 user 소유 → **FK 미설정**(값 참조). `social_accounts`가 [V1](../../src/main/resources/db/migration/V1__baseline_users_social_accounts.sql)에서 의도적으로 생략한 선례를 그대로 따른다([§2-4](#2-4-제약무결성-공통)). 회원 상태·프로필은 user 공개 쿼리/애플리케이션 조인으로 얻는다.
+- **`uq_local_accounts_user_id`가 지키는 불변식**: 번호로 찾은 기존 계정에 자격증명을 덧붙이는 **연동 경로**(US-1-11)는 "조회 후 INSERT"라 동시 요청에 check-then-act가 깨지는데, 두 번째 INSERT가 이 제약에서 막힌다. 선검사에서 걸리는 경우가 `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS`다.
+- **정본은 `users`, 이 테이블은 스냅샷**: `name`·`birth_date`는 가입 폼 값의 사본이라 NULL 허용이며, **연동 시 `users`의 프로필을 갱신하지 않으므로 두 값이 다를 수 있다**. 모든 응답의 `name`·`email`은 `users`에서 나가고 이 표의 사본은 어떤 응답에도 싣지 않는다([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) §6). `social_accounts.email`·`name`(provider 스냅샷)과 같은 취급이다.
+- **이메일 중복 검사는 이 테이블에만**: 웹 가입의 이메일 중복(`409 AUTH_EMAIL_ALREADY_REGISTERED`)은 `local_accounts.email`만 본다. **`users.email`에는 UNIQUE를 걸지 않는다** — 걸면 "본인이 본인 소셜 이메일로 웹 가입"이라는 가장 흔한 정상 경로가 막힌다([§4-2](#4-2-user)). 신규 가입일 때만 폼 이메일을 `users.email`에도 기록하고, 연동일 때는 소셜 진본을 유지한다.
+- **잠금은 컬럼이지 Redis TTL이 아니다**: `failed_login_attempts`·`locked_at`을 TTL 키로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책(US-1-12)이 깨진다. 해제 경로는 없고 운영자가 `locked_at`을 비우는 것이 유일하다(수용된 제약).
+- **연동 매핑은 불변, 자격증명은 가변**: `user_id`·`email`은 생성 이후 바뀌지 않지만 `password_hash`·실패 카운터·`locked_at`은 갱신되므로 `social_accounts`와 달리 `updated_at`을 둔다([§2-2](#2-2-공통-컬럼-표준)).
+- **탈퇴 시 이 행도 함께 지운다**: 탈퇴는 `users` PII 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)) + `social_accounts` 삭제 + **`local_accounts` 삭제** + refresh 무효화다(`UserWithdrawnEventListener` — 자격증명 두 채널을 같은 자리에서 지운다). 남기면 두 가지가 동시에 무너진다 — ① 탈퇴는 `users` 행을 지우지 않고 `user_type`도 `LANDLORD` 그대로라, 남은 웹 자격증명으로 **권한이 온전한 세션을 다시 받는다**(앱 소셜이 그렇지 않은 것은 `social_accounts`를 지우기 때문이다) ② `uq_local_accounts_email`이 살아남아 **본인이 같은 이메일로 재가입할 수 없다**(409 `AUTH_EMAIL_ALREADY_REGISTERED`). 웹 계정이 없는 세입자·앱 전용 임대인은 0행 삭제라 무해하다.
+- **민감정보**: `email`·`name`·`birth_date`는 로그·응답 마스킹 대상이고(응답에는 애초에 `users` 값만 나간다), 비밀번호는 **해시만** 보관한다. 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
+- **신설 — 전진 마이그레이션 V22**([`V22__create_local_accounts.sql`](../../src/main/resources/db/migration/V22__create_local_accounts.sql), [migration-policy](./migration-policy.md)): 신규 테이블이라 백필이 없는 순수 확장 변경이다.
+
+    ```sql
+    -- 웹 로컬 자격증명(local_accounts). 자격증명은 auth 소관이라 users에 붙이지 않는다(ADR-0001·ADR-0047).
+    -- user_id에 FK는 걸지 않는다 — social_accounts가 V1에서 의도적으로 생략한 선례(값 참조).
+    -- uq_local_accounts_user_id가 user_id 인덱스를 겸하므로 별도 보조 인덱스도 두지 않는다.
+    CREATE TABLE local_accounts (
+        id                    BIGINT       NOT NULL AUTO_INCREMENT,
+        user_id               BIGINT       NOT NULL,
+        email                 VARCHAR(255) NOT NULL,
+        password_hash         VARCHAR(100) NOT NULL,
+        name                  VARCHAR(200) NULL,
+        birth_date            DATE         NULL,
+        failed_login_attempts INT          NOT NULL DEFAULT 0,
+        locked_at             DATETIME(6)  NULL,
+        created_at            DATETIME(6)  NOT NULL,
+        updated_at            DATETIME(6)  NOT NULL,
+        PRIMARY KEY (id),
+        CONSTRAINT uq_local_accounts_email   UNIQUE (email),
+        CONSTRAINT uq_local_accounts_user_id UNIQUE (user_id)
+    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+    ```
+
 ### 4-2. `user`
 
 > 스토어: **MySQL** (회원 프로필·계정 lifecycle, [ADR-0005](../adr/0005-polyglot-persistence.md)). domain-model `User`(VO `FullName`(→단일 `name`)·`Consent`를 컬럼으로 평탄화, `name`·`nickname`·`country`·`occupation`·`email`은 단일 컬럼).
@@ -184,7 +257,7 @@
 | `id` | BIGINT | PK, AUTO_INCREMENT |
 | `user_type` | VARCHAR(16) (enum `UserType`) | NOT NULL DEFAULT `TENANT` · 온보딩 제출 엔드포인트로 확정·이후 불변 · INDEX(아래 註) |
 | `name` | VARCHAR(200) | NULL · VO `FullName`→단일 컬럼 · **세입자·임대인 공통** 전체 이름(PII — 아래 註) · **소셜 로그인 시점에 요청 `name`으로 채움**(검증 대상 아님 — 아래 註) · 세입자 `first_name`+`last_name` 분리·임대인 `first_name` 재사용 편법은 #192에서 폐지 |
-| `phone_number` | VARCHAR(20) | NULL · **임대인**(PII — 로그·타 사용자 노출 시 마스킹, 예 `010-****-5678`). 온보딩 전 `auth` SMS 인증(§4-1 A-3 `VERIFIED`)을 거친 값. 세입자는 NULL · 길이/형식 확인 필요 |
+| `phone_number` | VARCHAR(20) | NULL · **UNIQUE**(`uq_users_phone_number` — 같은 번호는 계정 하나, V23 · 아래 註) · **임대인**(PII — 로그·타 사용자 노출 시 마스킹, 예 `010-****-5678`). 온보딩 전 `auth` SMS 인증(§4-1 A-3 `VERIFIED`)을 거친 값이며 입력 경로에서 **숫자만 남겨 정규화**한다(기존 행 백필 없음 — 아래 註). 세입자는 NULL · 길이/형식 확인 필요 |
 | `business_registration_number_hash` | VARCHAR(64) | NULL · **임대인** 사업자등록번호 SHA-256 해시(원문 비저장·로그 비저장·마스킹, 예 `****567890`) · 세입자는 NULL · **온보딩에서도 매물 등록에서도 채우지 않아 항상 NULL** — 임대인이 입력한 사업자등록번호는 매물 문서(`listings.businessRegistrationNumber`)가 원문으로 보유한다(아래 註) · 컬럼명·유니크 제약·저장 방식 확인 필요 |
 | `nickname` | VARCHAR(50) | NULL · **UNIQUE** · 시스템 배정(`형용사 + 사물`) · 탈퇴 시 익명화 |
 | `gender` | VARCHAR(16) (enum `Gender`) | NULL(PII) |
@@ -204,7 +277,7 @@
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
-**인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / INDEX `user_type`(역할별 조회·집계) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
+**인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / **UNIQUE `phone_number`**(`uq_users_phone_number` — 「같은 번호면 같은 계정」을 DB가 지킨다; NULL 다중 허용이라 세입자·탈퇴자는 무영향. 번호로 기존 임대인 계정을 찾는 연동·병합 조회의 등치 인덱스도 겸한다 — 아래 註) / INDEX `user_type`(역할별 조회·집계) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
 
 - **이메일 두 종류**: 소셜 제공자 이메일은 **auth `social_accounts.email`** 소관(역할 무관·소셜 연동 메타데이터)이고, `users.email`은 **소셜 로그인 시 provider email(요청 `email`↔토큰 `email` 클레임 대조로 확정)로 세팅**되는 연락 이메일이다(#192 — 온보딩 입력·인증이 아니며, 계정 생성 시 둘은 같은 provider 값에서 나온다). **역할과 무관하게** 세입자·임대인 모두 소셜 로그인에서 캡처된 provider email을 `users.email`에 보유한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 '임대인 이메일 미수집' 결정은 #192로 개정 — 수집 폼이 아니라 소셜 로그인 provider 값 보유이고, 이메일 인증(신원 확인)이 없어진 지금 email은 '미검증 연락처'일 뿐이다). 이메일 인증 API(§4-1 A-2)는 **온보딩 완료(`ACTIVE`) 이후 접근 전용**이고, 그 *인증 흔적*은 Redis에만 단명 보관하며 **실제 `users.email` 변경 반영은 후속 이슈**(#192 범위 밖 — 이번엔 접근 제한만). **이름도 같은 이중 관리**다 — `social_accounts.name`(provider 스냅샷)과 `users.name`(사용자 값). `social_accounts`의 `email`·`name`은 로그인마다 provider 값으로 upsert되지만 `users`는 최초 로그인에만 세팅되고 이후 사용자 편집(name=`PATCH /users/me`)만 반영한다 — 재로그인 시 provider 변경은 `social_accounts`에만 반영하고 `users`는 덮지 않는다.
 - **닉네임**: 시스템이 `형용사 + 사물`로 무작위 배정하며 `UNIQUE`로 중복을 막는다(충돌 시 재시도). 사용자 입력·수정 대상이 아니다.
@@ -215,11 +288,11 @@
 - **`lang`의 NULL은 "미선택"**: NOT NULL·DEFAULT `en`을 두지 않는다 — NULL(과 공백)은 "언어를 고른 적 없음"(미선택)을 뜻하며 런타임에서 `en`으로 매핑한다.
 - **사업자번호 해시(어느 경로에서도 미채움)**: `business_registration_number_hash`는 임대인 **온보딩에서 수집·저장하지 않는다** — 온보딩(약관 동의 + 연락처 SMS 인증)은 사업자번호 게이트가 없어 온보딩 완료(`ACTIVE`) 후에도 이 컬럼은 **NULL로 남는다**. 사업자번호 검증(`POST /api/v1/auth/business/verify`, §4-1 A-4)은 무상태라 결과를 이 컬럼에 쓰지 않는다. **매물 등록 시점에도 채우지 않는다** — 임대인이 등록 폼에 입력한 사업자등록번호는 **원문 그대로 `listings.businessRegistrationNumber`에 저장**되므로(§4-3) `users`에 해시를 따로 둘 이유가 없다. 즉 현재 이 컬럼을 채우는 코드 경로는 없다. [ADR-0033](../adr/0033-business-registry-verification.md)의 "원문 비저장·해시로만 영속"은 **매물 문서 한정으로 개정**됐고([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)) `users`에는 여전히 미채택이다. 유니크 제약은 앱 레벨(컬럼 유니크 미적용 — 확인 필요).
 - **연락처 인증값 영속**: `phone_number`(임대인)는 온보딩 제출 시 Redis 연락처 인증 마커(§4-1 A-3 `phone-verify:verified:{userId}`)의 번호와 대조해 일치할 때만 확정·영속한다(미인증/불일치 `AUTH_PHONE_NOT_VERIFIED`). 인증 흔적은 TTL로 소멸하고 확정 번호만 `users.phone_number`로 남는다.
-- **교차 모듈 no-FK**: auth(소셜연동·refresh·이메일인증·연락처인증·사업자번호 검증)와 `userId` 값만 공유.
+- **교차 모듈 no-FK**: auth(소셜연동·웹 로컬 자격증명·refresh·이메일인증·연락처인증·사업자번호 검증)와 `userId` 값만 공유.
 - **소프트삭제 대신 상태**: 탈퇴=`status=WITHDRAWN`+`withdrawn_at` 기록, PII 즉시 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md))(+토큰 일괄 무효화). 탈퇴 시 `nickname`도 익명화(NULL)해 유니크 슬롯을 회수하며, 임대인 PII(`name`·`phone_number`·`birth_date`·`business_registration_number_hash`)도 함께 익명화(NULL)한다. `lang`은 `country`와 함께 익명화(NULL) 대상이다 — 사용자가 고른 표시 언어도 PII라 탈퇴 시 남길 이유가 없다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). WITHDRAWN/없음 조회는 `USER_NOT_FOUND`(404).
 - **PII 컬럼은 NULL 허용**(`name`·`phone_number`·`business_registration_number_hash`·`nickname`·`gender`·`birth_date`·`country`·`lang`·`occupation`·`email`·`visa_type`): 회원은 소셜 로그인 시 `name`·`email`(둘 다 역할 무관)만 채운 채 `PENDING`으로 생성되고 나머지 프로필은 온보딩에서 채우며, 역할별로 컬럼 채움이 갈리고(임대인만 `phone_number`+`business_registration_number_hash`), 탈퇴 시 즉시 **익명화(NULL)**되기 때문이다([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)). "온보딩 완료(`ACTIVE`) 시 (역할에 맞게) 채워져야 한다"는 **상태·역할 불변식**(앱·서버 검증)이지 컬럼 NOT NULL 제약이 아니다. 단 `lang`·`occupation`은 이 불변식에서도 **제외**다 — 세입자 온보딩 **선택** 필드라 `ACTIVE`여도 미전송이면 NULL로 남는다(`lang` #141 · `occupation` #187 — `occupation`은 V3부터 NULL 허용이라 필수→선택 전환에 마이그레이션이 없다).
 - **민감정보**: `email`·`visa_type`·`phone_number`는 로그·타 사용자 노출 시 마스킹(본인 `GET /users/me`는 평문). `business_registration_number_hash`는 해시 컬럼이며 응답엔 마스킹값(예 `****567890`)만 노출한다. 이 테이블에는 원문을 저장하지 않고 로그에도 남기지 않는다(사업자등록번호 원문을 보유하는 곳은 매물 문서뿐이다 — [§4-3](#4-3-listing)). 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
-- **마이그레이션 후속**: 이 스키마(닉네임·국적·직업·이메일 추가, 전화번호 컬럼 제거)는 baseline([V1](../../src/main/resources/db/migration/V1__baseline_users_social_accounts.sql)) 이후 변경이므로 **전진 마이그레이션(V2 등)** 으로 반영해야 한다([migration-policy](./migration-policy.md), 확인 필요). 임대인 역할 컬럼(`user_type`·`phone_number`·`business_registration_number_hash` 추가, `user_type` 인덱스)은 **전진 마이그레이션 V8 예정**이다(실제 DDL은 후속 구현 PR — 컬럼명·유니크 제약·phone 길이/형식·저장 방식 확인 필요). 이름은 세입자/임대인 통일로 `first_name`+`last_name`을 단일 `name`으로 병합하며 별도 **전진 마이그레이션 V19**로 반영한다(#192 — 아래 註).
+- **마이그레이션 후속**: 이 스키마(닉네임·국적·직업·이메일 추가, 전화번호 컬럼 제거)는 baseline([V1](../../src/main/resources/db/migration/V1__baseline_users_social_accounts.sql)) 이후 변경이므로 **전진 마이그레이션(V2 등)** 으로 반영해야 한다([migration-policy](./migration-policy.md), 확인 필요). 임대인 역할 컬럼(`user_type`·`phone_number`·`business_registration_number_hash` 추가, `user_type` 인덱스)은 **전진 마이그레이션 V8 예정**이다(실제 DDL은 후속 구현 PR — 컬럼명·phone 길이/형식·저장 방식 확인 필요. `phone_number` 유니크 제약은 V8에서 미결로 남겼다가 **V23에서 확정**했다 — 아래 註). 이름은 세입자/임대인 통일로 `first_name`+`last_name`을 단일 `name`으로 병합하며 별도 **전진 마이그레이션 V19**로 반영한다(#192 — 아래 註).
 - **`lang` 추가 — 전진 마이그레이션 V13 예정**(최신이 V12이므로 다음 번호는 `V13__users_lang.sql`, [migration-policy](./migration-policy.md)): 컬럼 추가 + 백필로 **배포 t=0 항등**(기존 사용자가 받던 언어가 그대로 유지)을 맞춘다. 인덱스는 추가하지 않는다 — `lang`은 PK 단건 조회(`findById`)로만 읽고 언어별 검색이 없다.
 
     ```sql
@@ -252,6 +325,14 @@
       WHERE u.status IN ('PENDING', 'TERMS_AGREED');
     DELETE FROM users WHERE status IN ('PENDING', 'TERMS_AGREED');
     ```
+
+- **번호 유일성 `uq_users_phone_number` — 전진 마이그레이션 V23**([`V23__users_phone_number_unique.sql`](../../src/main/resources/db/migration/V23__users_phone_number_unique.sql), [migration-policy §3](./migration-policy.md#3-되돌릴-수-있는-변경-호환성-분류)): 임대인 웹 가입(US-1-11)과 앱 임대인 온보딩(US-1-15)은 「같은 번호면 같은 계정」으로 이어붙는데, 두 흐름이 거의 동시에 도착하면 **양쪽 다 「기존 계정 없음」을 읽고** 각자 `ACTIVE`·`LANDLORD` 행을 만들어 한 사람의 계정이 갈라진다. 애플리케이션 조회(`SELECT … FOR UPDATE`)는 **아직 없는 행을 잠글 수 없으므로** 그 경쟁을 실제로 막는 것은 이 UNIQUE뿐이다 — 두 번째 INSERT가 제약 위반으로 실패하고 그 트랜잭션이 통째로 롤백되며, 실패한 쪽은 재시도하면 상대가 만든 계정을 발견해 정상 연동·병합된다([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) §5). MySQL UNIQUE는 NULL 중복을 허용하므로 세입자(정의상 NULL)와 탈퇴자(익명화로 NULL — [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md))는 영향이 없다(`nickname` UNIQUE와 같은 성질이라 온보딩 전 다건도 무방). 이 제약이 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)가 미결로 남긴 "연락처 유니크 제약(동일 번호 다계정 허용 여부)"을 닫는다.
+
+    ```sql
+    ALTER TABLE users ADD CONSTRAINT uq_users_phone_number UNIQUE (phone_number);
+    ```
+
+    **정규화는 입력 경로만 · 백필 없음(수용된 제약)**: 번호 정규화(숫자만 남김)는 새 입력 경로에만 넣고 **기존 행은 `UPDATE`하지 않는다** — 이 마이그레이션에 백필 SQL이 없는 이유다. 따라서 하이픈으로 저장돼 있던 기존 임대인 번호는 정규화된 값과 등치 매칭되지 않아 **연동·병합에서 누락될 수 있고**, 그 임대인은 웹 가입 시 별개 계정을 갖게 된다(재인증으로 번호를 다시 확정하면 그 시점에 표준형으로 접힌다). 알고 수용한 한계이며 [user-stories](../requirements/user-stories.md)·[ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) Consequences에도 같은 제약으로 기록돼 있다. [migration-policy §3](./migration-policy.md#3-되돌릴-수-있는-변경-호환성-분류)상 **제약 강화는 비호환**이라 원래는 중복 행 정리가 선행돼야 하지만, 임대인 계정에 중복 번호를 만들 경로가 아직 없어 대상이 0건이다(적용 전 중복 점검 절차는 [migration-policy §3](./migration-policy.md#3-되돌릴-수-있는-변경-호환성-분류)).
 
 #### 사용자 차단 — `user_blocks`
 
@@ -360,7 +441,7 @@
 | `_id` | ObjectId | PK |
 | `schemaVersion` | int | NOT NULL · 문서 구조 버전(현재 `4`) |
 | `landlordId` | long | NOT NULL · → user `users.id` 값 참조(FK 없음) |
-| `contact` | object | NOT NULL · 매물별 담당 연락처(`managerName`·`phone`·`sms`) · 임대인 개인 연락처와 별개 값(아래 註) |
+| `contact` | object | NOT NULL · 매물별 담당 연락처(`managerName`·`phone`) · `phone`은 지점 대표 전화이며 임대인 개인 연락처와 별개 값(아래 註) |
 | `businessRegistrationNumber` | string | 사업자등록번호 **원문** · 응답 비노출(아래 註) |
 | `blogUrl` | string | nullable · 임대인 소개 페이지 URL |
 | `ageMin` | int | NOT NULL · 이용 가능 연령 하한 · 등록 폼의 `ageRange`(`min~max`)를 서버가 나눈 값 |
@@ -434,7 +515,7 @@
 
 - 주변 시설은 자유 텍스트가 아니라 `nearbyFacilities`의 `NearbyFacility` 코드 배열이다. API 응답에서도 `nearbyFacilities`로 내려주며 다른 공통 코드와 같이 카탈로그 label과 조합한다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
-- **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. 이어 `0118 listing-university-collection`이 `universities` validator를 세운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)) — 넷 다 스키마만 다루고 문서를 넣지 않는다. 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
+- **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. 이어 `0116 listing-location-required`가 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. `0118 listing-university-collection`이 `universities` validator를 세우고([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)), `0119 listing-contact-sms-drop`이 담당자 연락처에서 `sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제) — **다섯 다 스키마만 다루고 문서를 넣지 않는다**. 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
 - **시드(`listings` 2건 · `listingCatalog` 105건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
 - seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
 
@@ -484,7 +565,7 @@
 - **최근 본**: 사용자별 최신 30개까지만 보관하고, 조회 API는 그중 `PUBLISHED`이면서 ACTIVE `roomOffers`가 있는 매물만 `viewedAt desc limit 10`으로 반환한다.
 - **좌표**: 저장 `[lng,lat]` ↔ API `{lat,lng}` 변환. `location`은 **v4 validator의 `required`**다 — 도로명 주소 검색(`GET /api/v1/listings/addresses`)이 준 좌표를 등록 요청이 되돌려 보내므로 좌표 없는 매물이 생길 경로가 없다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). 최초 v4 baseline(`0115`)은 지오코딩이 없어 이 필드를 선택으로 뒀고, `0116 listing-location-required`가 필수로 조였다(시드 주입 전이라 백필 대상 0건).
 - **ARC 요구**: 매물 루트 `arcRequired`(`REQUIRED`/`NOT_REQUIRED`) 한 필드가 정본이다. 파생 태그(`ConditionTag.NO_ARC`)는 없어졌고 `roomOffers[].filterTags` 저장값과 응답 태그가 1:1이다. 진단 `arcStatus`와의 매핑은 §4-4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)).
-- **매물 문서의 임대인 PII**: `businessRegistrationNumber`는 **원문**을, `contact`(`managerName`·`phone`·`sms`)는 평문을 이 컬렉션에 저장한다 — [ADR-0033](../adr/0033-business-registry-verification.md)의 "원문 비저장·해시로만 영속"을 **매물 문서 한정으로 개정**한 결과다(온보딩·`users` 테이블에는 미채택, `auth`의 검증은 무상태 유지 — §4-1 A-4). `contact`는 매물별 담당 연락처라 임대인 개인 연락처(`users.phone_number`, 마스킹 대상)와 **별개 값**이므로 마스킹하지 않고 **세입자 응답에 공개**한다. 응답에서 제외하는 것은 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)이다. 임대인 탈퇴 시 이 문서의 PII 처리는 [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)의 익명화 대상(MySQL `users` 컬럼)에 없어 후속 설계 대상이다.
+- **매물 문서의 임대인 PII**: `businessRegistrationNumber`는 **원문**을, `contact`(`managerName`·`phone`)는 평문을 이 컬렉션에 저장한다 — [ADR-0033](../adr/0033-business-registry-verification.md)의 "원문 비저장·해시로만 영속"을 **매물 문서 한정으로 개정**한 결과다(온보딩·`users` 테이블에는 미채택, `auth`의 검증은 무상태 유지 — §4-1 A-4). `contact.phone`은 지점 대표 전화라 임대인 개인 연락처(`users.phone_number`, 마스킹 대상)와 **별개 값**이므로 마스킹하지 않고 **세입자 응답에 공개**한다. 반대로 **개인 번호는 이 문서에 복사하지 않는다** — 그 값을 그대로 받게 되던 `contact.sms`는 뺐고(changeUnit `0119`, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended), 소비자가 생기면 저장이 아니라 조회 시점에 `user` 모듈에서 가져와 마스킹해 내보낸다. 응답에서 제외하는 것은 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)이다. 임대인 탈퇴 시 이 문서의 PII 처리는 [ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)의 익명화 대상(MySQL `users` 컬럼)에 없어 후속 설계 대상이다.
 - `favorited`·`distanceMeters`는 조회 시점 산출 표현값으로 영속하지 않는다(domain-model).
 
 ### 4-4. `diagnosis`
@@ -1010,7 +1091,7 @@
 4. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.
 5. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`nickname`·`email`·`country`·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
 6. **이메일 인증 정책(세입자)**: 인증번호 길이·만료(TTL)·검증 시도 상한·재발송 레이트리밋 미확정. 메일 발송은 **SMTP**(구체 relay/provider는 인프라 결정 — [ADR-0021](../adr/0021-cost-optimization-profile.md))(§4-1 A-2).
-7. **연락처 SMS 인증 정책(임대인)**: SMS provider 선정·인증번호 정책=**이메일과 통일**(6자리·코드 5분·마커 30분·시도 5회·재발송 60초)·**프로필 연락처 변경 시 SMS 재인증**은 확정(provider 상세는 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 남은 미확정: SMS provider 단가·국내외(한국) 번호 발신, 연락처 유니크 제약 채택 여부(§4-1 A-3).
+7. **연락처 SMS 인증 정책(임대인)**: SMS provider 선정·인증번호 정책=**이메일과 통일**(6자리·코드 5분·마커 30분·시도 5회·재발송 60초)·**프로필 연락처 변경 시 SMS 재인증**은 확정(provider 상세는 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). ~~연락처 유니크 제약 채택 여부~~ → **해결됨** — `uq_users_phone_number`를 V23으로 채택했다([§4-2](#4-2-user) · [ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) §5). 남은 미확정: SMS provider 단가·국내외(한국) 번호 발신.
 8. **직업(`Occupation`) 분류값**: ~~요구사항 정의서 드롭다운 항목 잘림 → 임시값, 실제 선택지 확정 필요~~ → **해결됨(#93, #138 개편)** — 확정 7종(`UNDERGRADUATE_STUDENT`/`GRADUATE_STUDENT`/`EXCHANGE_STUDENT`/`LANGUAGE_TEACHING`/`MANUFACTURING_PRODUCTION`/`BUSINESS_TRADE`/`ETC`) 반영.
 9. **닉네임 풀**: `nickname_adjectives`·`nickname_nouns` 단어 시딩·로케일(언어)·조합 포맷(연결/구분자), 재조합 재시도 상한·fallback 규칙, 무작위 선택 전략(앱 로드 vs `RAND()`) 미확정.
 10. **국가(`countries`)**: 표시명 다국어(단일 vs `name_en`/`name_ko`), 시드 출처(ISO 3166-1·전체 국가 확장), `users.country`→`countries.code` FK 적용 여부. (`flag`는 국기 이미지 URL(flagcdn.com SVG)로 확정 — 외부 CDN 의존, 자체 호스팅 전환은 후속 검토.)

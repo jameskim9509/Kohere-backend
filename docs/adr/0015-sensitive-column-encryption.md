@@ -15,7 +15,7 @@ Accepted
 
 ## Context
 
-- [database-design §6](../database/database-design.md): 민감정보의 **애플리케이션 레벨 컬럼 암호화 도입 여부가 미정**이다 — MySQL은 `user`의 `phone`/`visa`, `social_accounts`의 `email`이고, MongoDB `listings` 문서에는 `businessRegistrationNumber`(원문)와 `contact.managerName`/`phone`/`sms`가 있다([ADR-0039](./0039-listing-schema-v4-registration-form.md)). 도입하면 암호문이 평문보다 길어 **VARCHAR 길이를 재산정**해야 해서 컬럼 DDL이 막힌다(MySQL 한정).
+- [database-design §6](../database/database-design.md): 민감정보의 **애플리케이션 레벨 컬럼 암호화 도입 여부가 미정**이다 — MySQL은 `user`의 `phone`/`visa`, `social_accounts`의 `email`이고, MongoDB `listings` 문서에는 `businessRegistrationNumber`(원문)와 `contact.managerName`/`phone`이 있다([ADR-0039](./0039-listing-schema-v4-registration-form.md) — `contact.sms`는 Amended로 제거됐다). 도입하면 암호문이 평문보다 길어 **VARCHAR 길이를 재산정**해야 해서 컬럼 DDL이 막힌다(MySQL 한정).
 - 일부 컬럼은 **등치 조회**가 필요하다(예: `social_accounts`의 `UNIQUE(provider, provider_user_id)`) → 무작위 암호화면 조회가 깨진다.
 
 ## Decision
