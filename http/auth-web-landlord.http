@@ -1,6 +1,6 @@
 # Kohere — 임대인 웹(로컬 자격증명) 인증 로컬 수동 테스트 — #229
-# 흐름: 가입용 SMS 발송 → SMS 확인 → 회원가입 → 로그인 → 재발급(쿠키) → 로그아웃(쿠키)
-# 스펙: docs/api/specs/01-auth-onboarding.md §1-1·§1-2·§1-3·§1-4·§6·§7
+# 흐름: 가입용 SMS 발송 → SMS 확인 → 회원가입 → 로그인 → 재발급(쿠키) → 로그아웃(쿠키) → (선택) 탈퇴
+# 스펙: docs/api/specs/01-auth-onboarding.md §1-1·§1-2·§1-3·§1-4·§6·§7·§10
 # 유저스토리: US-1-11(웹 회원가입) · US-1-12(웹 로그인) · US-1-13(가입 전 연락처 인증) · US-1-15(앱 온보딩 시 병합)
 # 결정: ADR-0047(웹 로컬 자격증명 분리 · 휴대폰 번호 계정 공유) · ADR-0048(refresh HttpOnly 쿠키 채널)
 # (앱 소셜 트랙은 auth-onboarding-landlord.http — 이쪽은 소셜 로그인이 없다)
@@ -31,6 +31,8 @@
 #   (속성이 찍히는 순서는 다를 수 있다 — 값만 보면 된다.)
 #   · local 프로파일에서만 Secure 가 빠진다(base 기본값은 true) — 로컬이 평문 http 라서다.
 #   · Path=/api/v1/auth 라 재발급·로그아웃에만 실리고 /users/me 같은 다른 API 에는 딸려가지 않는다.
+#   · 쿠키를 **지우는** 자리는 둘이다 — 로그아웃(7-a)과 회원 탈퇴(8). 탈퇴는 위 Path 때문에 요청에 쿠키가
+#     실리지 않아 "쿠키로 온 요청인가"를 판정할 수 없으므로 **조건 없이** 삭제 쿠키를 내린다(8번 주석 참고).
 #
 # **REST Client 는 쿠키를 실제로 저장·재전송한다.** 설정 `rest-client.rememberCookiesForSubsequentRequests`
 # 가 기본값 `true` 이고, 응답의 Set-Cookie 를 쿠키 저장소에 넣어 같은 호스트의 다음 요청에 자동으로 붙인다.
@@ -183,6 +185,16 @@ Content-Type: application/json
 {
   "refreshToken": "{{refreshToken}}"
 }
+
+### 8. (선택 · ☠ 되돌릴 수 없다) 회원 탈퇴 — 204 No Content + 삭제 쿠키
+#    ⚠️ 이 계정(@email/@phone)이 없어지므로 **아래 에러 케이스보다 먼저 누르지 않는다.** E1·E2·E5 가 이 계정을 쓴다.
+#    ★ 응답 헤더에 `Set-Cookie: refreshToken=; Max-Age=0` 이 붙는지 확인한다 — **요청에는 쿠키가 실리지 않는데도**
+#      내려온다. 쿠키 Path 가 /api/v1/auth 라 브라우저(와 REST Client)가 /users/me 요청에 refresh 를 붙이지 않아
+#      "쿠키로 온 요청인가"를 판정할 방법이 없기 때문이다. 그래서 로그아웃과 달리 **조건 없이** 내린다.
+#      (서버에서는 이미 그 계정의 refresh 가 전부 무효화된다 — 이 헤더는 보안이 아니라 브라우저에 남는
+#       죽은 쿠키(최대 14일) 정리다. 쿠키를 가진 적 없는 앱 클라이언트에는 아무 영향이 없다.)
+DELETE {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
 
 # ══════════════════════════════ 에러 케이스 ══════════════════════════════
 # 아래는 각각 독립 요청이다. 순서대로 다 보내지 말고 필요한 것만 클릭한다 —

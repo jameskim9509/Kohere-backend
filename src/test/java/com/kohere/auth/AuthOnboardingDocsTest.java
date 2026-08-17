@@ -539,10 +539,16 @@ class AuthOnboardingDocsTest {
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_REFRESH_TOKEN"));
 
-    // 탈퇴
+    // 탈퇴 — 로그아웃과 같은 Max-Age=0 삭제 쿠키를 함께 내린다(ADR-0048 §3). 로그아웃과 달리 조건이 없다:
+    // 쿠키 Path가 /api/v1/auth라 브라우저가 /users/me 요청에는 refresh 쿠키를 싣지 않아 "쿠키로 온
+    // 요청인가"를 판정할 수 없다. 그래서 이 요청에 쿠키를 붙이지 않았는데도 삭제 쿠키가 나오는 것이 계약이며,
+    // 아래 단정이 그 회귀 방어다(속성이 발급 때와 어긋나면 브라우저가 다른 쿠키로 보고 지우지 않는다).
     mockMvc
         .perform(delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
         .andExpect(status().isNoContent())
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, startsWith("refreshToken=;")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/api/v1/auth")))
         .andDo(
             document(
                 "user-withdraw",
@@ -1390,6 +1396,20 @@ class AuthOnboardingDocsTest {
         WITHDRAW_SUMMARY,
         WITHDRAW_DESCRIPTION,
         WITHDRAW_409);
+
+    // 삭제 쿠키는 성공(204)에만 실린다 — 컨트롤러가 withdraw()가 반환한 뒤에 헤더를 붙이기 때문이다.
+    // 문서·주석이 "조건 없이 내린다"라고 적혀 있어 헤더 추가를 서비스 호출 위로 끌어올리는 리팩터링이
+    // 자연스러운데, 그러면 두 번째 탭·더블클릭으로 나는 409가 아직 살아 있는 세션의 쿠키를 지운다.
+    // 위 perform 헬퍼는 status·code만 보므로 여기서 헤더 부재를 따로 못박는다.
+    mockMvc
+        .perform(
+            delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(withdrawAccess)))
+        .andExpect(status().isConflict())
+        .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+    mockMvc
+        .perform(delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(ghostToken)))
+        .andExpect(status().isNotFound())
+        .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
   }
 
   // ---- helpers ----

@@ -21,7 +21,7 @@
 
 > **표시 규칙 — 모든 응답의 `name`·`email`은 `users`의 값이다.** `local_accounts`가 보관하는 웹 폼 스냅샷(`name`·`birth_date`)은 **어떤 응답에도 싣지 않는다**(`social_accounts.name`과 같은 취급 — 저장은 하되 표시는 `users`). 따라서 **연동된 계정은 로그인에 쓴 웹 이메일이 아니라 소셜 진본 이메일이 응답에 나갈 수 있다 — 의도된 동작**이다. 신규 가입일 때만 폼 이메일이 `users.email`에도 기록되어 두 값이 같아진다.
 
-**refresh 토큰 쿠키**(웹 전용 채널 — [ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md)): §1-3·§1-4는 refresh를 **응답 본문에 싣지 않고** `Set-Cookie`로만 내린다. 속성은 한 벌로 고정한다.
+**refresh 토큰 쿠키**(웹 전용 채널 — [ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md)): §1-3·§1-4는 refresh를 **응답 본문에 싣지 않고** `Set-Cookie`로만 내린다. 속성은 한 벌로 고정한다. 쿠키를 **지우는** 자리는 §7(로그아웃)·§10(탈퇴) 둘이고, 삭제 쿠키도 이름과 `Path`가 발급 때와 같아야 브라우저가 같은 쿠키로 보고 지운다.
 
 | 속성 | 값 | 이유 |
 | --- | --- | --- |
@@ -96,7 +96,7 @@
 | POST | `/api/v1/auth/logout` | 현재 세션 refresh 토큰 무효화(refresh는 쿠키 우선 · 본문 fallback, 쿠키로 온 요청은 삭제 쿠키 동반) | 필수 | 204 |
 | GET | `/api/v1/users/me` | 내 프로필 조회 | 필수 | 200 |
 | PATCH | `/api/v1/users/me` | 내 프로필 부분 수정 | 필수 | 200 |
-| DELETE | `/api/v1/users/me` | 회원 탈퇴(WITHDRAWN 전이, 토큰 일괄 무효화) | 필수 | 204 |
+| DELETE | `/api/v1/users/me` | 회원 탈퇴(WITHDRAWN 전이, 토큰 일괄 무효화, 삭제 쿠키 동반) | 필수 | 204 |
 | GET | `/api/v1/users/me/blocks` | 내가 차단한 사용자 목록(해제용) | 필수 | 200 |
 | DELETE | `/api/v1/users/me/blocks/{userId}` | 차단 해제(멱등) | 필수 | 204 |
 
@@ -1233,7 +1233,15 @@ Set-Cookie: refreshToken=; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Ma
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 개인정보(세입자: 이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·국적·표시 언어·이메일·닉네임)는 탈퇴 시 즉시 익명화하고, 자격증명 두 벌(`social_accounts` 매핑 · 웹 `local_accounts` 행)을 **함께 삭제**한다([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md) · [ADR-0047](../../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) — 웹 자격증명이 남으면 `users` 행이 보존되는 탈퇴 특성상 탈퇴한 임대인이 §1-4로 다시 로그인할 수 있고, `local_accounts.email` UNIQUE 때문에 같은 이메일 재가입도 막힌다. 임대인 `business_registration_number_hash` 컬럼도 익명화 대상에 포함하지만(방어적 처리 — [database-design](../../database/database-design.md) §4-2) **실제로는 온보딩·매물 등록 어느 경로에서도 채우지 않아 항상 NULL**이라 지울 값이 없다. 임대인이 매물 등록에 입력한 사업자등록번호는 매물 문서가 원문으로 보유하며, 탈퇴 시 매물 문서 PII 처리는 **후속** 설계 대상이다. Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
+본문 없음. **§7(로그아웃)과 마찬가지로 `Max-Age=0` 삭제 쿠키를 함께 내려** 브라우저에 남은 refresh 쿠키까지 지운다([ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md) §3).
+
+```http
+Set-Cookie: refreshToken=; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=0
+```
+
+> **§7과 달리 조건 없이 내린다.** 로그아웃은 요청이 쿠키로 왔을 때만 붙이지만, 쿠키 `Path`가 `/api/v1/auth`라 브라우저는 이 요청(`/api/v1/users/me`)에 refresh 쿠키를 **애초에 싣지 않는다** — 요청만 봐서는 보유 여부를 알 수 없으므로 항상 내린다. **쿠키를 가진 적 없는 앱 클라이언트에는 아무 영향이 없다**(`Max-Age=0`은 「지금 만료」라 지울 것이 없다). 서버에서는 이미 모든 refresh가 무효화되므로 이 헤더는 보안이 아니라 **잔여물 정리**다 — 지우지 않으면 죽은 쿠키가 최대 14일 남아 재발급 재시도가 설명 불가능한 `401`을 받는다.
+
+개인정보(세입자: 이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·국적·표시 언어·이메일·닉네임)는 탈퇴 시 즉시 익명화하고, 자격증명 두 벌(`social_accounts` 매핑 · 웹 `local_accounts` 행)을 **함께 삭제**한다([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md) · [ADR-0047](../../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) — 웹 자격증명이 남으면 `users` 행이 보존되는 탈퇴 특성상 탈퇴한 임대인이 §1-4로 다시 로그인할 수 있고, `local_accounts.email` UNIQUE 때문에 같은 이메일 재가입도 막힌다. 임대인 `business_registration_number_hash` 컬럼도 익명화 대상에 포함하지만(방어적 처리 — [database-design](../../database/database-design.md) §4-2) **실제로는 온보딩·매물 등록 어느 경로에서도 채우지 않아 항상 NULL**이라 지울 값이 없다. 임대인이 매물 등록에 입력한 사업자등록번호는 매물 문서가 원문으로 보유하며, 탈퇴 시 매물 문서 PII 처리는 **후속** 설계 대상이다. Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 #### 발생 가능한 에러
 

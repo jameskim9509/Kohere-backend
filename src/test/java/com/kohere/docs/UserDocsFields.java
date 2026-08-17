@@ -154,6 +154,7 @@ public final class UserDocsFields {
 
       - 성공 응답에는 본문이 없다(204).
       - Apple로 가입한 계정은 Apple 쪽 앱 연동까지 함께 해제된다 — Apple 장애로 해제가 실패해도 탈퇴는 그대로 완료되고 에러를 돌려주지 않는다.
+      - `Set-Cookie: refreshToken=; Max-Age=0; Path=/api/v1/auth` 를 함께 내려 **임대인 웹의 refresh 쿠키를 브라우저에서도 지운다**.
 
       **에러 코드**
 

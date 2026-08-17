@@ -6,7 +6,7 @@
 | 작성자 | Kohere Backend 팀 |
 | 작성일 | 2026-08-16 |
 | 기준 코드 | `feature/229-web-landlord-auth` @ `86654fb`. 본 ADR의 파일·경로 참조는 전부 이 시점 기준이며, 재검증 없이 인용하지 않는다 |
-| 관련 문서 | [ADR-0003](./0003-jwt-auth-after-oauth-login.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0010](./0010-jwt-authentication-filter.md), [ADR-0011](./0011-token-lifetime-and-secret-policy.md), [ADR-0021](./0021-cost-optimization-profile.md), [ADR-0022](./0022-dev-https-caddy.md), [ADR-0047](./0047-web-local-credentials-and-phone-based-account-linking.md), [US-1-12](../requirements/user-stories.md), [01-auth-onboarding §개요(웹 임대인 트랙)·§6·§7](../api/specs/01-auth-onboarding.md), [api-design-guide §2-1](../api/api-design-guide.md), [system-overview](../architecture/system-overview.md) |
+| 관련 문서 | [ADR-0003](./0003-jwt-auth-after-oauth-login.md), [ADR-0006](./0006-refresh-token-store-redis.md), [ADR-0010](./0010-jwt-authentication-filter.md), [ADR-0011](./0011-token-lifetime-and-secret-policy.md), [ADR-0014](./0014-withdrawal-pii-anonymization.md), [ADR-0021](./0021-cost-optimization-profile.md), [ADR-0022](./0022-dev-https-caddy.md), [ADR-0047](./0047-web-local-credentials-and-phone-based-account-linking.md), [US-1-12](../requirements/user-stories.md), [01-auth-onboarding §개요(웹 임대인 트랙)·§6·§7·§10](../api/specs/01-auth-onboarding.md), [api-design-guide §2-1](../api/api-design-guide.md), [system-overview](../architecture/system-overview.md) |
 
 ## Status
 
@@ -66,6 +66,12 @@ Set-Cookie: refreshToken=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/
 - 본문 JSON이 **깨졌으면** 종전대로 `400 MALFORMED_REQUEST`.
 - 요청이 **쿠키로 왔으면** 회전된 refresh를 다시 쿠키로 내리고, **본문으로 왔으면** 종전대로 본문에 담는다. 응답 모양이 요청 채널을 따라간다.
 - `logout`은 쿠키로 왔을 때 **`Max-Age=0` 삭제 쿠키**를 함께 내린다.
+
+**쿠키를 지우는 자리는 로그아웃 하나가 아니다 — 회원 탈퇴(`DELETE /api/v1/users/me`)도 같은 삭제 쿠키를 내린다.** 탈퇴는 서버에서 그 사용자의 refresh를 전부 `REVOKED`로 만들므로(`UserWithdrawnEvent` 구독, [ADR-0014](./0014-withdrawal-pii-anonymization.md)) **보안 구멍은 아니지만**, 지우지 않으면 죽은 쿠키가 최대 14일(§4) 브라우저에 남아 재발급을 재시도하는 화면이 설명 불가능한 `401`을 받는다. 세션을 끊는 두 경로의 동작이 갈릴 이유가 없다.
+
+다만 **탈퇴는 조건 없이 내린다** — 로그아웃의 「요청이 쿠키로 왔을 때만」 판정을 그대로 쓰면 항상 거짓이다. 쿠키 `Path`가 `/api/v1/auth`로 좁혀져(§2) 브라우저가 `/api/v1/users/me` 요청에 refresh 쿠키를 **애초에 싣지 않기** 때문이다. 경로를 좁힌 것의 대가이며, 요청만 봐서는 보유 여부를 알 수 없으니 항상 내리는 쪽이 옳다. `Set-Cookie`의 `Path`는 요청 경로와 무관하게 지정할 수 있어(`Domain`과 다르다) 다른 경로의 응답으로 `/api/v1/auth` 쿠키를 지우는 것은 정상 동작이고, **쿠키를 가진 적 없는 앱 클라이언트에는 아무 영향이 없다**(`Max-Age=0`은 「지금 만료」라 지울 것이 없다). 응답 본문·status·에러 계약이 그대로라 하위 호환이다.
+
+> **누가 그 헤더를 쓰는가** — 탈퇴 엔드포인트는 `user` 모듈(`UserController`)에 있고 refresh 쿠키는 `auth` 채널의 관심사지만, `RefreshTokenCookies`는 `auth`가 아니라 **공유 커널 `common.security`** 에 있다(§2 — 쿠키는 도메인 규칙이 아니라 HTTP 전송 수단이라 `JwtTokenService` 옆에 뒀다). `user`의 허용 의존은 `{"common"}`이고 `common`은 OPEN 모듈이라 경계 위반이 아니며, 그 컨트롤러는 이미 같은 패키지의 `AuthPrincipal`을 쓰고 있다. **auth의 `UserWithdrawnEventListener`가 내리는 대안은 기술적으로 가능하지만**(이벤트가 같은 요청 스레드에서 동기 발행되므로 `RequestContextHolder`로 응답에 닿는다) 채택하지 않았다 — 응용 계층이 서블릿 타입을 만지게 되고, 그 리스너가 예고한 대로 `@ApplicationModuleListener`(비동기)로 바뀌는 순간 **삭제 쿠키가 조용히 증발**하며, 리스너는 탈퇴 트랜잭션 안이라 롤백되면 일어나지 않은 탈퇴의 삭제 쿠키가 나간다. 컨트롤러는 서비스가 커밋을 마치고 돌아온 뒤에 헤더를 쓰므로 그 창이 없다.
 
 **앱은 항상 본문에 refresh를 담아 보내므로 정상 경로의 동작이 바뀌지 않는다.** 하위 호환이 깨지지 않으니 [api-design-guide §2-1](../api/api-design-guide.md)의 v2 기준에 미달한다 — **v1을 유지한다.**
 
@@ -129,7 +135,7 @@ Set-Cookie: refreshToken=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/
   - **한 엔드포인트가 두 모양의 응답을 낸다**(쿠키 or 본문). 스펙·REST Docs 스니펫을 두 벌 유지해야 한다.
   - **본문 없는 `reissue`·`logout`의 에러 코드가 바뀐다**(`MALFORMED_REQUEST` → `INVALID_INPUT`). 기존 스니펫 둘과 `AuthDocsFields` 상수를 갱신한다.
   - **로컬 프로파일 오버라이드를 빠뜨리면 로컬에서만 조용히 깨진다.** http에 `Secure=true` 쿠키는 브라우저가 저장하지 않아 재발급이 안 되는데, 서버 로그에는 "refresh 없음"으로만 남는다.
-  - **`Path`가 `/api/v1/auth`에 고정된다.** 나중에 `/api/v2/auth`가 생기면 그 경로로는 쿠키가 실리지 않는다 — 버전을 올릴 때 함께 봐야 한다.
+  - **`Path`가 `/api/v1/auth`에 고정된다.** 나중에 `/api/v2/auth`가 생기면 그 경로로는 쿠키가 실리지 않는다 — 버전을 올릴 때 함께 봐야 한다. 같은 이유로 **`/api/v1/auth` 밖에서 세션을 끊는 엔드포인트는 요청 쿠키를 볼 수 없어 삭제 쿠키를 조건 없이 내려야 한다**(§3의 탈퇴). 그런 엔드포인트가 늘어나면 "쿠키를 지우는 자리"가 흩어진다 — 지금은 로그아웃·탈퇴 둘이고, 셋째가 생기면 공통화를 다시 검토한다.
   - **다중 탭 재발급이 재사용 탐지에 걸릴 수 있다.** 쿠키는 브라우저가 자동으로 붙이므로 프론트가 refresh를 "들고 있지 않고", 두 탭이 거의 동시에 만료를 감지하면 **회전된 옛 토큰이 한 번 더 제출**될 수 있다. [ADR-0006](./0006-refresh-token-store-redis.md) §3의 규칙상 그건 재사용 정황이라 **정상 사용자가 전체 무효화로 로그아웃**된다. 프론트가 재발급을 단일화(탭 간 락·in-flight 공유)해야 한다.
 - **후속 작업**
   - 웹을 **별도 오리진**에 올릴 계획이 서면 §6의 체크 셋을 이행하고 이 ADR을 개정한다. 그 전까지는 동일 오리진 배치가 전제다.
@@ -143,6 +149,7 @@ Set-Cookie: refreshToken=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/
 - 본문에 `refreshToken`을 담아 `reissue`를 부르면(앱 경로) 종전대로 **본문에** 새 refresh가 오고 `Set-Cookie`가 붙지 않는다.
 - 쿠키·본문 둘 다 없으면 `400 INVALID_INPUT` + `errors[].field="refreshToken"`, 깨진 JSON 본문은 `400 MALFORMED_REQUEST`다.
 - 쿠키로 `logout`하면 서버에서 refresh가 `REVOKED`로 전이되고 **`Max-Age=0` 삭제 쿠키**가 함께 온다. 이후 그 쿠키로 `reissue`가 실패한다.
+- `DELETE /api/v1/users/me`(탈퇴) 응답에도 **같은 속성의 `Max-Age=0` 삭제 쿠키**가 온다 — 요청에 쿠키가 실리지 않는 경로이므로 **채널과 무관하게 항상** 온다(앱 경로 응답에도 붙지만 본문·status는 그대로다).
 - 회전된 옛 refresh를 쿠키로 다시 제출하면 [ADR-0006](./0006-refresh-token-store-redis.md)대로 **사용자 전체 무효화**가 일어난다(앱 경로와 같은 결과).
 - 로컬 프로파일(http)에서 브라우저가 쿠키를 실제로 저장·전송한다(`secure: false` 오버라이드 확인).
 - 기존 앱 통합 테스트(본문 방식 회전·재사용 탐지·로그아웃)가 **그대로 통과한다.**

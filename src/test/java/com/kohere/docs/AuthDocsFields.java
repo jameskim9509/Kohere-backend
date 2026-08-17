@@ -536,7 +536,7 @@ public final class AuthDocsFields {
 
       - **refresh 토큰은 응답 본문에 없다** — `Set-Cookie: refreshToken=…; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=1209600`으로만 내려간다. 브라우저가 자동 보관하므로 클라이언트가 저장할 것이 없다(`local` 프로파일에서만 `Secure`가 빠진다).
       - `onboardingRequired`는 항상 `false`, `status`는 항상 `"ACTIVE"`다 — 웹에는 부분 완료 상태가 없다.
-      - `email`·`name`은 **회원 프로필(`users`)의 값**이다 — 연동된 계정이면 폼에 적은 웹 이메일이 아니라 소셜 진본 이메일이 나갈 수 있다(의도된 동작).
+      - `email`·`name`은 **회원 프로필(`users`)의 값**이다 — 연동된 계정이면 폼에 적은 웹 이메일이 아니라 소셜 진본 이메일이 나갈 수 있다.
 
       **에러 코드**
 
@@ -866,7 +866,7 @@ public final class AuthDocsFields {
         field(
             "data.email",
             JsonFieldType.STRING,
-            "회원 프로필 이메일 — 연동된 계정이면 폼에 적은 웹 이메일이 아니라 소셜 진본 이메일이 나갈 수 있다(의도된 동작)"),
+            "회원 프로필 이메일 — 연동된 계정이면 폼에 적은 웹 이메일이 아니라 소셜 진본 이메일이 나갈 수 있다"),
         optField(
             "data.name",
             JsonFieldType.STRING,

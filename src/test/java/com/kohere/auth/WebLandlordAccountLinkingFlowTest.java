@@ -1,6 +1,8 @@
 package com.kohere.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
@@ -8,6 +10,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -359,10 +362,17 @@ class WebLandlordAccountLinkingFlowTest {
     assertThat(countSocialAccountsByUserId(webUserId)).isEqualTo(2);
 
     // 4) 탈퇴 — 여기가 회귀 지점이다. 2행을 단건으로 읽으면 500으로 막혀 영원히 탈퇴하지 못한다.
+    //    함께 내려오는 삭제 쿠키도 여기서 못박는다: 이 계정은 웹 가입으로 만들어져 브라우저에 refresh
+    //    쿠키를 실제로 들고 있는 유일한 흐름이라, 잔여 쿠키가 남는지 아닌지가 여기서만 진짜로 검증된다.
+    //    쿠키 Path가 /api/v1/auth라 이 요청(/users/me)에는 쿠키가 실리지 않는다 — 그런데도 삭제 쿠키가
+    //    나와야 한다(조건부로 바꾸면 판정이 항상 거짓이라 조용히 사라진다. ADR-0048 §3).
     String accessToken = read(mergedBody, "data", "accessToken");
     mockMvc
         .perform(delete("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
-        .andExpect(status().isNoContent());
+        .andExpect(status().isNoContent())
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, startsWith("refreshToken=;")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
+        .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/api/v1/auth")));
 
     // Apple 폐기는 매핑 삭제 전에, 저장된 토큰으로 호출된다(ADR-0031 #5). 2행을 순회했다는 증거이기도 하다.
     verify(appleAuthClient).revokeRefreshToken("twice-apple-rt");
