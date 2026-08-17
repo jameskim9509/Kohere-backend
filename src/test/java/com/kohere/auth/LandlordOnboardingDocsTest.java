@@ -272,6 +272,9 @@ class LandlordOnboardingDocsTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(landlordJson(PHONE)))
             .andExpect(status().isOk())
+            // 이 흐름에는 같은 번호의 웹 계정이 없으므로 병합 분기를 타지 않는다 — 스니펫에 실리는 예시가
+            // 일반 온보딩(US-1-9)이라는 뜻이고, 병합 예시는 WebLandlordAccountLinkingFlowTest가 맡는다.
+            .andExpect(jsonPath("$.data.linked").value(false))
             .andExpect(jsonPath("$.data.user.userType").value("LANDLORD"))
             .andExpect(jsonPath("$.data.user.gender").doesNotExist())
             .andExpect(jsonPath("$.data.user.occupation").doesNotExist())

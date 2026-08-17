@@ -201,6 +201,7 @@ public final class AuthDocsFields {
       **응답 주의사항**
 
       - 응답 `data.user`의 `phoneNumber`는 세입자 미수집이라 값이 null이 아니라 **필드 자체가 생략**된다.
+      - `data.linked`는 **항상 `false`**다 — 임대인과 같은 응답 타입을 쓸 뿐이고, 계정 병합의 매칭 키인 휴대폰 번호를 세입자는 수집하지 않아 병합 분기 자체가 없다.
 
       **에러 코드**
 
@@ -418,6 +419,7 @@ public final class AuthDocsFields {
 
       - 국적·표시 언어는 서버가 `KR`·`ko`로 고정 부여한다.
       - 응답 `data.user`의 세입자 전용 필드(`gender`·`occupation`·`visaType`)는 값이 null이 아니라 **필드 자체가 생략**되고, `phoneNumber`는 마스킹된다.
+      - **`data.linked`가 계정 병합 여부다** — `true`면 아래 「계정 병합」이 일어난 것이라 `data.user`와 토큰이 요청에 쓴 계정이 아닌 웹 계정 기준이다. `user.id`를 요청 토큰과 비교해 추론하지 말고 이 필드를 본다.
 
       **에러 코드**
 
@@ -435,7 +437,8 @@ public final class AuthDocsFields {
       **계정 병합**
 
       - 인증한 연락처로 **이미 웹에서 가입한 임대인 계정**(같은 번호의 다른 `ACTIVE`·`LANDLORD` 계정)이 발견되면 두 계정을 하나로 합친다 — 앱 소셜 자격 매핑을 그 계정으로 옮기고 방금 만들어진 임시 계정은 삭제한다.
-      - 이때 응답의 `data.user`와 토큰은 **합쳐진(웹) 계정 기준**이라 `data.user.id`가 요청 토큰의 사용자와 다르다. 클라이언트는 **응답의 토큰으로 교체**해야 하며, 이후 소셜 로그인은 항상 같은 계정으로 귀결된다.
+      - 병합이 일어나면 **`data.linked=true`** 다(일반 온보딩은 `false`). 이때 응답의 `data.user`와 토큰은 **합쳐진(웹) 계정 기준**이라 `data.user.id`가 요청 토큰의 사용자와 다르다. 클라이언트는 **응답의 토큰으로 교체**해야 하며(요청에 쓴 토큰의 계정은 더 이상 존재하지 않는다), 표시할 이름·이메일도 살아남은 계정의 값이다. 이후 소셜 로그인은 항상 같은 계정으로 귀결된다.
+      - `linked`는 웹 회원가입(`POST /api/v1/auth/signup`)의 같은 이름 필드와 **의미가 같다** — 방향만 반대(연결/병합)이고 클라이언트에게는 둘 다 "계정이 하나로 합쳐졌다"는 한 가지 사실이다. 응답 필드 추가는 하위 호환이라 버전은 `/api/v1` 그대로다.
       """;
 
   public static final String[] LANDLORD_ONBOARDING_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};

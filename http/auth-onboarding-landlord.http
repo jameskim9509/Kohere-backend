@@ -86,6 +86,13 @@ Content-Type: application/json
 #    요청 본문은 { phoneNumber, birthDate } 두 필드다 — 이름·이메일은 소셜 로그인 때 확정(온보딩 미수집).
 #    게이트 우선순위: 약관 미동의 422(이미 ACTIVE 면 409) → 연락처 미인증 422 AUTH_PHONE_NOT_VERIFIED. (사업자번호 게이트 없음)
 #    phoneNumber 는 3~4단계에서 인증한 값과 일치해야 한다.
+#
+#    ★ 응답의 data.linked 가 "웹 계정과 병합됐는지"다(US-1-15). 이 파일만 단독으로 돌리면 같은 번호의 웹 계정이
+#      없으므로 linked=false 다. 같은 @phone 으로 auth-web-landlord.http 를 먼저 완주해 웹 계정을 만들어 두면
+#      여기서 linked=true 로 바뀌고, 그때는 응답의 data.user 와 토큰이 모두 "웹 계정" 기준이다:
+#        · data.user.id 가 이 요청에 쓴 계정이 아니라 웹 계정 id 다(요청에 쓴 임시 계정 행은 삭제됐다)
+#        · data.user.name·email·birthDate 도 방금 입력한 값이 아니라 웹 계정 값이다(병합은 대상을 덮어쓰지 않는다)
+#        · 6~8단계는 반드시 이 응답의 accessToken 을 써야 한다 — 아래 요청들이 그렇게 참조하고 있으니 그대로 두면 된다
 # @name landlordOnboarding
 POST {{baseUrl}}/api/v1/auth/landlord/onboarding
 Authorization: Bearer {{socialLogin.response.body.$.data.accessToken}}

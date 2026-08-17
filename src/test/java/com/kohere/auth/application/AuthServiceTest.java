@@ -400,6 +400,8 @@ class AuthServiceTest {
     assertThat(response.user().nickname()).isEqualTo("BraveOtter");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
+    // 세입자 응답의 linked는 상수 false다 — 매칭 키인 휴대폰 번호를 수집하지 않아 병합 분기가 없다(US-1-15).
+    assertThat(response.linked()).isFalse();
     // 온보딩은 이름·이메일을 받지 않고(소셜 로그인 캡처), 이메일 인증 선행 게이트도 없다(#192).
     verify(userAccountService).completeOnboarding(eq(40L), any(OnboardingProfile.class));
     verify(refreshTokenRepository).save(any(RefreshToken.class));
@@ -604,6 +606,8 @@ class AuthServiceTest {
     assertThat(response.user().userType()).isEqualTo("LANDLORD");
     assertThat(response.accessToken()).isEqualTo("access-token");
     assertThat(response.refreshToken()).isNotNull();
+    // 병합하지 않은 정상 온보딩은 linked=false다 — 이 단정이 없으면 무조건 true를 내려도 초록이다.
+    assertThat(response.linked()).isFalse();
     // 게이트 통과 순서: 약관 → 연락처(사업자번호는 온보딩에서 수집하지 않음)
     verify(phoneVerificationService).assertVerified(40L, "01012345678");
     ArgumentCaptor<LandlordOnboardingProfile> captor =
@@ -669,6 +673,9 @@ class AuthServiceTest {
     // 토큰이 나가고, 클라이언트는 그것을 정상 세션으로 저장한다.
     assertThat(response.user().id()).isEqualTo(77L);
     assertThat(response.accessToken()).isEqualTo("target-access-token");
+    // 병합했다는 사실 자체를 응답으로 알린다 — id 비교로 추론하게 두면 클라이언트가 토큰 교체를 놓친다.
+    // 이 값은 병합 분기를 고른 그 Optional에서 나오므로 실제 실행 경로와 갈릴 수 없다.
+    assertThat(response.linked()).isTrue();
     ArgumentCaptor<RefreshToken> refreshCaptor = ArgumentCaptor.forClass(RefreshToken.class);
     verify(refreshTokenRepository).save(refreshCaptor.capture());
     assertThat(refreshCaptor.getValue().getUserId()).isEqualTo(77L);

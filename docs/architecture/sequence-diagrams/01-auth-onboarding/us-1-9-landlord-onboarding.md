@@ -53,7 +53,7 @@ sequenceDiagram
             Note over AUTH: 정식 accessToken+refreshToken 발급
             AUTH->>RDS: refreshToken 해시 저장
             RDS-->>AUTH: 저장 완료
-            AUTH-->>C: 200 OK<br/>{ user{ userType: LANDLORD, status: ACTIVE, nickname },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
+            AUTH-->>C: 200 OK<br/>{ linked: false, user{ userType: LANDLORD, status: ACTIVE, nickname },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }<br/>(linked=true는 웹 계정 병합 분기 — US-1-15)
             C-->>U: 임대인 가입 완료, 서비스 진입
         end
     end

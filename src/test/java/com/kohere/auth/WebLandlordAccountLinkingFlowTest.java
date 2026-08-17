@@ -169,6 +169,9 @@ class WebLandlordAccountLinkingFlowTest {
     agreeTerms(appOnboardingToken);
     verifyAppPhone(appOnboardingToken, APP_FIRST_PHONE);
     String onboardingBody = landlordOnboarding(appOnboardingToken, APP_FIRST_PHONE);
+    // 앱이 먼저인 이 시나리오에는 아직 웹 계정이 없다 — 병합 분기를 타지 않았다는 것을 여기서 못박아 두어야
+    // 뒤의 웹 가입 linked=true가 "원래부터 true였던 값"이 아님이 성립한다.
+    assertThat(readBoolean(onboardingBody, "data", "linked")).isFalse();
     long appUserId = readLong(onboardingBody, "data", "user", "id");
 
     // 2) 웹 — 가입용(번호 키) SMS 인증. 앱 트랙의 userId 키 챌린지와 별개 경로다(§1-1·§1-2).
@@ -245,10 +248,11 @@ class WebLandlordAccountLinkingFlowTest {
    * 만들어진다 — 소셜은 이름·이메일만 주고 번호를 주지 않아 로그인 시점엔 판정할 수 없기 때문이다. 그래서 번호를 처음 알게 되는 <b>임대인 온보딩 제출</b>에서
    * 병합한다.
    *
-   * <p>병합이 실제로 일어났는지는 응답만으로 알 수 없어 <b>네 곳을 모두</b> 본다. ① {@code social_accounts.user_id}가 웹 계정으로
-   * 옮겨졌는가 ② 임시 {@code users} 행이 하드 삭제됐는가(D13) ③ 발급된 토큰이 <b>임시 계정이 아니라 웹 계정</b>의 것인가(방금 지운 행을 가리키는
-   * 토큰을 내주는 실수가 조용히 성립할 수 있는 자리다) ④ 병합 전에 등록한 매물의 {@code landlordId}가 그대로인가(살아남는 쪽이 원래 소유자라 옮길 데이터가
-   * 없다는 전제 그 자체).
+   * <p>응답은 {@code linked=true}로 병합을 <b>선언</b>하지만 그 플래그만 믿지 않는다 — 플래그와 실제 쓰기가 갈리는 회귀는 응답을 아무리 읽어도
+   * 보이지 않기 때문이다(웹 가입 쪽에서 {@code users} 행 수를 세는 것과 같은 이유). 그래서 <b>네 곳을 더</b> 본다. ① {@code
+   * social_accounts.user_id}가 웹 계정으로 옮겨졌는가 ② 임시 {@code users} 행이 하드 삭제됐는가(D13) ③ 발급된 토큰이 <b>임시 계정이
+   * 아니라 웹 계정</b>의 것인가(방금 지운 행을 가리키는 토큰을 내주는 실수가 조용히 성립할 수 있는 자리다) ④ 병합 전에 등록한 매물의 {@code
+   * landlordId}가 그대로인가(살아남는 쪽이 원래 소유자라 옮길 데이터가 없다는 전제 그 자체).
    */
   @Test
   @DisplayName("웹 먼저 가입한 임대인이 앱 온보딩을 마치면 소셜 매핑이 옮겨지고 임시 계정이 삭제되며 매물 소유권은 그대로다")
@@ -288,6 +292,9 @@ class WebLandlordAccountLinkingFlowTest {
 
     // 5) 임대인 온보딩 제출 → 병합. 응답의 user는 임시 계정이 아니라 웹 계정 기준이다(스펙 §5-2).
     String mergedBody = landlordOnboarding(appOnboardingToken, WEB_FIRST_PHONE);
+    // 병합을 서버가 명시해서 알린다(US-1-15). 이 단정이 이 시나리오의 요점이다 — 아래 id 비교는 테스트가
+    // 두 값을 다 알고 있어서 가능한 것이고, 실제 앱은 자기가 보낸 토큰을 파싱해야 같은 판정을 할 수 있다.
+    assertThat(readBoolean(mergedBody, "data", "linked")).isTrue();
     assertThat(readLong(mergedBody, "data", "user", "id")).isEqualTo(webUserId);
     assertThat(read(mergedBody, "data", "user", "email")).isEqualTo("web-first@work.com");
 
@@ -345,6 +352,7 @@ class WebLandlordAccountLinkingFlowTest {
     agreeTerms(appleOnboardingToken);
     verifyAppPhone(appleOnboardingToken, TWICE_MERGED_PHONE);
     String mergedBody = landlordOnboarding(appleOnboardingToken, TWICE_MERGED_PHONE);
+    assertThat(readBoolean(mergedBody, "data", "linked")).isTrue();
     assertThat(readLong(mergedBody, "data", "user", "id")).isEqualTo(webUserId);
 
     // 한 계정에 소셜 매핑 2행 — 병합 이후의 정상 상태다.
@@ -389,6 +397,7 @@ class WebLandlordAccountLinkingFlowTest {
     agreeTerms(token);
     verifyAppPhone(token, phone);
     String body = landlordOnboarding(token, phone);
+    assertThat(readBoolean(body, "data", "linked")).isTrue();
     assertThat(readLong(body, "data", "user", "id")).isEqualTo(targetUserId);
   }
 
@@ -710,6 +719,17 @@ class WebLandlordAccountLinkingFlowTest {
 
   private long readLong(String json, String... path) throws Exception {
     return node(json, path).asLong();
+  }
+
+  /**
+   * boolean 필드를 읽는다. <b>필드가 실제로 boolean인지 먼저 단정하는 것이 핵심</b>이다 — Jackson의 {@code asBoolean()}은 없는
+   * 노드({@code MissingNode})에 조용히 {@code false}를 주므로, 그대로 쓰면 응답에서 {@code linked}를 통째로 지워도 {@code
+   * isFalse()} 단정이 초록으로 통과한다.
+   */
+  private boolean readBoolean(String json, String... path) throws Exception {
+    JsonNode node = node(json, path);
+    assertThat(node.isBoolean()).as("%s는 boolean 필드여야 한다", String.join(".", path)).isTrue();
+    return node.booleanValue();
   }
 
   private JsonNode node(String json, String... path) throws Exception {

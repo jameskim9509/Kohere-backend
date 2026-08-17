@@ -316,10 +316,22 @@ public final class UserDocsFields {
    * 온보딩 응답의 {@code data.user}({@code UserProfileView})와 정식 토큰 3종. 세입자 {@code POST
    * /auth/onboarding}과 임대인 {@code POST /auth/landlord/onboarding}이 같은 응답 타입({@code
    * OnboardingResponse})을 쓴다.
+   *
+   * <p>{@code data.linked}는 <b>임대인 병합(US-1-15)에서만 true가 될 수 있지만 기술자는 두 오퍼레이션이 공유한다</b> — 같은 응답 타입이라
+   * 세입자 응답에도 필드가 나가고, 기술자를 한쪽에만 두면 다른 쪽 스니펫이 "문서화되지 않은 필드"로 실패한다. 그래서 설명 문구가 두 경로를 모두 덮는다.
    */
   public static List<FieldDescriptor> onboardingResponseFields() {
     List<FieldDescriptor> descriptors = new ArrayList<>();
     descriptors.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    descriptors.add(
+        field(
+            "data.linked",
+            JsonFieldType.BOOLEAN,
+            "기존 웹 임대인 계정과 병합됐으면 true. true면 data.user와 아래 토큰이 모두 요청에 쓴 계정이 아니라"
+                + " 합쳐진 웹 계정 기준이며 그 계정의 id는 data.user.id다 — 요청에 쓴 임시 계정은 삭제됐으므로"
+                + " 클라이언트는 반드시 이 응답의 accessToken·refreshToken으로 교체해야 하고, 화면에 표시할 이름·이메일도"
+                + " 방금 입력한 값이 아니라 살아남은 계정의 값이다(예: \"기존 웹 계정과 연결되었습니다\" 안내)."
+                + " 세입자 온보딩(POST /auth/onboarding)은 매칭 키인 휴대폰 번호를 수집하지 않아 병합 분기 자체가 없어 항상 false다"));
     descriptors.addAll(profileFields("data.user."));
     descriptors.add(codeField("data.tokenType", TOKEN_TYPES, "토큰 타입 — 항상 Bearer"));
     descriptors.add(field("data.accessToken", JsonFieldType.STRING, "access 토큰(JWT)"));

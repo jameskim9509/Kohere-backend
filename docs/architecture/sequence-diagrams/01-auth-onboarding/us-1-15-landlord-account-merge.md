@@ -67,7 +67,7 @@ sequenceDiagram
             SQL-->>USER: 갱신 완료
             USER-->>AUTH: user{ userType: LANDLORD, status: ACTIVE, nickname }
             Note over AUTH,SQL: 그 사이 같은 번호의 웹 가입(US-1-11)이 커밋됐다면 이 전이가 커밋 시점에<br/>uq_users_phone_number를 위반한다 → 전체 롤백 → 409 RESOURCE_CONFLICT<br/>(재시도하면 위 조회가 그 계정을 발견해 병합으로 수렴한다)
-            Note over AUTH: 토큰은 userId=99로 발급한다
+            Note over AUTH: 토큰은 userId=99로 발급한다 — 응답 linked=false
         else 1건 — 같은 번호의 웹 계정(42) 발견, 병합
             AUTH->>SQL: UPDATE social_accounts SET user_id = 42 WHERE user_id = 99<br/>(앱 로그인의 열쇠를 옮긴다 — 영향 행 수를 단언하지 않는다)
             SQL-->>AUTH: 갱신 완료
@@ -75,12 +75,13 @@ sequenceDiagram
             USER->>SQL: DELETE FROM users WHERE id = 99
             SQL-->>USER: 삭제 완료
             Note over AUTH,SQL: 42는 손대지 않는다 — 상태 전이도 프로필 덮어쓰기도 없다<br/>응답 user는 위 잠금 조회가 읽어 둔 42의 프로필 그대로다<br/>99가 만든 진단 문서(MongoDB)는 삭제하지 않는다
-            Note over AUTH: 토큰은 userId=42로 발급한다 — 99가 아니다
+            Note over AUTH: 토큰은 userId=42로 발급한다 — 99가 아니다. 응답 linked=true
         end
         AUTH->>RDS: refreshToken 해시 저장(14일 TTL) — Redis라 롤백되지 않는다(알려진 제약)<br/>(phone-verify:code:99는 인증 확인 때 이미 지워졌고<br/>phone-verify:verified:99는 지우지 않고 TTL로 소멸시킨다 — US-1-9와 동일)
         RDS-->>AUTH: 저장 완료
-        AUTH-->>C: 200 OK<br/>{ user{ userType: LANDLORD, status: ACTIVE, nickname },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
-        C-->>U: 임대인 가입 완료 — 웹에서 등록한 매물의 예약이 앱에 보인다
+        AUTH-->>C: 200 OK<br/>{ linked(병합 여부), user{ userType: LANDLORD, status: ACTIVE, nickname },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
+        Note over C: linked=true면 저장 토큰을 응답 값으로 교체하고(요청에 쓴 계정은 삭제됐다)<br/>화면의 이름·이메일도 응답 user 값으로 갱신한다 — 방금 입력한 값이 아니다
+        C-->>U: 임대인 가입 완료 — 웹에서 등록한 매물의 예약이 앱에 보인다<br/>(병합이면 "기존 웹 계정과 연결되었습니다" 안내)
     end
 ```
 
@@ -91,6 +92,7 @@ sequenceDiagram
 - **병합 대상 조회는 `SELECT ... FOR UPDATE`로 잠그고, 잠근 행을 그대로 프로필로 돌려받는다.** 조건은 **인증된 번호 + 자기 자신 제외(`id != currentUserId`) + `status='ACTIVE'` + `user_type='LANDLORD'`** 다. 자기 제외가 없으면 자기 자신을 대상으로 잡아 **소셜 매핑을 자기에게 옮기고 자기 행을 지우는** 자기파괴가 성립한다(지금은 번호가 비어 있어 걸리지 않지만 기대면 안 되는 불변식이다). 웹 가입([US-1-11](us-1-11-web-signup.md))의 같은 조회가 **식별자만** 돌려받는 것과 달리 여기서는 **프로필까지** 받는다 — 병합 응답의 `user`가 대상 계정 기준이라 어차피 그 값이 필요하고, 잠근 행에서 바로 만들면 조회가 한 번으로 끝나며 응답이 **잠긴 그 행의 값**임이 보장된다(병합은 대상 행을 한 칼럼도 쓰지 않으므로 덮어쓰기 위험도 없다). 뒤 두 조건은 지금은 중복이다 — 번호는 임대인 온보딩(= `ACTIVE` 전이) 시점에만 기록되고, 웹 가입은 한 트랜잭션으로 `ACTIVE`까지 완주하며, 세입자·탈퇴자는 NULL이라 **`phone_number`가 채워진 계정은 사실상 `ACTIVE` 임대인뿐**이기 때문이다. 그럼에도 명시하는 이유는 나중에 누군가 다른 경로에서 `PENDING` 계정에 번호를 채워도 병합이 오작동하지 않게 하기 위해서다 — **암묵 불변식에 기대지 않는다.** 잠금은 두 기기가 동시에 같은 계정으로 병합하는 경우를 직렬화한다.
 - **0건이면 US-1-9가 그대로 동작한다.** 자기 계정을 `TERMS_AGREED`→`ACTIVE`로 전이시키고 `userType=LANDLORD`를 확정한 뒤 자기 `userId`로 토큰을 발급한다 — 기존 임대인 온보딩 동작은 **한 줄도 바뀌지 않는다**.
 - **1건이면 세 가지만 한다.** ① `UPDATE social_accounts SET user_id = 42 WHERE user_id = 99`로 **앱 로그인의 열쇠를 옮기고**, ② `DELETE FROM users WHERE id = 99`로 임시 행을 **하드 삭제**하며, ③ **대상 id(42)로** 토큰을 발급한다. 대상 계정은 이미 `ACTIVE`·`LANDLORD`이므로 상태 전이가 없고, 프로필도 덮어쓰지 않는다. 응답의 `user` 프로필 역시 42 기준이다. UPDATE의 영향 행 수는 **단언하지 않는다** — 임시 계정은 실제로 `social_accounts`가 1행이지만 코드가 그것을 가정할 이유가 없고, UPDATE는 N행이어도 안전하다.
+- **병합했다는 사실은 응답 `linked`로 알린다 — 추론시키지 않는다.** 이 플래그가 없으면 앱은 *자기가 보낸 토큰에 박힌 `userId`* 를 꺼내 응답 `user.id`와 대조해야 병합을 알 수 있는데, **그 비교를 빠뜨려도 그 화면까지는 아무 이상이 없다** — 낡은 토큰으로 다음 API를 부르고 나서야 깨지고, 방금 입력한 이름·생년월일 대신 다른 값이 보이는 이유도 앱이 설명할 수 없다. 병합은 서버가 확실히 아는 사실이므로 서버가 말한다. 필드명이 웹 가입([US-1-11](us-1-11-web-signup.md))의 `linked`와 같은 것은 의도다 — 구현(자격증명 INSERT / 계정 병합)은 다르지만 클라이언트가 받는 사실은 "계정이 하나로 합쳐졌다" 하나다. **값은 병합 분기를 고른 그 조회 결과에서 그대로 나온다**(같은 `Optional`) — 별도 계산이 아니므로 "플래그는 true인데 실제로는 병합하지 않았다"가 성립할 자리가 없고, 토큰은 여전히 응답 프로필의 id에서만 발급된다. 세입자 온보딩([US-1-2](us-1-2-onboarding-submit.md))은 응답 타입만 공유할 뿐 번호를 수집하지 않아 **언제나 `false`** 다.
 - **임시 계정 id를 참조할 수 있는 것을 전부 훑어도 남는 것은 둘뿐이다.** `local_accounts`(웹 가입은 `ACTIVE` 임대인에만 붙어 임시 계정에는 생길 수 없다) · `bookings`·`booking_reports`·`user_blocks`·매물(`listings.landlordId`)·찜·최근 본 매물(모두 `hasRole("USER")` 게이트라 온보딩 스코프 토큰이 닿지 못한다) · refresh 토큰(정식 토큰을 받은 적이 없어 `refresh:user:{id}` 인덱스가 비어 있다) · `chat`·`community`·`report`(영속 구현 없음)는 모두 **애초에 행이 없다.** 남는 것은 ① 진단 문서(의도적 미삭제 — 아래 제약)와 ② Redis 인증 마커(`phone-verify:verified:{임시 id}`, TTL 30분으로 소멸)뿐이며, 후자는 `users.id`가 AUTO_INCREMENT라 지운 값이 재사용되지 않으므로 **다른 계정이 주워 갈 수 없다.**
 - **대상 쪽에 `social_accounts`가 여러 행이 되는 것은 정상이다.** 같은 사람이 Google로 병합한 뒤 Apple로도 앱 로그인해 다시 병합하면 42에 2행이 붙는다. `(provider, provider_user_id)` UNIQUE는 값이 달라 위반되지 않으며, **한 사람이 여러 소셜 계정으로 같은 계정에 들어오는 것**이라 막을 근거가 없다.
 - **병합 후 앱 로그인은 항상 대상 계정으로 귀결된다.** `social_accounts`의 `providerUserId` 조회가 `user_id=42`를 반환하므로, 앱의 임대인 예약 조회(`GET /api/v1/bookings`, `WHERE landlord_id = 42`)에 **웹에서 등록한 매물의 신청이 그대로 보인다**. 이것이 공유 `user_id` 설계를 택한 이유이며, 두 방향(연결·병합) 모두 **매물·예약 데이터는 한 건도 옮기지 않는다** — id가 하나라 옮길 필요가 없다.
@@ -106,8 +108,8 @@ sequenceDiagram
 | 게이트 미통과 | 약관 미동의(`PENDING`) | `422 AUTH_TERMS_AGREEMENT_REQUIRED`(기존) — 병합 없음 |
 | 게이트 미통과 | 인증 마커 없음·제출 번호 불일치 | `422 AUTH_PHONE_NOT_VERIFIED`(기존) — **병합 없음** |
 | 이미 완료 | 자기 계정이 이미 `ACTIVE` | `409 AUTH_ONBOARDING_ALREADY_COMPLETED`(기존) |
-| **병합 없음** | 같은 번호의 다른 `ACTIVE`·`LANDLORD` 계정 0건 | US-1-9 그대로 — 자기 계정 `ACTIVE` 전이, 자기 id로 토큰 |
-| **병합** | 같은 번호의 다른 `ACTIVE`·`LANDLORD` 계정 1건 | `social_accounts.user_id` 이전 + 임시 `users` 행 DELETE + **대상 id로 토큰** |
+| **병합 없음** | 같은 번호의 다른 `ACTIVE`·`LANDLORD` 계정 0건 | US-1-9 그대로 — 자기 계정 `ACTIVE` 전이, 자기 id로 토큰, **`linked=false`** |
+| **병합** | 같은 번호의 다른 `ACTIVE`·`LANDLORD` 계정 1건 | `social_accounts.user_id` 이전 + 임시 `users` 행 DELETE + **대상 id로 토큰** + **`linked=true`** |
 | **경합** | 조회 시점엔 0건이었는데 커밋 전에 웹 가입이 같은 번호를 확정 | `409 RESOURCE_CONFLICT` — `uq_users_phone_number` 위반으로 전체 롤백. **재시도하면 위 「병합」으로 수렴한다** |
 
 ## 알려진 제약

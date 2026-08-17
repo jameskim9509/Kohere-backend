@@ -73,6 +73,14 @@ public class AuthService {
   private static final String STATUS_ACTIVE = "ACTIVE";
   private static final String STATUS_PENDING = "PENDING";
   private static final String USER_TYPE_LANDLORD = "LANDLORD";
+
+  /**
+   * 세입자 온보딩 응답의 {@code linked} — <b>상수 false다.</b> 병합 매칭 키는 SMS로 인증한 휴대폰 번호 단독인데 세입자는 온보딩에서 번호를
+   * 수집하지 않아 대조할 열쇠가 없다(ADR-0047 §3). 리터럴 {@code false}를 그냥 넘기면 "아직 안 붙인 것"과 구분되지 않으므로, 값이 아니라 이름으로
+   * 이유를 남긴다.
+   */
+  private static final boolean TENANT_NEVER_MERGES = false;
+
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final OidcTokenVerifier oidcTokenVerifier;
@@ -274,8 +282,14 @@ public class AuthService {
                 request.visaType(),
                 request.lang()));
     TokenResponse tokens = issueFullTokens(userId);
+    // 세입자는 병합 분기가 아예 없다 — 응답 타입을 임대인과 공유할 뿐이다(상수 javadoc 참조).
     return new OnboardingResponse(
-        user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
+        TENANT_NEVER_MERGES,
+        user,
+        tokens.tokenType(),
+        tokens.accessToken(),
+        tokens.refreshToken(),
+        tokens.expiresIn());
   }
 
   /**
@@ -333,6 +347,10 @@ public class AuthService {
    * <p><b>토큰과 응답 프로필은 언제나 같은 계정 기준이다</b> — {@code issueFullTokens(user.id())}가 그것을 구조로 못박는다. 병합이면
    * {@code user.id()}가 요청 토큰의 {@code userId}와 다르며(대상 계정), 클라이언트는 응답의 토큰으로 교체해야 한다(스펙 §5-2). 두 값을 따로
    * 넘겨받는 코드였다면 병합 분기에서 <b>토큰만 임시 계정으로 발급</b>하는 실수가 조용히 성립한다 — 방금 지운 행을 가리키는 토큰이다.
+   *
+   * <p><b>병합 여부는 응답의 {@code linked}로 명시해서 알린다</b>(US-1-15). 종전에는 {@code user.id()}가 요청 토큰의 {@code
+   * userId}와 다른 것을 클라이언트가 스스로 눈치채야 병합을 알 수 있었는데, 그 비교를 빠뜨려도 화면은 멀쩡해 보이고 낡은 토큰으로 다음 호출을 하고 나서야 깨진다.
+   * 그래서 서버가 아는 사실을 필드로 내린다 — 이름은 반대 방향({@code SignupResponse.linked})과 <b>같은 단어</b>다.
    */
   @Transactional
   public OnboardingResponse landlordOnboarding(long userId, LandlordOnboardingRequest request) {
@@ -341,17 +359,29 @@ public class AuthService {
     // users.phone_number·병합 조회 모두 인증 마커와 같은 표준형을 쓴다 — UNIQUE(V23)가 표기 차이로 뚫리지 않게(#229 D10).
     String verifiedPhoneNumber = PhoneNumbers.normalize(request.phoneNumber());
     LocalDate birthDate = RequestDates.parsePast("birthDate", request.birthDate());
+    // 분기 판정을 Optional 하나로 묶어 둔다 — linked와 실제로 실행한 경로가 같은 값에서 나오므로 둘이 갈릴 수 없다.
+    // (프로필만 받아 두고 linked를 따로 계산하면 "id가 다르면 병합" 같은 추정 규칙이 서버 안에 생긴다.)
+    Optional<UserProfileView> mergeTarget =
+        userAccountService.findActiveLandlordProfileByPhoneNumberExcluding(
+            verifiedPhoneNumber, userId);
+    boolean linked = mergeTarget.isPresent();
     UserProfileView user =
-        userAccountService
-            .findActiveLandlordProfileByPhoneNumberExcluding(verifiedPhoneNumber, userId)
+        mergeTarget
             .map(target -> mergeIntoExistingLandlord(userId, target))
             .orElseGet(
                 () ->
                     userAccountService.completeLandlordOnboarding(
                         userId, new LandlordOnboardingProfile(verifiedPhoneNumber, birthDate)));
+    // 토큰은 여전히 user.id()에서만 나온다 — linked를 도입해도 "토큰은 임시 계정, 응답은 대상 계정"이
+    // 성립할 자리를 만들지 않는다(위 javadoc의 불변식).
     TokenResponse tokens = issueFullTokens(user.id());
     return new OnboardingResponse(
-        user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
+        linked,
+        user,
+        tokens.tokenType(),
+        tokens.accessToken(),
+        tokens.refreshToken(),
+        tokens.expiresIn());
   }
 
   /**

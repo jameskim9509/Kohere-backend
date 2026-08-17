@@ -310,6 +310,9 @@ class AuthOnboardingDocsTest {
                     .content(onboardingJson()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.user.phoneNumber").doesNotExist())
+            // 세입자 응답의 linked는 상수 false다 — 임대인과 응답 타입만 공유할 뿐 병합 분기가 없다.
+            // 여기서 단정해 두지 않으면 세입자 경로에 병합 판정이 새로 붙어도 아무도 알아채지 못한다.
+            .andExpect(jsonPath("$.data.linked").value(false))
             .andDo(
                 document(
                     "auth-onboarding",
