@@ -135,7 +135,7 @@ github_deploy_branch = "release"
 web_artifacts_bucket_name = "kohere-dev-web-artifacts"
 # web_release_retention_days = 90   # 즉시·동일 롤백이 보장되는 창. 줄이면 초과 나이의 릴리스가 실제로 삭제된다
 # 배포 역할의 신뢰 조건(sub)에 리터럴로 박힌다 — 실제 레포 이름이어야 한다(기본값 없음).
-github_web_repo = "Kohere-frontend"
+github_web_repo = "Kohere-web"
 # github_web_deploy_branch = "release"
 # apply 후 아래 셋을 프론트 리포 Variables 에 설정한다:
 #   terraform output web_artifacts_bucket        → WEB_ARTIFACTS_BUCKET
