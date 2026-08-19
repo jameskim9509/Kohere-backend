@@ -43,6 +43,17 @@ module "s3_cloudfront" {
   route53_zone_id     = var.route53_zone_id
 }
 
+# ===== 임대인 웹 릴리스 아티팩트 (비공개 S3) =====
+# 콘텐츠 이미지 버킷과 달리 CDN이 없다 — 읽는 주체가 dev 호스트 하나이고, 서빙은 그 호스트의 Caddy가 한다(#232).
+module "web" {
+  source = "../../modules/dev/web"
+
+  name_prefix            = local.name_prefix
+  tags                   = local.common_tags
+  bucket_name            = var.web_artifacts_bucket_name
+  release_retention_days = var.web_release_retention_days
+}
+
 # ===== 네트워크 (미니 VPC·IGW·public subnet) =====
 module "network" {
   source = "../../modules/dev/network"
@@ -83,6 +94,8 @@ module "iam" {
   account_id        = data.aws_caller_identity.current.account_id
   images_bucket_arn = module.s3_cloudfront.bucket_arn
   log_group_arn     = module.logs.log_group_arn
+  # 프론트 릴리스 읽기 + current.txt 포인터 쓰기(#232)
+  web_bucket_arn = module.web.bucket_arn
 }
 
 # ===== 시크릿 (SSM Parameter Store SecureString) =====
@@ -160,6 +173,9 @@ module "host" {
   mongo_username        = var.mongo_username
   images_bucket         = module.s3_cloudfront.bucket_name
   images_cdn_domain     = module.s3_cloudfront.cdn_domain
+
+  # 임대인 웹 릴리스(#232) — deploy-web.sh 렌더와 부팅 복원(current.txt)이 이 버킷을 쓴다.
+  web_artifacts_bucket = module.web.bucket_name
 
   # 로그 반출(ADR-0038 ⑥) — Agent는 기본 비활성(ADR-0026 메모리 게이트). Log Group은 항상 준비돼 있다.
   log_group_name          = module.logs.log_group_name

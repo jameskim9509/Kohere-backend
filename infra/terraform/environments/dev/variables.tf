@@ -357,3 +357,34 @@ variable "ecr_repository" {
   type        = string
   default     = "kohere-backend"
 }
+
+# ----- 임대인 웹(SPA) 정적 서빙 · 프론트 CI/CD (#232) -----
+variable "web_artifacts_bucket_name" {
+  description = "프론트 릴리스 아티팩트 S3 버킷 이름(전역 유일). 예: kohere-dev-web-artifacts"
+  type        = string
+}
+
+variable "web_release_retention_days" {
+  description = <<-EOT
+    releases/ 보관 일수. 정하는 것은 "롤백 가능 여부"가 아니라 즉시·동일 롤백이 보장되는 창이다 —
+    만료된 SHA로 롤백하면 워크플로가 그 커밋을 재빌드해 복원한다(느리고 바이트 동일 보장 없음).
+    줄이면 초과 나이의 릴리스가 실제로 삭제되어 그만큼 즉시 롤백 창이 사라진다.
+  EOT
+  type        = number
+  default     = 90
+}
+
+variable "github_web_repo" {
+  description = <<-EOT
+    프론트엔드 GitHub 리포지토리 이름. 배포 역할의 신뢰 조건(sub)에 리터럴로 박히므로 반드시 실제 값이어야 한다 —
+    기본값을 두지 않는 이유는, 틀린 값으로도 apply 가 성공해 아무도 맡을 수 없는 역할이 조용히 생기기 때문이다.
+    나중에 바꿔도 신뢰 정책만 in-place 갱신되고 역할 ARN은 그대로다.
+  EOT
+  type        = string
+}
+
+variable "github_web_deploy_branch" {
+  description = "프론트 배포를 허용·트리거할 브랜치(프론트 deploy.yml 의 on.push.branches 와 일치해야 함)"
+  type        = string
+  default     = "release"
+}

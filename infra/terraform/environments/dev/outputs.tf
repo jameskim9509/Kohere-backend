@@ -38,3 +38,18 @@ output "test_login_secret" {
   value       = module.secrets.test_login_secret
   sensitive   = true
 }
+
+output "web_artifacts_bucket" {
+  description = "프론트 릴리스 아티팩트 버킷(프론트 리포 Variables 의 WEB_ARTIFACTS_BUCKET)"
+  value       = module.web.bucket_name
+}
+
+output "github_web_deploy_role_arn" {
+  description = "프론트 GitHub Actions가 assume할 배포 역할 ARN(프론트 리포 Variables 의 AWS_DEPLOY_ROLE_ARN)"
+  value       = aws_iam_role.github_web_deploy.arn
+}
+
+output "ssm_deploy_web_document" {
+  description = "프론트 릴리스 적용 SSM Document 이름(프론트 리포 Variables 의 SSM_DEPLOY_WEB_DOCUMENT)"
+  value       = aws_ssm_document.deploy_web.name
+}
