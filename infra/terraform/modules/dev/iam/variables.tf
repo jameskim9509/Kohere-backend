@@ -30,3 +30,12 @@ variable "log_group_arn" {
   type        = string
   default     = ""
 }
+
+variable "web_bucket_arn" {
+  description = <<-EOT
+    프론트 릴리스 아티팩트 S3 버킷 ARN(web 모듈, #232). 빈 값이면 권한 미부여.
+    릴리스는 읽기만, 쓰기는 current.txt 한 객체뿐이다 — 호스트가 릴리스를 만들거나 지울 수 없다.
+  EOT
+  type        = string
+  default     = ""
+}

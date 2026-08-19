@@ -56,6 +56,38 @@ data "aws_iam_policy_document" "params" {
     }
   }
 
+  # 프론트 릴리스 아티팩트(#232) — 릴리스는 읽기만 하고, 쓰기는 "지금 라이브" 포인터 한 객체뿐이다.
+  # 포인터를 CI가 아니라 호스트가 쓰는 이유: 심볼릭 링크 교체와 같은 스크립트 안에서 갱신해야 둘이 어긋나지 않는다.
+  # CI가 쓰면 SSM은 성공했는데 잡이 죽은 경우 포인터만 낡아, 재부팅이 옛 릴리스를 되살린다.
+  dynamic "statement" {
+    for_each = var.web_bucket_arn != "" ? [1] : []
+    content {
+      sid     = "WebReleasesRead"
+      actions = ["s3:GetObject"]
+      resources = [
+        "${var.web_bucket_arn}/releases/*",
+        "${var.web_bucket_arn}/current.txt",
+      ]
+    }
+  }
+  # ListBucket 은 객체가 아니라 버킷에 걸리는 액션이라 문장을 나눠야 한다 — 객체 ARN에 붙이면 sync가 AccessDenied 난다.
+  dynamic "statement" {
+    for_each = var.web_bucket_arn != "" ? [1] : []
+    content {
+      sid       = "WebBucketList"
+      actions   = ["s3:ListBucket"]
+      resources = [var.web_bucket_arn]
+    }
+  }
+  dynamic "statement" {
+    for_each = var.web_bucket_arn != "" ? [1] : []
+    content {
+      sid       = "WebCurrentPointerWrite"
+      actions   = ["s3:PutObject"]
+      resources = ["${var.web_bucket_arn}/current.txt"]
+    }
+  }
+
   # CloudWatch Agent가 /opt/kohere/logs/app.json을 tail해 보낼 권한(ADR-0038).
   # 관리형 CloudWatchAgentServerPolicy(logs:* + 전 Log Group)를 쓰지 않고 이 Log Group 하나로 스코프한다.
   # Log Group과 보존기간은 Terraform(logs 모듈)이 소유하므로 CreateLogGroup·PutRetentionPolicy는 주지 않는다 —
