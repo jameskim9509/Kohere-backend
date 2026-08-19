@@ -30,9 +30,17 @@ resource "aws_instance" "host" {
   }
 
   user_data_replace_on_change = false
-  user_data = templatefile("${path.module}/user_data.sh.tftpl", {
+  # user_data의 16KB 하드 리밋을 해결하기 위해 gzip + base64 사용.
+  user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh.tftpl", {
     aws_region = var.aws_region
     account_id = var.account_id
+    # 부팅 시 프론트 마지막 릴리스를 복원할 때 읽을 포인터 버킷(#232).
+    web_artifacts_bucket = var.web_artifacts_bucket
+    # 프론트 릴리스 적용(#232) — 배포·롤백·부팅 복원이 모두 이 스크립트 하나를 인자만 달리해 호출한다.
+    deploy_web = templatefile("${path.module}/deploy-web.sh.tftpl", {
+      aws_region = var.aws_region
+      web_bucket = var.web_artifacts_bucket
+    })
     # 시크릿 조회(SSM→.env)는 별도 스크립트로 분리 — 부팅·배포 양쪽에서 재호출(최신값 반영, ADR-0024).
     refresh_env = templatefile("${path.module}/refresh-env.sh.tftpl", {
       aws_region     = var.aws_region
@@ -63,7 +71,7 @@ resource "aws_instance" "host" {
       mongo_username    = var.mongo_username
       mysql_username    = var.mysql_username
     })
-  })
+  }))
 
   lifecycle {
     ignore_changes = [ami]

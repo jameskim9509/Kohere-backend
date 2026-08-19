@@ -75,6 +75,25 @@ ${reconcile_db}
 RECONCILE
 chmod +x /opt/kohere/reconcile-db.sh
 
+# 5-1) 임대인 웹 릴리스 루트(#232) — caddy가 /srv:ro 로 마운트해 여기서 SPA를 서빙한다.
+#      실제 릴리스는 프론트 CI가 deploy-web.sh 로 채운다. 여기선 자리만 잡고, 첫 배포 전에도
+#      / 가 원인 모를 404가 아니라 상태를 말하게 한다 — 6)의 app 이미지 부재 처리와 같은 태도다.
+mkdir -p /opt/kohere/web/releases/_bootstrap
+cat >/opt/kohere/web/releases/_bootstrap/index.html <<'HTML'
+<!doctype html><meta charset="utf-8"><title>Kohere dev</title>
+<h1>프론트엔드가 아직 배포되지 않았습니다</h1>
+<p>인프라는 정상입니다. 프론트엔드 레포의 release 브랜치가 머지되면 이 화면이 교체됩니다.</p>
+<p>API 문서: <a href="/swagger-ui/">/swagger-ui/</a></p>
+HTML
+# 이미 릴리스가 걸려 있으면 건드리지 않는다 — 이 스크립트를 손으로 재실행했을 때 살아 있는 릴리스가
+# 플레이스홀더로 되돌아가는 사고를 막는다.
+[ -e /opt/kohere/web/current ] || ln -sfn releases/_bootstrap /opt/kohere/web/current
+
+cat >/opt/kohere/deploy-web.sh <<'DEPLOYWEB'
+${deploy_web}
+DEPLOYWEB
+chmod +x /opt/kohere/deploy-web.sh
+
 # 6) 기동 + DB 자격증명 reconcile(최초엔 마커 시드=no-op, 데이터 보존 회전 — ADR-0025)
 #    공용 이미지(mysql/mongo/redis/caddy)는 항상 기동한다. 앱 이미지(ECR :dev)는 첫 CI 배포 전엔 없을 수 있어
 #    best-effort로만 시도 — 없어도 인프라·DB는 정상(README §6 대안 B). pull 한 번 실패가 전체를 중단(set -e)시키지 않게 분리.
@@ -87,6 +106,17 @@ else
 fi
 bash /opt/kohere/reconcile-db.sh || true
 docker image prune -f # 직전 :dev 이미지(dangling) 즉시 정리 — root 볼륨 보호
+
+# 6-1) 프론트 마지막 릴리스 복원(#232) — 릴리스는 루트 볼륨에 있어 인스턴스를 교체하면 사라진다.
+#      S3의 current.txt(배포 성공 시 deploy-web.sh가 갱신)를 읽어 되살린다. app 이미지가 ECR :dev
+#      이동 태그로 복원되는 것과 같은 구조이고, best-effort인 것도 같다 — 포인터가 없거나(첫 배포 전)
+#      복원이 실패하면 플레이스홀더로 두고 경고만 남긴다. 웹이 비는 것보다 부팅이 멈추는 게 더 나쁘다.
+WEB_SHA=$(aws s3 cp --region ${aws_region} "s3://${web_artifacts_bucket}/current.txt" - 2>/dev/null | tr -d '[:space:]' || true)
+if [ -n "$WEB_SHA" ]; then
+  bash /opt/kohere/deploy-web.sh "$WEB_SHA" || echo "WARN: 프론트 릴리스($WEB_SHA) 복원 실패 — 플레이스홀더 유지"
+else
+  echo "INFO: 프론트 current.txt 없음 — 플레이스홀더 유지. 프론트 CI 배포(release 머지)로 채워진다."
+fi
 
 # 7) 디스크 보호 타이머 — :dev 이동 태그라 배포마다 이전 이미지가 dangling으로 쌓여 20GB root가 찰 수 있다.
 #    배포(deploy.yml)는 recreate 직후 즉시 prune하고, 여기선 안전망으로 미사용 리소스를 매일(7일 이전) 정리한다.
