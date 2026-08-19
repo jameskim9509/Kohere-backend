@@ -1,8 +1,3 @@
-variable "name_prefix" {
-  description = "리소스 이름 접두사"
-  type        = string
-}
-
 variable "tags" {
   description = "공통 태그"
   type        = map(string)

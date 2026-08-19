@@ -131,8 +131,6 @@ variable "web_artifacts_bucket" {
   description = <<-EOT
     프론트 릴리스 아티팩트 S3 버킷 이름(web 모듈). deploy-web.sh 가 releases/<sha> 를 내려받고
     current.txt 포인터를 갱신하며, 부팅 시 그 포인터로 마지막 릴리스를 복원한다.
-    빈 값이면 복원이 no-op이 되고 플레이스홀더만 서빙된다.
   EOT
   type        = string
-  default     = ""
 }

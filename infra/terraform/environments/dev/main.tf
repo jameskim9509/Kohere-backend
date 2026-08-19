@@ -48,7 +48,6 @@ module "s3_cloudfront" {
 module "web" {
   source = "../../modules/dev/web"
 
-  name_prefix            = local.name_prefix
   tags                   = local.common_tags
   bucket_name            = var.web_artifacts_bucket_name
   release_retention_days = var.web_release_retention_days
