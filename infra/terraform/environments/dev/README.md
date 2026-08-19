@@ -15,13 +15,17 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
 
 ```
 모바일 앱 ──HTTPS(443, 항상)──▶ EIP(+도메인) ──▶ EC2 1대 (docker-compose)
-                                                  ├─ caddy:2     (TLS 종단·자동 HTTPS·리버스 프록시, ADR-0022)
+임대인 웹(브라우저) ──HTTPS──────▶  (같은 도메인)      ├─ caddy:2     (TLS 종단·자동 HTTPS, ADR-0022)
+                                                  │                 ├ /api·/swagger-ui·/actuator → app
+                                                  │                 └ 나머지 → /opt/kohere/web/current (SPA)
                                                   ├─ app         (Spring Boot · ${app_image})
                                                   ├─ mysql:8.0   (auth·user)        ┐ 데이터는
                                                   ├─ mongo:7     (listing·diagnosis)┤ 암호화 EBS /data
                                                   └─ redis:7     (refresh 토큰)     ┘ 에 영속
                                                   └─ 시크릿 ─────▶ SSM Parameter Store(부팅 시 .env 주입, ADR-0023)
-앱 이미지: GitHub Actions ──OIDC──▶ ECR(:dev 이동 태그) ──▶ SSM run-command로 EC2 재배포
+앱 이미지:     백엔드 레포 Actions ──OIDC──▶ ECR(:dev 이동 태그) ──▶ SSM run-command로 EC2 재배포
+임대인 웹:     프론트 레포 Actions ──OIDC──▶ S3(releases/<sha> 불변 + current.txt 포인터)
+                                        ──▶ SSM(전용 Document)로 호스트가 내려받아 심볼릭 링크 원자 교체
 콘텐츠 이미지: S3 ──OAC──▶ CloudFront(커스텀 도메인 별칭, us-east-1 ACM) ──▶ 클라이언트 직접 로드
 ```
 
@@ -31,10 +35,11 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
 | --- | --- |
 | `modules/dev/network` | 미니 VPC·IGW·public subnet |
 | `modules/dev/security` | SG(80/443 + 옵션 DB 포트 3306/27017) |
-| `modules/dev/iam` | 인스턴스 프로파일(SSM·ECR·파라미터·S3 이미지) |
+| `modules/dev/iam` | 인스턴스 프로파일(SSM·ECR·파라미터·S3 이미지·S3 프론트 릴리스) |
+| `modules/dev/web` | 임대인 웹 릴리스 아티팩트 S3(비공개 — `releases/<sha>` 불변 + `current.txt` 포인터) — **항상 생성** |
 | `modules/dev/secrets` | SSM Parameter Store SecureString(앱·DB 시크릿) |
 | `modules/dev/storage` | 데이터 EBS(mysql/mongo 영속) |
-| `modules/dev/host` | EC2 + EIP + EBS attach, user_data(compose·Caddyfile·refresh-env·reconcile-db) |
+| `modules/dev/host` | EC2 + EIP + EBS attach, user_data(compose·Caddyfile·refresh-env·reconcile-db·deploy-web) |
 | `modules/dev/dns` | Route53 A 레코드(domain→EIP) — **항상 생성**(domain·zone 필수) |
 | `modules/dev/monitoring` | CloudWatch 알람 + SNS → Discord(`discord_webhook_url`, SNS→Lambda) |
 | `modules/shared/s3-cloudfront` | 콘텐츠 이미지 S3 + CloudFront(OAC, 커스텀 도메인 별칭) — **항상 생성** |
@@ -301,6 +306,9 @@ terraform apply
 | `github_deploy_role_arn` | GitHub Actions가 assume할 배포 역할 ARN → 리포 Variables `AWS_DEPLOY_ROLE_ARN` 에 설정 |
 | `images_bucket` | 콘텐츠 이미지 S3 버킷명 |
 | `images_cdn_domain` | 이미지 서빙 커스텀 도메인(`cdn_domain_name` 별칭, 항상 설정됨) |
+| `web_artifacts_bucket` | 임대인 웹 릴리스 버킷 → **프론트** 리포 Variables `WEB_ARTIFACTS_BUCKET` |
+| `github_web_deploy_role_arn` | 프론트 Actions가 assume할 배포 역할 ARN → **프론트** 리포 Variables `AWS_DEPLOY_ROLE_ARN` |
+| `ssm_deploy_web_document` | 릴리스 적용 SSM Document 이름 → **프론트** 리포 Variables `SSM_DEPLOY_WEB_DOCUMENT` |
 
 ```bash
 terraform output github_deploy_role_arn   # 다음 단계에서 사용
@@ -337,6 +345,25 @@ gh workflow run deploy.yml --repo swyp-app-5th-team1/Kohere-backend
 **GitHub OIDC provider 소유권**: provider는 계정당 1개라 **bootstrap이 단일 생성·소유**한다. dev `cicd.tf` 는 이를 `data` 로 **조회만** 하므로(별도 토글 변수 없음), **1단계 bootstrap apply가 선행**돼야 한다 — 안 돼 있으면 provider lookup이 실패한다. dev·prod는 같은 provider를 공유한다.
 
 > 배포 역할 신뢰 정책은 `release` 브랜치 ref만 assume을 허용한다 — 다른 브랜치/PR에서는 거부된다(최소 권한·단기 자격증명).
+
+### 8-1. 프론트엔드(임대인 웹) 리포 Variables
+
+프론트는 **별도 역할**을 쓴다. 백엔드 역할에 레포를 한 줄 더 얹지 않은 이유는, 그러면 프론트 레포가 ECR push와 `AWS-RunShellScript`(호스트 root 임의 실행)까지 함께 얻기 때문이다. 프론트 역할이 호스트에서 할 수 있는 일은 **전용 SSM Document 하나**(= `deploy-web.sh`)뿐이다.
+
+| 변수 | 값 | 비고 |
+| --- | --- | --- |
+| `AWS_DEPLOY_ROLE_ARN` | `terraform output github_web_deploy_role_arn` | **필수**. 백엔드 것과 다른 ARN이다 |
+| `AWS_REGION` | `ap-northeast-2` | **필수** |
+| `WEB_ARTIFACTS_BUCKET` | `terraform output web_artifacts_bucket` | **필수**. 릴리스 업로드 대상 |
+| `SSM_DEPLOY_WEB_DOCUMENT` | `terraform output ssm_deploy_web_document` | **필수**. 이 문서 외의 명령은 역할이 실행할 수 없다 |
+| `DEV_HOST_NAME` | `kohere-dev-host` | **필수**. SSM 대상 EC2 Name 태그 |
+| `DEV_URL` | `https://<domain_name>` | **필수**. 배포 후 스모크 체크 대상 |
+
+`github_web_repo` 를 tfvars에 채워야 apply 된다(기본값 없음) — 이 값이 신뢰 정책의 `sub` 조건에 리터럴로 박히기 때문이다. 나중에 바꿔도 신뢰 정책만 in-place 갱신되고 역할 ARN은 그대로라, 프론트 리포 Variables를 다시 손댈 필요는 없다.
+
+배포 흐름: `release` 머지 → build → `s3 sync dist/ s3://<bucket>/releases/<sha>/` → SSM(전용 Document)으로 호스트가 내려받아 `current` 심볼릭 링크 원자 교체 → `current.txt` 갱신. 워크플로는 **SSM 완료까지 폴링**해 실패 시 빨갛게 죽고, 이어서 루트·딥링크·API 스모크를 확인한다.
+
+롤백은 이미 올라간 SHA를 수동 실행에 넣으면 된다 — 재빌드 없이 링크만 되돌아간다(보관 기간이 지나 아티팩트가 없으면 그 커밋을 재빌드해 복원한다).
 
 ---
 
