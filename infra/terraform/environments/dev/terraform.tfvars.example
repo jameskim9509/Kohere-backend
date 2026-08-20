@@ -141,3 +141,8 @@ github_web_repo = "Kohere-web"
 #   terraform output web_artifacts_bucket        → WEB_ARTIFACTS_BUCKET
 #   terraform output github_web_deploy_role_arn  → AWS_DEPLOY_ROLE_ARN
 #   terraform output ssm_deploy_web_document     → SSM_DEPLOY_WEB_DOCUMENT
+# GitHub이 새 레포에 적용하는 immutable subject claim 때문에 sub 에 숫자 ID가 붙는다
+#   (repo:<org>@<orgId>/<repo>@<repoId>:ref:...). 신뢰 정책이 옛 형식과 함께 둘 다 받도록 조립한다.
+#   확인: gh api repos/<org>/<repo> --jq '{repo_id:.id, owner_id:.owner.id}'
+github_org_id      = "289965197"
+github_web_repo_id = "1330553011"

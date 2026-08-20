@@ -383,6 +383,20 @@ variable "github_web_repo" {
   type        = string
 }
 
+variable "github_org_id" {
+  description = <<-EOT
+    GitHub 조직의 숫자 ID(예: `gh api orgs/<org> --jq .id`). immutable subject claim 형식
+    `repo:<org>@<orgId>/<repo>@<repoId>:...` 를 조립하는 데 쓴다 — 이름이 아니라 ID로 고정되므로
+    레포·조직 이름을 바꿔도 신뢰가 다른 대상으로 옮겨가지 않는다.
+  EOT
+  type        = string
+}
+
+variable "github_web_repo_id" {
+  description = "프론트 레포의 숫자 ID(`gh api repos/<org>/<repo> --jq .id`). 위와 같은 용도"
+  type        = string
+}
+
 variable "github_web_deploy_branch" {
   description = "프론트 배포를 허용·트리거할 브랜치(프론트 deploy.yml 의 on.push.branches 와 일치해야 함)"
   type        = string
