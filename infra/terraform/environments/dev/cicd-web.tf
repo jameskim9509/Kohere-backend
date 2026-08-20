@@ -35,6 +35,20 @@ resource "aws_ssm_document" "deploy_web" {
   tags = merge(local.common_tags, { Name = "${local.name_prefix}-deploy-web" })
 }
 
+locals {
+  # 받아들일 sub 두 형식. GitHub이 새 레포에 적용하는 **immutable subject claim**은 조직·레포에 숫자 ID를
+  #   덧붙인다(repo:org@<orgId>/repo@<repoId>) — 이름을 바꿔도 신뢰가 조용히 따라가지 않게 하는 장치다.
+  #   Kohere-web은 이 형식이고 Kohere-backend는 아직 옛 형식이라, 실제로 sub가 한 글자도 안 맞아
+  #   AssumeRoleWithWebIdentity가 거부됐다. 둘 다 받아 두면 GitHub이 어느 쪽으로 굴러가도 배포가 멈추지 않는다.
+  #
+  # 와일드카드로 뭉개지 않는다 — `repo:swyp-app-5th-team1*/...` 는 `swyp-app-5th-team1-<아무거나>` 조직까지
+  #   매칭돼서 신뢰 범위가 조용히 넓어진다. 정확한 값 둘을 나열하면 StringLike가 OR로 평가한다.
+  github_web_deploy_subs = [
+    "repo:${var.github_org}/${var.github_web_repo}:ref:refs/heads/${var.github_web_deploy_branch}",
+    "repo:${var.github_org}@${var.github_org_id}/${var.github_web_repo}@${var.github_web_repo_id}:ref:refs/heads/${var.github_web_deploy_branch}",
+  ]
+}
+
 # 신뢰 정책 — 프론트 레포의 지정 브랜치 push에서만 assume. 조건이 없으면 github.com 전체가 통과한다
 #   (발급자가 GitHub Actions 전역에 하나뿐이고, aud 는 요청 시 아무나 지정할 수 있다).
 data "aws_iam_policy_document" "github_web_assume" {
@@ -56,7 +70,7 @@ data "aws_iam_policy_document" "github_web_assume" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}/${var.github_web_repo}:ref:refs/heads/${var.github_web_deploy_branch}"]
+      values   = local.github_web_deploy_subs
     }
   }
 }
