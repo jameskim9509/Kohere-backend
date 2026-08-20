@@ -1,0 +1,292 @@
+# 클라이언트 동작·테스트·구현 순서
+
+## 1. 클라이언트 동작
+
+### 1.1 채팅방 진입
+
+1. REST로 방 헤더를 조회한다.
+2. WebSocket에 CONNECT한다.
+3. 저장 결과·오류·room event·translation·control user queue를 구독한다.
+4. control ping/pong으로 개인 queue 준비를 확인한다.
+5. room topic을 구독한다.
+6. `SUBSCRIPTION_READY(roomId, highWatermark)`를 기다린다.
+7. REST 최근 이력과 필요한 `afterMessageId` catch-up을 high-watermark까지 완료한다.
+8. REST 결과와 구독 직후 topic 이벤트를 `messageId`, `clientMessageId`로 합친다.
+
+SUBSCRIBE frame을 보낸 시점만으로 구독이 준비됐다고 가정하지 않는다. 같은 메시지가 REST와 topic 양쪽에서 도착하는 것은 정상이며 ID로 제거한다.
+
+### 1.2 재연결
+
+1. 지수 backoff와 jitter로 재연결한다.
+2. 갱신한 access token으로 CONNECT한다.
+3. control barrier와 room `SUBSCRIPTION_READY`를 다시 완료한다.
+4. 마지막 연속 DB sync checkpoint를 `afterMessageId`로 조회한다.
+5. high-watermark까지 모든 page를 읽는다.
+6. 완료 후에만 checkpoint를 전진시킨다.
+7. 그동안 받은 live topic 이벤트와 ID로 병합한다.
+
+topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. broker publish 실패로 중간 ID가 빠질 수 있으므로 checkpoint는 REST가 연속 구간을 확인한 뒤에만 전진한다.
+
+### 1.3 임시 말풍선
+
+- 전송 직전 프런트엔드가 `clientMessageId`를 생성한다.
+- 저장 결과 전에는 `sending` 상태로 표시할 수 있다.
+- topic 또는 저장 결과가 오면 같은 `clientMessageId`를 서버 `messageId`와 합친다.
+- timeout이면 `failed` 또는 retry 상태로 바꾼다.
+- retry는 같은 `clientMessageId`를 사용한다.
+- 백엔드는 임시 말풍선 자체를 저장하지 않는다.
+
+### 1.4 자동 번역 표시
+
+- 내가 보낸 메시지는 원문을 기본 표시한다.
+- 받은 메시지는 `translation`이 있으면 번역본을 기본 표시하고 `원문 보기`를 제공한다.
+- 원문 보기와 번역문 보기 전환은 프런트엔드의 메시지별 화면 상태다.
+- 번역본이 아직 없거나 실패했을 때 대기 문구·원문 표시 시점은 프런트엔드가 결정한다.
+- 백엔드는 `번역 중` 같은 표시 문자열을 만들지 않는다.
+- 개인 translation 이벤트가 원문보다 먼저 오면 `messageId`로 잠시 보관해 나중에 합친다.
+- translation 이벤트를 놓치면 다음 REST 메시지 이력의 저장된 번역본으로 복구한다.
+- 자동 번역 결과에는 Google 표시 요구사항에 맞는 출처 안내를 붙인다.
+
+### 1.5 삭제 UX
+
+- DELETE 성공 직후 현재 화면에만 Undo를 잠시 표시한다.
+- `undoToken`은 앱 메모리에만 두고 영구 저장하지 않는다.
+- 삭제방 목록, 복구 가능 방, 내부 만료일을 노출하지 않는다.
+- 앱 종료 후 이전 삭제방을 찾아 복구하는 기능은 제공하지 않는다.
+
+### 1.6 기존 기능 연동 시 프런트엔드 변경
+
+- 차단: 기존 사용자 차단 저장 기능은 재사용하지만 채팅 화면에서는 새 room 기반 차단 API를 호출한다.
+- 삭제: 채팅방 DELETE 응답의 `undoToken`을 현재 화면 메모리에 보관하고 짧은 Undo 버튼을 제공한다.
+- 신고: 상세 사유 입력 없이 서버가 반환한 고정 사유 code 한 개를 room 신고 API로 보낸다.
+- 메시지: 새 전송마다 프런트엔드가 `clientMessageId` UUID를 만들고 같은 메시지 재시도에는 같은 값을 사용한다.
+
+## 2. 테스트 계획
+
+### 2.1 도메인·서비스
+
+- 본인 매물 문의 거부
+- 같은 `(listingId, tenantId, landlordId)`가 같은 방 반환
+- 다른 listing은 다른 방 반환
+- 방 참여자만 조회·전송·삭제·Undo·차단·신고 가능
+- 공백-only, 2,999자, 3,000자, 3,001자 경계
+- emoji·결합문자의 Unicode code point 경계
+- 같은 clientMessageId 재시도는 DB 한 행
+- 같은 clientMessageId와 다른 content는 충돌
+- 차단 관계에서 DB INSERT와 broker publish 모두 0회
+- 지연된 예약 이벤트의 방 존재 보장이 삭제방을 재노출하지 않음
+
+### 2.2 MySQL 통합
+
+- Flyway 전체 적용과 JPA validate
+- 동시 방 생성 시 UNIQUE로 한 방
+- 방 생성과 두 member 저장의 원자성
+- 동시 같은 메시지 재시도 시 한 메시지
+- 과거 cursor와 forward `afterMessageId` 정렬·페이지
+- 사용자별 삭제 경계 적용
+- DELETE가 opaque undoToken만 반환
+- 같은 숨김 상태의 DELETE 재시도가 새 삭제 기록을 만들지 않음
+- 오래된 token과 짧은 Undo 기간 만료 요청 거부
+- Undo가 직전 숨김 경계를 복원
+- 새 메시지·직접 문의가 방만 다시 표시하고 과거 숨김 경계는 유지
+- 동일 방 신고 동시 접수가 UNIQUE로 한 행
+
+### 2.3 WebSocket·STOMP 통합
+
+- 정상 JWT CONNECT와 `Principal.name=userId`
+- token 누락·위조·만료·온보딩 미완료 거부
+- 연결 중 token 만료 도달 시 session 종료
+- JWT 인증 interceptor가 인가 interceptor보다 먼저 실행
+- 제3자의 room SUBSCRIBE·SEND 거부
+- 타 user queue, raw queue, wildcard destination 거부
+- 허용하지 않은 destination deny-all
+- DB commit 이전 broadcast 0회
+- 두 참여자가 저장 완료 room topic 수신
+- 발신 session만 application send result 수신
+- 중복 retry는 결과만 받고 room broadcast 한 번
+- 64 KiB transport와 3,000 code point 경계
+- control ping/pong과 `SUBSCRIPTION_READY` barrier
+- 최초 구독과 REST 조회 사이 race 복구
+- 중간 publish 실패를 연속 DB checkpoint가 복구
+- 10초 heartbeat, 연결 손실, 서버 재시작 후 reconnect
+
+### 2.4 REST·신고 사유 현지화
+
+- 사용자 언어별 동일 code·다른 label
+- 번역 누락 시 영어 fallback
+- 방 신고에서 reporter와 reported user를 서버가 결정
+- 자유 입력 detail을 받지 않음
+- 빈 방 신고 거부
+- 동일 방 신고 재시도 200, 신규 201
+- 현재 보이는 메시지 범위만 신고 evidence로 사용
+- 다른 사용자의 reportId 조회를 동일 404 처리
+- 최초 evidence snapshot과 hash 유지
+
+### 2.5 채팅 메시지 자동 번역
+
+- 수신자의 `users.lang`이 `en`, `ko`일 때 대상 언어가 정확함
+- 미설정 언어가 기존 규칙대로 `en`으로 fallback
+- 발신자의 `users.lang`을 원문 언어로 사용하지 않고 provider 자동 감지
+- 원문 commit·ACK·room broadcast가 Google timeout·4xx·5xx와 독립
+- `PENDING → PROCESSING → SUCCEEDED | NOT_REQUIRED | FAILED` 상태 전이
+- lease 만료 작업을 worker가 안전하게 다시 처리
+- 같은 `clientMessageId` 재시도와 동시 worker 실행에도 번역 행 한 개
+- 번역 결과는 수신자만 받고 발신자·제3자는 받지 않음
+- 차단·비참여·길이 초과 본문은 Google 호출 0회
+- translation 이벤트 유실 후 REST 이력으로 복구
+- 번역 결과가 원문보다 먼저 도착해도 `messageId`로 병합
+- 번역 완료가 방 재노출·마지막 메시지·삭제 경계를 변경하지 않음
+- 방을 숨겨도 원문과 번역 행은 물리 삭제되지 않음
+- 신고 evidence와 hash가 번역 여부와 관계없이 원문 기준
+- 원문·번역문의 markup을 plain text로 처리
+- 로그·APM에 원문, 번역문, provider payload가 없음
+
+### 2.6 모듈·이벤트
+
+- Spring Modulith allowed dependency 검증
+- `report -> chat::api` 단방향 유지
+- booking과 chat의 순환 의존 없음
+- BookingCreatedEvent publication 저장·listener 실패·재처리
+- 같은 eventId·bookingId 재처리의 방 생성 멱등성
+
+## 3. 구현 순서
+
+### 1단계: 계약과 DB
+
+1. 이 폴더의 API·STOMP 계약을 DTO와 error code로 확정
+2. 구현 직전 최신 Flyway 번호 확인
+3. chat room·member·message migration
+4. message translation 작업·결과 migration과 worker index
+5. report reason·report·최초 evidence migration
+6. Spring Modulith Event Publication Registry migration·재처리 설정
+7. JPA entity와 repository adapter
+
+### 2단계: 방과 REST
+
+1. `ChatListingQueryService`, `ChatCounterpartQueryService`, `ChatReportQueryService` 공개 interface
+2. `package-info.java`의 allowed dependency와 `@NamedInterface` 정합화
+3. 사용자 요청용 `enterLandlordRoom` 구현: 같은 방을 반환하고 요청자의 목록 숨김만 해제
+4. 예약 이벤트용 `ensureLandlordRoomExists` 구현: 누락된 방만 생성하고 기존 사용자별 숨김 상태는 유지
+5. 문의 API와 durable BookingCreatedEvent 보상 listener
+6. 방 목록·단건·과거/누락 메시지 조회
+7. 기존 `/read`, REST message POST, `unreadCount` 비노출
+
+### 3단계: WebSocket·STOMP
+
+1. WebSocket starter와 필요한 security messaging 의존성
+2. endpoint, Simple Broker, transport limit, heartbeat 설정
+3. CONNECT JWT interceptor와 ACTIVE 확인
+4. token expiresAt session lifecycle
+5. 인증·인가 interceptor 순서와 destination deny-all
+6. STOMP text message handler와 `String.codePointCount` 기반 3,000자 검증
+7. control ping/pong과 subscription high-watermark barrier
+8. commit 후 room broadcast, application send result, error, room event
+9. 개인 translation queue와 exact destination 인가
+
+### 4단계: 채팅 메시지 자동 번역
+
+1. provider 독립 `MessageTranslationPort`
+2. Google Cloud Translation Advanced v3 NMT adapter와 `text/plain` 요청
+3. GCP project·인증·timeout·quota·provider 비활성화용 stub 설정
+4. 원문 transaction의 `PENDING` 작업 저장과 lease 기반 worker
+5. 자동 언어 감지, 대상 `users.lang` snapshot, 제한된 retry
+6. REST 이력 translation projection과 수신자 개인 STOMP 결과
+7. 사용자별 숨김 경계의 번역 projection과 신고 원문 불변식
+
+### 5단계: 삭제·Undo·차단
+
+1. member의 `roomHiddenAt`, 이력 숨김 경계, undoToken과 짧은 Undo 만료
+2. DELETE와 restore endpoint
+3. 기존 `UserBlockService` 연결
+4. room ensure·SEND에 양방향 차단 guard
+
+### 6단계: 채팅방 신고
+
+1. 고정 reason catalog와 `ko/en` label
+2. room participant·counterpart·evidence query
+3. report와 최초 evidence snapshot
+4. 신고 접수와 내 신고 상태 조회
+
+### 7단계: 검증과 운영
+
+1. 단위·MySQL·REST·STOMP E2E 테스트
+2. REST Docs와 STOMP protocol 문서화
+3. 연결·지연·거부·재연결 지표
+4. 본문 없는 구조화 로그
+5. 다중 인스턴스 전환 조건 점검
+
+관리자 신고 처리와 3개월 만료·물리 삭제의 구현·테스트·운영 계획은 [후속 고도화 문서](future/04-testing-and-operations.md)로 분리한다.
+
+## 4. 운영 지표
+
+- 현재 WebSocket session 수
+- CONNECT·SUBSCRIBE·SEND 거부 수와 code
+- 메시지 DB 저장 latency와 commit 후 publish 실패
+- duplicate clientMessageId 처리 수
+- reconnect·REST catch-up 횟수와 page 수
+- 번역 처리 latency, 성공·불필요·실패·재시도 수
+- 번역 작업 backlog·최대 지연과 처리 문자 수
+- Event Publication Registry 미완료 건수·최대 지연
+
+## 5. Broker 전환 기준
+
+다음 중 하나가 발생하기 전에 Simple Broker를 외부 broker relay로 전환한다.
+
+- 애플리케이션 JVM이 두 개 이상
+- rolling deployment 중 구·신 인스턴스가 동시에 WebSocket을 수신
+- 서버 간 메시지 fan-out 필요
+- 실시간 전달 재시도·durable queue가 제품 요구가 됨
+
+전환 후에도 유지할 계약:
+
+- SEND·SUBSCRIBE destination
+- MySQL message schema
+- `clientMessageId` 멱등성
+- 서비스의 참여자·차단 검증
+- MySQL commit 후 publish 원칙
+
+변경 대상은 broker 설정·연결·운영 계층이다. 외부 broker의 TLS, credential, heartbeat, 장애 정책, 다중 인스턴스 user-destination 설정을 전환 작업에 포함한다.
+
+## 6. 구현 완료 기준
+
+- 문의와 신청이 같은 비즈니스 키의 roomId로 수렴한다.
+- 예약 직후 방 보장 실패를 client retry와 durable booking event가 보상한다.
+- 로그인 완료 사용자만 REST와 STOMP를 사용할 수 있다.
+- 비참여자는 roomId를 알아도 조회·구독·전송하지 못한다.
+- 메시지는 MySQL commit 후에만 두 참여자에게 전달된다.
+- 네트워크 재시도에도 같은 메시지가 중복 저장되지 않는다.
+- 원문은 공백·줄바꿈 포함 Unicode code point 3,000자까지 허용한다.
+- 받은 메시지는 사용자 언어 번역본을 우선 표시하고 원문을 확인할 수 있다.
+- 내가 보낸 메시지는 원문을 우선 표시한다.
+- 번역 장애가 원문 저장·ACK·실시간 전달을 실패시키지 않는다.
+- 번역 결과는 지정 수신자에게만 전달되고 REST 이력으로 복구된다.
+- 원문 파기 시 번역본도 함께 파기되고 신고 증거는 원문을 유지한다.
+- WebSocket 단절 중 메시지를 REST catch-up으로 복구한다.
+- 삭제는 상대 기록에 영향을 주지 않고 현재 화면에서 Undo할 수 있다.
+- 사용자에게 삭제방 목록이나 복구 가능 상태를 제공하지 않는다.
+- 차단 이후 메시지는 저장·전달되지 않고 과거 기록은 유지된다.
+- 신고는 방·신고자·상대·사유·접수 시각·원문 증거를 갖는다.
+- 신고 UI와 API에 자유 입력 상세 사유가 없다.
+- 신고 사유 label은 로그인 사용자 언어로 반환된다.
+- 읽음 기능, 카드 메시지, 그룹 채팅은 포함되지 않는다.
+- 단일 EC2에서 Simple Broker로 동작하고 재연결 시 MySQL로 복구된다.
+
+## 7. 참고 자료
+
+- [Spring STOMP 활성화](https://docs.spring.io/spring-framework/reference/web/websocket/stomp/enable.html)
+- [Spring Simple Broker](https://docs.spring.io/spring-framework/reference/web/websocket/stomp/handle-simple-broker.html)
+- [Spring STOMP Broker Relay](https://docs.spring.io/spring-framework/reference/web/websocket/stomp/handle-broker-relay.html)
+- [Spring STOMP interceptor](https://docs.spring.io/spring-framework/reference/web/websocket/stomp/interceptors.html)
+- [Spring STOMP token 인증](https://docs.spring.io/spring-framework/reference/web/websocket/stomp/authentication-token-based.html)
+- [Spring Security WebSocket](https://docs.spring.io/spring-security/reference/servlet/integrations/websocket.html)
+- [WebSocket transport message limit](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/web/socket/config/annotation/WebSocketTransportRegistration.html)
+- [Google Cloud Translation Advanced 개요](https://docs.cloud.google.com/translate/docs/api-overview)
+- [Google Cloud Translation 텍스트 번역](https://docs.cloud.google.com/translate/docs/translate-text)
+- [Google Cloud Translation 할당량과 요청 크기](https://docs.cloud.google.com/translate/quotas)
+- [Google Cloud Translation 인증](https://docs.cloud.google.com/translate/docs/authentication)
+- [Google Cloud Translation 데이터 사용](https://docs.cloud.google.com/translate/data-usage)
+- [Google Cloud Translation 표시 요구사항](https://docs.cloud.google.com/translate/attribution)
+- [기존 예약·문의·채팅 API 초안](../../api/specs/04-booking-inquiry-chat.md)
+- [기존 신고 API 초안](../../api/specs/07-reports.md)
+- [기존 도메인 모델](../domain-model.md)
+- [기존 DB 논리 설계](../../database/database-design.md)
