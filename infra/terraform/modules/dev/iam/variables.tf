@@ -20,13 +20,19 @@ variable "account_id" {
 }
 
 variable "images_bucket_arn" {
-  description = "콘텐츠 이미지 S3 버킷 ARN(앱 업로드 권한). 빈 값이면 S3 권한 미부여"
+  description = "콘텐츠 이미지 S3 버킷 ARN(s3-cloudfront 모듈). 앱이 인스턴스 역할로 업로드한다"
   type        = string
-  default     = ""
 }
 
 variable "log_group_arn" {
-  description = "앱 로그 Log Group ARN(logs 모듈). CloudWatch Agent 권한을 이 그룹으로만 스코프한다. 빈 값이면 로그 권한 미부여"
+  description = "앱 로그 Log Group ARN(logs 모듈). CloudWatch Agent 권한을 이 그룹으로만 스코프한다"
   type        = string
-  default     = ""
+}
+
+variable "web_bucket_arn" {
+  description = <<-EOT
+    프론트 릴리스 아티팩트 S3 버킷 ARN(web 모듈, #232).
+    릴리스는 읽기만, 쓰기는 current.txt 한 객체뿐이다 — 호스트가 릴리스를 만들거나 지울 수 없다.
+  EOT
+  type        = string
 }

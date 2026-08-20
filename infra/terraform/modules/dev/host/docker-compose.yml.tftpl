@@ -28,6 +28,9 @@ services:
       - "443:443"
     volumes:
       - /opt/kohere/Caddyfile:/etc/caddy/Caddyfile:ro
+      # 임대인 웹 릴리스(#232). 호스트가 소유하고 Caddy는 읽기만 한다 — deploy-web.sh 가 current 링크를
+      # 갈아끼우면 다음 요청부터 새 릴리스가 나간다(root 가 요청마다 해석되므로 컨테이너를 건드리지 않는다).
+      - /opt/kohere/web:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
   mysql:
