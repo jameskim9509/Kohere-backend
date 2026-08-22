@@ -132,6 +132,14 @@ target = SELECT * FROM users                     ← 잠근 행에서 응답 프
 
 MySQL의 UNIQUE는 **NULL 중복을 허용**하므로 세입자(정의상 NULL)와 탈퇴자(익명화로 NULL — [ADR-0014](./0014-withdrawal-pii-anonymization.md))는 영향받지 않는다. 이 제약이 [ADR-0034](./0034-landlord-phone-sms-verification.md)의 미결 항목("연락처 유니크 제약 — 현재 미적용")을 닫는다.
 
+> **Amended — 유형별 복합키로 완화(`V28`).** 관리자(`ADMIN`) 유형이 생기면서 이 결정의 "번호 하나당 계정 하나"를 **"번호 하나당 유형별로 계정 하나"** 로 좁힌다. 관리자는 가입 경로가 없어 운영자가 웹 가입 계정을 승격해 만드는데, 승격하면 그 계정이 `LANDLORD` 조회에서 빠지면서도 `phone_number`는 계속 점유해 **같은 사람이 그 번호로 임대인 계정을 따로 만들 수 없게** 되기 때문이다.
+>
+> **막으려던 경쟁은 그대로 막힌다.** 위 시나리오에서 경쟁하는 두 INSERT는 **둘 다 `LANDLORD`** 이므로 복합키에서도 `(LANDLORD, 010X)`로 충돌한다. 공존이 허용되는 것은 유형이 다른 `(ADMIN, 010X)`뿐이다.
+>
+> **애플리케이션 코드는 바뀌지 않는다.** 번호로 조회하는 두 쿼리(`findByPhoneNumberAndStatusAndUserType`·`...AndIdNot`)가 이미 `userType`으로 필터하므로 전역 유일성을 가정하는 코드가 없다. **제약 이름도 `uq_users_phone_number` 그대로 둔다** — `GlobalExceptionHandler`가 제약 이름 화이트리스트로 이 위반을 `409 RESOURCE_CONFLICT`로 번역하므로, 이름을 바꾸면 그 경합이 `500 INTERNAL_ERROR`로 떨어진다.
+>
+> 제약을 **느슨하게** 하는 변경이라 기존 행이 전부 새 제약을 자동으로 만족한다 — 선행 정리 쿼리가 필요 없고 `V23`(제약 강화)과 반대 방향이다.
+
 ### 6. 정본은 `users`, 자격증명 테이블은 스냅샷이다
 
 웹 폼은 연동 여부와 무관하게 항상 전체 필드를 받는다(화면이 하나이고 분기가 없다). 그 `name`·`birth_date`를 버리지 않고 `local_accounts`에 함께 저장한다 — 새 패턴이 아니라 **기존 구조의 대칭 적용**이다. `social_accounts`가 이미 `email`(V1)과 `name`([V20](../../src/main/resources/db/migration/V20__social_accounts_name.sql) — *"provider가 준 표시 이름 스냅샷을 보관한다(User.name과 별개)"*)을 들고 있다.

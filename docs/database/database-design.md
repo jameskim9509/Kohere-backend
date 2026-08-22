@@ -64,7 +64,7 @@
 | 값 객체(VO) | 컬럼 묶음으로 평탄화 | 임베드 객체 | 임베드/평탄화 |
 | 좌표 | — | GeoJSON `Point`(`[lng,lat]`) + `2dsphere` | — |
 
-- **enum**: 문자열 **UPPER_SNAKE** 저장. MySQL 네이티브 `ENUM` 미사용(값 추가 진화 용이). 값 카탈로그는 [domain-model](../architecture/domain-model.md) 각 모듈 "상태(enum)". 회원 역할 `UserType`은 `TENANT`(세입자/외국인)·`LANDLORD`(임대인) 두 값이며 `users.user_type`에 `VARCHAR(16)`로 저장한다(DEFAULT `TENANT`, 온보딩 제출로 확정·불변).
+- **enum**: 문자열 **UPPER_SNAKE** 저장. MySQL 네이티브 `ENUM` 미사용(값 추가 진화 용이). 값 카탈로그는 [domain-model](../architecture/domain-model.md) 각 모듈 "상태(enum)". 회원 역할 `UserType`은 `TENANT`(세입자/외국인)·`LANDLORD`(임대인)·`ADMIN`(관리자) 세 값이며 `users.user_type`에 `VARCHAR(16)`로 저장한다(DEFAULT `TENANT`). `TENANT`·`LANDLORD`는 온보딩 제출로 확정·불변이고, **`ADMIN`만 예외로 온보딩 이후 운영자의 수동 `UPDATE`로 부여**한다 — 가입 경로가 없다.
 - **금액**: 원(KRW) 정수, 소수점 없음.
 - **시각**: UTC ISO-8601, 저장도 UTC([api-design-guide §6](../api/api-design-guide.md)).
 
@@ -255,9 +255,9 @@
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
 | `id` | BIGINT | PK, AUTO_INCREMENT |
-| `user_type` | VARCHAR(16) (enum `UserType`) | NOT NULL DEFAULT `TENANT` · 온보딩 제출 엔드포인트로 확정·이후 불변 · INDEX(아래 註) |
+| `user_type` | VARCHAR(16) (enum `UserType`) | NOT NULL DEFAULT `TENANT` · 온보딩 제출 엔드포인트로 확정·이후 불변(**`ADMIN` 수동 승격만 예외** — 아래 註) · INDEX(아래 註) |
 | `name` | VARCHAR(200) | NULL · VO `FullName`→단일 컬럼 · **세입자·임대인 공통** 전체 이름(PII — 아래 註) · **소셜 로그인 시점에 요청 `name`으로 채움**(검증 대상 아님 — 아래 註) · 세입자 `first_name`+`last_name` 분리·임대인 `first_name` 재사용 편법은 #192에서 폐지 |
-| `phone_number` | VARCHAR(20) | NULL · **UNIQUE**(`uq_users_phone_number` — 같은 번호는 계정 하나, V23 · 아래 註) · **임대인**(PII — 로그·타 사용자 노출 시 마스킹, 예 `010-****-5678`). 온보딩 전 `auth` SMS 인증(§4-1 A-3 `VERIFIED`)을 거친 값이며 입력 경로에서 **숫자만 남겨 정규화**한다(기존 행 백필 없음 — 아래 註). 세입자는 NULL · 길이/형식 확인 필요 |
+| `phone_number` | VARCHAR(20) | NULL · **UNIQUE**(`uq_users_phone_number` — `(user_type, phone_number)` 복합키, V28 · 아래 註) · **임대인**(PII — 로그·타 사용자 노출 시 마스킹, 예 `010-****-5678`). 온보딩 전 `auth` SMS 인증(§4-1 A-3 `VERIFIED`)을 거친 값이며 입력 경로에서 **숫자만 남겨 정규화**한다(기존 행 백필 없음 — 아래 註). 세입자는 NULL · 길이/형식 확인 필요 |
 | `business_registration_number_hash` | VARCHAR(64) | NULL · **임대인** 사업자등록번호 SHA-256 해시(원문 비저장·로그 비저장·마스킹, 예 `****567890`) · 세입자는 NULL · **온보딩에서도 매물 등록에서도 채우지 않아 항상 NULL** — 임대인이 입력한 사업자등록번호는 매물 문서(`listings.businessRegistrationNumber`)가 원문으로 보유한다(아래 註) · 컬럼명·유니크 제약·저장 방식 확인 필요 |
 | `nickname` | VARCHAR(50) | NULL · **UNIQUE** · 시스템 배정(`형용사 + 사물`) · 탈퇴 시 익명화 |
 | `gender` | VARCHAR(16) (enum `Gender`) | NULL(PII) |
@@ -277,11 +277,21 @@
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
-**인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / **UNIQUE `phone_number`**(`uq_users_phone_number` — 「같은 번호면 같은 계정」을 DB가 지킨다; NULL 다중 허용이라 세입자·탈퇴자는 무영향. 번호로 기존 임대인 계정을 찾는 연동·병합 조회의 등치 인덱스도 겸한다 — 아래 註) / INDEX `user_type`(역할별 조회·집계) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
+**인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / **UNIQUE `(user_type, phone_number)`**(`uq_users_phone_number` — 「같은 번호면 **유형별로** 같은 계정」을 DB가 지킨다; NULL 다중 허용이라 세입자·탈퇴자는 무영향. 번호로 기존 임대인 계정을 찾는 연동·병합 조회의 인덱스도 겸한다 — 아래 註) / INDEX `user_type`(역할별 조회·집계) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
 
 - **이메일 두 종류**: 소셜 제공자 이메일은 **auth `social_accounts.email`** 소관(역할 무관·소셜 연동 메타데이터)이고, `users.email`은 **소셜 로그인 시 provider email(요청 `email`↔토큰 `email` 클레임 대조로 확정)로 세팅**되는 연락 이메일이다(#192 — 온보딩 입력·인증이 아니며, 계정 생성 시 둘은 같은 provider 값에서 나온다). **역할과 무관하게** 세입자·임대인 모두 소셜 로그인에서 캡처된 provider email을 `users.email`에 보유한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 '임대인 이메일 미수집' 결정은 #192로 개정 — 수집 폼이 아니라 소셜 로그인 provider 값 보유이고, 이메일 인증(신원 확인)이 없어진 지금 email은 '미검증 연락처'일 뿐이다). 이메일 인증 API(§4-1 A-2)는 **온보딩 완료(`ACTIVE`) 이후 접근 전용**이고, 그 *인증 흔적*은 Redis에만 단명 보관하며 **실제 `users.email` 변경 반영은 후속 이슈**(#192 범위 밖 — 이번엔 접근 제한만). **이름도 같은 이중 관리**다 — `social_accounts.name`(provider 스냅샷)과 `users.name`(사용자 값). `social_accounts`의 `email`·`name`은 로그인마다 provider 값으로 upsert되지만 `users`는 최초 로그인에만 세팅되고 이후 사용자 편집(name=`PATCH /users/me`)만 반영한다 — 재로그인 시 provider 변경은 `social_accounts`에만 반영하고 `users`는 덮지 않는다.
 - **닉네임**: 시스템이 `형용사 + 사물`로 무작위 배정하며 `UNIQUE`로 중복을 막는다(충돌 시 재시도). 사용자 입력·수정 대상이 아니다.
 - **상태 흐름·컬럼 채움 시점**: `status`는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`. **`name`과 `email`은 소셜 로그인 시점**(User 생성, `PENDING`)에 요청 `name`·provider `email`로 채워지고(#192 — 온보딩이 아니며 세입자·임대인 역할 무관), **동의 컬럼**(`terms_of_service_agreed`·`privacy_policy_agreed`·`marketing_agreed`·`agreed_at`·`terms_version`)은 **약관 동의 단계**(`PENDING`→`TERMS_AGREED`)에 채워지며, **프로필 컬럼**(세입자: `nickname`·성별·생년월일·`country`·`lang`(선택 — 미전송이면 저장하지 않고 NULL, 표시 시 `en` 폴백)·`occupation`(선택 — 미전송이면 저장하지 않고 NULL, #187)·`visa_type` / 임대인: `nickname`·`phone_number`·`birth_date`·`country`=`KR`·`lang`=`ko`(둘 다 서버 고정, 사용자 미입력))은 **온보딩 단계**(`TERMS_AGREED`→`ACTIVE`)에 채워진다(임대인 `business_registration_number_hash`는 온보딩에서 수집하지 않아 이 단계엔 채우지 않고, **매물 등록 시점에도 채우지 않는다** — 사업자등록번호 원문은 매물 문서가 보유한다; enum 값 정본은 [domain-model](../architecture/domain-model.md)).
+- **관리자(`ADMIN`) 승격**: 관리자는 **가입 경로가 없다.** 운영자가 관리자 전용 계정을 임대인 웹 가입 흐름으로 만든 뒤 아래로 승격한다. 로그인·계정 연동 방식은 임대인과 완전히 동일하며 관리자 전용 인증 경로를 두지 않는다.
+
+  ```sql
+  -- ACTIVE 계정에만 적용한다. 온보딩 미완료 계정을 승격하면 ROLE_ONBOARDING 토큰만 받아
+  -- 보안 매처를 통과하지 못한 채 권한만 갖는 계정이 된다. 코드 경로가 없으므로 이 조건이 유일한 방어선이다.
+  UPDATE users SET user_type = 'ADMIN' WHERE id = ? AND status = 'ACTIVE';
+  ```
+
+  **활동 중인 임대인·세입자 계정을 승격하지 않는다** — `ADMIN`은 병존하지 않는 제3의 유형이라 승격하면 이전 역할을 잃고(매물 등록 불가·임대인 연동 조회에서 제외), 매물을 보유한 임대인을 승격하면 자기 매물을 자기가 심사할 수 있게 된다.
+- **번호 UNIQUE가 유형별인 이유**: `V23`은 `phone_number` 단독 UNIQUE였다. 관리자 승격이 생기면서 **승격된 계정이 번호를 계속 점유해** 같은 사람이 그 번호로 임대인 계정을 따로 만들 수 없게 되므로, `V28`에서 `(user_type, phone_number)` 복합키로 **완화**했다. **제약 이름은 `uq_users_phone_number` 그대로 둔다** — `GlobalExceptionHandler`가 제약 이름 화이트리스트로 이 위반을 `409 RESOURCE_CONFLICT`로 번역하므로, 이름을 바꾸면 그 경합이 `500 INTERNAL_ERROR`로 떨어진다. `V23`이 막으려던 경쟁 — 웹 임대인 가입과 앱 임대인 온보딩이 동시에 들어와 각자 `ACTIVE`·`LANDLORD` 행을 만드는 것 — 은 **두 INSERT가 모두 `LANDLORD`** 라 복합키로도 그대로 막힌다. 애플리케이션 조회는 이미 `userType`으로 필터하므로 코드 변경이 없다([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) Amended).
 - **역할(`user_type`) 분기**: `user_type`은 **온보딩 제출 엔드포인트**(세입자 `POST /api/v1/auth/onboarding` / 임대인 `POST /api/v1/auth/landlord/onboarding`)로 확정되며 **이후 불변**이다. 소셜 로그인·약관 동의까지 두 역할 공통이고 이후 온보딩에서 분기한다(임대인 온보딩엔 연락처 SMS 인증이 있고, 세입자 이메일 인증은 온보딩 단계가 아니라 `ACTIVE` 이후 전용 접근이다 — §4-1 A-2). 임대인은 user 별도 모듈이 아니라 **같은 `users` 애그리거트**다 — 본인 프로필 조회·수정(`GET`/`PATCH /users/me`)은 세입자와 동일 경로로 제공하되 `user_type`에 따라 응답·수정 가능 컬럼이 갈린다(임대인 응답은 `name`·`nickname`·`birth_date`·`phone_number`·`email`·`country`(=`KR`, 표시명·국기 포함)·`status`·동의 컬럼·`created_at`만 — 세입자 전용 컬럼 `gender`·`occupation`·`visa_type`는 제외(`birth_date`·`country`는 임대인도 보유·반환 — `country`는 서버 고정값이라 수집하지 않지만 응답엔 나오고, `email`은 소셜 로그인 provider 값이라 임대인도 보유·반환한다); 수정은 `name`·`phone_number`·`marketing_agreed`만(임대인 `birth_date`는 온보딩 확정·조회 전용이고 `country`·`lang`은 서버 고정이라 변경 불가 — `lang` 변경은 세입자 전용), `business_registration_number_hash`·`user_type`·`nickname`은 불변).
 - **이름 저장(세입자·임대인 통일)**: 세입자·임대인 모두 단일 `name` 컬럼에 전체 이름을 저장한다 — 과거 세입자 `first_name`(이름)+`last_name`(성) 분리·임대인 `first_name` 재사용(단일 name을 `first_name`에, `last_name`은 NULL) 편법은 **#192에서 폐지**했다(API는 예전부터 단일 `name` 필드였고 이제 DB 컬럼도 `name` 하나라 `name`↔`first_name` 매핑이 사라진다). `name`은 온보딩이 아니라 **소셜 로그인 시점에 요청 `name`으로 채운다**(네이티브 SDK가 준 값 신뢰 — 토큰 검증 대상 아님, Apple은 이름을 최초 1회만 주므로 백엔드가 토큰에서 못 얻는다). 임대인은 추가로 `phone_number`·`birth_date`를 온보딩에서 채우고, 세입자는 `gender`·`country`·`lang`(선택)·`occupation`(선택, #187)·`visa_type`·`birth_date`를 온보딩에서 채운다(임대인은 `gender`·`occupation`·`visa_type`는 미수집·NULL, `birth_date`는 세입자·임대인 공통 수집, `country`·`lang`은 사용자 입력이 아니라 **서버가 `KR`·`ko`로 심는다**). NOT NULL 제약이 아니라 역할별 채움은 **상태·역할 불변식**(앱·서버 검증)이다.
 - **표시 언어(`lang`)**: 사용자가 고른 표시 언어를 영속하는 컬럼이며 다국어 표시의 **1순위 출처**다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). 값은 ISO 639-1 **소문자 코드**이고(DB 컬럼은 이 코드를 저장), 서버는 닫힌 집합 `Language` enum으로 모델링·검증해 **지원 목록 `en`·`ko`·`ja`** 밖이면 `400 INVALID_INPUT`이다(세 언어 밖은 어느 카탈로그에도 콘텐츠가 시드되지 않아 빈 선택지를 노출하지 않는다). 채움·변경 규칙은 역할별로 갈린다 — **세입자**만 온보딩·`PATCH /users/me`로 보낼 수 있고(둘 다 **선택 필드**라 미전송이면 저장하지 않고 NULL로 두고 표시 시 `en`으로 폴백한다), **임대인**은 온보딩 시 서버가 `ko`를 심고 이후 변경 경로가 없다(임대인 프로필 수정은 `lang`을 읽지 않는다). `PATCH /users/me`에 `country`만 오고 `lang`이 없으면 `lang`은 그대로 두고(국적을 바꿔도 표시 언어는 바뀌지 않는다), `lang`을 명시 전송하면 그 값을 저장한다. `lang`만 보내면 `country`는 그대로다.
@@ -479,6 +489,11 @@
 | `preferredNationalities` | string[] | 임대인 설문 — 선호 국적 · 응답 비노출(아래 註) |
 | `contractDifficulties` | string[] | 임대인 설문 — 계약 시 겪은 어려움 · 응답 비노출(아래 註) |
 | `serviceFeedback` | string | nullable · 임대인 설문 — 서비스 개선 의견 · 응답 비노출(아래 註) |
+| `consents` | object | **필수** · 매물 이용약관 동의(changeUnit `0120`) |
+| `consents.privacyPolicyAgreed` | bool | 필수 · 개인정보 수집·이용 동의 |
+| `consents.listingExposureAgreed` | bool | 필수 · 매물 정보 제공 및 노출 동의 |
+| `consents.version` | string | 필수 · 동의한 약관 버전(서버 설정값 `app.terms.listing-consent-version`) |
+| `consents.agreedAt` | date | 필수 · 동의 시각 |
 
 > `monthlyRent`·`deposit`은 Listing 루트가 아니라 `roomOffers[].pricing`의 단일값이다. 앱의 `minBudget`/`maxBudget`은 조회 조건일 뿐 DB에 범위로 저장하지 않는다. `featureSummary`는 DB에 저장하지 않고, 상세 응답을 만들 때 활성 `roomOffers[].filterTags`의 합집합으로 계산한다. 필터는 반드시 같은 `roomOffers[]` 원소가 가격·옵션을 동시에 만족하는지 `$elemMatch`로 검사한다 — `MOVE_IN_NOW`도 `filterTags`의 태그 하나일 뿐이라 별도 재고 조건을 보지 않는다.
 
