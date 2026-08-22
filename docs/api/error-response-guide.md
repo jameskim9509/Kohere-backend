@@ -174,6 +174,8 @@
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
+| `LISTING_REQUIRED_AGREEMENT_MISSING` | 422 | 매물 등록에 필요한 이용약관 동의 2종 중 하나 이상이 누락되거나 `false` |
+| `LISTING_INVALID_STATUS_TRANSITION` | 409 | 심사 대상(`PENDING`)이 아닌 매물에 승인·반려를 요청 |
 | `LISTING_IMAGE_REQUIRED` | 400 | 업로드에 파일이 없거나 비었음. 등록에서는 사진 키 개수가 규칙을 벗어남 — 지점 1~5개, 방마다 2~5개 |
 | `LISTING_IMAGE_KEY_NOT_FOUND` | 400 | 등록 요청의 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
 | `LISTING_IMAGE_TOO_LARGE` | 413 | 사진 한 장이 10MB를 넘음 |

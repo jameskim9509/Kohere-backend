@@ -11,7 +11,8 @@
 
 - `ListingType`: `GOSHIWON`, `CO_LIVING`, `SHARE_HOUSE`
 - `RentalType`: `MONTHLY_RENT`
-- `ListingStatus`(매물 상태): `PENDING`(승인 대기), `PUBLISHED`(공개), `REJECTED`(반려), `PAUSED`(일시중지), `DELETED`(삭제)
+- `ListingStatus`(매물 상태): `PENDING`(심사 대기), `PUBLISHED`(승인·공개), `REJECTED`(반려)
+  - 전이는 **`PENDING → PUBLISHED`(승인)** 와 **`PENDING → REJECTED`(반려)** 둘뿐이고, 그 외 상태에서의 심사 요청은 `409 LISTING_INVALID_STATUS_TRANSITION`이다. 반려된 매물의 재심사는 관리자가 직접 승인하는 것이 아니라 **임대인이 수정해 `PENDING`으로 되돌린 뒤**(수정 API는 후속) 다시 심사를 통과한다 — 직접 승인을 열면 아무것도 고치지 않은 매물이 통과하는 우회로가 되기 때문이다. 전이 주체는 관리자이며 상세는 [관리자 매물 심사](#관리자-매물-심사)를 본다.
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
 - `ConditionTag`(매물 옵션 필터 8종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음)
 - `ArcRequirement`(매물 루트 `arcRequired` 값): `REQUIRED`, `NOT_REQUIRED`. ARC 없이 입주할 수 있는지는 조건 태그가 아니라 이 필드로 표현한다
@@ -35,10 +36,16 @@
 | DELETE | `/api/v2/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
 | GET | `/api/v2/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
 | GET | `/api/v2/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
+| GET | `/api/v1/admin/listings` | 매물 심사 목록(관리자) — **모든 상태**, `status`로 필터 | 필수(관리자) | 200 |
+| GET | `/api/v1/admin/listings/{listingId}` | 심사용 상세(관리자) — 저장된 **전 필드** | 필수(관리자) | 200 |
+| POST | `/api/v1/admin/listings/{listingId}/approval` | 매물 승인(관리자) → `PUBLISHED` | 필수(관리자) | 200 |
+| POST | `/api/v1/admin/listings/{listingId}/rejection` | 매물 반려(관리자) → `REJECTED` + 사유 저장 | 필수(관리자) | 200 |
 
 > 위 표의 `/api/v2` 경로가 정본이다. 같은 경로의 `/api/v1` 버전은 빈 결과·404만 돌려주는 `deprecated` 스텁으로만 남아 있다(아래 [v1 조회 API 종료](#v1-조회-api-종료deprecated)).
 >
 > 주소 검색·역 검색·사진 업로드·매물 등록만 임대인 전용이고 나머지는 세입자·비로그인 사용자를 위한 조회 API다. 다섯 경로는 `SecurityConfig`에 **`GET /api/v1/listings/addresses`·`GET /api/v1/listings/stations`·`GET /api/v1/listings/stations/nearby`·`POST /api/v2/listings`·`POST /api/v2/listings/images`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다([ADR-0010](../../adr/0010-jwt-authentication-filter.md)) — 주소 검색과 `/stations` 매처는 공개 조회 매처(`GET /api/v1/listings/*` `permitAll`)보다 **먼저** 선언해야 한다(둘 다 한 세그먼트라 그 매처에 잡힌다). 먼저 매칭된 규칙이 이기므로 뒤에 두면 인증 규칙이 통째로 무시된다 — 명시하지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰도 컨트롤러에 도달한다. 임대인 여부(`userType=LANDLORD`)는 서비스가 다시 검사해 `403 FORBIDDEN`으로 거른다. 등록된 매물은 `PENDING`이라 아래 조회 API 어디에도 나오지 않는다 — 조회는 `PUBLISHED` 한정이다.
+>
+> 관리자 심사 4종은 `SecurityConfig`에 **`/api/v1/admin/**`를 `hasRole("USER")`로 못박은 명시 매처**를 둔다 — 명시하지 않으면 `anyRequest().authenticated()`로 떨어져 온보딩 스코프 토큰이 컨트롤러까지 도달한다. 관리자 여부(`userType=ADMIN`)는 매처로 표현할 수 없으므로 **서비스가 다시 검사해 `403 FORBIDDEN`** 으로 거른다(임대인 게이트와 같은 이중 인가). 토큰에는 관리자 여부를 담지 않아 **권한 부여·회수가 즉시 반영**된다. 반대 방향도 막힌다 — 관리자는 찜·예약·채팅·커뮤니티 같은 세입자·임대인 기능을 호출할 수 없고, 각 서비스의 허용 목록 게이트(세입자 또는 임대인만 통과)가 `403 FORBIDDEN`을 낸다.
 >
 > 공개 조회도 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 넣지 않으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 된다(v1 공개 조회 매처와 같은 이유). 결국 `/api/v2/listings` 네임스페이스는 **GET은 공개, POST(등록)는 `hasRole("USER")`** 로 메서드별로 갈린다. 찜 토글(`POST`·`DELETE /api/v2/listings/*/favorite`)과 내 스코프(`GET /api/v2/users/me/favorites`·`/recent-listings`)는 v1과 동일하게 `hasRole("USER")` 매처를 유지한다.
 >
@@ -391,7 +398,11 @@ Request Body:
   ],
   "preferredNationalities": ["JAPAN", "CHINA"],
   "contractDifficulties": ["LANGUAGE", "PAYMENT"],
-  "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다."
+  "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다.",
+  "consents": {
+    "privacyPolicyAgreed": true,
+    "listingExposureAgreed": true
+  }
 }
 ```
 
@@ -445,10 +456,14 @@ Request Body:
 | `preferredNationalities` | `Nationality[]` | 필수 | 설문 — 선호하는 국적(복수 선택). 응답에 포함하지 않는다 |
 | `contractDifficulties` | `ContractDifficulty[]` | 필수 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 응답에 포함하지 않는다 |
 | `serviceFeedback` | string | 선택 | 설문 — Kohere에 전하고 싶은 말. 응답에 포함하지 않는다 |
+| `consents` | object | 필수 | 매물 이용약관 동의 2종. 객체 자체가 없으면 `400 INVALID_INPUT` |
+| `consents.privacyPolicyAgreed` | boolean | 필수 | 개인정보 수집·이용 동의. `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING` |
+| `consents.listingExposureAgreed` | boolean | 필수 | 매물 정보 제공 및 노출 동의. `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING` |
 
 요청 주의사항:
 
-- **서버가 정하는 값은 요청 본문에 없다.** `listingId` · `roomOffers[].roomOfferId`(둘 다 ObjectId 발급) · `schemaVersion`(`4`) · `status`(`PENDING`) · `favoriteCount`(`0`) · `createdAt`/`updatedAt` · `rentalType`(`MONTHLY_RENT` 고정) · `roomOffers[].pricing.currency`(`KRW` 고정) · `roomOffers[].status`(`ACTIVE`)를 클라이언트가 정하지 않는다. `landlordId`도 요청이 아니라 access 토큰에서 읽는다. **사진 URL(`imageUrls`·`roomOffers[].roomImageUrls`)도 마찬가지다** — 요청은 키만 보내고 서버가 확정 위치의 URL을 응답에 담아 준다.
+- **동의 2종은 모두 `true`여야 등록된다.** 하나라도 빠지거나 `false`면 `422 LISTING_REQUIRED_AGREEMENT_MISSING`이고 매물도 확정 사진도 만들어지지 않는다. 따라서 **저장된 매물은 예외 없이 동의를 마친 매물**이며, 심사 단계가 동의 여부를 판단 기준으로 다시 쓰지 않는다. 서버는 동의 여부와 함께 **약관 버전과 동의 시각**을 저장한다 — 동의 사실의 입증 책임이 사업자에게 있어 "코드가 막는다"는 주장만으로는 부족하기 때문이다. 이 버전은 회원 약관 버전(`users.terms_version`, [ADR-0012](../../adr/0012-terms-version-management.md))과 **별개 값**이다: 그쪽은 계정 단위로 가입 시 1회 기록되지만 매물 동의는 **매물마다 등록 시점**이라 같은 임대인의 매물이 서로 다른 버전을 가질 수 있다. 동의 3종은 **세입자 응답에 포함하지 않는다**(설문 3종·`businessRegistrationNumber`와 동일 취급).
+- **서버가 정하는 값은 요청 본문에 없다.** `listingId` · `roomOffers[].roomOfferId`(둘 다 ObjectId 발급) · `schemaVersion`(`4`) · `status`(`PENDING`) · `favoriteCount`(`0`) · `createdAt`/`updatedAt` · `rentalType`(`MONTHLY_RENT` 고정) · `roomOffers[].pricing.currency`(`KRW` 고정) · `roomOffers[].status`(`ACTIVE`) · `consents.version`(약관 버전 — 서버 설정값 `app.terms.listing-consent-version`) · `consents.agreedAt`(동의 시각)를 클라이언트가 정하지 않는다. `landlordId`도 요청이 아니라 access 토큰에서 읽는다. **사진 URL(`imageUrls`·`roomOffers[].roomImageUrls`)도 마찬가지다** — 요청은 키만 보내고 서버가 확정 위치의 URL을 응답에 담아 준다.
 - **사진은 미리 올려 둔다.** 먼저 `POST /api/v2/listings/images`로 한 장씩 올려 `key`를 받고, 그 키를 `imageKeys`(1~5개)와 `roomOffers[].roomImageKeys`(방마다 2~5개)에 담는다. 어느 사진이 어느 방 것인지는 **이 JSON 구조가 정한다** — 배열의 순서가 곧 표시 순서다.
 - **자기가 올린 키만 쓸 수 있다.** 키는 `uploads/{내 landlordId}/…` 형태이며, 남의 키나 존재하지 않는 키(오타·7일 만료)는 `400 LISTING_IMAGE_KEY_NOT_FOUND`다. 셋을 한 코드로 묶은 것은 구분해 알려주면 남의 키가 있는지 없는지가 새어 나가기 때문이다.
 - **등록에 성공하면 사진이 확정 위치로 옮겨 간다.** 업로드 때 받은 `uploads/…` URL은 무효가 되므로 **등록 응답의 URL을 쓴다.**
@@ -1309,8 +1324,89 @@ Request Body: 없음
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
+| `LISTING_REQUIRED_AGREEMENT_MISSING` | 422 | 매물 등록에 필요한 이용약관 동의 2종 중 하나 이상이 누락되거나 `false` |
+| `LISTING_INVALID_STATUS_TRANSITION` | 409 | 심사 대상(`PENDING`)이 아닌 매물에 승인·반려를 요청 |
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다. **deprecated된 v1 상세·찜 토글 스텁도 이 코드를 쓴다** — 매물을 찾지 못해서가 아니라 조회하지 않기 때문이며, 새 코드를 만들지 않아 구버전 앱이 이미 처리하던 에러 그대로 받는다(위 [v1 스텁 동작](#v1-스텁-동작)).
 > 뒤 두 코드는 매물 등록(`POST /api/v2/listings`) 전용이다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
 > **주소 검색(`GET /api/v1/listings/addresses`)도 전용 코드를 두지 않는다** — 키워드 검증은 `INVALID_INPUT`, 외부 연동 실패는 `UPSTREAM_ERROR`(502)이며 둘 다 공통 코드다. 지원하지 않는 지역이라고 거절하지 않는다 — 검색도 등록도 통과시키고, 행정구역만 `ETC`로 저장한다([ADR-0046](../../adr/0046-administrative-region-as-catalog-data.md)).
 > 하트 토글은 이미 찜/미찜 상태여도 에러로 보지 않고 현재 하트 상태와 찜 수를 반환한다. 프론트는 응답 body의 `favorited`, `favoriteCount`만 보고 UI를 맞추면 된다.
+
+---
+
+## 관리자 매물 심사
+
+> 관리자(`userType=ADMIN`)가 임대인이 올린 매물을 심사하는 4종이다. 경로는 `/api/v1/admin/listings`이며, 매물 조회 정본이 `/api/v2`인 것과 무관하게 **신규 네임스페이스라 `/api/v1`에서 시작한다**(대체할 v1 계약이 없으므로 버전 정책상 v2를 붙일 근거가 없다 — [api-design-guide §2-1](../api-design-guide.md)). 유저 스토리는 US-3-7이다.
+
+### 관리자 계정과 인가
+
+- **관리자는 회원가입 경로가 없다.** 운영자가 관리자 전용 계정을 임대인 웹 가입 흐름(`POST /api/v1/auth/signup`)으로 만든 뒤 DB에서 승격한다. 로그인·계정 연동은 임대인과 완전히 동일하다(이메일·비밀번호 `local_accounts`, 가입 전 SMS 인증, HttpOnly 쿠키 refresh — [ADR-0047](../../adr/0047-web-local-credentials-and-phone-based-account-linking.md)·[ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md)).
+
+  ```sql
+  -- 승격은 반드시 ACTIVE 계정에만 한다. 온보딩 미완료 계정을 승격하면 ROLE_ONBOARDING 토큰만 받아
+  -- 보안 매처를 통과하지 못한 채 권한만 갖는 계정이 된다.
+  UPDATE users SET user_type = 'ADMIN' WHERE id = ? AND status = 'ACTIVE';
+  ```
+
+  **활동 중인 임대인·세입자 계정을 승격하지 않는다** — `ADMIN`은 제3의 유형이라 승격하면 이전 역할을 잃고(매물 등록 불가), 매물을 보유한 임대인을 승격하면 자기 매물을 자기가 심사할 수 있게 된다.
+
+- **인가는 이중이다.** `SecurityConfig`의 `/api/v1/admin/**` → `hasRole("USER")` 매처가 1차로 거르고, 서비스가 `userType=ADMIN`을 다시 확인해 아니면 `403 FORBIDDEN`이다. 토큰에는 관리자 여부를 담지 않으므로 **권한 부여·회수가 즉시 반영**된다.
+- **반대 방향도 막힌다.** 관리자는 찜·예약·채팅·커뮤니티 같은 세입자·임대인 기능을 호출할 수 없다(각 서비스의 허용 목록 게이트가 `403 FORBIDDEN`). 프로필 조회·수정, 로그아웃, 매물 공개 조회, 진단·퀴즈·생활 팁은 그대로 사용한다.
+
+### 심사 응답의 노출 범위
+
+심사 상세·목록은 **매물 문서에 저장된 모든 필드**를 담는다 — 세입자 응답이 감추는 `landlordId`·`businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)·동의 3종(`consents`)·`rejectionReason`을 감추지 않는다. 표시 여부는 관리자 화면이 정한다.
+
+노출해도 되는 근거는 둘이다 — 매물 문서에는 **임대인 개인 연락처가 저장되지 않으므로**(`contact.phone`은 지점 대표 전화, [ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md) Amended) 마스킹 대상 PII가 이 응답에 없고, `businessRegistrationNumber`는 **관리자가 심사에서 진위를 수동 확인해야 하는 값**이라 오히려 필수다([ADR-0033](../../adr/0033-business-registry-verification.md) 개정). 표시 언어는 임대인 화면과 같이 한국어 고정이다.
+
+### GET /api/v1/admin/listings — 매물 심사 목록
+
+- 설명: **모든 상태**의 매물을 등록 최신순으로 조회한다. `status`로 상태별 필터가 가능하다.
+- 인증: 필수(관리자)
+
+쿼리 파라미터:
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `status` | `ListingStatus[]` | 선택 | 상태 필터. 콤마로 여러 개(`?status=PENDING,REJECTED`). **생략하면 전체** |
+| `page` | integer | 선택 | 0부터. 기본 `0` |
+| `size` | integer | 선택 | 기본 `20`, 최대 `100` |
+
+발생 가능한 에러: `400 INVALID_INPUT`(정의되지 않은 `status`, `size` 범위 초과) · `403 FORBIDDEN`(관리자 아님) · `403 AUTH_ONBOARDING_REQUIRED` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`.
+
+### GET /api/v1/admin/listings/{listingId} — 심사용 상세
+
+- 설명: 심사 대상 매물의 **저장된 전 필드**를 반환한다. 상태와 무관하게 조회된다.
+- 인증: 필수(관리자)
+
+발생 가능한 에러: `404 LISTING_NOT_FOUND`(없는 id·ObjectId 형식 아님) · `403 FORBIDDEN` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`.
+
+### POST /api/v1/admin/listings/{listingId}/approval — 매물 승인
+
+- 설명: `PENDING` 매물을 `PUBLISHED`로 전이시킨다. 요청 본문이 없다. 승인 시 이전 `rejectionReason`을 **비운다** — 수정을 거쳐 다시 올라온 매물이 지난 사유를 달고 공개되지 않게 하기 위해서다.
+- 인증: 필수(관리자)
+- 성공: `200 OK` + 심사 상세와 같은 구조. 상태 전이 액션이므로 `201`이 아니다.
+
+승인 직후부터 그 매물은 세입자의 목록·지도·상세 조회에 나타난다.
+
+발생 가능한 에러: `409 LISTING_INVALID_STATUS_TRANSITION`(이미 `PUBLISHED`·`REJECTED`) · `404 LISTING_NOT_FOUND` · `403 FORBIDDEN` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`.
+
+### POST /api/v1/admin/listings/{listingId}/rejection — 매물 반려
+
+- 설명: `PENDING` 매물을 `REJECTED`로 전이시키고 사유를 저장한다.
+- 인증: 필수(관리자)
+- 성공: `200 OK` + 심사 상세와 같은 구조.
+
+```jsonc
+{
+  "reason": "사업자등록번호와 매물 주소가 일치하지 않습니다."
+}
+```
+
+| 필드 | 타입 | 필수 | 검증 |
+| --- | --- | --- | --- |
+| `reason` | string | 필수 | 반려 사유. 공백 불가, 1~500자. 임대인만 읽는 값이라 **번역하지 않는다** |
+
+승인과 반려를 하나의 상태 변경 API로 묶지 않은 이유는 **"반려에는 사유가 필요하다"를 요청 타입으로 강제**하기 위해서다. `PATCH /{id}/status`였다면 `status` 값에 따라 `reason` 필수 여부가 갈리는 조건부 검증이 되고, 승인 요청에 사유가 실려 와도 타입으로 막을 수 없다.
+
+발생 가능한 에러: `400 INVALID_INPUT`(`reason` 누락·공백·500자 초과) · `409 LISTING_INVALID_STATUS_TRANSITION` · `404 LISTING_NOT_FOUND` · `403 FORBIDDEN` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`.
