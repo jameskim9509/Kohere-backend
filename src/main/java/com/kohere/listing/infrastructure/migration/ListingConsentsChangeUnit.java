@@ -273,10 +273,4 @@ public class ListingConsentsChangeUnit {
   private static Document bsonType(String type) {
     return new Document("bsonType", type);
   }
-
-  /** forward-only: 저장 계약을 롤백으로 되돌려 PII 통로를 다시 열지 않는다. */
-  @RollbackExecution
-  public void rollback() {
-    // no-op (forward-only)
-  }
 }
