@@ -824,6 +824,17 @@ public final class ListingDocsFields {
             "설문 — 계약 과정에서 겪은 어려움. 1개 이상이며 응답에는 나오지 않는다"));
     fields.add(
         optField("serviceFeedback", JsonFieldType.STRING, "설문 — 서비스에 전하고 싶은 말. 응답에는 나오지 않는다"));
+    fields.add(field("consents", JsonFieldType.OBJECT, "매물 이용약관 동의 2종. 객체가 없으면 400"));
+    fields.add(
+        field(
+            "consents.privacyPolicyAgreed",
+            JsonFieldType.BOOLEAN,
+            "개인정보 수집·이용 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
+    fields.add(
+        field(
+            "consents.listingExposureAgreed",
+            JsonFieldType.BOOLEAN,
+            "매물 정보 제공 및 노출 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
     return List.copyOf(fields);
   }
 
@@ -961,6 +972,118 @@ public final class ListingDocsFields {
     fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     fields.addAll(listingDocumentFields("data", null));
     fields.add(errorNull());
+    return fields;
+  }
+
+  // ── 관리자 매물 심사 — /api/v1/admin/listings ─────────────────────────────
+
+  public static final String ADMIN_LISTING_LIST_SUMMARY = "매물 심사 목록 조회(관리자)";
+
+  public static final String ADMIN_LISTING_LIST_DESCRIPTION =
+      """
+      관리자가 심사할 매물을 조회한다. 세입자 조회와 달리 **모든 상태**를 대상으로 한다.
+
+      `status`로 상태별 필터가 가능하고(콤마로 여러 개), 생략하면 전체다. 기본 정렬은 등록 최신순이다.
+
+      인가는 두 겹이다 — 보안 매처가 `hasRole("USER")`로 온보딩 토큰을 막고, 서비스가 `userType=ADMIN`을
+      다시 확인해 아니면 403이다. 토큰에 관리자 여부를 담지 않으므로 권한 부여·회수가 즉시 반영된다.
+      """;
+
+  public static final String ADMIN_LISTING_DETAIL_SUMMARY = "매물 심사 상세 조회(관리자)";
+
+  public static final String ADMIN_LISTING_DETAIL_DESCRIPTION =
+      """
+      심사 대상 매물의 **저장된 전 필드**를 반환한다. 상태와 무관하게 조회된다.
+
+      세입자 상세가 감추는 값(`landlordId`·`businessRegistrationNumber`·설문 3종·`consents`·
+      `rejectionReason`)을 감추지 않는다. 매물 문서에는 임대인 개인 연락처가 저장되지 않아 마스킹 대상
+      PII가 없고, 사업자등록번호는 오히려 관리자가 심사에서 진위를 확인해야 하는 값이다.
+      """;
+
+  public static final String ADMIN_LISTING_APPROVAL_SUMMARY = "매물 승인(관리자)";
+
+  public static final String ADMIN_LISTING_APPROVAL_DESCRIPTION =
+      """
+      심사 대기 매물을 공개 상태로 바꾼다. 요청 본문이 없다.
+
+      승인 직후부터 그 매물이 세입자의 목록·지도·상세 조회에 나타난다. 이전 반려 사유는 지운다 —
+      수정을 거쳐 다시 올라온 매물이 지난 사유를 달고 공개되지 않게 하기 위해서다.
+
+      심사 대상은 심사 대기 상태뿐이다. 이미 승인·반려된 매물은 409다.
+      """;
+
+  public static final String ADMIN_LISTING_REJECTION_SUMMARY = "매물 반려(관리자)";
+
+  public static final String ADMIN_LISTING_REJECTION_DESCRIPTION =
+      """
+      심사 대기 매물을 사유와 함께 반려한다. 사유는 임대인만 읽는 값이라 번역하지 않는다.
+
+      승인과 반려를 하나의 상태 변경 API로 묶지 않은 이유는 "반려에는 사유가 필요하다"를 요청 타입으로
+      강제하기 위해서다 — 단일 API였다면 조건부 검증이 되고 승인 요청에 사유가 실려 와도 막을 수 없다.
+
+      반려된 매물의 재심사는 임대인이 수정해 심사 대기로 되돌린 뒤에만 가능하다(수정 API는 후속).
+      """;
+
+  public static final String[] ADMIN_LISTING_400 = {"INVALID_INPUT"};
+  public static final String[] ADMIN_LISTING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] ADMIN_LISTING_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] ADMIN_LISTING_404 = {"LISTING_NOT_FOUND"};
+  public static final String[] ADMIN_LISTING_409 = {"LISTING_INVALID_STATUS_TRANSITION"};
+
+  /** 반려 요청 본문 필드다. */
+  public static List<FieldDescriptor> rejectionRequestFields() {
+    return List.of(field("reason", JsonFieldType.STRING, "반려 사유. 공백 불가, 1~500자. 번역하지 않는다"));
+  }
+
+  /** 심사 상세 200 응답 필드다. 세입자 상세를 그대로 싣고 감춰진 값을 나란히 더한다. */
+  public static List<FieldDescriptor> adminListingResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(adminListingFields("data"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /** 심사 목록 200 응답 필드다. */
+  public static List<FieldDescriptor> adminListingPageResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(adminListingFields("data.content[]"));
+    fields.addAll(pageFields("심사 대상 매물 총 개수"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /** 심사 응답 한 건의 필드다. 세입자 상세는 {@code listing} 아래에 그대로 실린다. */
+  private static List<FieldDescriptor> adminListingFields(String prefix) {
+    List<FieldDescriptor> fields =
+        new ArrayList<>(
+            listingDocumentFields(prefix + ".listing", null, ListingDocumentVariant.REGISTERED));
+    fields.add(field(prefix + ".landlordId", JsonFieldType.NUMBER, "매물 소유 임대인 계정 id. 세입자 응답에는 없다"));
+    fields.add(
+        field(
+            prefix + ".businessRegistrationNumber",
+            JsonFieldType.STRING,
+            "사업자등록번호 원문. 심사에서 진위를 수동 확인하는 값이라 관리자에게만 내려간다"));
+    fields.add(
+        enumArrayField(prefix + ".preferredNationalities", Nationality.class, "등록 폼 설문 — 선호 국적"));
+    fields.add(
+        enumArrayField(
+            prefix + ".contractDifficulties", ContractDifficulty.class, "등록 폼 설문 — 계약 시 어려움"));
+    fields.add(
+        optField(
+            prefix + ".serviceFeedback", JsonFieldType.STRING, "등록 폼 설문 — 서비스 의견. 없으면 키가 빠진다"));
+    fields.add(field(prefix + ".consents", JsonFieldType.OBJECT, "등록 시 받은 이용약관 동의"));
+    fields.add(
+        field(prefix + ".consents.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보 수집·이용 동의"));
+    fields.add(
+        field(
+            prefix + ".consents.listingExposureAgreed", JsonFieldType.BOOLEAN, "매물 정보 제공 및 노출 동의"));
+    fields.add(
+        field(prefix + ".consents.version", JsonFieldType.STRING, "동의한 약관 버전. 회원 약관 버전과 별개 값이다"));
+    fields.add(field(prefix + ".consents.agreedAt", JsonFieldType.STRING, "동의 시각(UTC ISO-8601)"));
+    fields.add(
+        optField(prefix + ".rejectionReason", JsonFieldType.STRING, "반려 사유. 반려 상태가 아니면 키가 빠진다"));
     return fields;
   }
 
