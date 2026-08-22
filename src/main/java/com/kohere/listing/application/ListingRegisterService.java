@@ -5,6 +5,7 @@ import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.domain.LandlordOnlyListingException;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.ListingRequiredAgreementMissingException;
 import com.kohere.listing.domain.ListingUnknownCatalogCodeException;
 import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
@@ -18,8 +19,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -35,7 +36,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class ListingRegisterService {
 
   /** {@code user::api}가 문자열로 주는 임대인 구분값이다. */
@@ -66,6 +66,29 @@ public class ListingRegisterService {
   private final ListingImageConfirmer listingImageConfirmer;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
+
+  /**
+   * 매물 등록 동의가 참조하는 약관 버전이다. 회원 약관 버전({@code app.terms.version})과 <b>독립적으로 개정</b>된다 — 매물 약관만 고쳐도 회원
+   * 약관 버전은 그대로여야 한다.
+   */
+  private final String consentVersion;
+
+  public ListingRegisterService(
+      ListingRepository listingRepository,
+      ListingCatalogRepository listingCatalogRepository,
+      UniversityRepository universityRepository,
+      ListingImageConfirmer listingImageConfirmer,
+      ListingLocalizationService listingLocalizationService,
+      UserAccountService userAccountService,
+      @Value("${app.terms.listing-consent-version}") String consentVersion) {
+    this.listingRepository = listingRepository;
+    this.listingCatalogRepository = listingCatalogRepository;
+    this.universityRepository = universityRepository;
+    this.listingImageConfirmer = listingImageConfirmer;
+    this.listingLocalizationService = listingLocalizationService;
+    this.userAccountService = userAccountService;
+    this.consentVersion = consentVersion;
+  }
 
   /**
    * 등록 요청을 저장하고 생성된 매물을 상세 응답 구조로 돌려준다.
@@ -140,6 +163,19 @@ public class ListingRegisterService {
         .build();
   }
 
+  /**
+   * 이용약관 동의 2종이 모두 {@code true}인지 확인한다.
+   *
+   * <p>이 게이트 덕분에 <b>저장된 매물은 예외 없이 동의를 마친 매물</b>이 된다 — 심사 단계가 동의 여부를 판단 기준으로 다시 쓰지 않는 근거다.
+   */
+  private static void requireConsents(ListingRegisterRequest request) {
+    var consents = request.consents();
+    if (!Boolean.TRUE.equals(consents.privacyPolicyAgreed())
+        || !Boolean.TRUE.equals(consents.listingExposureAgreed())) {
+      throw new ListingRequiredAgreementMissingException();
+    }
+  }
+
   private void requireLandlord(long landlordId) {
     if (!USER_TYPE_LANDLORD.equals(userAccountService.getUserType(landlordId))) {
       throw new LandlordOnlyListingException();
@@ -158,6 +194,7 @@ public class ListingRegisterService {
   private Listing toListing(
       long landlordId, ListingRegisterRequest request, ListingCatalogCodes catalog) {
     requireCatalogCodes(request, catalog);
+    requireConsents(request);
     RangeInput usedFloor =
         RangeInput.parse("building.usedFloorRange", request.building().usedFloorRange());
     RangeInput age = RangeInput.parse("ageRange", request.ageRange());
@@ -216,6 +253,7 @@ public class ListingRegisterService {
         .preferredNationalities(request.preferredNationalities())
         .contractDifficulties(request.contractDifficulties())
         .serviceFeedback(request.serviceFeedback())
+        .consents(new Listing.Consents(true, true, consentVersion, now))
         .build();
   }
 
