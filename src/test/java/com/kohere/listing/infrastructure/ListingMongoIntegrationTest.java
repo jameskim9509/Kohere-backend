@@ -99,6 +99,9 @@ class ListingMongoIntegrationTest {
   @BeforeEach
   void cleanListingCollections() {
     given(userAccountService.getLanguage(anyLong())).willReturn("en");
+    // 찜·최근 본 매물에 사용자용 API 허용 목록 게이트(세입자·임대인만 통과)가 붙었다. 스텁하지 않으면
+    // mock 이 null 을 돌려줘 403 이 나고, 정작 검증하려던 저장소 동작에 닿지 못한다.
+    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
     mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(FAVORITES_COLLECTION).deleteMany(new Document());
     mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());

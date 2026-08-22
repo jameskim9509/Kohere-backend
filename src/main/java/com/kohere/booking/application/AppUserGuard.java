@@ -16,7 +16,9 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>새 사용자용 API를 추가하면 이 게이트를 함께 붙인다.</b> 인가가 보안 매처가 아니라 서비스 코드에 있으므로 빠뜨리면 관리자가 통과한다.
  */
-@Component
+// 네 모듈이 같은 이름의 클래스를 각자 갖는다. 빈 이름을 모듈별로 못박지 않으면 Spring 기본 이름(appUserGuard)이
+// 충돌해 컨텍스트가 뜨지 않는다 — 타입은 서로 달라 주입은 문제없지만 이름은 전역이다.
+@Component("bookingAppUserGuard")
 @RequiredArgsConstructor
 public class AppUserGuard {
 

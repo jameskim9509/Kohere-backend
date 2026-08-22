@@ -16,10 +16,23 @@ import java.util.Set;
  * @param sort 정렬 키. 현재는 {@code createdAt,asc}만 인식하고 그 외에는 등록 최신순이다
  */
 public record AdminListingSearchRequest(
-    Set<Listing.ListingStatus> status, @Min(0) int page, @Min(1) @Max(100) int size, String sort) {
+    Set<Listing.ListingStatus> status,
+    @Min(0) Integer page,
+    @Min(1) @Max(100) Integer size,
+    String sort) {
 
+  private static final int DEFAULT_PAGE = 0;
+  private static final int DEFAULT_SIZE = 20;
+
+  /**
+   * 생략된 값을 기본값으로 채운다.
+   *
+   * <p>{@code page}·{@code size}를 원시 {@code int}가 아니라 박스 타입으로 받는 이유는 <b>파라미터 부재와 0을 구분</b>하기 위해서다.
+   * 원시 타입이면 쿼리에 값이 없을 때 바인딩 자체가 실패해 {@code 400}이 나므로, 아무 조건 없이 전체를 조회하는 가장 기본적인 호출이 막힌다.
+   */
   public AdminListingSearchRequest {
     status = status == null ? Collections.emptySet() : Set.copyOf(status);
-    size = size == 0 ? 20 : size;
+    page = page == null ? DEFAULT_PAGE : page;
+    size = size == null ? DEFAULT_SIZE : size;
   }
 }

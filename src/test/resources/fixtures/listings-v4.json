@@ -22,7 +22,6 @@
     "type": "GOSHIWON",
     "rentalType": "MONTHLY_RENT",
     "status": "PUBLISHED",
-    "rejectionReason": null,
     "genderPolicy": "FEMALE_ONLY",
     "languagesSupported": [
       "ENGLISH",
@@ -50,8 +49,7 @@
       "fullAddress": {
         "ko": "서울특별시 관악구 신림동 나로 56-15",
         "en": "56-15 Na-ro, Sillim-dong, Gwanak-gu, Seoul"
-      },
-      "detail": null
+      }
     },
     "building": {
       "type": "VILLA",
@@ -224,7 +222,6 @@
       "phone": "+82) 10-2222-3333"
     },
     "businessRegistrationNumber": "9876543210",
-    "blogUrl": null,
     "ageMin": 22,
     "ageMax": 40,
     "title": {
@@ -234,7 +231,6 @@
     "type": "CO_LIVING",
     "rentalType": "MONTHLY_RENT",
     "status": "PUBLISHED",
-    "rejectionReason": null,
     "genderPolicy": "ANY",
     "languagesSupported": [
       "ENGLISH",
@@ -392,7 +388,6 @@
       "IDENTITY",
       "COMMUNICATION_CHANNEL"
     ],
-    "serviceFeedback": null,
     "consents": {
       "privacyPolicyAgreed": true,
       "listingExposureAgreed": true,
