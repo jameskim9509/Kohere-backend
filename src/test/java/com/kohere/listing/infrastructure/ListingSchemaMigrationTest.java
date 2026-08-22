@@ -4,23 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.kohere.TestcontainersConfiguration;
 import com.kohere.listing.infrastructure.migration.ContactSmsDropChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingConsentsChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingLocationRequiredChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingStatusEnumShrinkChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingV4BaselineChangeUnit;
 import com.mongodb.MongoWriteException;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
 import org.bson.Document;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.context.annotation.Import;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -36,20 +34,34 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 가져와 필드를 바꿔 직접 {@code insertOne} 하는 테스트) 한꺼번에 켜면 그 전제가 무너진다. 대신 <b>이 테스트 하나</b>가 changeUnit 체인을 직접
  * 적용하고 픽스처를 넣어 본다.
  *
+ * <p><b>Spring 컨텍스트를 띄우지 않는다.</b> changeUnit도 {@link ListingTestSeeds}도 {@link MongoTemplate} 하나만
+ * 있으면 되고, {@code @SpringBootTest}로 올리면 이 검증에 쓰지도 않는 MySQL·Redis 컨테이너와 컨텍스트가 스위트 내내 함께 살아 있게 된다 — 전체
+ * 실행에서 Docker 메모리를 밀어내 다른 테스트의 컨테이너 기동을 깨뜨린다.
+ *
  * <p>체인을 순서대로 다 돌리는 것은 <b>ChangeUnit 사이의 가정도 함께 검증</b>하기 위해서다 — {@code 0119} 이후 유닛들은 컬렉션이 없으면
  * {@link IllegalStateException}을 던지도록 방어하고 있는데, 그 방어선을 실제로 밟는 곳이 지금까지 없었다.
  */
-@SpringBootTest
-@ActiveProfiles("test")
 @Testcontainers
-@Import(TestcontainersConfiguration.class)
 class ListingSchemaMigrationTest {
 
   private static final String LISTINGS_COLLECTION = "listings";
+  private static final String DATABASE = "kohere-schema-test";
 
-  @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
+  @Container static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
-  @Autowired private MongoTemplate mongoTemplate;
+  private static MongoClient client;
+  private static MongoTemplate mongoTemplate;
+
+  @BeforeAll
+  static void connect() {
+    client = MongoClients.create(mongo.getConnectionString());
+    mongoTemplate = new MongoTemplate(client, DATABASE);
+  }
+
+  @AfterAll
+  static void disconnect() {
+    client.close();
+  }
 
   /** validator까지 매번 새로 세우기 위해 컬렉션을 통째로 지운다. */
   @BeforeEach
