@@ -1028,7 +1028,6 @@ public final class ListingDocsFields {
   public static final String[] ADMIN_LISTING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
   public static final String[] ADMIN_LISTING_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
   public static final String[] ADMIN_LISTING_404 = {"LISTING_NOT_FOUND"};
-  public static final String[] ADMIN_LISTING_409 = {"LISTING_INVALID_STATUS_TRANSITION"};
 
   /** 반려 요청 본문 필드다. */
   public static List<FieldDescriptor> rejectionRequestFields() {

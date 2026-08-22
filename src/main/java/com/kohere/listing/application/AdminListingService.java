@@ -24,10 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  * 권한을 회수해도 토큰 수명만큼 관리자로 남는다. 그래서 <b>판정은 매 요청 DB 조회</b>다 — 임대인 게이트({@code
  * ListingRegisterService#requireLandlord})가 이미 쓰는 방식이다.
  *
- * <p><b>승인은 {@code PENDING}에서만, 반려는 어느 상태에서든</b> 할 수 있다. 반려된 매물의 재승인은 관리자가 직접 하는 것이 아니라 임대인이 고쳐
- * {@code PENDING}으로 되돌린 뒤(수정 API는 후속) 다시 이 문을 통과한다. 반면 반려는 사후 반려(공개 매물을 내린다)와 사유 정정(이미 반려한 매물의 사유를
- * 다시 쓴다)이 모두 정상 경로라 상태를 가리지 않는다 — 노출을 여는 쪽만 좁게 통제하고 닫는 쪽은 열어 둔다. 그 가드는 도메인({@code
- * Listing#approve})이 들고 있다.
+ * <p><b>승인·반려 모두 상태를 가리지 않는다.</b> 심사 대기 매물의 1차 처리뿐 아니라 잘못 반려한 매물을 되살리는 재승인({@code REJECTED →
+ * PUBLISHED}), 공개 매물을 내리는 사후 반려({@code PUBLISHED → REJECTED}), 이미 반려한 매물의 사유 정정이 모두 정상 경로다 — 관리자의
+ * 오판을 되돌릴 수단이 서버에 있어야 하기 때문이다. 이미 공개 중인 매물의 재승인만 아무 일도 하지 않는다({@code Listing#approve}).
  *
  * <p>docs/api/specs/03-listings-favorites.md 「관리자 매물 심사」 · 시퀀스 US-3-7.
  */

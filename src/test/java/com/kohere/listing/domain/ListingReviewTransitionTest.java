@@ -1,7 +1,6 @@
 package com.kohere.listing.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
@@ -50,15 +49,26 @@ class ListingReviewTransitionTest {
   }
 
   @ParameterizedTest
-  @EnumSource(
-      value = Listing.ListingStatus.class,
-      names = {"PUBLISHED", "REJECTED"})
-  @DisplayName("승인은 심사 대기 상태에서만 할 수 있다")
-  void approveRejectsTransitionFromNonPending(Listing.ListingStatus status) {
-    Listing listing = pending().toBuilder().status(status).build();
+  @EnumSource(Listing.ListingStatus.class)
+  @DisplayName("승인은 어느 상태에서든 할 수 있다")
+  void approveAllowedFromAnyStatus(Listing.ListingStatus status) {
+    // 잘못 반려한 매물을 되살리는 재승인(REJECTED)이 정상 경로다 — 관리자의 오판을 되돌릴
+    // 수단이 서버에 없으면 임대인 수정 API가 나오기 전까지 그 매물이 묶인다.
+    Listing listing = pending().toBuilder().status(status).rejectionReason("이전 사유").build();
 
-    assertThatThrownBy(() -> listing.approve(NOW))
-        .isInstanceOf(ListingInvalidStatusTransitionException.class);
+    Listing approved = listing.approve(NOW);
+
+    assertThat(approved.getStatus()).isEqualTo(Listing.ListingStatus.PUBLISHED);
+  }
+
+  @Test
+  @DisplayName("이미 공개 중인 매물의 재승인은 아무 일도 하지 않는다")
+  void approveIsNoOpWhenAlreadyPublished() {
+    // updatedAt 이 바뀌면 세입자 목록의 기본 정렬(찜 수 → 최신 수정순)에서 그 매물만 위로 올라간다.
+    Listing published = pending().toBuilder().status(Listing.ListingStatus.PUBLISHED).build();
+
+    assertThat(published.approve(NOW)).isSameAs(published);
+    assertThat(published.approve(NOW).getUpdatedAt()).isEqualTo(EARLIER);
   }
 
   @ParameterizedTest

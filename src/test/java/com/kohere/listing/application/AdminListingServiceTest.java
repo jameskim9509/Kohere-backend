@@ -12,7 +12,6 @@ import static org.mockito.Mockito.verify;
 
 import com.kohere.listing.domain.AdminOnlyListingException;
 import com.kohere.listing.domain.Listing;
-import com.kohere.listing.domain.ListingInvalidStatusTransitionException;
 import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.catalog.ListingCatalogRepository;
@@ -116,16 +115,20 @@ class AdminListingServiceTest {
   }
 
   @Test
-  @DisplayName("승인 대상이 아닌 매물은 저장하지 않는다")
-  void rejectsAlreadyReviewedListing() {
+  @DisplayName("잘못 반려한 매물을 되살릴 수 있다")
+  void approveRevivesRejectedListing() {
     givenAdmin();
-    Listing published = pending().toBuilder().status(Listing.ListingStatus.PUBLISHED).build();
-    given(listingRepository.findById(LISTING_ID)).willReturn(Optional.of(published));
+    Listing rejected =
+        pending().toBuilder()
+            .status(Listing.ListingStatus.REJECTED)
+            .rejectionReason("오판이었던 사유")
+            .build();
+    given(listingRepository.findById(LISTING_ID)).willReturn(Optional.of(rejected));
 
-    assertThatThrownBy(() -> service.approve(ADMIN_ID, LISTING_ID))
-        .isInstanceOf(ListingInvalidStatusTransitionException.class);
+    var response = service.approve(ADMIN_ID, LISTING_ID);
 
-    verify(listingRepository, never()).save(any());
+    assertThat(response.listing().status()).isEqualTo(Listing.ListingStatus.PUBLISHED);
+    assertThat(response.rejectionReason()).isNull();
   }
 
   @Test

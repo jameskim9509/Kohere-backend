@@ -9,7 +9,6 @@ import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_400;
 import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_401;
 import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_403;
 import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_404;
-import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_409;
 import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_APPROVAL_DESCRIPTION;
 import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_APPROVAL_SUMMARY;
 import static com.kohere.docs.ListingDocsFields.ADMIN_LISTING_DETAIL_DESCRIPTION;
@@ -300,20 +299,23 @@ class AdminListingDocsTest {
   }
 
   @Test
-  void 문서스니펫생성_승인대상아님_409() throws Exception {
-    // 시드의 두 번째 매물은 PUBLISHED 그대로다 — 이미 공개된 매물의 재승인을 막는 경계.
+  void 재승인_잘못반려한매물을_되살린다() throws Exception {
+    // 승인도 상태를 가리지 않는다. 관리자의 오판을 되돌릴 수단이 서버에 있어야 한다.
     mockMvc
         .perform(
-            post("/api/v1/admin/listings/{listingId}/approval", ListingTestSeeds.SECOND_LISTING_ID)
+            post("/api/v1/admin/listings/{listingId}/rejection", PENDING_LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(REJECTION_BODY))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            post("/api/v1/admin/listings/{listingId}/approval", PENDING_LISTING_ID)
                 .header(HttpHeaders.AUTHORIZATION, bearer(adminToken())))
-        .andExpect(status().isConflict())
-        .andDo(
-            errorSnippet(
-                "admin-listing-approval-conflict",
-                ApiDocsTags.LISTINGS,
-                ADMIN_LISTING_APPROVAL_SUMMARY,
-                ADMIN_LISTING_APPROVAL_DESCRIPTION,
-                ADMIN_LISTING_409));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.listing.status").value("PUBLISHED"))
+        .andExpect(jsonPath("$.data.rejectionReason").doesNotExist());
   }
 
   @Test
