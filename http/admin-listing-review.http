@@ -7,7 +7,12 @@
 #   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
 #   2) 앱:      ./gradlew bootRun
 #   3) 시드:    아래 「시드」를 먼저 읽는다. 앱은 매물·카탈로그를 하나도 넣지 않는다.
-#   4) 0번부터 순서대로 "Send Request" — 토큰은 이름붙은 응답으로 자동 전달된다.
+#   4) 0번부터 순서대로 "Send Request" — 토큰과 사진 키는 이름붙은 응답으로 자동 전달된다.
+#
+# 사진은 **한 장씩** 올린다(ADR-0041). 6-a~f 로 여섯 장을 올리는데, 앞의 셋(6-a~c)은 7번 정상 등록용이고
+# 뒤의 셋(6-d~f)은 8번 동의 누락 케이스용이다 — 등록이 성공하면 그 키들은 확정 위치로 옮겨지고 임시본이
+# 지워지므로, 8번이 같은 키를 재사용하면 400 LISTING_IMAGE_KEY_NOT_FOUND 가 나 정작 보려던 422 를 못 본다.
+# 방 하나는 사진이 2~5장이어야 해서(v4 저장 불변식) 방 사진만 케이스당 두 장이다.
 #
 # ─────────────────────────── 관리자 계정 만들기 (필수 · 1회) ───────────────────────────
 # ★ 관리자는 가입 경로가 없다. 임대인 웹 가입으로 계정을 만든 뒤 DB에서 직접 승격한다.
@@ -45,11 +50,6 @@
 @adminPassword = Kohere1!
 @adminName = 김관리
 @adminBirthDate = 1985-01-01
-
-# ↓ 매물을 등록할 임대인. 관리자와 **다른 계정**이어야 한다
-@landlordPhone = 01088880000
-@landlordEmail = landlord@kohere.test
-@landlordPassword = Kohere1!
 
 # ↓ 1번 발송 후 앱 콘솔의 [DEV SMS] 줄에서 6자리를 읽어 채운다
 @code = 000000
@@ -95,30 +95,102 @@ Content-Type: application/json
 
 ### 5. 임대인 로그인 (매물을 등록할 계정 — 별도로 가입해 둔다)
 # @name landlordLogin
-POST {{baseUrl}}/api/v1/auth/login
+POST {{baseUrl}}/api/v1/auth/social-login
 Content-Type: application/json
 
-{ "email": "{{landlordEmail}}", "password": "{{landlordPassword}}" }
-
+{
+  "provider": "GOOGLE",
+  "idToken": "master:landlord:local-dev-test-login-secret"
+}
 # ─────────────────────────── 심사 대상 만들기 ───────────────────────────
 
-### 6. 매물 사진 업로드 (임대인) — 등록에 쓸 키를 받는다. 필요한 만큼 반복한다
-#    상세 흐름과 방별 사진 개수는 listing.http 를 본다. 여기서는 심사가 목적이라 최소로만 쓴다.
+### 6-a. 사진 업로드 ① 지점 대표 → 201 { key, url }
+#     사진은 **한 장씩** 올린다(ADR-0041). 등록은 이 key 들을 참조할 뿐 파일을 다시 싣지 않는다.
+#     파일은 http/images/ 의 1x1 JPEG 를 쓴다 — 서버는 내용을 검사하지 않고 형식과 크기만 본다.
+#     MinIO 를 띄우지 않으려면 APP_IMAGES_ENABLED=false 로 기동한다(업로드 없이 URL 만 만드는 스텁이 붙는다).
 # @name coverImage
 POST {{baseUrl}}/api/v2/listings/images
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
-Content-Type: multipart/form-data; boundary=----KohereBoundary
+Content-Type: multipart/form-data; boundary=KohereBoundary
 
-------KohereBoundary
-Content-Disposition: form-data; name="image"; filename="cover.jpg"
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="branch-1.jpg"
 Content-Type: image/jpeg
 
-fake-jpeg-bytes
-------KohereBoundary--
+< ./images/branch-1.jpg
+--KohereBoundary--
+
+### 6-b. 사진 업로드 ② 방 사진 1
+#     방 하나는 사진이 **2~5장** 이어야 한다(v4 저장 불변식). 그래서 방 사진만 두 번 올린다.
+# @name roomImage1
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary--
+
+### 6-c. 사진 업로드 ③ 방 사진 2
+# @name roomImage2
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
+
+### 6-d. 사진 업로드 ④ 8번(동의 누락)용 대표 사진
+#     7번 등록이 성공하면 그 키들은 확정 위치로 옮겨지고 임시본이 지워진다. 8번이 같은 키를 다시 쓰면
+#     400 LISTING_IMAGE_KEY_NOT_FOUND 가 나 정작 검증하려던 422 를 못 본다 — 그래서 따로 올린다.
+# @name coverImageForConsentCase
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="branch-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-2.jpg
+--KohereBoundary--
+
+### 6-e. 사진 업로드 ⑤ 8번용 방 사진 1
+# @name roomImage1ForConsentCase
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="room-a-1.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-1.jpg
+--KohereBoundary--
+
+### 6-f. 사진 업로드 ⑥ 8번용 방 사진 2
+# @name roomImage2ForConsentCase
+POST {{baseUrl}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=KohereBoundary
+
+--KohereBoundary
+Content-Disposition: form-data; name="file"; filename="room-a-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/room-a-2.jpg
+--KohereBoundary--
 
 ### 7. 매물 등록 (임대인) → status=PENDING. 이 매물이 심사 대상이다
 #    ★ consents 2종이 없으면 422 LISTING_REQUIRED_AGREEMENT_MISSING 이다(아래 8번에서 확인).
-#    본문 전체 예시는 listing.http 13번을 그대로 쓰되 imageKeys 만 6번 응답 키로 바꾼다.
+#    본문 전체 예시는 listing.http 13번과 같은 구조다.
 # @name register
 POST {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
@@ -169,8 +241,8 @@ Content-Type: application/json
       "pricing": { "monthlyRent": 380000, "deposit": 300000, "maintenanceFee": 0 },
       "filterTags": ["FEMALE_ONLY"],
       "roomImageKeys": [
-        "{{coverImage.response.body.$.data.key}}",
-        "{{coverImage.response.body.$.data.key}}"
+        "{{roomImage1.response.body.$.data.key}}",
+        "{{roomImage2.response.body.$.data.key}}"
       ]
     }
   ],
@@ -221,7 +293,7 @@ Content-Type: application/json
   "description": "동의를 빠뜨린 요청입니다.",
   "extraNotes": "특이사항 없음",
   "refundPolicy": "입주 7일 전 전액 환불",
-  "imageKeys": ["{{coverImage.response.body.$.data.key}}"],
+  "imageKeys": ["{{coverImageForConsentCase.response.body.$.data.key}}"],
   "roomOffers": [
     {
       "name": "스탠다드 1인실",
@@ -230,8 +302,8 @@ Content-Type: application/json
       "pricing": { "monthlyRent": 380000, "deposit": 300000, "maintenanceFee": 0 },
       "filterTags": ["FEMALE_ONLY"],
       "roomImageKeys": [
-        "{{coverImage.response.body.$.data.key}}",
-        "{{coverImage.response.body.$.data.key}}"
+        "{{roomImage1ForConsentCase.response.body.$.data.key}}",
+        "{{roomImage2ForConsentCase.response.body.$.data.key}}"
       ]
     }
   ],
