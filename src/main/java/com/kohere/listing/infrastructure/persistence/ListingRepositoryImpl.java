@@ -61,6 +61,35 @@ public class ListingRepositoryImpl implements ListingRepository {
     return mongoRepository.findById(new ObjectId(listingId)).map(ListingMongoMapper::toDomain);
   }
 
+  /**
+   * 심사용 조회: 상태 필터가 비면 <b>모든 상태</b>를 대상으로 한다.
+   *
+   * <p>아래 세입자용 조회 3종이 {@code status = PUBLISHED}를 조건 앞머리에 고정하는 것과 달리, 여기서만 상태를 파라미터로 받는다. 활성 방 상품
+   * 조건도 걸지 않는다 — 심사 대상에는 아직 공개되지 않은 매물이 포함되고, 관리자는 방 상품 상태와 무관하게 문서 전체를 봐야 한다.
+   */
+  @Override
+  public PageResponse<Listing> findForAdmin(
+      Set<Listing.ListingStatus> statuses, int page, int size, String sort) {
+    Criteria criteria =
+        (statuses == null || statuses.isEmpty())
+            ? new Criteria()
+            : Criteria.where("status").in(statuses.stream().map(Enum::name).toList());
+    return findPage(criteria, page, size, adminSort(sort));
+  }
+
+  /**
+   * 심사 목록 정렬. 기본은 등록 최신순이다 — 관리자는 새로 올라온 매물부터 본다.
+   *
+   * <p>세입자 목록의 {@code defaultSort}(찜 수 우선)를 쓰지 않는다. 심사에는 인기도가 의미 없고, 아직 공개되지 않아 찜 수가 전부 0인 매물이 대상이라
+   * 정렬 키로 성립하지도 않는다.
+   */
+  private static Sort adminSort(String sort) {
+    if ("createdAt,asc".equals(sort)) {
+      return Sort.by(Sort.Direction.ASC, "createdAt");
+    }
+    return Sort.by(Sort.Direction.DESC, "createdAt");
+  }
+
   /** 목록 기본 조회: 공개 매물 중 활성 방 상품이 하나 이상 있는 문서만 조회한다. */
   @Override
   public PageResponse<Listing> findPublished(int page, int size) {

@@ -128,6 +128,58 @@ public class Listing {
   /** 임대인이 서비스에 남긴 의견이다. 등록 폼 설문 응답이라 세입자 응답에 포함하지 않는다. */
   private final String serviceFeedback;
 
+  /**
+   * 등록 시점에 받은 매물 이용약관 동의다. 세입자 응답에 포함하지 않는다.
+   *
+   * <p>등록 게이트가 두 동의를 모두 {@code true}로 강제하므로 <b>저장된 매물은 예외 없이 동의를 마친 매물</b>이다 — 심사 단계가 동의 여부를 판단
+   * 기준으로 다시 쓰지 않는다.
+   */
+  private final Consents consents;
+
+  /**
+   * 심사를 통과시켜 공개 상태로 만든다. 심사 대상은 {@link ListingStatus#PENDING}뿐이다.
+   *
+   * <p>반려됐다 임대인이 고쳐 다시 올라온 매물이면 이전 사유가 남아 있다. 공개되는 매물이 지난 반려 사유를 달고 다니지 않도록 여기서 지운다.
+   *
+   * @param now 상태를 바꾼 시각
+   * @return 공개 상태가 된 새 매물
+   * @throws ListingInvalidStatusTransitionException 심사 대상이 아닌 상태인 경우
+   */
+  public Listing approve(Instant now) {
+    requirePending();
+    return toBuilder().status(ListingStatus.PUBLISHED).rejectionReason(null).updatedAt(now).build();
+  }
+
+  /**
+   * 사유와 함께 반려한다. 사유는 임대인만 읽는 값이라 번역하지 않는다.
+   *
+   * @param reason 반려 사유
+   * @param now 상태를 바꾼 시각
+   * @return 반려 상태가 된 새 매물
+   * @throws ListingInvalidStatusTransitionException 심사 대상이 아닌 상태인 경우
+   */
+  public Listing reject(String reason, Instant now) {
+    requirePending();
+    return toBuilder()
+        .status(ListingStatus.REJECTED)
+        .rejectionReason(reason)
+        .updatedAt(now)
+        .build();
+  }
+
+  /**
+   * 심사는 {@link ListingStatus#PENDING}에서만 시작한다.
+   *
+   * <p>반려된 매물의 재심사는 관리자가 직접 승인하는 것이 아니라 <b>임대인이 고쳐 {@code PENDING}으로 되돌린 뒤</b> 다시 이 문을 통과한다(수정 API는
+   * 후속). 관리자에게 {@code REJECTED → PUBLISHED}를 열어 주면 아무것도 고치지 않은 매물을 통과시키는 우회로가 되고, 반려 사유가 해소됐는지 확인할
+   * 근거가 사라진다. 사후 반려({@code PUBLISHED → REJECTED})를 열게 되면 이 가드만 완화하면 된다.
+   */
+  private void requirePending() {
+    if (status != ListingStatus.PENDING) {
+      throw new ListingInvalidStatusTransitionException();
+    }
+  }
+
   /** 매물의 심사·게시 상태다. 임대인과 관리자만 읽으므로 번역 대상이 아니다. */
   public enum ListingStatus {
     /** 등록 직후 관리자 승인을 기다리는 상태다. 조회 API에 노출되지 않는다. */
@@ -137,13 +189,7 @@ public class Listing {
     PUBLISHED,
 
     /** 관리자가 반려한 상태다. 사유는 {@link Listing#getRejectionReason()}에 담긴다. */
-    REJECTED,
-
-    /** 임대인이 일시적으로 공개를 중단한 상태다. */
-    PAUSED,
-
-    /** 삭제 처리되어 일반 조회에서 제외되는 상태다. */
-    DELETED
+    REJECTED
   }
 
   /** 가장 가까운 대중교통 수단 유형이다. */
@@ -244,6 +290,26 @@ public class Listing {
     /** 입주자가 함께 사용할 수 있는 옥상 공간이다. */
     ROOFTOP
   }
+
+  /**
+   * 매물 등록 시 받은 이용약관 동의다.
+   *
+   * <p>등록 게이트가 두 값을 모두 {@code true}로 강제하므로 저장된 값은 항상 {@code true}다. 그럼에도 함께 저장하는 이유는 <b>동의 사실의 입증
+   * 책임이 사업자에게 있어</b> "코드가 막는다"는 주장만으로는 부족하기 때문이다 — 실제 증빙은 {@code agreedAt}과 {@code version}이 진다.
+   *
+   * <p>{@code version}은 회원 약관 버전({@code users.terms_version})과 <b>별개 값</b>이다. 그쪽은 계정 단위로 가입 시 1회
+   * 기록되지만 매물 동의는 매물마다 등록 시점이라, 같은 임대인의 매물이 서로 다른 버전을 가질 수 있다.
+   *
+   * @param privacyPolicyAgreed 개인정보 수집·이용 동의
+   * @param listingExposureAgreed 매물 정보 제공 및 노출 동의
+   * @param version 동의한 약관 버전(서버 설정값)
+   * @param agreedAt 동의 시각
+   */
+  public record Consents(
+      boolean privacyPolicyAgreed,
+      boolean listingExposureAgreed,
+      String version,
+      Instant agreedAt) {}
 
   /**
    * 세입자가 매물 문의에 사용할 담당자 연락처다.
