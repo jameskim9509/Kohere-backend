@@ -286,8 +286,22 @@ class AdminListingDocsTest {
   }
 
   @Test
-  void 문서스니펫생성_심사대상아님_409() throws Exception {
-    // 시드의 두 번째 매물은 PUBLISHED 그대로다 — 이미 처리된 매물의 재심사를 막는 경계.
+  void 사후반려_공개매물을_상태무관하게_내린다() throws Exception {
+    // 반려는 승인과 달리 상태를 가리지 않는다. 시드의 두 번째 매물은 PUBLISHED 그대로다 —
+    // 문제가 발견된 공개 매물을 내리는 유일한 수단이라 409가 아니라 200이어야 한다.
+    mockMvc
+        .perform(
+            post("/api/v1/admin/listings/{listingId}/rejection", ListingTestSeeds.SECOND_LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(REJECTION_BODY))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.listing.status").value("REJECTED"));
+  }
+
+  @Test
+  void 문서스니펫생성_승인대상아님_409() throws Exception {
+    // 시드의 두 번째 매물은 PUBLISHED 그대로다 — 이미 공개된 매물의 재승인을 막는 경계.
     mockMvc
         .perform(
             post("/api/v1/admin/listings/{listingId}/approval", ListingTestSeeds.SECOND_LISTING_ID)

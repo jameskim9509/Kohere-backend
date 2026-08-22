@@ -71,7 +71,8 @@ public enum ErrorCode {
   // 등록 동의는 INVALID_INPUT(400)이 아니라 422다 — 값의 형식이 아니라 「동의하지 않았다」는 의미상 거부이고,
   // 회원 약관의 AUTH_REQUIRED_AGREEMENT_MISSING과 같은 성격이라 status를 맞춘다.
   LISTING_REQUIRED_AGREEMENT_MISSING(HttpStatus.UNPROCESSABLE_ENTITY, "매물 등록에 필요한 약관에 동의해야 합니다."),
-  // 심사 대상은 PENDING뿐이다. 재심사는 임대인이 수정해 PENDING으로 되돌린 뒤에만 가능하다(후속).
+  // 승인은 PENDING에서만 가능하다. 재승인은 임대인이 수정해 PENDING으로 되돌린 뒤에만 된다(후속).
+  // 반려는 상태를 가리지 않으므로 이 코드가 나지 않는다 — 사후 반려·사유 정정이 정상 경로다.
   LISTING_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT, "현재 상태에서 요청한 상태로 변경할 수 없습니다."),
 
   // --- 신청·채팅 (booking/chat) — docs/api/specs/04-booking-inquiry-chat.md ---

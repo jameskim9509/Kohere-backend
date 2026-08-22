@@ -102,7 +102,21 @@ class AdminListingServiceTest {
   }
 
   @Test
-  @DisplayName("심사 대상이 아닌 매물은 저장하지 않는다")
+  @DisplayName("반려는 이미 공개된 매물에도 할 수 있다")
+  void rejectAllowedOnPublishedListing() {
+    // 사후 반려 — 문제가 발견된 공개 매물을 내리는 유일한 수단이다.
+    givenAdmin();
+    Listing published = pending().toBuilder().status(Listing.ListingStatus.PUBLISHED).build();
+    given(listingRepository.findById(LISTING_ID)).willReturn(Optional.of(published));
+
+    var response = service.reject(ADMIN_ID, LISTING_ID, "허위 매물로 확인됨");
+
+    assertThat(response.listing().status()).isEqualTo(Listing.ListingStatus.REJECTED);
+    assertThat(response.rejectionReason()).isEqualTo("허위 매물로 확인됨");
+  }
+
+  @Test
+  @DisplayName("승인 대상이 아닌 매물은 저장하지 않는다")
   void rejectsAlreadyReviewedListing() {
     givenAdmin();
     Listing published = pending().toBuilder().status(Listing.ListingStatus.PUBLISHED).build();

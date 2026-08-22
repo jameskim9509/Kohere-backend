@@ -264,59 +264,69 @@ Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 GET {{baseUrl}}/api/v2/listings/{{register.response.body.$.data.listingId}}
 
 ### 14. 이미 승인된 매물 재승인 → **409 LISTING_INVALID_STATUS_TRANSITION**
-#     심사 대상은 PENDING 뿐이다. 재심사는 임대인이 수정해 PENDING 으로 되돌린 뒤에만 가능하다(수정 API 는 후속).
-#     ★ 후속 수정 API 가 붙어도 이 단계는 409 그대로여야 한다 — 관리자가 상태를 직접 뒤집는 경로는 열지 않는다.
+#     승인은 PENDING 에서만 된다. 재승인은 임대인이 수정해 PENDING 으로 되돌린 뒤에만 가능하다(수정 API 는 후속).
+#     ★ 후속 수정 API 가 붙어도 이 단계는 409 그대로여야 한다 — 관리자가 노출을 여는 경로는 좁게 유지한다.
 POST {{baseUrl}}/api/v1/admin/listings/{{register.response.body.$.data.listingId}}/approval
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-### 15. 반려 (다른 PENDING 매물로 진행한다 — 7번을 한 번 더 실행해 새 매물을 만든 뒤)
+### 15. ★ 사후 반려 — 12번에서 승인해 공개 중인 그 매물을 그대로 내린다 → **200**
+#     반려는 상태를 가리지 않는다. 14번의 재승인이 409인 것과 대비되는 지점이며,
+#     관리자가 서비스에서 매물을 내리는 유일한 수단이다. 직후 13번을 다시 실행하면 404 다.
 POST {{baseUrl}}/api/v1/admin/listings/{{register.response.body.$.data.listingId}}/rejection
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 Content-Type: application/json
 
 { "reason": "사업자등록번호와 매물 주소가 일치하지 않습니다." }
 
-### 16. 사유 없는 반려 → **400 INVALID_INPUT**
+### 16. ★ 사유 정정 — 이미 반려된 매물을 다른 사유로 다시 반려 → **200**
+#     반려는 멱등이 아니라 사유를 덮어쓴다. 잘못 적은 사유를 고쳐 쓰는 경로다.
+POST {{baseUrl}}/api/v1/admin/listings/{{register.response.body.$.data.listingId}}/rejection
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{ "reason": "사유 정정 — 사업자등록번호가 폐업 상태입니다." }
+
+### 17. 사유 없는 반려 → **400 INVALID_INPUT**
 POST {{baseUrl}}/api/v1/admin/listings/{{register.response.body.$.data.listingId}}/rejection
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 Content-Type: application/json
 
 { "reason": "  " }
 
-### 17. 없는 매물 → **404 LISTING_NOT_FOUND**
+### 18. 없는 매물 → **404 LISTING_NOT_FOUND**
 GET {{baseUrl}}/api/v1/admin/listings/68e0000000000000000000ff
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
 # ─────────────────────────── 경계 확인 (인가) ───────────────────────────
 
-### 18. 임대인 토큰으로 심사 → **403 FORBIDDEN**
+### 19. 임대인 토큰으로 심사 → **403 FORBIDDEN**
 #     보안 매처는 ROLE_USER 까지만 본다. 관리자 여부는 서비스가 DB로 판정한다.
 GET {{baseUrl}}/api/v1/admin/listings
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
-### 19. 토큰 없이 심사 → **401 UNAUTHENTICATED**
+### 20. 토큰 없이 심사 → **401 UNAUTHENTICATED**
 GET {{baseUrl}}/api/v1/admin/listings
 
-### 20. ★ 관리자 토큰으로 세입자 기능 호출 → **403 FORBIDDEN**
+### 21. ★ 관리자 토큰으로 세입자 기능 호출 → **403 FORBIDDEN**
 #     관리자는 관리자 전용 API 만 쓸 수 있다. 각 서비스의 허용 목록 게이트(세입자 또는 임대인만 통과)가 막는다.
 GET {{baseUrl}}/api/v2/users/me/favorites?page=0&size=20
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-### 21. 관리자 토큰으로 채팅방 목록 → **403 FORBIDDEN**
+### 22. 관리자 토큰으로 채팅방 목록 → **403 FORBIDDEN**
 GET {{baseUrl}}/api/v1/chat-rooms?page=0&size=20
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-### 22. 관리자 토큰으로 프로필 조회 → **200** (허용 목록)
-#     계정 관리는 관리자도 필요하다. 20·21번과 달리 게이트를 두지 않은 경로다.
+### 23. 관리자 토큰으로 프로필 조회 → **200** (허용 목록)
+#     계정 관리는 관리자도 필요하다. 21·22번과 달리 게이트를 두지 않은 경로다.
 GET {{baseUrl}}/api/v1/users/me
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-### 23. 관리자 토큰으로 매물 공개 조회 → **200** (허용 목록)
+### 24. 관리자 토큰으로 매물 공개 조회 → **200** (허용 목록)
 #     심사할 매물을 세입자 시점으로 확인할 일이 있어 열어 둔다. 애초에 permitAll 이라 토큰 없이도 된다.
 GET {{baseUrl}}/api/v2/listings?page=0&size=20
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-### 24. 관리자 로그아웃 → **204** (허용 목록)
+### 25. 관리자 로그아웃 → **204** (허용 목록)
 #     관리자도 세션은 끝낼 수 있어야 한다. refresh 는 웹이라 HttpOnly 쿠키로 함께 지워진다.
 POST {{baseUrl}}/api/v1/auth/logout
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}

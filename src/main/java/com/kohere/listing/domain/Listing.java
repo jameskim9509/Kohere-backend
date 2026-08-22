@@ -153,13 +153,16 @@ public class Listing {
   /**
    * 사유와 함께 반려한다. 사유는 임대인만 읽는 값이라 번역하지 않는다.
    *
+   * <p><b>상태를 가리지 않는다.</b> 승인과 달리 어느 상태에서든 반려할 수 있다 — 심사 대기 매물의 1차 반려뿐 아니라, 공개 후 문제가 발견된 매물을 내리는
+   * <b>사후 반려</b>({@code PUBLISHED → REJECTED})와 이미 반려한 매물의 <b>사유 정정</b>({@code REJECTED →
+   * REJECTED})이 모두 정상 경로다. 노출을 여는 쪽만 좁게 통제하고 닫는 쪽은 언제든 열어 두는 것이 안전한 방향이다 — 문제가 발견된 공개 매물을 즉시 내릴 수
+   * 있어야 한다.
+   *
    * @param reason 반려 사유
    * @param now 상태를 바꾼 시각
    * @return 반려 상태가 된 새 매물
-   * @throws ListingInvalidStatusTransitionException 심사 대상이 아닌 상태인 경우
    */
   public Listing reject(String reason, Instant now) {
-    requirePending();
     return toBuilder()
         .status(ListingStatus.REJECTED)
         .rejectionReason(reason)
@@ -168,11 +171,13 @@ public class Listing {
   }
 
   /**
-   * 심사는 {@link ListingStatus#PENDING}에서만 시작한다.
+   * <b>승인</b>은 {@link ListingStatus#PENDING}에서만 할 수 있다.
    *
    * <p>반려된 매물의 재심사는 관리자가 직접 승인하는 것이 아니라 <b>임대인이 고쳐 {@code PENDING}으로 되돌린 뒤</b> 다시 이 문을 통과한다(수정 API는
    * 후속). 관리자에게 {@code REJECTED → PUBLISHED}를 열어 주면 아무것도 고치지 않은 매물을 통과시키는 우회로가 되고, 반려 사유가 해소됐는지 확인할
-   * 근거가 사라진다. 사후 반려({@code PUBLISHED → REJECTED})를 열게 되면 이 가드만 완화하면 된다.
+   * 근거가 사라진다.
+   *
+   * <p>반려({@link #reject})에는 이 가드를 걸지 않는다.
    */
   private void requirePending() {
     if (status != ListingStatus.PENDING) {

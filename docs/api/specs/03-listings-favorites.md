@@ -12,7 +12,9 @@
 - `ListingType`: `GOSHIWON`, `CO_LIVING`, `SHARE_HOUSE`
 - `RentalType`: `MONTHLY_RENT`
 - `ListingStatus`(매물 상태): `PENDING`(심사 대기), `PUBLISHED`(승인·공개), `REJECTED`(반려)
-  - 전이는 **`PENDING → PUBLISHED`(승인)** 와 **`PENDING → REJECTED`(반려)** 둘뿐이고, 그 외 상태에서의 심사 요청은 `409 LISTING_INVALID_STATUS_TRANSITION`이다. 반려된 매물의 재심사는 관리자가 직접 승인하는 것이 아니라 **임대인이 수정해 `PENDING`으로 되돌린 뒤**(수정 API는 후속) 다시 심사를 통과한다 — 직접 승인을 열면 아무것도 고치지 않은 매물이 통과하는 우회로가 되기 때문이다. 전이 주체는 관리자이며 상세는 [관리자 매물 심사](#관리자-매물-심사)를 본다.
+  - **승인은 `PENDING`에서만** 할 수 있다(`PENDING → PUBLISHED`). 그 외 상태에서 승인을 요청하면 `409 LISTING_INVALID_STATUS_TRANSITION`이다 — 반려된 매물의 재승인은 관리자가 직접 하는 것이 아니라 **임대인이 수정해 `PENDING`으로 되돌린 뒤**(수정 API는 후속) 다시 심사를 통과한다. 직접 승인을 열면 아무것도 고치지 않은 매물이 통과하는 우회로가 되기 때문이다.
+  - **반려는 어느 상태에서든** 할 수 있다(`* → REJECTED`). 심사 대기 매물의 1차 반려뿐 아니라 **사후 반려**(공개 후 문제가 발견된 매물을 내린다)와 **사유 정정**(이미 반려한 매물의 사유를 다시 쓴다)이 모두 정상 경로다. 노출을 **여는** 쪽만 좁게 통제하고 **닫는** 쪽은 열어 두는 것이 안전한 방향이다.
+  - 전이 주체는 관리자이며 상세는 [관리자 매물 심사](#관리자-매물-심사)를 본다.
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
 - `ConditionTag`(매물 옵션 필터 8종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음)
 - `ArcRequirement`(매물 루트 `arcRequired` 값): `REQUIRED`, `NOT_REQUIRED`. ARC 없이 입주할 수 있는지는 조건 태그가 아니라 이 필드로 표현한다
@@ -1325,7 +1327,7 @@ Request Body: 없음
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 | `LISTING_REQUIRED_AGREEMENT_MISSING` | 422 | 매물 등록에 필요한 이용약관 동의 2종 중 하나 이상이 누락되거나 `false` |
-| `LISTING_INVALID_STATUS_TRANSITION` | 409 | 심사 대상(`PENDING`)이 아닌 매물에 승인·반려를 요청 |
+| `LISTING_INVALID_STATUS_TRANSITION` | 409 | 심사 대기(`PENDING`)가 아닌 매물에 **승인**을 요청. 반려는 상태를 가리지 않아 이 코드가 나지 않는다 |
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다. **deprecated된 v1 상세·찜 토글 스텁도 이 코드를 쓴다** — 매물을 찾지 못해서가 아니라 조회하지 않기 때문이며, 새 코드를 만들지 않아 구버전 앱이 이미 처리하던 에러 그대로 받는다(위 [v1 스텁 동작](#v1-스텁-동작)).
 > 뒤 두 코드는 매물 등록(`POST /api/v2/listings`) 전용이다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
@@ -1393,7 +1395,7 @@ Request Body: 없음
 
 ### POST /api/v1/admin/listings/{listingId}/rejection — 매물 반려
 
-- 설명: `PENDING` 매물을 `REJECTED`로 전이시키고 사유를 저장한다.
+- 설명: 매물을 `REJECTED`로 전이시키고 사유를 저장한다. **상태를 가리지 않는다** — 심사 대기 매물의 1차 반려, 공개 매물을 내리는 **사후 반려**, 이미 반려한 매물의 **사유 정정**이 모두 이 경로다.
 - 인증: 필수(관리자)
 - 성공: `200 OK` + 심사 상세와 같은 구조.
 
@@ -1409,4 +1411,4 @@ Request Body: 없음
 
 승인과 반려를 하나의 상태 변경 API로 묶지 않은 이유는 **"반려에는 사유가 필요하다"를 요청 타입으로 강제**하기 위해서다. `PATCH /{id}/status`였다면 `status` 값에 따라 `reason` 필수 여부가 갈리는 조건부 검증이 되고, 승인 요청에 사유가 실려 와도 타입으로 막을 수 없다.
 
-발생 가능한 에러: `400 INVALID_INPUT`(`reason` 누락·공백·500자 초과) · `409 LISTING_INVALID_STATUS_TRANSITION` · `404 LISTING_NOT_FOUND` · `403 FORBIDDEN` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`.
+발생 가능한 에러: `400 INVALID_INPUT`(`reason` 누락·공백·500자 초과) · `404 LISTING_NOT_FOUND` · `403 FORBIDDEN` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`. **`409`는 나지 않는다** — 반려는 상태를 가리지 않는다.

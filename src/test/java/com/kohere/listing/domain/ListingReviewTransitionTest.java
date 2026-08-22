@@ -53,14 +53,26 @@ class ListingReviewTransitionTest {
   @EnumSource(
       value = Listing.ListingStatus.class,
       names = {"PUBLISHED", "REJECTED"})
-  @DisplayName("심사 대상이 아닌 상태는 승인·반려 모두 거부한다")
-  void rejectsTransitionFromNonPending(Listing.ListingStatus status) {
+  @DisplayName("승인은 심사 대기 상태에서만 할 수 있다")
+  void approveRejectsTransitionFromNonPending(Listing.ListingStatus status) {
     Listing listing = pending().toBuilder().status(status).build();
 
     assertThatThrownBy(() -> listing.approve(NOW))
         .isInstanceOf(ListingInvalidStatusTransitionException.class);
-    assertThatThrownBy(() -> listing.reject("사유", NOW))
-        .isInstanceOf(ListingInvalidStatusTransitionException.class);
+  }
+
+  @ParameterizedTest
+  @EnumSource(Listing.ListingStatus.class)
+  @DisplayName("반려는 어느 상태에서든 할 수 있다")
+  void rejectAllowedFromAnyStatus(Listing.ListingStatus status) {
+    // 심사 대기 매물의 1차 반려뿐 아니라, 공개 매물을 내리는 사후 반려(PUBLISHED)와
+    // 이미 반려한 매물의 사유 정정(REJECTED)이 모두 정상 경로다.
+    Listing listing = pending().toBuilder().status(status).rejectionReason("이전 사유").build();
+
+    Listing rejected = listing.reject("새 사유", NOW);
+
+    assertThat(rejected.getStatus()).isEqualTo(Listing.ListingStatus.REJECTED);
+    assertThat(rejected.getRejectionReason()).isEqualTo("새 사유");
   }
 
   /** 전이 검증에 필요한 필드만 채운 심사 대기 매물이다. */
