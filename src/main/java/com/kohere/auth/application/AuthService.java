@@ -9,6 +9,7 @@ import com.kohere.auth.application.dto.PhoneVerifyResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.domain.AppUserOnlyException;
 import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.EmailMismatchException;
 import com.kohere.auth.domain.EmailRequiredException;
@@ -73,6 +74,7 @@ public class AuthService {
   private static final String STATUS_ACTIVE = "ACTIVE";
   private static final String STATUS_PENDING = "PENDING";
   private static final String USER_TYPE_LANDLORD = "LANDLORD";
+  private static final String USER_TYPE_TENANT = "TENANT";
 
   /**
    * 세입자 온보딩 응답의 {@code linked} — <b>상수 false다.</b> 병합 매칭 키는 SMS로 인증한 휴대폰 번호 단독인데 세입자는 온보딩에서 번호를
@@ -252,6 +254,7 @@ public class AuthService {
   @Transactional(readOnly = true)
   public EmailVerificationCodeResponse sendEmailVerificationCode(
       long userId, EmailVerificationCodeRequest request) {
+    requireAppUser(userId);
     long expiresIn = emailVerificationService.sendCode(userId, request.email());
     return new EmailVerificationCodeResponse(maskEmail(request.email()), expiresIn);
   }
@@ -259,6 +262,7 @@ public class AuthService {
   /** 이메일 인증번호 확인. 성공 시 이메일을 검증 완료로 마킹한다. */
   @Transactional(readOnly = true)
   public EmailVerifyResponse verifyEmail(long userId, EmailVerifyRequest request) {
+    requireAppUser(userId);
     emailVerificationService.verify(userId, request.email(), request.code());
     return new EmailVerifyResponse(maskEmail(request.email()), true);
   }
@@ -512,6 +516,19 @@ public class AuthService {
    * com.kohere.common.security.SecurityConfig})가 보장하므로, 여기서는 userType이 LANDLORD인지만 확인한다(임대인 아님 403
    * FORBIDDEN). 상태 소유자는 user이므로 공개 API로 조회만 한다(판정 책임은 흐름을 조율하는 auth).
    */
+  /**
+   * 세입자·임대인만 통과시키는 허용 목록 게이트다.
+   *
+   * <p>이메일 인증은 회원 본인의 연락 수단을 확인하는 절차라 관리자에게는 쓸 일이 없다. 관리자를 콕 집어 거부하지 않고 아는 두 유형만 통과시키므로 이 코드가
+   * {@code ADMIN}을 알 필요가 없고, 나중에 회원 유형이 늘어도 자동으로 거부된다.
+   */
+  private void requireAppUser(long userId) {
+    String userType = userAccountService.getUserType(userId);
+    if (!USER_TYPE_TENANT.equals(userType) && !USER_TYPE_LANDLORD.equals(userType)) {
+      throw new AppUserOnlyException();
+    }
+  }
+
   private void assertLandlord(long userId) {
     if (!USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
       throw new LandlordOnlyException();

@@ -201,7 +201,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -214,6 +214,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
@@ -227,7 +228,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -240,6 +241,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
@@ -253,7 +255,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -267,6 +269,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   // ── §9 최근 본 매물 — GET /api/v2/users/me/recent-listings ─────────────────
@@ -279,7 +282,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -293,6 +296,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   // ── §10-1 매물 사진 업로드 — POST /api/v2/listings/images ──────────────────
@@ -981,47 +985,127 @@ public final class ListingDocsFields {
 
   public static final String ADMIN_LISTING_LIST_DESCRIPTION =
       """
-      관리자가 심사할 매물을 조회한다. 세입자 조회와 달리 **모든 상태**를 대상으로 한다.
+      심사 화면에 보여줄 매물을 조회한다. 세입자용 목록과 달리 **`status`와 무관하게 모두** 나온다.
 
-      `status`로 상태별 필터가 가능하고(콤마로 여러 개), 생략하면 전체다. 기본 정렬은 등록 최신순이다.
+      **헤더**
 
-      인가는 두 겹이다 — 보안 매처가 `hasRole("USER")`로 온보딩 토큰을 막고, 서비스가 `userType=ADMIN`을
-      다시 확인해 아니면 403이다. 토큰에 관리자 여부를 담지 않으므로 권한 부여·회수가 즉시 반영된다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - `status`를 **보내지 않으면 전체**다. 콤마로 여러 개 보낼 수 있다(`?status=PENDING,REJECTED`).
+      - `sort`는 `createdAt,asc`만 인식하고, 그 밖의 값이나 생략은 **등록 최신순**이다.
+
+      **응답 주의사항**
+
+      - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
+      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
+      - `listing.favorited`는 **항상 false**다. 관리자에게는 찜 개념이 없다.
+      - `{code,label}`의 `label`은 **항상 한국어**다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `status`에 정의되지 않은 값, `size`가 1~100 밖 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
       """;
 
   public static final String ADMIN_LISTING_DETAIL_SUMMARY = "매물 심사 상세 조회(관리자)";
 
   public static final String ADMIN_LISTING_DETAIL_DESCRIPTION =
       """
-      심사 대상 매물의 **저장된 전 필드**를 반환한다. 상태와 무관하게 조회된다.
+      심사할 매물 한 건을 조회한다. 세입자용 상세와 달리 **저장된 값을 감추지 않고**, `status`와 무관하게 조회된다.
 
-      세입자 상세가 감추는 값(`landlordId`·`businessRegistrationNumber`·설문 3종·`consents`·
-      `rejectionReason`)을 감추지 않는다. 매물 문서에는 임대인 개인 연락처가 저장되지 않아 마스킹 대상
-      PII가 없고, 사업자등록번호는 오히려 관리자가 심사에서 진위를 확인해야 하는 값이다.
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **응답 주의사항**
+
+      - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
+      - `businessRegistrationNumber`는 **마스킹 없이 원문**이다. 심사에서 진위를 직접 확인하는 값이다.
+      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
+      - `listing.favorited`는 **항상 false**다.
+      - `{code,label}`의 `label`은 **항상 한국어**다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
       """;
 
   public static final String ADMIN_LISTING_APPROVAL_SUMMARY = "매물 승인(관리자)";
 
   public static final String ADMIN_LISTING_APPROVAL_DESCRIPTION =
       """
-      심사 대기 매물을 공개 상태로 바꾼다. 요청 본문이 없다.
+      매물을 `PUBLISHED`로 바꿔 세입자에게 공개한다. **요청 본문이 없다.**
 
-      승인 직후부터 그 매물이 세입자의 목록·지도·상세 조회에 나타난다. 이전 반려 사유는 지운다 —
-      수정을 거쳐 다시 올라온 매물이 지난 사유를 달고 공개되지 않게 하기 위해서다.
+      **헤더**
 
-      심사 대상은 심사 대기 상태뿐이다. 이미 승인·반려된 매물은 409다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - **`status`를 가리지 않는다.** `PENDING`은 물론 `REJECTED`인 매물도 승인할 수 있다.
+      - **이미 `PUBLISHED`이면 아무것도 바뀌지 않는다.** `updatedAt`도 그대로라 목록 정렬이 흔들리지 않는다. 반복 호출해도 안전하다.
+
+      **응답 주의사항**
+
+      - 응답 구조는 심사 상세(`GET /api/v1/admin/listings/{listingId}`)와 같다.
+      - `status`가 `PUBLISHED`가 되고 `rejectionReason`은 **지워진다**(필드 자체가 생략된다).
+      - 승인 직후부터 그 매물이 세입자의 목록·지도·상세 조회에 나타난다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
       """;
 
   public static final String ADMIN_LISTING_REJECTION_SUMMARY = "매물 반려(관리자)";
 
   public static final String ADMIN_LISTING_REJECTION_DESCRIPTION =
       """
-      심사 대기 매물을 사유와 함께 반려한다. 사유는 임대인만 읽는 값이라 번역하지 않는다.
+      매물을 `REJECTED`로 바꾸고 사유를 남긴다. 반려된 매물은 세입자 조회에서 사라진다.
 
-      승인과 반려를 하나의 상태 변경 API로 묶지 않은 이유는 "반려에는 사유가 필요하다"를 요청 타입으로
-      강제하기 위해서다 — 단일 API였다면 조건부 검증이 되고 승인 요청에 사유가 실려 와도 막을 수 없다.
+      **헤더**
 
-      반려된 매물의 재심사는 임대인이 수정해 심사 대기로 되돌린 뒤에만 가능하다(수정 API는 후속).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - **`status`를 가리지 않는다.** 심사 대기 매물은 물론 이미 공개된 매물도 이 요청으로 내릴 수 있다.
+      - **이미 `REJECTED`인 매물에도 보낼 수 있다.** 그때는 `reason`이 새 값으로 덮인다.
+      - `reason`은 임대인이 읽는 값이라 **번역하지 않는다.** 보낸 문자열이 그대로 저장된다.
+
+      **응답 주의사항**
+
+      - 응답 구조는 심사 상세(`GET /api/v1/admin/listings/{listingId}`)와 같다.
+      - `status`가 `REJECTED`가 되고 `rejectionReason`에 보낸 사유가 실린다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `reason` 누락·공백만·500자 초과 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
       """;
 
   public static final String[] ADMIN_LISTING_400 = {"INVALID_INPUT"};

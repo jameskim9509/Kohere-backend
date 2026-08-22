@@ -125,7 +125,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **요청 주의사항**
 
@@ -140,6 +140,7 @@ public final class AuthDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 토큰으로 호출 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 회원용 인증 기능은 호출할 수 없다 |
       | 429 | `TOO_MANY_REQUESTS` | 재발송 간격을 채우지 않은 재요청 |
       | 502 | `UPSTREAM_ERROR` | 메일 provider 장애·타임아웃으로 발송 실패 |
       """;
@@ -160,7 +161,7 @@ public final class AuthDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **에러 코드**
 
@@ -171,6 +172,7 @@ public final class AuthDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 토큰으로 호출 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 회원용 인증 기능은 호출할 수 없다 |
       | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 인증번호를 받은 적이 없거나 만료됐거나 코드가 틀림 — 어느 쪽인지 구분해 주지 않는다 |
       | 429 | `TOO_MANY_REQUESTS` | 코드 불일치가 시도 상한까지 누적돼 잠김 |
       """;
