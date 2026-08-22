@@ -16,6 +16,28 @@ variable "aws_region" {
   default     = "ap-northeast-2"
 }
 
+# ----- Google Cloud Translation + AWS Workload Identity Federation -----
+variable "google_cloud_project_id" {
+  description = "Cloud Translation API와 WIF를 구성할 Google Cloud 프로젝트 ID"
+  type        = string
+}
+
+variable "google_translation_service_account_email" {
+  description = "dev EC2가 WIF로 가장할 기존 Google Translation 서비스 계정 이메일"
+  type        = string
+
+  validation {
+    condition     = endswith(var.google_translation_service_account_email, ".iam.gserviceaccount.com")
+    error_message = "google_translation_service_account_email에는 ...iam.gserviceaccount.com 형식의 서비스 계정 이메일을 입력해야 합니다."
+  }
+}
+
+variable "chat_translation_enabled" {
+  description = "dev 앱의 1:1 채팅 Google 자동 번역 활성화 여부"
+  type        = bool
+  default     = true
+}
+
 variable "app_image" {
   description = "ECR 앱 이미지 URI(:tag 포함). 예: <account>.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"
   type        = string
@@ -356,4 +378,49 @@ variable "ecr_repository" {
   description = "푸시 대상 ECR 리포지토리 이름(prod와 공유)"
   type        = string
   default     = "kohere-backend"
+}
+
+# ----- 임대인 웹(SPA) 정적 서빙 · 프론트 CI/CD (#232) -----
+variable "web_artifacts_bucket_name" {
+  description = "프론트 릴리스 아티팩트 S3 버킷 이름(전역 유일). 예: kohere-dev-web-artifacts"
+  type        = string
+}
+
+variable "web_release_retention_days" {
+  description = <<-EOT
+    releases/ 보관 일수. 정하는 것은 "롤백 가능 여부"가 아니라 즉시·동일 롤백이 보장되는 창이다 —
+    만료된 SHA로 롤백하면 워크플로가 그 커밋을 재빌드해 복원한다(느리고 바이트 동일 보장 없음).
+    줄이면 초과 나이의 릴리스가 실제로 삭제되어 그만큼 즉시 롤백 창이 사라진다.
+  EOT
+  type        = number
+  default     = 90
+}
+
+variable "github_web_repo" {
+  description = <<-EOT
+    프론트엔드 GitHub 리포지토리 이름. 배포 역할의 신뢰 조건(sub)에 리터럴로 박히므로 반드시 실제 값이어야 한다 —
+    기본값을 두지 않는 이유는, 틀린 값으로도 apply 가 성공해 아무도 맡을 수 없는 역할이 조용히 생기기 때문이다.
+    나중에 바꿔도 신뢰 정책만 in-place 갱신되고 역할 ARN은 그대로다.
+  EOT
+  type        = string
+}
+
+variable "github_org_id" {
+  description = <<-EOT
+    GitHub 조직의 숫자 ID(예: `gh api orgs/<org> --jq .id`). immutable subject claim 형식
+    `repo:<org>@<orgId>/<repo>@<repoId>:...` 를 조립하는 데 쓴다 — 이름이 아니라 ID로 고정되므로
+    레포·조직 이름을 바꿔도 신뢰가 다른 대상으로 옮겨가지 않는다.
+  EOT
+  type        = string
+}
+
+variable "github_web_repo_id" {
+  description = "프론트 레포의 숫자 ID(`gh api repos/<org>/<repo> --jq .id`). 위와 같은 용도"
+  type        = string
+}
+
+variable "github_web_deploy_branch" {
+  description = "프론트 배포를 허용·트리거할 브랜치(프론트 deploy.yml 의 on.push.branches 와 일치해야 함)"
+  type        = string
+  default     = "release"
 }

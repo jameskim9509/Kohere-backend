@@ -1,51 +1,90 @@
 package com.kohere.chat.application;
 
-import com.kohere.chat.application.dto.ChatRoomResponse;
 import com.kohere.chat.application.dto.InquiryResponse;
-import com.kohere.chat.application.dto.MessageResponse;
-import com.kohere.chat.application.dto.ReadResponse;
-import com.kohere.chat.domain.ChatRoomRepository;
-import com.kohere.chat.domain.MessageRepository;
-import com.kohere.chat.presentation.dto.ReadRequest;
-import com.kohere.chat.presentation.dto.SendMessageRequest;
-import com.kohere.common.response.CursorResponse;
-import com.kohere.common.response.PageResponse;
+import com.kohere.chat.domain.ChatListingUnavailableException;
+import com.kohere.chat.domain.ChatTenantOnlyException;
+import com.kohere.chat.domain.ChatUnavailableException;
+import com.kohere.chat.domain.SelfInquiryNotAllowedException;
+import com.kohere.listing.api.ChatListingQueryService;
+import com.kohere.listing.api.ChatListingView;
+import com.kohere.user.api.UserAccountService;
+import com.kohere.user.api.UserBlockService;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 채팅 유스케이스 조율. 도메인(포트)을 호출하고 흐름만 조율한다. 도메인 규칙은 엔티티/도메인 서비스에 둔다 (docs/convention/code-style.md
- * §3-3).
+ * 채팅 REST 유스케이스를 조율하는 응용 서비스다.
  *
- * <p>의존성은 생성자 주입({@code @RequiredArgsConstructor})으로 받는다(§3-4). 인증 주체(userId)는 SecurityContext에서
- * 가져온다(TODO: 보안 설정 후 연동). 본인 참여 방 검증·본인 매물 문의 차단도 여기서 수행한다(TODO).
+ * <p>현재는 매물 문의로 채팅방을 조회하거나 만드는 유스케이스를 담당한다. 메시지 이력·목록·단건 조회는 책임이 큰 한 서비스에 몰리지 않도록 각각의 읽기 전용 서비스가
+ * 담당한다. 컨트롤러는 {@code @AuthenticationPrincipal AuthPrincipal}에서 검증된 {@code userId}를 꺼내 서비스에 전달하며,
+ * body나 query로 사용자 ID를 선택하게 두지 않는다.
  *
- * <p>TODO: 영속 계층(JPA) 도입 시 유스케이스에 트랜잭션 경계({@code @Transactional})를 추가한다.
+ * <p>TEXT 저장은 STOMP 처리 흐름의 별도 유스케이스가 담당한다. REST 전송 메서드를 이 서비스에 함께 두지 않아 같은 메시지에 두 개의 진입 경로와 서로 다른
+ * 중복 처리 규칙이 생기는 것을 막는다. 읽음 처리는 이번 범위에서 제외한다.
+ *
+ * <p>문의와 신청이 동일한 방 생성 규칙을 사용하도록 실제 조회·생성·동시성 수렴은 {@link ChatRoomEnsurer}에 위임한다. 이 서비스는 문의 요청자만 수행할
+ * 역할·매물·차단 검증과 기존 방 재표시를 담당한다.
  */
 @Service
 @RequiredArgsConstructor
 public class ChatService {
 
-  private final ChatRoomRepository chatRoomRepository;
-  private final MessageRepository messageRepository;
+  private static final String USER_TYPE_TENANT = "TENANT";
 
-  public InquiryResponse createInquiry(String listingId) {
-    throw new UnsupportedOperationException("TODO: 매물 문의(임대인 채팅방 생성/조회 + 매물 카드 고정)");
+  private final ChatListingQueryService listingQueryService;
+  private final UserAccountService userAccountService;
+  private final UserBlockService userBlockService;
+  private final ChatRoomCreator roomCreator;
+  private final ChatRoomEnsurer roomEnsurer;
+
+  /**
+   * 매물·세입자·임대인 조합의 채팅방을 조회하거나 하나만 생성한다.
+   *
+   * @param tenantId JWT에서 확인한 요청자 {@code users.id}
+   * @param listingId 문의 대상 매물 식별자
+   * @return 방 ID와 이번 호출에서 새로 생성했는지 여부
+   */
+  public InquiryResponse createInquiry(long tenantId, String listingId) {
+    assertTenant(tenantId);
+
+    ChatListingView listing =
+        listingQueryService
+            .findPublishedListing(listingId)
+            .orElseThrow(ChatListingUnavailableException::new);
+    assertDifferentUsers(tenantId, listing.landlordId());
+    assertChatAvailable(tenantId, listing.landlordId());
+
+    ChatRoomSeed seed =
+        new ChatRoomSeed(
+            listing.listingId(), listing.landlordId(), listing.title(), listing.address());
+    ChatRoomEnsurer.EnsureResult ensured = roomEnsurer.ensure(seed, tenantId, Instant.now());
+
+    // 직접 문의는 사용자의 명시적 재진입이다. 기존 방만 다시 표시하며 과거 메시지 숨김 경계는 복원하지 않는다.
+    if (!ensured.created()) {
+      roomCreator.showExistingRoomForTenant(ensured.room().getId(), tenantId, Instant.now());
+    }
+    return new InquiryResponse(ensured.room().getId(), ensured.created());
   }
 
-  public PageResponse<ChatRoomResponse> listRooms(String category, int page, int size) {
-    throw new UnsupportedOperationException("TODO: 내 채팅방 리스트 조회(카테고리 필터·lastMessageAt desc)");
+  /** 매물 문의는 세입자 전용이다. JWT userId로 서버의 현재 사용자 역할을 다시 확인한다. */
+  private void assertTenant(long userId) {
+    if (!USER_TYPE_TENANT.equals(userAccountService.getUserType(userId))) {
+      throw new ChatTenantOnlyException();
+    }
   }
 
-  public CursorResponse<MessageResponse> getMessages(Long roomId, String cursor, int size) {
-    throw new UnsupportedOperationException("TODO: 채팅방 메시지 조회(커서 페이지네이션, 최신순)");
+  /** 매물 소유자와 요청자가 같으면 자기 자신과의 1:1 방을 만들지 않는다. */
+  private static void assertDifferentUsers(long tenantId, long landlordId) {
+    if (tenantId == landlordId) {
+      throw new SelfInquiryNotAllowedException();
+    }
   }
 
-  public MessageResponse sendMessage(Long roomId, SendMessageRequest request) {
-    throw new UnsupportedOperationException("TODO: 텍스트 메시지 전송(lastMessageAt 갱신 + 푸시 이벤트)");
-  }
-
-  public ReadResponse markRead(Long roomId, ReadRequest request) {
-    throw new UnsupportedOperationException("TODO: 읽음 처리(마지막 읽은 메시지까지 전진, 멱등)");
+  /** 어느 방향이든 차단 관계가 있으면 방 조회·생성 전에 동일한 403으로 거부한다. */
+  private void assertChatAvailable(long tenantId, long landlordId) {
+    if (userBlockService.isBlockedBetween(tenantId, landlordId)) {
+      throw new ChatUnavailableException();
+    }
   }
 }

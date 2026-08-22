@@ -1,5 +1,41 @@
-# dev Caddy 설정 (Terraform 렌더 → /opt/kohere/Caddyfile). 자동 HTTPS(Let's Encrypt), app:8080 프록시.
-# caddy_site: 도메인(HTTPS 자동, ADR-0022).
+# dev Caddy 설정 (Terraform 렌더 → /opt/kohere/Caddyfile). 자동 HTTPS(Let's Encrypt, ADR-0022).
+# 한 도메인에서 백엔드 API와 임대인 웹(SPA)을 함께 낸다 — 동일 오리진 유지가 CORS 미설정 ·
+# csrf.disable() · SameSite=Lax refresh 쿠키(ADR-0048)가 성립하는 조건이다. 오리진을 가르는 순간 셋 다 바뀌어야 한다.
+# caddy_site: 도메인.
 ${caddy_site} {
-  reverse_proxy app:8080
+  encode zstd gzip
+
+  # ① 백엔드로 넘길 경로 — API · 채팅 WebSocket · Swagger UI(jar 번들 정적) · actuator.
+  #    springdoc 을 쓰지 않아 /v3/api-docs 는 없다. handle_path(프리픽스 제거)가 아니다 — 앱이 전체 경로를 그대로 받아야 한다.
+  #    Caddy reverse_proxy는 WebSocket Upgrade를 자동 처리하므로 /ws/chat을 같은 app upstream에 넘기기만 하면 된다.
+  @backend path /api/* /ws/chat /swagger-ui /swagger-ui/* /actuator/*
+  handle @backend {
+    reverse_proxy app:8080
+  }
+
+  # ② 나머지 전부 = SPA. /srv/current 는 releases/<sha> 를 가리키는 심볼릭 링크이고 deploy-web.sh 가 원자 교체한다.
+  #    root 는 요청마다 해석되므로 배포 때 Caddy 리로드도 재시작도 필요 없다.
+  handle {
+    root * /srv/current
+
+    # 해시 파일명 자산은 영구 캐시, 나머지(= try_files 로 index.html 이 될 것들)는 매번 재검증한다.
+    # 주의: `header /index.html` 로 잡으면 안 된다 — header 는 try_files 재작성 *전*에 평가되므로
+    #       딥링크(/listings/new)에는 붙지 않는다. 부정 매처라야 진입 문서가 되는 경로를 전부 잡는다.
+    @assets path /assets/*
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+    @entry not path /assets/*
+    header @entry Cache-Control "no-cache"
+
+    # 정적 응답은 Spring Security 헤더 체인을 타지 않는다 — 여기서 직접 준다.
+    header {
+      Strict-Transport-Security "max-age=31536000"
+      X-Content-Type-Options    "nosniff"
+      X-Frame-Options           "DENY"
+      Referrer-Policy           "strict-origin-when-cross-origin"
+      -Server
+    }
+
+    try_files {path} /index.html # SPA 딥링크 폴백 — 없는 경로는 진입 문서로 되돌려 라우팅을 앱에 맡긴다
+    file_server
+  }
 }

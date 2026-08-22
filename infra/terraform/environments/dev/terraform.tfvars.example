@@ -4,6 +4,12 @@
 
 aws_region = "ap-northeast-2"
 
+# ----- Google 채팅 자동 번역 (필수) -----
+# 서비스 계정 JSON 키는 입력하지 않는다. EC2의 kohere-dev-host 역할을 Google WIF로 교환한다.
+google_cloud_project_id                = "project-bdb9704d-3952-475b-a1c"
+google_translation_service_account_email = "kohere@project-bdb9704d-3952-475b-a1c.iam.gserviceaccount.com"
+# chat_translation_enabled = true
+
 # ----- 앱 이미지 (필수) -----
 # CI가 ECR에 push한 dev 태그 이미지.
 app_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"
@@ -129,3 +135,20 @@ github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"
 github_deploy_branch = "release"
 # apply 후 `terraform output github_deploy_role_arn` 값을 리포 Variables 의 AWS_DEPLOY_ROLE_ARN 에 설정.
+
+# ----- 임대인 웹(SPA) 정적 서빙 · 프론트 CI/CD (#232) -----
+# 프론트 빌드 산출물이 올라갈 비공개 버킷(전역 유일). 호스트가 인스턴스 롤로 내려받아 Caddy가 같은 도메인에서 서빙한다.
+web_artifacts_bucket_name = "kohere-dev-web-artifacts"
+# web_release_retention_days = 90   # 즉시·동일 롤백이 보장되는 창. 줄이면 초과 나이의 릴리스가 실제로 삭제된다
+# 배포 역할의 신뢰 조건(sub)에 리터럴로 박힌다 — 실제 레포 이름이어야 한다(기본값 없음).
+github_web_repo = "Kohere-web"
+# github_web_deploy_branch = "release"
+# apply 후 아래 셋을 프론트 리포 Variables 에 설정한다:
+#   terraform output web_artifacts_bucket        → WEB_ARTIFACTS_BUCKET
+#   terraform output github_web_deploy_role_arn  → AWS_DEPLOY_ROLE_ARN
+#   terraform output ssm_deploy_web_document     → SSM_DEPLOY_WEB_DOCUMENT
+# GitHub이 새 레포에 적용하는 immutable subject claim 때문에 sub 에 숫자 ID가 붙는다
+#   (repo:<org>@<orgId>/<repo>@<repoId>:ref:...). 신뢰 정책이 옛 형식과 함께 둘 다 받도록 조립한다.
+#   확인: gh api repos/<org>/<repo> --jq '{repo_id:.id, owner_id:.owner.id}'
+github_org_id      = "289965197"
+github_web_repo_id = "1330553011"

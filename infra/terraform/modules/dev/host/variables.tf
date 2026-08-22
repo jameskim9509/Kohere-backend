@@ -107,6 +107,28 @@ variable "images_cdn_domain" {
   default     = ""
 }
 
+# ----- Google Cloud Translation WIF -----
+variable "google_wif_credential_configuration" {
+  description = "EC2 앱이 ADC로 읽을 비밀키 없는 Google external_account 설정 JSON"
+  type        = string
+}
+
+variable "chat_translation_enabled" {
+  description = "앱의 채팅 자동 번역 활성화 여부"
+  type        = bool
+}
+
+variable "chat_translation_project_id" {
+  description = "Cloud Translation API 호출 대상 Google Cloud 프로젝트 ID"
+  type        = string
+}
+
+variable "chat_translation_location" {
+  description = "Cloud Translation API location"
+  type        = string
+  default     = "global"
+}
+
 # ----- 로그 반출 (ADR-0038 롤아웃 ⑥) -----
 variable "log_group_name" {
   description = "CloudWatch Agent가 /opt/kohere/logs/app.json을 실어 보낼 Log Group 이름(logs 모듈)"
@@ -124,4 +146,13 @@ variable "enable_cloudwatch_agent" {
   EOT
   type        = bool
   default     = true
+}
+
+# ----- 임대인 웹 릴리스 (web 모듈 출력, #232) -----
+variable "web_artifacts_bucket" {
+  description = <<-EOT
+    프론트 릴리스 아티팩트 S3 버킷 이름(web 모듈). deploy-web.sh 가 releases/<sha> 를 내려받고
+    current.txt 포인터를 갱신하며, 부팅 시 그 포인터로 마지막 릴리스를 복원한다.
+  EOT
+  type        = string
 }

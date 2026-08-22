@@ -1,0 +1,42 @@
+#!/bin/bash
+# 프론트엔드 릴리스 적용(#232) — S3의 releases/<sha>를 내려받아 "현재 릴리스" 심볼릭 링크를 원자 교체한다.
+#   사용: bash /opt/kohere/deploy-web.sh <sha>
+#
+# 배포와 롤백이 같은 경로다 — 롤백은 예전 sha를 넣는다. 롤백 전용 코드를 따로 두면 평소에 아무도
+#   실행하지 않는 코드가 되고, 정작 급할 때 처음 돌리다 깨진다. 이 경로는 매 배포마다 검증된다.
+# Caddy 리로드는 필요 없다. root(/srv/current)가 요청마다 해석되므로 링크만 바꾸면 다음 요청부터 새 릴리스다.
+set -euo pipefail
+
+# 인자를 강제한다 — 비면 s3 경로가 releases// 가 되어 버킷의 모든 릴리스를 통째로 내려받는다.
+SHA="$${1:?usage: deploy-web.sh <sha>}"
+BUCKET="${web_bucket}"
+ROOT=/opt/kohere/web
+REL="$ROOT/releases/$SHA"
+
+mkdir -p "$REL"
+aws s3 sync --region ${aws_region} "s3://$BUCKET/releases/$SHA/" "$REL/"
+
+# 진입 문서가 없으면 sync가 반쯤 실패한 것이다. 여기서 멈추면 링크가 안 움직여 사이트는 옛 릴리스 그대로다.
+[ -f "$REL/index.html" ] || {
+  echo "ERROR: index.html 없음 — 릴리스 $SHA 가 비었거나 잘못됐다"
+  exit 1
+}
+
+# 아래 정리에서 방금 링크할 릴리스가 지워지지 않게 사용 시각을 올린다. 롤백은 오래된 디렉터리를 다시
+# 링크하는데, sync가 받을 게 없어 mtime이 그대로면 곧바로 정리 대상이 된다.
+touch "$REL"
+
+# 원자 교체. ln 단독은 기존 링크를 지웠다 다시 만들어 current 가 없는 순간이 생기고, 그때 들어온 요청이 404가 된다.
+# mv -T 는 rename(2) 하나라 어느 시점에 봐도 current 는 옛것이거나 새것이다.
+# 대상은 반드시 상대 경로 — 호스트의 /opt/kohere/web 이 컨테이너에선 /srv 라 절대 경로면 컨테이너 안에서 끊긴다.
+ln -sfn "releases/$SHA" "$ROOT/.current.tmp"
+mv -Tf "$ROOT/.current.tmp" "$ROOT/current"
+
+# 교체가 끝난 뒤에만 포인터를 옮긴다 — 위에서 죽으면 포인터는 직전 정상 릴리스를 가리킨 채 남고,
+# 재부팅이 그 릴리스를 되살린다(안전한 방향으로 실패한다).
+echo "$SHA" | aws s3 cp --region ${aws_region} - "s3://$BUCKET/current.txt"
+
+# 최근 5개만 남긴다 — 롤백 여지와 20GB 루트 볼륨 보호. 지워도 S3에 있으므로 롤백은 다시 받아 온다.
+ls -1dt "$ROOT"/releases/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf
+
+echo "web 배포 완료: $SHA"

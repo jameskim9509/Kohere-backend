@@ -4,7 +4,7 @@
 >
 > **영속(ADR-0005, 데이터 특성 기준):** `listing`(+`favorite`·`recent-listing`)·`diagnosis` → **MongoDB**, `auth`·`user` → **MySQL**.
 > **본 문서의 추가 결정(팀 확정):** ① **refresh 토큰 → Redis** — **[ADR-0006](../adr/0006-refresh-token-store-redis.md)** 으로 확정(ADR-0005 `RefreshToken` 배치 보완, ADR-0003 후속 닫힘). ② **매물 예약(신청) = 독립 기능**(예약 저장 + 내 예약 목록·상세 조회)으로 1차 MVP 편입. `booking`이 조회 시점에 `listing`·`user` 공개 쿼리를 동기 참조해 매물 요약·가격·예약자 성명을 조합한다(이벤트 결합 아님). **인앱 채팅 기록**(예약 시 채팅방 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent`)·문의·실시간 WebSocket·푸시는 **후속·이연**. booking 저장소는 (확인 필요, ADR-0005 표 미확정), chat 저장소는 후속 결정. ③ **클라이언트가 둘이다** — 모바일 앱(소셜 로그인)에 더해 **임대인 웹**(이메일+비밀번호 로컬 로그인)이 **같은 `/api/v1/auth` 표면**을 쓴다. 자격증명은 `users`·`social_accounts` 옆의 `local_accounts`로 분리하고([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)), 웹 refresh는 응답 본문이 아니라 **HttpOnly 쿠키**로 나른다([ADR-0048](../adr/0048-web-refresh-token-httponly-cookie.md)).
-> **스택 상태:** 현재 배선된 의존성 정본은 [build.gradle](../../build.gradle)(`web`·`validation`·`data-jpa`·`data-redis`·`security`·`oauth2-jose`·`jjwt`·`spring-modulith-starter-core` + 테스트 `test`·`modulith-starter-test`·Testcontainers·REST Docs/restdocs-api-spec). `추후`=1차 MVP 이후.
+> **스택 상태:** 현재 배선된 의존성 정본은 [build.gradle](../../build.gradle)(`web`·`validation`·`data-jpa`·`data-redis`·`security`·`oauth2-jose`·`jjwt`·`spring-modulith-starter-jpa` + 테스트 `test`·`modulith-starter-test`·Testcontainers·REST Docs/restdocs-api-spec). `starter-jpa`는 기존 `starter-core` 기능을 포함하면서 모듈 이벤트 publication을 MySQL에 보관한다. `추후`=1차 MVP 이후.
 
 ## 목적
 
@@ -79,7 +79,7 @@ flowchart LR
     SRV -- "DB·JWT·provider 시크릿" --> SECRET
 ```
 
-> **전제(인프라 근거 없음):** 임대인 웹은 **API와 동일 오리진**에 배치한다는 전제로 CORS origin 추가·CSRF 토큰을 두지 않았지만(`SameSite=Lax` refresh 쿠키 + `csrf.disable()` 유지), [docker-compose.yml](../../docker-compose.yml)에도 dev [Caddyfile](../../infra/terraform/modules/dev/host/Caddyfile.tftpl)(`reverse_proxy app:8080` 하나)에도 **웹을 서빙하는 서비스가 아직 없다** — 다른 호스트로 배포되는 순간 쿠키 refresh가 CSRF 표면이 되므로 실제 배치 전에 이 전제를 먼저 확정한다([ADR-0048](../adr/0048-web-refresh-token-httponly-cookie.md)).
+> **동일 오리진 배치(확정):** 임대인 웹은 **API와 같은 도메인**에서 서빙한다. dev [Caddyfile](../../infra/terraform/modules/dev/host/Caddyfile.tftpl)이 `/api`·`/swagger-ui`·`/actuator`만 app으로 넘기고 나머지를 SPA 정적 파일로 내며, 딥링크는 `index.html`로 폴백한다. 그래서 CORS origin 추가도 CSRF 토큰도 두지 않는다(`SameSite=Lax` refresh 쿠키 + `csrf.disable()` 유지). **오리진을 가르는 순간 쿠키 refresh가 CSRF 표면이 되므로 셋을 함께 바꿔야 한다**([ADR-0048](../adr/0048-web-refresh-token-httponly-cookie.md)). 릴리스 전달·롤백·부팅 복원은 §1-3-3. **prod(ECS·ALB)의 서빙 방식은 아직 정해지지 않았다**(§1-3-2).
 
 ### 1-2. 내부 컴포넌트(모듈)와 저장소 매핑
 
@@ -282,7 +282,7 @@ flowchart TB
     LMBD -. "알람 임베드 POST(웹훅)" .-> DISCORD
 ```
 
-> 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·Gmail SMTP(메일)·네이버 지역검색(장소)는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다. 임대인 웹은 **같은 ALB로 들어오는 브라우저 클라이언트**로만 그려져 있다 — 웹 정적 서빙 인프라는 아직 없다(§1 전제).
+> 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·Gmail SMTP(메일)·네이버 지역검색(장소)는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다. 임대인 웹은 **같은 ALB로 들어오는 브라우저 클라이언트**로만 그려져 있다 — **prod의 웹 정적 서빙 방식은 아직 정해지지 않았다.** dev는 같은 호스트의 Caddy가 SPA를 함께 내는 것으로 확정했지만(§1-3-3), ECS엔 붙잡을 파일시스템이 없어 그 방식을 그대로 옮길 수 없다. 후보는 **CloudFront 하나에 오리진 둘**(S3=기본 · ALB=`/api/*`, 캐시 비활성·쿠키 전달)로 **동일 오리진 성질만 유지**하는 것이고, dev가 S3에 쌓는 `releases/<sha>` 구조가 그대로 그 오리진이 되므로 걸림돌은 아니다.
 
 #### 1-3-3. dev 배포 아키텍처 (비용 최소화 — 단일 EC2 compose)
 
@@ -298,6 +298,7 @@ flowchart TB
 | 메일     | 실 SMTP(Gmail SMTP)                                                | **MailHog는 로컬 compose 전용이라 dev엔 없음**                                                                                                                                                  |
 | 시크릿   | **SSM Parameter Store SecureString**(무료)                   | Secrets Manager 미사용. 부팅·배포 시`refresh-env.sh`로 SSM→`.env` 재조회 후 app recreate(JWT/pepper 자동 생성). **변경 반영은 배포**([ADR-0024](../adr/0024-secret-change-propagation.md)) |
 | 이미지   | **S3 + CloudFront**(+ Route53 별칭, prod 동일 모듈)          | 앱은 S3 업로드 + URL 응답.**클라이언트는 `cdn.dev.kohere.app`(Route53 alias→CloudFront)에서 GET**(미설정 시 `*.cloudfront.net` 직접). 인증서는 us-east-1 ACM                               |
+| 웹 서빙  | **Caddy가 같은 도메인에서 임대인 웹(SPA) 정적 파일 제공**(`/opt/kohere/web/current` → `releases/<sha>`) | 동일 오리진 유지가 CORS 미설정·`csrf.disable()`·`SameSite=Lax` 쿠키의 성립 조건이다(§1). 프론트 CI가 S3 `releases/<sha>/`에 올리면 SSM run-command로 호스트가 내려받아 **심볼릭 링크를 원자 교체**한다(rename(2) — 교체 중 404 없음). `current.txt` 포인터로 **인스턴스 교체 후 마지막 릴리스를 부팅 시 복원**하고, 예전 SHA를 넣으면 **재빌드 없이 롤백**된다 |
 | 노출     | EIP → Route53 A 레코드(`dev.kohere.app`)                        | SG 80/443만. 관리자 접속은 SSM 전용(SSH 미개방)                                                                                                                                                       |
 | 데이터   | 전용 암호화 EBS(`/data`) bind-mount                              | 인스턴스 교체에도 보존                                                                                                                                                                                |
 | 모니터링 | CloudWatch StatusCheckFailed·CPU·**로그 수집량** 알람 + SNS       | 단일 박스 다운·로그 폭주 → SNS →**Lambda → Discord** 통보([ADR-0027](../adr/0027-dev-discord-alerting.md)). 셋 다 같은 SNS 토픽을 쓴다. **로그 내용 기반 알람은 없다**(metric filter 미도입 — "ERROR가 N건" 같은 조건 불가) |
@@ -311,7 +312,8 @@ flowchart TB
     DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
-      GHA["GitHub Actions (OIDC)<br/>build · ECR push · SSM deploy"]
+      GHA["백엔드 레포 Actions (OIDC)<br/>build · ECR push · SSM deploy"]
+      GHAWEB["프론트 레포 Actions (OIDC)<br/>build · S3 업로드 · SSM deploy<br/>별도 역할 · 전용 SSM Document"]
       ECR["ECR<br/>app 이미지(dev 태그)"]
     end
 
@@ -320,13 +322,15 @@ flowchart TB
       SSM["SSM Parameter Store<br/>SecureString 시크릿"]
       CF["CloudFront<br/>이미지 서빙(별칭 cdn.dev.kohere.app)"]
       S3IMG[("S3<br/>이미지 원본")]
+      S3WEB[("S3<br/>프론트 릴리스<br/>releases/&lt;sha&gt; · current.txt")]
       CW["CloudWatch 알람<br/>(StatusCheck·CPU·로그 수집량)"]
       CWLOG[("CloudWatch Logs<br/>/kohere/dev/app · 보존 30일")]
       SNS["SNS 알람 토픽"]
       LMBD["Lambda<br/>discord_notify (SNS→Discord)"]
       IGW["Internet Gateway"]
       subgraph EC2["EC2 t3.small · EIP (public subnet)"]
-        CADDY["Caddy<br/>80/443 · 자동 HTTPS"]
+        CADDY["Caddy<br/>80/443 · 자동 HTTPS<br/>경로 분기: /api·/swagger-ui·/actuator → app, 나머지 → SPA"]
+        WEBDIR["/opt/kohere/web<br/>current → releases/&lt;sha&gt;"]
         APP["app (ECR 이미지)"]
         MYSQL["mysql:8.0"]
         MONGO["mongo:7"]
@@ -347,7 +351,11 @@ flowchart TB
     R53 --> IGW
     IGW -- "공인 IP(EIP)" --> CADDY
     EC2 -- "egress(ECR·ACME·OIDC·비즈노·SOLAPI·SMTP·네이버·NCP·카카오)" --> IGW
-    CADDY -- "내부 :8080" --> APP
+    CADDY -- "내부 :8080 (/api·/swagger-ui·/actuator)" --> APP
+    CADDY -- "정적 서빙(/srv:ro · 나머지 전부 + 딥링크 폴백)" --> WEBDIR
+    GHAWEB -. "릴리스 업로드(S3 PutObject)" .-> S3WEB
+    GHAWEB -. "SSM run-command<br/>deploy-web.sh &lt;sha&gt;" .-> EC2
+    S3WEB -. "sync + 링크 원자 교체(배포·롤백·부팅 복원)" .-> WEBDIR
     APP --> MYSQL
     APP --> MONGO
     APP --> REDIS
@@ -394,7 +402,7 @@ flowchart TB
 | ----------- | ------------------------------------------------------------------------------ | ------ |
 | 언어/런타임 | Java 21 (Temurin), toolchain 21                                                | 배선됨 |
 | 프레임워크  | Spring Boot 3.5, Spring MVC                                                    | 배선됨 |
-| 모듈러리티  | Spring Modulith (BOM 2.1.0,`-starter-core`), `ApplicationModules.verify()` | 배선됨 |
+| 모듈러리티  | Spring Modulith (1.4.1, `starter-jpa`), `ApplicationModules.verify()`와 JPA Event Publication Registry | 배선됨 |
 | 빌드/포맷   | Gradle, Spotless + google-java-format(2-space), Lombok                         | 배선됨 |
 
 ### 3-2. 영속 — 폴리글랏 ([ADR-0005](../adr/0005-polyglot-persistence.md))
@@ -404,7 +412,7 @@ flowchart TB
 | `listing`(+`favorite`·`recent-listing`), `diagnosis`, `lifetip`(1차 MVP 이후·읽기 전용 카탈로그) | **MongoDB** + Spring Data MongoDB                                                   | 도입               | 지오·가변 스키마·대량 읽기 / 문서형 애그리거트·배열·단일 도큐먼트 원자 쓰기                                                                             |
 | `auth`, `user`                                            | **MySQL 8**(RDS) + Spring Data JPA + `mysql-connector-j`                          | 도입               | 계정·토큰 트랜잭션 / 유니크 제약·카운트 정합. HikariCP(기본). **웹 로컬 자격증명 `local_accounts`(V22)가 `users`·`social_accounts`와 같은 스토어에 나란히 매달린다** — 한 `users` 행에 앱(소셜)·웹(로컬) 자격증명이 병렬로 붙어 `landlordId`가 하나로 유지된다. FK는 걸지 않는다(`social_accounts` 선례). `users.phone_number` UNIQUE(V23)가 **동시 가입·온보딩으로 계정이 갈라지는 것을 막는 유일한 수단**이며(세입자·탈퇴자는 NULL이라 무영향), **번호 정규화 백필이 없어 기존 하이픈 표기 행은 매칭에서 누락될 수 있다**([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) |
 | **refresh 토큰 · 휴대폰 인증 마커**                     | **Redis**(ElastiCache)                                                              | 도입               | **[ADR-0006](../adr/0006-refresh-token-store-redis.md) 확정**(TTL·회전·재사용탐지). 해시 **SHA-256(+pepper)**. ADR-0005 보완·ADR-0003 후속 닫힘. 웹도 **같은 저장소·같은 TTL(14일)** 을 쓰고 **전달 채널만 HttpOnly 쿠키**다([ADR-0048](../adr/0048-web-refresh-token-httponly-cookie.md)). 인증 마커는 두 계열 — 온보딩용 `phone-verify:code:{userId}`·`phone-verify:verified:{userId}`(**userId 키**)와 웹 가입용 `signup-phone:code:{정규화번호}`·`signup-phone:verified:{정규화번호}`(**번호 키**, 계정이 없는 단계라 userId로 잡을 수 없다). 가입용 발송 레이트리밋도 Redis 키(`signup-phone:rate:phone:*`·`signup-phone:rate:ip:*`)다 |
-| `booking`(매물 예약), `chat`(후속·이연)                | 추후 결정(추후 ADR)                                                                       | 도입(booking)      | booking=예약 저장+내 예약 조회(MySQL 유력, ADR-0005 확인 필요). 신청→인앱 채팅 기록(chat·`BookingCreatedEvent`)은 후속·이연. 저장소 임의 확정 금지 |
+| `booking`(매물 예약), `chat`(1:1 매물 채팅)                | **MySQL 8** + Spring Data JPA + Flyway                                                                       | 배선됨      | 예약·채팅방·참여자·공유 메시지·미완료 `BookingCreatedEvent` publication을 저장한다. 신청 커밋 뒤 같은 매물의 채팅방과 `BOOKING_CARD`를 비동기로 보장한다. |
 | 리포지토리 스택 분리                                          | `@EnableMongoRepositories`(listing·diagnosis·lifetip) / `@EnableJpaRepositories`(auth·user) | 도입               | 두 스택 스캔 분리(ADR-0005 Decision 1)                                                                                                                      |
 | 지도 검색                                                     | MongoDB**2dsphere**($geoWithin/$near/$geoNear) + 개별 마커 좌표 조회               | 도입               | 마커 결과 상한(`LISTING_AREA_TOO_LARGE`), 클러스터링은 프론트 지도 SDK 담당                                                                                                            |
 | 텍스트 검색(커뮤니티)                                         | MySQL**FULLTEXT + ngram parser**                                                    | **MVP 이후** | 한국어 토큰화. 규모 확장 시 Elasticsearch → 추후                                                                                                           |
@@ -425,7 +433,7 @@ flowchart TB
 | 서버 JWT 서명   | jjwt(`io.jsonwebtoken`), **HS256**(대칭, HMAC-SHA256)                                                                                                                                                          | 도입   | **[ADR-0009](../adr/0009-jwt-signing-algorithm-hs256.md)** 확정. MSA 분해·외부 검증자 도입 시 RS256/ES256+JWKS 전환(트리거)                                   |
 | 시크릿/키 관리  | env vars + SSM Parameter Store(SecureString)                                                                                                                                                                           | 도입   | 길이·주입[ADR-0011](../adr/0011-token-lifetime-and-secret-policy.md) 확정(≥256bit env 주입), 무중단 회전 절차 운영 후속                                            |
 | 레이트리밋      | **Bucket4j(인메모리)**                                                                                                                                                                                           | 도입   | auth·share 등 429 + Retry-After. 다중 인스턴스 시 Redis 백엔드 → 추후. **비로그인 가입용 SMS 발송은 문자 폭탄·발송비 남용 표면이라 이중 제한**을 건다 — 번호 5회/1시간 + IP 20회/1시간(재발송 쿨다운 60초), 초과 시 429 `TOO_MANY_REQUESTS`                                                                                             |
-| HTTP 헤더·CORS | Spring Security 헤더 + 명시적 CORS origin                                                                                                                                                                              | 도입   | HSTS·nosniff·X-Frame-Options. 임대인 웹은 **API와 동일 오리진** 전제라 CORS origin 추가도 CSRF 토큰도 두지 않는다(`SameSite=Lax` + `csrf.disable()` 유지) — **이 전제에는 아직 인프라 근거가 없다**(§1 전제)                                                                                                                                                      |
+| HTTP 헤더·CORS | Spring Security 헤더 + **동일 오리진(CORS 미설정)**                                                                                                                                                                              | 도입   | HSTS·nosniff·X-Frame-Options. 임대인 웹이 **API와 같은 도메인**에서 서빙되므로 CORS origin 추가도 CSRF 토큰도 두지 않는다(`SameSite=Lax` + `csrf.disable()` 유지) — dev Caddy가 경로로 분기해 SPA를 함께 낸다(§1·§1-3-3). 단 **정적 응답은 Spring Security 헤더 체인을 타지 않으므로** HSTS·nosniff·X-Frame-Options를 Caddy가 직접 부여한다                                                                                                                                                      |
 
 ### 3-4. 통신 · 외부 연동
 
@@ -510,4 +518,5 @@ ADR-0005가 **cross-store 조인·트랜잭션을 금지**하므로 단일 엔�
 - [ ] 임대인 연락 F-03이 매물 예약(신청) 저장 + 내 예약 조회(booking 독립)로 구현되고, 신청→인앱 채팅 기록(booking→chat)·실시간 WebSocket·푸시는 후속·이연으로 구분됐다
 - [ ] 클라이언트가 **모바일 앱·임대인 웹 둘**로 표기되고, 웹이 같은 `/api/v1/auth` 표면에 이메일+비밀번호로 붙어 access는 본문·refresh는 HttpOnly 쿠키로 받는 것이 다이어그램·표에 반영됐다
 - [ ] MySQL에 `local_accounts`가 `users`·`social_accounts`와 함께, Redis에 가입용 **번호 키** 챌린지(`signup-phone:*`)가 기존 userId 키 챌린지·refresh와 함께 표기됐다
-- [ ] **동일 오리진 전제에 인프라 근거가 없다**(docker-compose·dev Caddy에 웹 서빙 서비스 없음)는 사실이 전제로 남아 있고, 배치 확정 시 CORS·CSRF 판단을 다시 한다
+- [ ] **dev 동일 오리진 배치가 확정**됐다 — Caddy가 경로로 분기해 SPA를 함께 내므로 CORS·CSRF 판단(`csrf.disable()` + `SameSite=Lax`)이 그대로 유효하고, 그 근거가 §1·§1-3-3·§3에 함께 적혀 있다
+- [ ] **prod 웹 서빙 방식은 미정**임이 §1-3-2에 남아 있고, 확정 시 오리진이 갈리는지부터 판단해 CORS·CSRF를 다시 본다
