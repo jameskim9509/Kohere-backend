@@ -248,8 +248,10 @@ public class AuthService {
   }
 
   /**
-   * 이메일 인증번호 발송. 정식(ACTIVE) 사용자 전용으로, 접근 제한(정식 토큰·ROLE_USER)은 보안 필터(SecurityConfig)가 담당하므로 여기서는 상태
-   * 게이트를 두지 않는다(#192 — 온보딩 단계 전용→정식 전용 반전). 동기 발송 성공 시에만 챌린지를 저장한다(발송 실패 502).
+   * 이메일 인증번호 발송. 정식(ACTIVE) 사용자 전용으로, <b>상태</b> 게이트(정식 토큰·ROLE_USER)는 보안 필터(SecurityConfig)가
+   * 담당한다(#192 — 온보딩 단계 전용→정식 전용 반전). <b>유형</b> 게이트는 여기서 건다 — {@link #requireAppUser}로 세입자·임대인만 통과시켜
+   * 관리자를 막는다(#265). 상태 게이트가 ACTIVE를 보장하므로 이 시점의 {@code userType}은 이미 확정돼 있다. 동기 발송 성공 시에만 챌린지를
+   * 저장한다(발송 실패 502).
    */
   @Transactional(readOnly = true)
   public EmailVerificationCodeResponse sendEmailVerificationCode(
@@ -521,6 +523,13 @@ public class AuthService {
    *
    * <p>이메일 인증은 회원 본인의 연락 수단을 확인하는 절차라 관리자에게는 쓸 일이 없다. 관리자를 콕 집어 거부하지 않고 아는 두 유형만 통과시키므로 이 코드가
    * {@code ADMIN}을 알 필요가 없고, 나중에 회원 유형이 늘어도 자동으로 거부된다.
+   */
+  /**
+   * 세입자·임대인만 통과시킨다(관리자 403). 허용 목록이라 새 유형이 생겨도 기본이 차단이다.
+   *
+   * <p><b>연락처 인증(§4-1·§4-2)에는 이 게이트를 걸 수 없다.</b> {@code userType}은 온보딩 <b>제출</b> 시점에 확정되는데, 임대인
+   * 온보딩은 연락처 인증을 <b>선행</b>으로 요구한다 — 그 시점의 {@code userType}은 아직 null이라 허용 목록이 정상 가입을 막아 버린다. 그래서 이
+   * 게이트는 보안 필터가 ACTIVE를 보장하는 엔드포인트(이메일 인증)에만 건다.
    */
   private void requireAppUser(long userId) {
     String userType = userAccountService.getUserType(userId);

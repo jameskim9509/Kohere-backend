@@ -1363,6 +1363,8 @@ Request Body: 없음
   | 매물 심사 4종 | 매물 문의·채팅방 전체 · 커뮤니티 전체 |
   | | 매물 등록·사진 업로드·주소/역 검색·사업자번호 검증 |
 
+  온보딩 단계에서도 쓰이는 엔드포인트(연락처 인증 `POST /api/v1/auth/phone/**`)는 예외로 걸러지지 않는다 — 회원 유형이 온보딩 **제출** 시점에 확정되는데 임대인 온보딩은 연락처 인증을 **선행**으로 요구하므로, 유형으로 거르면 정상 가입이 막힌다.
+
 ### 심사 응답의 노출 범위
 
 심사 상세·목록은 **매물 문서에 저장된 모든 필드**를 담는다 — 세입자 응답이 감추는 `landlordId`·`businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)·동의 3종(`consents`)·`rejectionReason`을 감추지 않는다. 표시 여부는 관리자 화면이 정한다.
