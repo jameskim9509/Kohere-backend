@@ -891,19 +891,19 @@ class ListingMongoIntegrationTest {
   @Test
   void favorite_목록은_공개매물만_최근순으로_반환한다() {
     String newerListingId = "6858e2000000000000000003";
-    String pausedListingId = "6858e2000000000000000004";
+    String rejectedListingId = "6858e2000000000000000004";
     listingRepository.save(sampleListing());
     listingRepository.save(
         sampleListingBuilder().id(newerListingId).title(localized("두 번째 고시원")).build());
     listingRepository.save(
         sampleListingBuilder()
-            .id(pausedListingId)
-            .title(localized("노출 중지 고시원"))
-            .status(Listing.ListingStatus.PAUSED)
+            .id(rejectedListingId)
+            .title(localized("반려된 고시원"))
+            .status(Listing.ListingStatus.REJECTED)
             .build());
     favoriteRepository.saveIfAbsent(favorite(1L, LISTING_ID, "2026-06-24T01:00:00Z"));
     favoriteRepository.saveIfAbsent(favorite(1L, newerListingId, "2026-06-24T03:00:00Z"));
-    favoriteRepository.saveIfAbsent(favorite(1L, pausedListingId, "2026-06-24T04:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(1L, rejectedListingId, "2026-06-24T04:00:00Z"));
 
     PageResponse<FavoriteListingResponse> result = listingService.getMyFavorites(1L, 0, 20);
 
@@ -912,7 +912,7 @@ class ListingMongoIntegrationTest {
         .extracting(FavoriteListingResponse::listingId)
         .containsExactly(newerListingId, LISTING_ID);
     assertThat(result.content()).allMatch(FavoriteListingResponse::favorited);
-    assertThatThrownBy(() -> listingService.addFavorite(1L, pausedListingId))
+    assertThatThrownBy(() -> listingService.addFavorite(1L, rejectedListingId))
         .isInstanceOf(ListingNotFoundException.class);
   }
 
@@ -1083,9 +1083,7 @@ class ListingMongoIntegrationTest {
     Instant baseViewedAt = Instant.parse("2026-06-24T00:00:00Z");
     for (int index = 1; index <= 13; index++) {
       Listing.ListingStatus status =
-          index == 12
-              ? Listing.ListingStatus.PAUSED
-              : index == 13 ? Listing.ListingStatus.DELETED : Listing.ListingStatus.PUBLISHED;
+          index >= 12 ? Listing.ListingStatus.REJECTED : Listing.ListingStatus.PUBLISHED;
       saveListingWithRecentView(1L, index, status, baseViewedAt.plusSeconds(index));
     }
     recentListingRepository.upsertViewedAt(2L, listingId(11), baseViewedAt.plusSeconds(999));
@@ -1152,10 +1150,10 @@ class ListingMongoIntegrationTest {
   /** 없거나 공개 상태가 아닌 매물 상세 조회는 LISTING_NOT_FOUND가 되며 최근 본 기록도 남기지 않는다. */
   @Test
   void recent_상세조회_대상이_없거나_비공개면_기록하지_않는다() {
-    String pausedListingId = listingId(40);
-    listingRepository.save(listingWithIndex(40, Listing.ListingStatus.PAUSED));
+    String rejectedListingId = listingId(40);
+    listingRepository.save(listingWithIndex(40, Listing.ListingStatus.REJECTED));
 
-    assertThatThrownBy(() -> listingService.getListing(1L, pausedListingId))
+    assertThatThrownBy(() -> listingService.getListing(1L, rejectedListingId))
         .isInstanceOf(ListingNotFoundException.class);
     assertThatThrownBy(() -> listingService.getListing(1L, listingId(41)))
         .isInstanceOf(ListingNotFoundException.class);
@@ -1171,7 +1169,7 @@ class ListingMongoIntegrationTest {
   /** 최근 본 기록이 없거나 모두 비공개 매물이면 content 빈 배열을 정상 응답으로 반환한다. */
   @Test
   void recent_목록이_비어도_정상_응답을_반환한다() {
-    listingRepository.save(listingWithIndex(50, Listing.ListingStatus.DELETED));
+    listingRepository.save(listingWithIndex(50, Listing.ListingStatus.REJECTED));
     recentListingRepository.upsertViewedAt(
         1L, listingId(50), Instant.parse("2026-06-24T01:00:00Z"));
 

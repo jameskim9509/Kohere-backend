@@ -98,7 +98,7 @@ class BookingListingQueryIntegrationTest {
   @Test
   @DisplayName("공개 상태(PUBLISHED)가 아니면 빈 값")
   void emptyWhenListingNotPublished() {
-    listingRepository.save(listingBuilder().status(Listing.ListingStatus.PAUSED).build());
+    listingRepository.save(listingBuilder().status(Listing.ListingStatus.REJECTED).build());
 
     assertThat(bookingListingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .isEmpty();
