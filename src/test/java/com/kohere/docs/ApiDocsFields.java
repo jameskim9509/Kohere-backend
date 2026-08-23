@@ -142,6 +142,28 @@ public final class ApiDocsFields {
    * {@code (path, type)} dedup 때문에 하나만 살아남고 승자가 파일 순회 순서에 좌우된다. {@code ErrorCode} 전체 카탈로그(50개 초과)는
    * 넘기지 않는다. 오히려 못 읽는다.
    */
+  /**
+   * 실패 봉투에 <b>그 오퍼레이션 전용 {@code error.details.*}</b>를 끼운 변형(#270).
+   *
+   * <p>공용 {@link #errorFields}에 {@code error.details}를 넣지 않는 이유는 그러면 <b>모든 오퍼레이션</b>의 에러 스키마에 그 키가
+   * 생기기 때문이다 — 런타임에는 나가지도 않는 필드가 문서에만 붙는다. 대신 필요한 오퍼레이션이 이 변형으로 자기 키만 선언한다.
+   *
+   * <p><b>같은 {@code (path, method, status)}를 캡처하는 스니펫은 전부 이 결과를 써야 한다.</b> 응답 스키마는 {@code (path,
+   * type)} 기준 dedup·last-wins라, 한쪽만 상세를 선언하면 승자가 파일 순회 순서에 좌우된다(ADR-0017). 그래서 {@code details}가 실리지
+   * 않는 케이스도 같은 기술자를 쓰고 {@code jsonPath(...).doesNotExist()} 단정으로 부재를 되메운다.
+   */
+  public static List<FieldDescriptor> errorFieldsWith(
+      List<FieldDescriptor> details, String... allowedCodes) {
+    List<FieldDescriptor> descriptors = new ArrayList<>(errorFields(allowedCodes));
+    descriptors.add(
+        fieldWithPath("error.details")
+            .type(JsonFieldType.OBJECT)
+            .optional()
+            .description("코드별 부가 데이터 — 값이 없으면 null이 아니라 필드 자체가 생략된다"));
+    descriptors.addAll(details);
+    return List.copyOf(descriptors);
+  }
+
   public static List<FieldDescriptor> errorFields(String... allowedCodes) {
     List<FieldDescriptor> descriptors = new ArrayList<>();
     descriptors.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 실패 응답은 항상 false"));
