@@ -286,7 +286,10 @@ public class Listing {
     CENTRAL,
 
     /** 개별난방 방식이다. */
-    INDIVIDUAL
+    INDIVIDUAL,
+
+    /** 난방시설이 없다. <b>단독으로만</b> 보낼 수 있다. */
+    NONE
   }
 
   /** 방 상품의 판매 가능 상태다. */
@@ -346,7 +349,10 @@ public class Listing {
     MEETING_ROOM,
 
     /** 입주자가 함께 사용할 수 있는 옥상 공간이다. */
-    ROOFTOP
+    ROOFTOP,
+
+    /** 공용공간이 없다. <b>단독으로만</b> 보낼 수 있다. */
+    NONE
   }
 
   /**

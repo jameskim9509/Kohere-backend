@@ -40,7 +40,7 @@ final class ListingTestSeeds {
 
   private ListingTestSeeds() {}
 
-  /** 번역 사전 103건을 심는다. 없으면 응답 라벨 자리에 코드값이 그대로 나가 단언이 흔들린다. */
+  /** 번역 사전 113건을 심는다. 없으면 응답 라벨 자리에 코드값이 그대로 나가 단언이 흔들린다. */
   static void seedCatalog(MongoTemplate mongo, String collection) {
     insertAll(mongo, collection, read(CATALOG_RESOURCE));
   }
