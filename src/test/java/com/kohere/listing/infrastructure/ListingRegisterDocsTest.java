@@ -35,6 +35,7 @@ import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -413,12 +414,43 @@ class ListingRegisterDocsTest {
         "listing-register-unknown-catalog-code",
         LISTING_REGISTER_400);
 
+    // NONE 은 카탈로그에 실재하는 정상 코드라 코드 대조를 그대로 통과한다 — 단독 규칙을 따로 막지 않으면
+    // ["NONE","WIFI"] 가 저장돼 응답에 「없음, 와이파이」로 나간다.
+    performError(
+        register(landlordToken(), bodyReplacing("[\"WIFI\", \"TV\"]", "[\"NONE\", \"WIFI\"]")),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listing-register-none-not-alone",
+        LISTING_REGISTER_400);
+
     performError(
         register(landlordToken(), MALFORMED_BODY),
         status().isBadRequest(),
         "MALFORMED_REQUEST",
         "listing-register-malformed",
         LISTING_REGISTER_400);
+  }
+
+  /**
+   * 시설이 하나도 없는 건물도 등록된다(#270). 등록 응답은 시설을 감추지 않지만 세입자 상세와 같은 모양이라 여기서 {@code NONE} 이 code/label 로
+   * 나가는 것까지 함께 본다.
+   *
+   * <p>문서 스니펫은 만들지 않는다 — 같은 오퍼레이션의 성공 예시는 한 벌이고, 이 케이스는 계약 회귀만 지킨다.
+   */
+  @Test
+  @DisplayName("시설이 하나도 없으면 NONE 하나만 보내 등록할 수 있다")
+  void 시설없음_NONE_단독_등록() throws Exception {
+    String body =
+        bodyReplacing("[\"WASHER\", \"DRYING_RACK\"]", "[\"NONE\"]")
+            .replace("[\"CONVENIENCE_STORE\", \"HOSPITAL_PHARMACY\"]", "[\"NONE\"]");
+
+    mockMvc
+        .perform(register(landlordToken(), body))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.facilities.laundry.length()").value(1))
+        .andExpect(jsonPath("$.data.facilities.laundry[0].code").value("NONE"))
+        .andExpect(jsonPath("$.data.facilities.laundry[0].label").value("없음"))
+        .andExpect(jsonPath("$.data.nearbyFacilities[0].code").value("NONE"));
   }
 
   /** 등록에 성공하고 발급된 listingId를 돌려준다. 스니펫은 만들지 않는다(성공 오퍼레이션 예시는 한 벌이면 된다). */

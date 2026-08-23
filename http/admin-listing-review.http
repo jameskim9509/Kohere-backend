@@ -189,6 +189,8 @@ Content-Type: image/jpeg
 --KohereBoundary--
 
 ### 7. 매물 등록 (임대인) → status=PENDING. 이 매물이 심사 대상이다
+#    ※ 시설 8종에 해당하는 것이 없으면 ["NONE"] 하나만 보낸다(다른 코드와 같이 보내면 400).
+#      저장 결과는 11번 심사 상세에서 확인한다 — 등록 응답이 아니라 그쪽이 저장된 전 필드를 보여 준다.
 #    ★ consents 2종이 없으면 422 LISTING_REQUIRED_AGREEMENT_MISSING 이다(아래 8번에서 확인).
 #    본문 전체 예시는 listing.http 13번과 같은 구조다.
 # @name register

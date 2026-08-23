@@ -396,6 +396,8 @@ public final class ListingDocsFields {
 
       **요청 주의사항**
 
+      - **시설 8종은 「없음」을 `NONE`으로 보낸다.** 해당 시설이 하나도 없으면 `["NONE"]` **하나만** 싱는다 — `NONE`을 다른 코드와 함께 보내면 `400 INVALID_INPUT`이고 `error.errors[].field`에 그 필드 이름이 실린다. ※ **이 규칙은 아래 스키마에 드러나지 않는다** — `NONE`은 허용값 목록의 평범한 값이라 타입상으로는 조합이 유효해 보인다.
+      - `NONE`은 행정구역의 `ETC`나 설문의 `OTHER`와 다르다 — 그쪽은 「목록 밖의 값」이고 `NONE`은 「해당하는 것이 없음」이다.
       - **주소를 먼저 검색한다** — 주소 칸은 자유 입력이 아니다. `GET /api/v1/listings/addresses`로 검색해 고른 후보의 값을 아래 세 필드에 그대로 담는다. 검색 결과는 모두 고를 수 있다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다.**
 
       | 검색 응답 | 등록 요청 | 내용 |
@@ -430,7 +432,7 @@ public final class ListingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
+      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개, **시설 8종 중 어느 하나가 `NONE`을 다른 코드와 함께 담음**. 위반 필드는 `error.errors[]`에 실린다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
       | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -795,18 +797,45 @@ public final class ListingDocsFields {
     fields.add(enumField("arcRequired", ArcRequirement.class, "입주에 외국인등록증(ARC)이 필요한지 여부"));
     fields.add(field("facilities", JsonFieldType.OBJECT, "공용 시설·비품"));
     fields.add(
-        enumArrayField("facilities.heatingSystem", Listing.HeatingSystem.class, "난방시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.kitchen", KitchenFacility.class, "주방시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.laundry", LaundryFacility.class, "세탁시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.livingAmenities", LivingAmenity.class, "생활시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.securityFeatures", SecurityFeature.class, "안전시설. 1개 이상"));
+        enumArrayField(
+            "facilities.heatingSystem",
+            Listing.HeatingSystem.class,
+            "난방시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.kitchen",
+            KitchenFacility.class,
+            "주방시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.laundry",
+            LaundryFacility.class,
+            "세탁시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.livingAmenities",
+            LivingAmenity.class,
+            "생활시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.securityFeatures",
+            SecurityFeature.class,
+            "안전시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
     fields.add(
         enumArrayField(
             "facilities.commonSpaces",
             Listing.CommonSpaceType.class,
-            "공용공간. 1개 이상. 수량 없이 종류만 보낸다"));
-    fields.add(enumArrayField("facilities.providedSupplies", ProvidedSupply.class, "제공비품. 1개 이상"));
-    fields.add(enumArrayField("nearbyFacilities", NearbyFacility.class, "주변 편의시설. 1개 이상"));
+            "공용공간. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다). 수량 없이 종류만 보낸다"));
+    fields.add(
+        enumArrayField(
+            "facilities.providedSupplies",
+            ProvidedSupply.class,
+            "제공비품. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "nearbyFacilities",
+            NearbyFacility.class,
+            "주변 편의시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
     fields.add(field("nearestTransit", JsonFieldType.OBJECT, "가장 가까운 대중교통"));
     fields.add(enumField("nearestTransit.type", Listing.TransitType.class, "가까운 교통수단"));
     fields.add(
@@ -1343,6 +1372,8 @@ public final class ListingDocsFields {
       | " | `roomOffers[].status` | `ACTIVE`·`INACTIVE`. 방을 내리는 것은 요청에서 빼는 것이 아니라 `INACTIVE`로 보내는 것이다 |
       | 사진 키에 기존 사진을 섞는다 | `imageKeys` · `roomOffers[].roomImageKeys` | 새로 올린 **임시 키**(`uploads/…`)와 그 자리에 이미 있던 **확정 키**(`listings/…`)를 섞어 보낸다 |
 
+      - **시설 8종은 「없음」을 `NONE`으로 보낸다.** 해당 시설이 하나도 없으면 `["NONE"]` **하나만** 싱는다 — `NONE`을 다른 코드와 함께 보내면 `400 INVALID_INPUT`이고 `error.errors[].field`에 그 필드 이름이 실린다. ※ **이 규칙은 아래 스키마에 드러나지 않는다** — `NONE`은 허용값 목록의 평범한 값이라 타입상으로는 조합이 유효해 보인다.
+      - `NONE`은 행정구역의 `ETC`나 설문의 `OTHER`와 다르다 — 그쪽은 「목록 밖의 값」이고 `NONE`은 「해당하는 것이 없음」이다.
       - **보내지 않은 필드는 지워진다.** 주소에서 좌표·행정구역·주변 대학이 파생되므로 일부만 보내면 파생값이 본문과 어긋난다. 폼 프리필은 `GET /api/v2/users/me/listings/{listingId}`가 준다.
       - **수정할 수 있는지는 매물의 현재 상태 하나가 정한다.** 임대인이 고를 것은 없다.
 
@@ -1372,7 +1403,7 @@ public final class ListingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 등록과 같은 필수값·형식·범위 위반. 더해서 그 매물의 것이 아닌 `roomOfferId`, 저장 결과에 `ACTIVE` 방 0개 |
+      | 400 | `INVALID_INPUT` | 등록과 같은 필수값·형식·범위 위반(**시설 8종의 `NONE` 단독 규칙** 포함). 더해서 그 매물의 것이 아닌 `roomOfferId`, 저장 결과에 `ACTIVE` 방 0개 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `LISTING_IMAGE_REQUIRED` | 최종 배열이 대표 1~5장 · 방 2~5장을 벗어남 |
       | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 키가 남의 것·없는 것·만료된 것이거나, 확정 키를 원래 자리가 아닌 곳에 넣음 |

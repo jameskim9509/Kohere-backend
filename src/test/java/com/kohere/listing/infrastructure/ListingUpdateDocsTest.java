@@ -435,6 +435,39 @@ class ListingUpdateDocsTest {
   }
 
   /**
+   * 시설의 {@code NONE}은 단독으로만 보낼 수 있다(#270). 카탈로그에 실재하는 정상 코드라 코드 대조로는 걸러지지 않고, 등록·수정이 조립을 공유하므로 이
+   * 규칙도 두 경로에 똑같이 걸린다.
+   *
+   * <p>문서 스니펫은 등록 쪽에 한 벌 있으므로 여기서는 만들지 않는다 — 계약 회귀만 지킨다.
+   */
+  @Test
+  void NONE을_다른_코드와_함께_보내면_400() throws Exception {
+    mockMvc
+        .perform(
+            update(
+                landlordToken(),
+                LISTING_ID,
+                bodyReplacing("[\"WIFI\", \"TV\"]", "[\"NONE\", \"WIFI\"]")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andExpect(jsonPath("$.error.errors[0].field").value("facilities.livingAmenities"));
+  }
+
+  /** 시설이 하나도 없는 상태로도 수정된다 — 저장·응답 모두 {@code NONE} 하나다(#270). */
+  @Test
+  void 시설없음_NONE_단독_수정() throws Exception {
+    mockMvc
+        .perform(
+            update(
+                landlordToken(),
+                LISTING_ID,
+                bodyReplacing("[\"WASHER\", \"DRYING_RACK\"]", "[\"NONE\"]")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.listing.facilities.laundry.length()").value(1))
+        .andExpect(jsonPath("$.data.listing.facilities.laundry[0].code").value("NONE"));
+  }
+
+  /**
    * 그 매물의 것이 아닌 방 식별자는 400이다. 남의 매물 방을 끌어오거나 오타로 새 방이 생기는 것을 막는다.
    *
    * <p>어느 칸이 틀렸는지는 {@code errors[]}로만 알 수 있다 — {@code error.message}는 코드별 일반 문구로 덮인다.
