@@ -292,8 +292,8 @@
 | `description` | VO `LocalizedText` | 매물 소개 문구 `{ko,en}` |
 | `extraNotes` | VO `LocalizedText` | 입주 시 유의사항·생활 규칙 `{ko,en}` |
 | `imageUrls` | `List<String>` | 건물 공용 이미지 URL 목록(순서 보존, 첫 번째가 썸네일). **등록 요청은 URL이 아니라 저장 키(`imageKeys`, 1~5개)를 보낸다** — 서버가 임시 위치의 사진을 확정 위치로 복사하고 그 CDN URL을 보낸 순서 그대로 채운다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
-| `preferredNationalities` | `Set<Nationality>` | 임대인이 선호하는 입주자 국적(등록 폼 설문, 복수). 응답 비노출 |
-| `contractDifficulties` | `Set<ContractDifficulty>` | 외국인 임차인과 계약할 때 겪은 어려움(등록 폼 설문, 복수). 응답 비노출 |
+| `preferredNationalities` | `Set<Nationality>` | 임대인이 선호하는 입주자 국적(등록 폼 설문, 복수). 요청에서는 **선택**이며 값이 없으면 빈 집합으로 저장한다. 세입자 응답 비노출 |
+| `contractDifficulties` | `Set<ContractDifficulty>` | 외국인 임차인과 계약할 때 겪은 어려움(등록 폼 설문, 복수). 요청에서는 **선택**이며 값이 없으면 빈 집합으로 저장한다. 세입자 응답 비노출 |
 | `serviceFeedback` | String | Kohere에 바라는 점(등록 폼 설문, 자유 입력). 응답 비노출 |
 | `favoriteCount` | int | 찜 수 집계(≥0) |
 | `createdAt` | Instant | 생성 시각(UTC) |
@@ -429,7 +429,6 @@
 | `SupportedLanguage` | `ENGLISH` | 영어 |
 | | `CHINESE` | 중국어 |
 | | `JAPANESE` | 일본어 |
-| | `OTHER` | 기타 |
 | `NearbyFacility` | `CONVENIENCE_STORE` | 편의점 |
 | | `MART` | 마트/슈퍼마켓 |
 | | `HOSPITAL_PHARMACY` | 병원/약국 |
@@ -501,14 +500,12 @@
 | | `CHINA` | 중국 |
 | | `SOUTHEAST_ASIA` | 동남아 |
 | | `EUROPE` | 유럽 |
-| | `OTHER` | 기타 |
 | `ContractDifficulty` | `LANGUAGE` | 의사소통 문제(언어) — 등록 폼 설문 |
 | | `CULTURE` | 외국인 생활 관련 문제(문화) |
 | | `IDENTITY` | 낯선 외국인에 대한 두려움(신원) |
 | | `PAYMENT` | 대금 지급·환율(결제) |
 | | `CONTRACT_FULFILLMENT` | 손해배상·위약금(계약 이행) |
 | | `COMMUNICATION_CHANNEL` | 외국인과의 소통 채널 부족 |
-| | `OTHER` | 기타 |
 
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox·마커 결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 요청 bbox의 중심 좌표를 기준으로 하며, bbox 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 

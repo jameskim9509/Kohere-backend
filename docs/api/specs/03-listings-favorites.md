@@ -461,8 +461,8 @@ Request Body:
 | `roomOffers[].pricing.maintenanceFee` | integer(KRW) | 필수 | 관리비. 0 이상 |
 | `roomOffers[].filterTags` | `ConditionTag[]` | 필수 | 타입별 매물 옵션(복수 선택). 카탈로그 `CONDITION_TAG` 대조 |
 | `roomOffers[].roomImageKeys` | string[] | 필수 | 그 객실 사진의 저장 키. **2~5개**. 방마다 따로 담는다 |
-| `preferredNationalities` | `Nationality[]` | 필수 | 설문 — 선호하는 국적(복수 선택). 응답에 포함하지 않는다 |
-| `contractDifficulties` | `ContractDifficulty[]` | 필수 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 응답에 포함하지 않는다 |
+| `preferredNationalities` | `Nationality[]` | 선택 | 설문 — 선호하는 국적(복수 선택). 키를 생략하거나 `null`·`[]`을 보내도 된다. 서버가 빈 배열로 정규화하므로 **저장 문서에는 항상 키가 있다**. 세입자 응답에 포함하지 않는다 |
+| `contractDifficulties` | `ContractDifficulty[]` | 선택 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 키를 생략하거나 `null`·`[]`을 보내도 된다. 서버가 빈 배열로 정규화한다. 세입자 응답에 포함하지 않는다 |
 | `serviceFeedback` | string | 선택 | 설문 — Kohere에 전하고 싶은 말. 응답에 포함하지 않는다 |
 | `consents` | object | 필수 | 매물 이용약관 동의 2종. 객체 자체가 없으면 `400 INVALID_INPUT` |
 | `consents.privacyPolicyAgreed` | boolean | 필수 | 개인정보 수집·이용 동의. `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING` |
@@ -1470,7 +1470,8 @@ Request Body: 없음
 
 ### PUT /api/v2/listings/{listingId} — 매물 수정(임대인)
 
-- 설명: 임대인이 자기 매물의 내용을 고친다. **부분 수정이 아니라 전체 교체**이므로 등록 때 보낸 속성을 그대로 다시 보낸다 — 보내지 않은 필드는 지워진다. 저장에 성공하면 위 전이표대로 상태가 바뀌어 재심사에 오른다.
+- 설명: 임대인이 자기 매물의 내용을 고친다. **부분 수정이 아니라 전체 교체**이므로 등록 때 보낸 속성을 그대로 다시 보낸다 — 보내지 않은 필드는 지워진다.
+- **설문 2종(`preferredNationalities`·`contractDifficulties`)은 선택이지만 전체 교체 규칙은 그대로 적용된다** — 보내지 않으면 저장돼 있던 응답이 **빈 배열로 지워진다**(`blogUrl`·`serviceFeedback`과 같다). 값을 유지하려면 `GET /api/v2/users/me/listings/{listingId}`가 준 값을 그대로 다시 실어야 한다. 저장에 성공하면 위 전이표대로 상태가 바뀌어 재심사에 오른다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). 소유자 판정은 access 토큰의 사용자와 매물의 `landlordId`를 대조하며, 남의 매물이면 `404 LISTING_NOT_FOUND`다.
 - 메서드: **`PUT`이다.** `location`·`address.city`/`district`·`nearbyUniversityCodes`가 모두 주소에서 파생되는 값이라, 일부만 보내는 `PATCH`를 허용하면 파생값이 본문과 어긋난 상태로 남는다([api-design-guide](../api-design-guide.md)).
 - 선행 호출: 수정 화면의 프리필은 `GET /api/v2/users/me/listings/{listingId}`가 준다. 주소·역은 등록과 같이 `GET /api/v1/listings/addresses`·`GET /api/v1/listings/stations`로 다시 검색해 고른 값을 담고, 새로 넣을 사진은 `POST /api/v2/listings/images`로 먼저 올려 키를 받는다.
@@ -1586,7 +1587,7 @@ Request Body: 없음
 | 묶음 | 내용 | 왜 |
 | --- | --- | --- |
 | 매물 상세 전 필드 | 세입자 상세(`GET /api/v2/listings/{listingId}`)가 주는 것 전부 | 프리필의 본체 |
-| 세입자에게 감추는 값 | `businessRegistrationNumber` · 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`) | **전부 등록·수정 요청 필드**라 빠지면 그대로 다시 제출할 수 없다 |
+| 세입자에게 감추는 값 | `businessRegistrationNumber` · 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`) | **전부 등록·수정 요청 필드**다. 설문 3종은 선택이지만 **보내지 않으면 빈 값으로 덮이므로**(전체 교체) 유지하려면 이 응답이 준 값을 그대로 다시 실어야 한다 |
 | 사진 키 | `imageKeys` · `roomOffers[].roomImageKeys` | 유지할 사진을 그대로 되돌려 보내려면 URL이 아니라 **키**가 필요하다. 미리보기용 URL(`imageUrls`·`roomImageUrls`)도 함께 내려간다 |
 | 방 식별자·상태 | `roomOffers[].roomOfferId` · `roomOffers[].status` | 수정 요청이 요구하는 값이다. **`INACTIVE` 방도 포함해** 내려간다(세입자·관리자 응답은 `ACTIVE`만 준다) — 그래야 되살릴 수 있다 |
 | 읽기 전용 | `status` · `rejectionReason` | 같은 화면이 상태 배지와 반려 사유를 보여준다. 요청에는 칸이 없다 |

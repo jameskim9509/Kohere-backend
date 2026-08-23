@@ -1366,10 +1366,18 @@
   Given `address.lat`·`address.lng`를 빠뜨렸거나 WGS84 범위 밖의 값을 보내고
   When `POST /api/v2/listings`를 호출하면
   Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 매물을 생성하지 않는다. 좌표는 주소 검색이 준 값을 되돌려 보내는 필수 값이다
+- 시나리오: 설문을 건너뛰고 등록
+  Given 선호 국적·계약 어려움 설문에 답할 내용이 없어 키를 생략하거나 `null`·`[]`을 보내고
+  When `POST /api/v2/listings`를 호출하면
+  Then `201 Created`로 등록되고 저장 문서의 두 필드는 **빈 배열**이다(키는 항상 있다). 요청에서는 선택이지만 저장은 항상 배열이다
 - 시나리오: 해당 시설이 하나도 없는 매물 등록
   Given 시설 8종 중 어느 칸에 고를 것이 하나도 없어 `["NONE"]`을 보내고
   When `POST /api/v2/listings`를 호출하면
   Then `201 Created`로 등록되고 저장된 값도 `["NONE"]`이다. 조회 응답에는 다른 코드와 똑같이 `{code, label}`로 나간다
+- 시나리오: 수정 요청이 설문을 싣지 않음
+  Given 수정 요청에 설문 2종을 담지 않고
+  When `PUT /api/v2/listings/{listingId}`를 호출하면
+  Then 저장돼 있던 값이 **빈 배열로 교체된다** — 수정은 전체 교체라 생략은 「유지」가 아니라 「지움」이다(`blogUrl`·`serviceFeedback`과 같다). 값을 유지하려면 임대인 상세가 준 값을 그대로 다시 실는다
 - 시나리오: 입력 검증 실패(`NONE`을 다른 코드와 함께 보냄)
   Given 시설 8종 중 어느 하나가 `["NONE", "WIFI"]`처럼 `NONE`과 다른 코드를 함께 담고
   When `POST /api/v2/listings`나 `PUT /api/v2/listings/{listingId}`를 호출하면

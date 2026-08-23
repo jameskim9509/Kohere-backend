@@ -90,7 +90,7 @@ Proposed · **Amended(담당자 연락처에서 `sms` 제거, 2026-08-16)**
 
 **`0115`는 스키마만 다룬다** — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. **데이터는 건드리지 않는다.**
 
-**시드는 수동으로 주입한다**(`listings` 2건 · `listingCatalog` 113건). 운영 절차는 [migration-policy §8-1](../database/migration-policy.md#8-1-시드-주입-절차)이 정본이며, 핵심은 **`--drop`을 쓰지 않는 것**이다 — 컬렉션을 지우면 validator가 함께 사라지는데 `0115`는 1회성이라 재기동해도 복구되지 않는다. `deleteMany({})` 후 import한다.
+**시드는 수동으로 주입한다**(`listings` 2건 · `listingCatalog` 112건). 운영 절차는 [migration-policy §8-1](../database/migration-policy.md#8-1-시드-주입-절차)이 정본이며, 핵심은 **`--drop`을 쓰지 않는 것**이다 — 컬렉션을 지우면 validator가 함께 사라지는데 `0115`는 1회성이라 재기동해도 복구되지 않는다. `deleteMany({})` 후 import한다.
 
 인덱스는 부트스트랩(`ListingMongoIndexInitializer`)이 계속 소유한다. 다만 `listings_status_arc_required`는 키가 바뀌므로 **새 이름으로 만든다** — 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다.
 
