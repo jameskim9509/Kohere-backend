@@ -57,7 +57,7 @@ class WebLoginLockIntegrationTest {
   private static final String PASSWORD = "Kohere1!";
   private static final String WRONG_PASSWORD = "Wrong99!";
 
-  /** 로그인 시도 IP 한도(30회/시간)를 다른 테스트와 나눠 쓰지 않도록 이 테스트 전용 IP를 쓴다. */
+  /** 로그인 시도 IP 한도를 다른 테스트와 나눠 쓰지 않도록 이 테스트 전용 IP를 쓴다. */
   private static final String CLIENT_IP = "198.51.100.20";
 
   @Autowired private WebApplicationContext context;

@@ -141,12 +141,12 @@ class WebLandlordAuthDocsTest {
   private static final String LOCKED_PHONE = "01055550008";
   private static final String LOCKED_EMAIL = "err-web-locked@work.example";
 
-  /** 시도 한도(이메일 10회/시간)를 실제로 넘기는 전용 이메일. 계정은 만들지 않는다 — 한도는 조회보다 먼저 판정된다. */
+  /** 시도 한도(이메일 한도/시간)를 실제로 넘기는 전용 이메일. 계정은 만들지 않는다 — 한도는 조회보다 먼저 판정된다. */
   private static final String RATE_LIMITED_EMAIL = "err-web-ratelimit@work.example";
 
   /**
-   * 시도를 대량으로 쌓는 케이스 전용 IP. 기본 remote address(127.0.0.1)에 몰면 같은 컨테이너를 쓰는 다른 케이스가 IP 한도(로그인 30회/시간)를
-   * 나눠 쓰게 되어, 관계없는 단정이 429로 깨진다.
+   * 시도를 대량으로 쌓는 케이스 전용 IP. 기본 remote address(127.0.0.1)에 몰면 같은 컨테이너를 쓰는 다른 케이스가 IP 한도를 나눠 쓰게 되어,
+   * 관계없는 단정이 429로 깨진다.
    */
   private static final String RATE_LIMIT_TEST_IP = "203.0.113.77";
 
