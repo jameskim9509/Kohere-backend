@@ -432,6 +432,32 @@ class ListingRegisterDocsTest {
   }
 
   /**
+   * 설문 2종은 선택이라 키를 아예 빼도 등록된다(#270).
+   *
+   * <p><b>응답으로는 증명할 수 없다</b> — 등록 응답은 설문을 감추기 때문이다(위 {@code doesNotExist} 단정). 그래서 저장 문서를 직접 읽어 「키가
+   * 있고 빈 배열」임을 본다. 키가 사라지면 MongoDB {@code required} 위반이라 dev에서만 500이 나는데, 테스트 프로파일은 validator를 적용하지
+   * 않아 여기서 값을 직접 보지 않으면 아무도 잡지 못한다.
+   */
+  @Test
+  @DisplayName("설문 2종을 생략해도 등록되고 저장은 빈 배열이다")
+  void 설문생략_등록성공_빈배열저장() throws Exception {
+    String body =
+        REGISTER_BODY
+            .replaceAll("(?m)^ *\"preferredNationalities\".*\\R", "")
+            .replaceAll("(?m)^ *\"contractDifficulties\".*\\R", "");
+    if (body.contains("preferredNationalities") || body.contains("contractDifficulties")) {
+      throw new IllegalStateException("등록 본문에서 설문 두 필드를 빼지 못했다");
+    }
+
+    mockMvc.perform(register(landlordToken(), body)).andExpect(status().isCreated());
+
+    Document saved = mongoTemplate.getCollection(LISTINGS_COLLECTION).find().first();
+    assertThat(saved).isNotNull();
+    assertThat(saved.getList("preferredNationalities", String.class)).isEmpty();
+    assertThat(saved.getList("contractDifficulties", String.class)).isEmpty();
+  }
+
+  /**
    * 시설이 하나도 없는 건물도 등록된다(#270). 등록 응답은 시설을 감추지 않지만 세입자 상세와 같은 모양이라 여기서 {@code NONE} 이 code/label 로
    * 나가는 것까지 함께 본다.
    *

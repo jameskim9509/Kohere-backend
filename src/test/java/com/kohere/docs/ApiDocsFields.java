@@ -115,6 +115,18 @@ public final class ApiDocsFields {
     return codeArrayField(path, enumValues(enumType), description);
   }
 
+  /**
+   * {@link #enumArrayField}의 optional 판. 요청 필드를 선택으로 낮추면 이걸 써야 OpenAPI 요청 스키마의 {@code required}에서
+   * 빠진다.
+   *
+   * <p><b>자바 애너테이션만 떼고 기술자를 그대로 두면 문서만 조용히 틀린다</b> — 예시 페이로드에 값이 남아 있어 REST Docs는 실패하지 않고, 생성된 스키마만
+   * 계속 필수라고 말한다({@code !optional}이 그대로 {@code required}로 옮겨간다).
+   */
+  public static FieldDescriptor optEnumArrayField(
+      String path, Class<? extends Enum<?>> enumType, String description) {
+    return enumArrayField(path, enumType, description).optional();
+  }
+
   private static List<String> enumValues(Class<? extends Enum<?>> enumType) {
     return Arrays.stream(enumType.getEnumConstants()).map(Enum::name).toList();
   }

@@ -434,6 +434,25 @@ class ListingUpdateDocsTest {
         LISTING_UPDATE_409);
   }
 
+  /** 설문 2종을 생략한 수정은 성공하고 저장된 값이 빈 배열로 교체된다 — 전체 교체라 생략은 유지가 아니라 삭제다(#270). */
+  @Test
+  void 설문생략_수정성공_빈배열로교체() throws Exception {
+    String body =
+        UPDATE_BODY
+            .replaceAll("(?m)^ *\"preferredNationalities\".*\\R", "")
+            .replaceAll("(?m)^ *\"contractDifficulties\".*\\R", "");
+    if (body.contains("preferredNationalities") || body.contains("contractDifficulties")) {
+      throw new IllegalStateException("수정 본문에서 설문 두 필드를 빼지 못했다");
+    }
+
+    mockMvc
+        .perform(update(landlordToken(), LISTING_ID, body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.preferredNationalities").isArray())
+        .andExpect(jsonPath("$.data.preferredNationalities").isEmpty())
+        .andExpect(jsonPath("$.data.contractDifficulties").isEmpty());
+  }
+
   /**
    * 시설의 {@code NONE}은 단독으로만 보낼 수 있다(#270). 카탈로그에 실재하는 정상 코드라 코드 대조로는 걸러지지 않고, 등록·수정이 조립을 공유하므로 이
    * 규칙도 두 경로에 똑같이 걸린다.
