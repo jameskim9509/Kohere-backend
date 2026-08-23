@@ -6,6 +6,7 @@ import com.kohere.listing.domain.AdminOnlyListingException;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.ListingStateChangedException;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
 import java.util.List;
@@ -70,7 +71,8 @@ public class AdminListingService {
   public AdminListingDetailResponse approve(long adminId, String listingId) {
     requireAdmin(adminId);
 
-    Listing approved = listingRepository.save(findListing(listingId).approve(Instant.now()));
+    Listing found = findListing(listingId);
+    Listing approved = saveTransition(found, found.approve(Instant.now()));
     log.info("[ADMIN] 매물 승인 (adminId={}, listingId={})", adminId, listingId);
     return toResponse(approved);
   }
@@ -84,7 +86,8 @@ public class AdminListingService {
   public AdminListingDetailResponse reject(long adminId, String listingId, String reason) {
     requireAdmin(adminId);
 
-    Listing rejected = listingRepository.save(findListing(listingId).reject(reason, Instant.now()));
+    Listing found = findListing(listingId);
+    Listing rejected = saveTransition(found, found.reject(reason, Instant.now()));
     log.info("[ADMIN] 매물 반려 (adminId={}, listingId={})", adminId, listingId);
     return toResponse(rejected);
   }
@@ -94,6 +97,24 @@ public class AdminListingService {
    *
    * <p>보안 매처가 이미 온보딩 완료까지는 걸렀지만 그것으로는 역할을 알 수 없다. 여기서 확인하므로 권한을 회수하면 살아 있는 토큰으로도 심사할 수 없다.
    */
+  /**
+   * 심사 결정을 <b>읽은 시점의 상태를 조건으로</b> 저장한다.
+   *
+   * <p>임대인 수정이 같은 문서를 통째로 교체하므로, 조건 없이 저장하면 관리자의 결정과 임대인의 수정이 서로를 소리 없이 덮는다. 한쪽만 조건을 걸면 다른 쪽이 계속
+   * 덮으므로 양쪽에 건다.
+   *
+   * <p>이미 공개 중인 매물의 재승인은 {@link Listing#approve}가 자기 자신을 돌려주므로 <b>저장 자체를 하지 않는다</b> — 조건 비교로 이어지지
+   * 않게 여기서 먼저 걸러 낸다. 그래야 "바뀐 것이 없음"과 "누가 끼어들었음"이 섞이지 않는다.
+   */
+  private Listing saveTransition(Listing before, Listing after) {
+    if (after == before) {
+      return before;
+    }
+    return listingRepository
+        .saveIfStatus(after, before.getStatus())
+        .orElseThrow(ListingStateChangedException::new);
+  }
+
   private void requireAdmin(long adminId) {
     if (!USER_TYPE_ADMIN.equals(userAccountService.getUserType(adminId))) {
       throw new AdminOnlyListingException();

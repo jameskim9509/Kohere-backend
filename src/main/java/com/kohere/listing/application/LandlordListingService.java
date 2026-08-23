@@ -119,6 +119,11 @@ public class LandlordListingService {
    *
    * <p>사진은 URL이 아니라 <b>키</b>도 함께 준다. URL에서 키를 역산하게 하면 클라이언트가 주소 형식에 묶여 CDN을 바꿀 때 같이 깨진다.
    */
+  /** 저장 직후의 매물을 상세 응답으로 만든다. 수정 경로가 조회와 같은 모양을 돌려주도록 공유한다. */
+  LandlordListingDetailResponse toDetail(Listing listing, long landlordId) {
+    return toDetail(listing, localizationFor(landlordId));
+  }
+
   private LandlordListingDetailResponse toDetail(
       Listing listing, ListingLocalizationContext localization) {
     return new LandlordListingDetailResponse(

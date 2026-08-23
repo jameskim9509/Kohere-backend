@@ -122,6 +122,11 @@ public class ListingImageConfirmer {
    * <p>확정본에는 만료 규칙이 없어({@code uploads/} 접두 전용) 여기서 지우지 않으면 아무도 참조하지 않는 객체가 계속 쌓인다. 다만 정리는
    * best-effort다 — 실패해도 예외를 던지지 않고 그만큼 남는다.
    */
+  /** 확정이 끝난 임시본을 키 목록으로 치운다. 수정 경로는 임시 키만 따로 들고 있어 이 모양이 맞다. */
+  public void discardPendingKeys(Collection<String> pendingKeys) {
+    deleteQuietly(List.copyOf(pendingKeys));
+  }
+
   public void discardReplaced(Collection<String> keys) {
     deleteQuietly(List.copyOf(keys));
   }
