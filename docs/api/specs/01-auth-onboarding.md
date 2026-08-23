@@ -596,7 +596,7 @@ Set-Cookie: refreshToken=rt_3b1e7c5a2f9d04e8b6c1a07f5d2e93b4c8a16f0d; HttpOnly; 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
 | `phoneNumber` | string | 필수 | §1-5로 인증번호를 발송한 번호와 일치해야 함(정규화 후 비교 — 하이픈 유무는 무관) |
-| `code` | string | 필수 | 발송된 인증번호(숫자 6자리 — `@NotBlank` + `@Pattern`). 빈 문자열 불가 |
+| `code` | string | 필수 | 발송된 인증번호. 빈 문자열 불가. **자릿수·형식은 검증하지 않는다** — 검증이 해시 대조이고, §1-2가 같은 필드에 이미 같은 판단을 내려 두었다(형제 엔드포인트가 같은 입력에 다른 status를 내지 않게 한다) |
 
 #### 성공 Response — 200 OK
 
@@ -617,7 +617,7 @@ Set-Cookie: refreshToken=rt_3b1e7c5a2f9d04e8b6c1a07f5d2e93b4c8a16f0d; HttpOnly; 
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `phoneNumber`/`code` 누락/빈값/형식 위반 |
+| 400 | `INVALID_INPUT` | `phoneNumber`/`code` 누락·빈값, `phoneNumber` 형식 위반 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 422 | `AUTH_PHONE_VERIFICATION_FAILED` | 코드 불일치, 만료, **검증 시도 상한(5회) 초과**, 또는 챌린지 부재(미발송·만료·이미 검증) — §1-2와 동일하게 시도 초과도 이 코드다 |
 
