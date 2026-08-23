@@ -200,10 +200,11 @@
 
 | 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
 | --- | --- | --- | --- | --- |
-| `pwd-reset:{tokenHash}` | Hash | `userId`(→ users.id) · `email` · `issuedAt` · `expiresAt` | 토큰 만료(`app.auth.web.password-reset.token-ttl-seconds` — 30분) | 링크 사전 확인이 **읽기만** 하고, 재설정 확정이 **원자 소비**한다 |
+| `pwd-reset:{tokenHash}` | String(JSON) | `userId`(→ users.id) · `email` · `issuedAt` · `expiresAt` | 토큰 만료(`app.auth.web.password-reset.token-ttl-seconds` — 30분) | 링크 사전 확인이 **읽기만** 하고, 재설정 확정이 **원자 소비**한다 |
 | `pwd-reset:rate:email:{소문자이메일}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 한 사람 메일함에 링크를 퍼붓는 남용 차단 — 초과 시 `429 TOO_MANY_REQUESTS` |
 | `pwd-reset:rate:ip:{IP}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 이메일을 바꿔가며 발송비를 태우는 남용 차단 — 초과 시 `429` |
 
+- **Hash가 아니라 값 하나(JSON)다 — 원자 소비 때문이다.** 필드를 Hash로 쪼개면 소비가 `HGETALL` + `DEL` 두 명령이 되어 원자적일 수 없고, 같은 링크를 동시에 두 번 눌렀을 때 둘 다 통과해 **일회용이 아니게 된다**(메일 클라이언트 prefetch·더블클릭이 흔하다). 값 하나로 두면 `GETDEL` 한 명령이 읽기와 삭제를 함께 끝낸다 — Lua 스크립트를 들이지 않고 같은 보장을 얻는다.
 - **소비는 원자적이어야 한다**: 확정 시 `GETDEL`(또는 Lua) **한 번**으로 읽고 지운다. `find` → 검증 → `delete`로 쪼개면 동시에 들어온 두 요청이 같은 토큰으로 통과해 **한 링크가 두 번 쓰인다**.
 - **사전 확인은 소비하지 않는다**: 메일 클라이언트·보안 스캐너가 링크를 미리 여는 일이 흔해, 확인 단계에서 지우면 **사용자가 클릭하기도 전에 링크가 죽는다**. 사전 확인이 돌려주는 `expiresIn`은 고정값이 아니라 그 키의 **남은 TTL**이다.
 - **확정 순서가 계약이다**: 토큰 원자 소비 → `local_accounts.password_hash` 교체(MySQL) → 그 사용자 refresh 전량 무효화(Redis, (A) `refresh:user:{userId}`) → 로그인 시도 레이트리밋 카운터 삭제(Redis). MySQL과 Redis에 걸친 원자성은 불가능하므로([§2-4](#2-4-제약무결성-공통) 교차 스토어 트랜잭션 금지), 중간에 끊겼을 때 **남는 상태가 "토큰만 소비됨"**(사용자가 링크를 다시 요청하면 그만)이 되도록 이 순서를 지킨다. 뒤집으면 비밀번호는 이미 바뀌었는데 토큰이 살아 있는 **재사용 창**이 남는다.
