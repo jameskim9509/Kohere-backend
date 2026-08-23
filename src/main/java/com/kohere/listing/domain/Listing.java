@@ -140,7 +140,8 @@ public class Listing {
    * 심사를 통과시켜 공개 상태로 만든다.
    *
    * <p><b>상태를 가리지 않는다.</b> 심사 대기 매물의 승인뿐 아니라 <b>잘못 반려한 매물을 되살리는</b> 경로({@code REJECTED →
-   * PUBLISHED})도 정상이다 — 관리자의 오판을 되돌릴 수단이 서버에 없으면 임대인 수정 API가 나오기 전까지 그 매물이 묶인다.
+   * PUBLISHED})도 정상이다 — 관리자의 오판을 되돌릴 수단이 서버에 있어야 하기 때문이다. 임대인이 고쳐서 다시 올리는 경로({@link #afterEdit})와
+   * 별개로, 관리자 단독으로도 되살릴 수 있다.
    *
    * <p>이미 공개 중인 매물을 다시 승인하면 <b>아무 일도 일어나지 않는다</b>. 같은 값으로 저장해도 결과는 같지만 {@code updatedAt}이 바뀌면 세입자
    * 목록의 기본 정렬(찜 수 → 최신 수정순)에서 그 매물만 위로 올라간다 — 눈에 띄지 않는 부작용이라 아예 손대지 않는다.
@@ -176,6 +177,51 @@ public class Listing {
         .build();
   }
 
+  /** 이 매물이 이 계정의 소유인지 본다. 임대인 전용 조회·수정의 소유권 게이트가 쓴다. */
+  public boolean isOwnedBy(long userId) {
+    return landlordId != null && landlordId == userId;
+  }
+
+  /**
+   * 지금 임대인이 수정할 수 있는 상태인지 확인한다. 아니면 {@link ListingNotEditableException}이다.
+   *
+   * <p>사진을 확정 위치로 복사하기 <b>전에</b> 부른다 — 거절될 요청이 확정 위치에 흔적을 남기지 않게 하려는 것으로, 등록이 사진 키 검사를 가장 앞에 두는 것과
+   * 같은 이유다.
+   */
+  public void requireEditable() {
+    nextStatusAfterEdit();
+  }
+
+  /**
+   * 수정이 반영된 빌더를 받아 전이를 마무리한다.
+   *
+   * <p><b>상태와 반려 사유를 서비스가 아니라 여기서 정한다.</b> 서비스가 지우게 하면 다음에 생기는 수정 경로가 빠뜨린다 — {@link #approve}가 같은
+   * 이유로 소거를 직접 하는 것과 같다.
+   *
+   * <p>반려 사유는 <b>원래 상태를 가리지 않고 항상</b> 지운다. {@code PUBLISHED}였다면 이미 {@code null}이라 결과가 같고, 분기를 두면
+   * 그만큼 틀릴 여지가 생긴다.
+   *
+   * @param edited 수정 요청이 반영된 빌더. 상태·사유·수정 시각은 아직 이 매물의 값이다
+   * @param now 수정한 시각
+   */
+  public Listing afterEdit(ListingBuilder edited, Instant now) {
+    return edited.status(nextStatusAfterEdit()).rejectionReason(null).updatedAt(now).build();
+  }
+
+  /**
+   * 수정 후 넘어갈 상태를 정한다.
+   *
+   * <p><b>{@code default}를 두지 않는다.</b> 상태가 하나 더 늘면 컴파일이 깨져 여기서 결정을 강제한다 — 조용히 어느 한쪽으로 떨어지면 새 상태의 수정
+   * 가능 여부가 아무도 정하지 않은 채 정해진다.
+   */
+  private ListingStatus nextStatusAfterEdit() {
+    return switch (status) {
+      case REJECTED -> ListingStatus.PENDING;
+      case PUBLISHED -> ListingStatus.UPDATE_PENDING;
+      case PENDING, UPDATE_PENDING -> throw new ListingNotEditableException();
+    };
+  }
+
   /** 매물의 심사·게시 상태다. 임대인과 관리자만 읽으므로 번역 대상이 아니다. */
   public enum ListingStatus {
     /** 등록 직후 관리자 승인을 기다리는 상태다. 조회 API에 노출되지 않는다. */
@@ -185,7 +231,15 @@ public class Listing {
     PUBLISHED,
 
     /** 관리자가 반려한 상태다. 사유는 {@link Listing#getRejectionReason()}에 담긴다. */
-    REJECTED
+    REJECTED,
+
+    /**
+     * 공개 중이던 매물을 임대인이 수정해 재심사를 기다리는 상태다.
+     *
+     * <p>세입자 조회에서 <b>빠진다</b> — 심사를 거치지 않은 내용이 세입자에게 도달하지 않게 하려는 것이다. 조회 경로들이 {@code PUBLISHED}만
+     * 통과시키므로 <b>아무것도 하지 않아도</b> 그렇게 되며, 승인되면 찜 수·찜 문서·최근 본 기록이 그대로 복구된다.
+     */
+    UPDATE_PENDING
   }
 
   /** 가장 가까운 대중교통 수단 유형이다. */
