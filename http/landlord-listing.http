@@ -1,23 +1,40 @@
 # Kohere — 임대인 매물 수정·전용 조회 로컬 수동 테스트 — #267
-# 흐름: 임대인 로그인 → 내 매물 목록·상세 → 반려 매물 수정(→ 심사 대기) → 승인 → 공개 매물 수정(→ 수정 심사 대기) → 경계 확인
+# 흐름: 로그인 → 내 매물 목록·상세 → 반려 매물 수정(→ 심사 대기) → 승인 → 공개 매물 수정(→ 수정 심사 대기) → 경계 확인
 # 스펙: docs/api/specs/03-listings-favorites.md 「임대인 매물 관리」
 # 유저스토리: US-3-8(임대인 전용 조회) · US-3-9(임대인 매물 수정)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
 #   2) 앱:      ./gradlew bootRun
-#   3) 시드·관리자 계정 준비는 admin-listing-review.http 의 안내를 그대로 따른다.
-#      이 파일은 그 파일로 매물 하나를 등록·반려까지 해 둔 상태에서 이어 쓰는 것을 전제한다.
-#   4) 1번부터 순서대로 "Send Request".
+#   3) 계정·시드: admin-listing-review.http 의 「관리자 계정 만들기」·「시드」를 먼저 끝낸다.
+#      이 파일은 그 파일로 **매물 하나를 등록해 반려까지 해 둔 상태**에서 이어 쓴다.
+#   4) 0번부터 순서대로 "Send Request" — 토큰·매물 id·사진 키가 이름붙은 응답으로 자동 전달된다.
 #
-# ★ 이 파일의 핵심은 두 가지다.
+# ★ 이 파일의 핵심 두 가지
 #   · 수정은 **전체 교체**다. 등록 때 보낸 속성을 그대로 다시 보낸다 — 빠뜨린 필드는 지워진다.
-#   · 사진은 **임시 키와 기존 확정 키를 섞어** 보낸다. 그대로 둘 사진은 상세 응답의 `imageKeys` 값을
-#     그대로 되돌려 보내고, 새로 올린 사진만 업로드가 준 `uploads/…` 키로 보낸다.
+#   · 사진은 **임시 키와 기존 확정 키를 섞어** 보낸다. 그대로 둘 사진은 상세 응답의 `imageKeys` 를
+#     그대로 되돌려 보내고(아래에서 자동 참조한다), 새로 올린 것만 `uploads/…` 키로 보낸다.
+#
+# ⚠️ **수정할 때마다 상세를 먼저 다시 읽는다.** 수정이 성공하면 사진 확정 키가 바뀌므로, 옛 응답을
+#    참조하면 400 LISTING_IMAGE_KEY_NOT_FOUND 가 난다. 이 파일은 그래서 수정 직전마다 상세를
+#    새 이름으로 읽는다 — 5번(myListing) → 7번 수정, 11번(publishedListing) → 12번 수정,
+#    18번(latest) → 19~21번 경계 케이스.
 
 @host = http://localhost:8080
 @landlordEmail = landlord@kohere.test
 @landlordPassword = Password123!
+@adminEmail = admin@kohere.test
+@adminPassword = Password123!
+
+### 0. 관리자 웹 로그인 (승인 단계에서 쓴다)
+# @name adminLogin
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
 
 ### 1. 임대인 웹 로그인
 # @name landlordLogin
@@ -29,65 +46,53 @@ Content-Type: application/json
   "password": "{{landlordPassword}}"
 }
 
-###
-@landlordToken = {{landlordLogin.response.body.data.accessToken}}
-
 ### 2. 내 매물 목록 — 상태 무관 전체
 # 최근 수정순 고정이다. sort 파라미터는 없다.
 GET {{host}}/api/v2/users/me/listings
-Authorization: Bearer {{landlordToken}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
 ### 3. 내 매물 목록 — 반려된 것만
+# 이 응답의 첫 건을 이후 단계가 수정 대상으로 쓴다.
+# @name rejectedList
 GET {{host}}/api/v2/users/me/listings?status=REJECTED
-Authorization: Bearer {{landlordToken}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
 ### 4. 내 매물 목록 — 상태 여러 개(콤마)
 GET {{host}}/api/v2/users/me/listings?status=PENDING,UPDATE_PENDING&page=0&size=20
-Authorization: Bearer {{landlordToken}}
-
-###
-# ↓ 2~4번 응답에서 고친다. 반려된 매물의 id 를 넣는다.
-@listingId = 여기에_매물_id를_넣는다
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
 ### 5. 내 매물 상세 — 수정 폼 프리필용
-# 응답의 `imageKeys` · `rooms[].roomImageKeys` · `rooms[].roomOfferId` · `rooms[].status` 를
-# 그대로 7번 요청 본문에 옮겨 담는다. 비활성 방도 여기 나온다.
+# 이 응답의 imageKeys · rooms[].roomOfferId · rooms[].roomImageKeys 를 7번이 그대로 되돌려 보낸다.
+# 비활성 방도 rooms 에 나온다(listing.roomOffers 는 활성만).
 # @name myListing
-GET {{host}}/api/v2/users/me/listings/{{listingId}}
-Authorization: Bearer {{landlordToken}}
+GET {{host}}/api/v2/users/me/listings/{{rejectedList.response.body.$.data.content[0].listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
-### 6. 새 사진 한 장 올리기 (교체할 때만)
-# 응답의 key 가 uploads/{landlordId}/… 형태의 임시 키다.
+### 6. 새 사진 한 장 올리기 — 커버 한 장을 교체하는 시나리오다
 # @name newCover
 POST {{host}}/api/v2/listings/images
-Authorization: Bearer {{landlordToken}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 Content-Type: multipart/form-data; boundary=----KohereBoundary
 
 ------KohereBoundary
-Content-Disposition: form-data; name="file"; filename="cover.jpg"
+Content-Disposition: form-data; name="file"; filename="branch-2.jpg"
 Content-Type: image/jpeg
 
-< ./images/cover-1.jpg
+< ./images/branch-2.jpg
 ------KohereBoundary--
 
-###
-@newCoverKey = {{newCover.response.body.data.key}}
-
 ### 7. 반려 매물 수정 → 심사 대기(PENDING)
-# ★ 5번 응답을 보고 값을 채운다. 아래는 뼈대다.
-#   · imageKeys: 유지할 확정 키(5번의 imageKeys) + 새로 올린 임시 키({{newCoverKey}})를 섞는다.
-#   · roomOffers[].roomOfferId: 5번의 rooms[].roomOfferId. 새 방은 null 로 둔다.
-#   · roomOffers[].status: ACTIVE 또는 INACTIVE. 방을 내릴 때 요청에서 빼지 말고 INACTIVE 로 보낸다.
-#   · consents: 등록과 똑같이 둘 다 true 여야 한다. 저장된 최초 동의 시각은 그대로 유지된다.
-PUT {{host}}/api/v2/listings/{{listingId}}
-Authorization: Bearer {{landlordToken}}
+# imageKeys = 5번의 첫 커버 키(유지) + 6번의 임시 키(신규) 혼합.
+# roomImageKeys = 5번의 방 사진 확정 키 두 장을 그대로 유지.
+PUT {{host}}/api/v2/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 Content-Type: application/json
 
 {
-  "title": "코히어 고시원 (수정)",
+  "title": "코히어 고시원 (수정본)",
   "type": "GOSHIWON",
   "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
-  "businessRegistrationNumber": "1112233344",
+  "businessRegistrationNumber": "{{myListing.response.body.$.data.businessRegistrationNumber}}",
   "blogUrl": null,
   "address": {
     "fullAddress": "서울특별시 서대문구 신촌로 1",
@@ -113,98 +118,307 @@ Content-Type: application/json
     "livingAmenities": ["WIFI"],
     "securityFeatures": ["CCTV"],
     "commonSpaces": ["SHARED_KITCHEN"],
-    "providedSupplies": ["BED"]
+    "providedSupplies": ["BEDDING"]
   },
   "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
   "nearbyFacilities": ["CONVENIENCE_STORE"],
-  "description": "역세권 고시원입니다. (수정)",
+  "description": "역세권 고시원입니다. (수정본)",
   "extraNotes": "취사는 공용 주방만 가능합니다.",
   "refundPolicy": "입주 7일 전까지 전액 환불",
-  "imageKeys": ["여기에_5번의_유지할_커버_확정키", "{{newCoverKey}}"],
+  "imageKeys": [
+    "{{myListing.response.body.$.data.imageKeys[0]}}",
+    "{{newCover.response.body.$.data.key}}"
+  ],
   "roomOffers": [
     {
-      "roomOfferId": "여기에_5번의_roomOfferId",
+      "roomOfferId": "{{myListing.response.body.$.data.rooms[0].roomOfferId}}",
       "status": "ACTIVE",
-      "name": "스탠다드 1인실",
+      "name": "스탠다드 1인실 (수정본)",
       "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "pricing": { "monthlyRent": 520000, "deposit": 1000000, "maintenanceFee": 50000 },
       "filterTags": ["MOVE_IN_NOW"],
-      "roomImageKeys": ["여기에_5번의_방사진_확정키1", "여기에_5번의_방사진_확정키2"]
+      "roomImageKeys": [
+        "{{myListing.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{myListing.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
     }
   ],
-  "preferredNationalities": ["VIETNAM"],
+  "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
   "serviceFeedback": null,
   "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
 }
 
-### 8. 수정 직후 상태 확인 — PENDING 이어야 한다
-GET {{host}}/api/v2/users/me/listings/{{listingId}}
-Authorization: Bearer {{landlordToken}}
+### 8. 수정 직후 상태 확인 — status 가 PENDING, rejectionReason 이 사라졌다
+GET {{host}}/api/v2/users/me/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
 ### 9. 심사 중에는 다시 수정할 수 없다 — 422 LISTING_NOT_EDITABLE
-# 7번 본문을 그대로 다시 보낸다. 상태가 PENDING 이라 거절된다.
-PUT {{host}}/api/v2/listings/{{listingId}}
-Authorization: Bearer {{landlordToken}}
+# 본문이 유효하든 아니든 상태 게이트가 먼저 걸린다.
+PUT {{host}}/api/v2/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 Content-Type: application/json
 
 { "title": "다시 수정 시도" }
 
-### 10. 관리자 승인 (admin-listing-review.http 의 관리자 토큰이 필요하다)
-@adminToken = 여기에_관리자_accessToken을_넣는다
+### 10. 관리자 승인 → PUBLISHED
+POST {{host}}/api/v1/admin/listings/{{myListing.response.body.$.data.listing.listingId}}/approval
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-POST {{host}}/api/v1/admin/listings/{{listingId}}/approval
-Authorization: Bearer {{adminToken}}
+### 11. 공개 매물 수정 준비 — 키가 바뀌었으므로 상세를 다시 읽는다
+# @name publishedListing
+GET {{host}}/api/v2/users/me/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
-### 11. 공개 매물 수정 → 수정 심사 대기(UPDATE_PENDING)
-# 7번과 같은 본문을 보낸다. 이번에는 PUBLISHED 에서 출발하므로 UPDATE_PENDING 으로 넘어간다.
-# ★ 이 시점부터 세입자 조회(12번)에서 사라진다 — 의도된 동작이다.
-PUT {{host}}/api/v2/listings/{{listingId}}
-Authorization: Bearer {{landlordToken}}
+### 12. 공개 매물 수정 → 수정 심사 대기(UPDATE_PENDING)
+# ★ 이 시점부터 세입자 조회에서 사라진다 — 의도된 동작이다(13번으로 확인).
+# 사진은 전부 유지한다(신규 업로드 없음) — 확정 키만 되돌려 보내는 경우다.
+PUT {{host}}/api/v2/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 Content-Type: application/json
 
-{ "여기에": "7번 본문을 그대로 다시 넣는다" }
+{
+  "title": "코히어 고시원 (공개 후 수정)",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{publishedListing.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": {
+    "fullAddress": "서울특별시 서대문구 신촌로 1",
+    "detail": "3층",
+    "lat": 37.5595,
+    "lng": 126.9425
+  },
+  "building": {
+    "type": "COMMERCIAL_BUILDING",
+    "totalFloors": 8,
+    "usedFloorRange": "3~5",
+    "parkingAvailable": false,
+    "elevatorAvailable": true
+  },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["SHARED_KITCHEN"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "공개 후 고친 소개 문구입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{publishedListing.response.body.$.data.imageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{publishedListing.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{publishedListing.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{publishedListing.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
 
-### 12. 세입자 조회에서 사라졌는지 확인 — 404 LISTING_NOT_FOUND
-GET {{host}}/api/v2/listings/{{listingId}}
+### 13. 세입자 조회에서 사라졌는지 — 404 LISTING_NOT_FOUND (토큰 없이 호출한다)
+GET {{host}}/api/v2/listings/{{publishedListing.response.body.$.data.listing.listingId}}
 
-### 13. 임대인 조회에는 그대로 보인다 — 200, status=UPDATE_PENDING
-GET {{host}}/api/v2/users/me/listings/{{listingId}}
-Authorization: Bearer {{landlordToken}}
+### 14. 임대인 조회에는 그대로 보인다 — 200, status=UPDATE_PENDING
+GET {{host}}/api/v2/users/me/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
-### 14. 관리자 승인 → 다시 공개. 찜 수·찜 문서·최근 본 기록이 그대로 복구된다
-POST {{host}}/api/v1/admin/listings/{{listingId}}/approval
-Authorization: Bearer {{adminToken}}
+### 15. 관리자 목록에서 수정 심사 건을 최근 수정순으로 본다
+# 수정 재심사 건은 원래 오래된 매물이라 등록 최신순 큐의 바닥에 가라앉는다.
+GET {{host}}/api/v1/admin/listings?status=UPDATE_PENDING&sort=updatedAt,desc
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+
+### 16. 관리자 승인 → 다시 공개. 찜 수·찜 문서·최근 본 기록이 그대로 복구된다
+POST {{host}}/api/v1/admin/listings/{{publishedListing.response.body.$.data.listing.listingId}}/approval
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+
+### 17. 세입자 조회에 다시 나타난다 — 200
+GET {{host}}/api/v2/listings/{{publishedListing.response.body.$.data.listing.listingId}}
 
 # ─────────────────────────────── 경계 확인 ───────────────────────────────
+# 아래는 16번까지 끝낸 상태에서 개별로 보내면 된다. 실행 전 18번으로 상세를 한 번 더 읽는다.
 
-### 15. 남의 매물 수정 — 404 LISTING_NOT_FOUND (403 이 아니다)
-# 다른 임대인의 매물 id 를 넣는다. 존재 여부를 누설하지 않으려고 404 로 통일한다.
+### 18. 최신 상세 다시 읽기 (경계 케이스가 참조한다)
+# @name latest
+GET {{host}}/api/v2/users/me/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 19. 동의 누락 — 422 LISTING_REQUIRED_AGREEMENT_MISSING
+# 수정에도 등록과 같은 게이트가 그대로 걸린다. 나머지 본문은 유효하다.
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "동의 없이 수정",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{latest.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{latest.response.body.$.data.imageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{latest.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": false, "listingExposureAgreed": true }
+}
+
+### 20. 방 사진 키를 커버 자리에 — 400 LISTING_IMAGE_KEY_NOT_FOUND
+# 문서에 **실재하는** 키지만 그 자리의 것이 아니다. 대표사진으로 쓰려면 다시 업로드해야 한다.
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "사진 자리 교차",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{latest.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{latest.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 21. 모든 방을 INACTIVE 로 — 400
+# 상태만 공개인데 목록·상세에는 나타나지 않는 매물이 만들어지는 것을 막는다.
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "전 방 비활성",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{latest.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{latest.response.body.$.data.imageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{latest.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "INACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 22. 남의 매물 수정 — 404 LISTING_NOT_FOUND (403 이 아니다)
+# 존재 여부를 누설하지 않으려고 「없는 매물」과 같은 코드로 통일한다.
 PUT {{host}}/api/v2/listings/000000000000000000000000
-Authorization: Bearer {{landlordToken}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 Content-Type: application/json
 
 { "title": "남의 매물" }
 
-### 16. 남의 매물 조회 — 404 LISTING_NOT_FOUND
+### 23. 남의 매물 조회 — 404 LISTING_NOT_FOUND
 GET {{host}}/api/v2/users/me/listings/000000000000000000000000
-Authorization: Bearer {{landlordToken}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
-### 17. 동의 누락 — 422 LISTING_REQUIRED_AGREEMENT_MISSING
-# 7번 본문에서 consents 만 false 로 바꿔 보낸다. 수정에도 게이트가 그대로 걸린다.
+### 24. ObjectId 형식이 아닌 id — 404 LISTING_NOT_FOUND
+GET {{host}}/api/v2/users/me/listings/not-an-object-id
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 
-### 18. 다른 방의 사진 키를 커버 자리에 — 400 LISTING_IMAGE_KEY_NOT_FOUND
-# imageKeys 에 listings/{id}/rooms/{roomOfferId}/… 키를 넣는다.
-# 문서에 실재하는 키여도 **그 자리의 것이 아니면** 거부된다. 대표사진으로 쓰려면 다시 업로드한다.
+### 25. 토큰 없이 내 매물 조회 — 401 UNAUTHENTICATED
+GET {{host}}/api/v2/users/me/listings
 
-### 19. 모든 방을 INACTIVE 로 — 400
-# roomOffers 의 status 를 전부 INACTIVE 로 바꿔 보낸다.
-# 상태만 공개인데 목록·상세에는 나타나지 않는 매물이 만들어지는 것을 막는다.
+### 26. 세입자 토큰으로 내 매물 조회 — 403 FORBIDDEN
+# auth-onboarding-tenant.http 로 세입자 토큰을 받은 뒤 아래 값을 채워 보낸다.
+@tenantToken = 세입자_accessToken
 
-### 20. 세입자 토큰으로 수정 — 403 FORBIDDEN
-# auth-onboarding-tenant.http 로 받은 세입자 토큰으로 7번을 보낸다.
-
-### 21. 관리자 목록에서 수정 심사 건을 최근 수정순으로 본다
-# 수정 재심사 건은 원래 오래된 매물이라 등록 최신순 큐의 바닥에 가라앉는다.
-GET {{host}}/api/v1/admin/listings?status=UPDATE_PENDING&sort=updatedAt,desc
-Authorization: Bearer {{adminToken}}
+GET {{host}}/api/v2/users/me/listings
+Authorization: Bearer {{tenantToken}}
