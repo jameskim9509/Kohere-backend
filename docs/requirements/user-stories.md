@@ -1366,6 +1366,14 @@
   Given `address.lat`·`address.lng`를 빠뜨렸거나 WGS84 범위 밖의 값을 보내고
   When `POST /api/v2/listings`를 호출하면
   Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 매물을 생성하지 않는다. 좌표는 주소 검색이 준 값을 되돌려 보내는 필수 값이다
+- 시나리오: 해당 시설이 하나도 없는 매물 등록
+  Given 시설 8종 중 어느 칸에 고를 것이 하나도 없어 `["NONE"]`을 보내고
+  When `POST /api/v2/listings`를 호출하면
+  Then `201 Created`로 등록되고 저장된 값도 `["NONE"]`이다. 조회 응답에는 다른 코드와 똑같이 `{code, label}`로 나간다
+- 시나리오: 입력 검증 실패(`NONE`을 다른 코드와 함께 보냄)
+  Given 시설 8종 중 어느 하나가 `["NONE", "WIFI"]`처럼 `NONE`과 다른 코드를 함께 담고
+  When `POST /api/v2/listings`나 `PUT /api/v2/listings/{listingId}`를 호출하면
+  Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하고 `errors[].field`에 그 필드 이름을 실는다. `NONE`은 「해당 없음」이라 단독으로만 성립한다
 - 시나리오: 입력 검증 실패(주소에서 행정구역을 못 뽑음)
   Given 지점 주소가 카탈로그에 없는 시·구여서 행정구역 코드를 판별할 수 없고
   When `POST /api/v2/listings`를 호출하면

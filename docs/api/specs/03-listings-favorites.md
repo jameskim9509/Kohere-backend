@@ -19,6 +19,8 @@
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
 - `ConditionTag`(매물 옵션 필터 8종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음)
 - `ArcRequirement`(매물 루트 `arcRequired` 값): `REQUIRED`, `NOT_REQUIRED`. ARC 없이 입주할 수 있는지는 조건 태그가 아니라 이 필드로 표현한다
+- **시설 8종**은 전부 `NONE`(해당 없음)을 갖는다 — `HeatingSystem`: `CENTRAL`, `INDIVIDUAL`, `NONE` / `KitchenFacility`·`LaundryFacility`·`LivingAmenity`·`SecurityFeature`·`CommonSpaceType`·`ProvidedSupply`·`NearbyFacility`도 각자 목록 끝에 `NONE`이 붙는다. **해당 시설이 하나도 없으면 `NONE` 하나만 보낸다** — 이 값은 다른 코드와 함께 보낼 수 없다(아래 등록 요청 참조).
+  - **`NONE`과 `ETC`/`OTHER`는 다르다.** `ETC`(행정구역)·`OTHER`는 「목록에 없는 그 외의 값」이고, `NONE`은 「해당하는 것이 없음」이다. 응답에서도 `NONE`은 다른 코드와 똑같이 `{code, label}`로 나가므로 화면은 「없음」 칩을 그대로 그리면 된다.
 
 > `ListingSort`는 api-design-guide §6의 일반 `?sort=field,(asc|desc)` 형식이 아닌 **이름 기반 정렬 프리셋**이다(추천 정렬 등 단일 필드로 표현되지 않는 정렬이 있어 enum으로 둔다). 찜 목록은 별도 정렬 파라미터 없이 `favoritedAt desc`로 고정된다.
 
@@ -435,14 +437,14 @@ Request Body:
 | `languagesSupported` | `SupportedLanguage[]` | 필수 | 외국어 응대(복수 선택). 카탈로그 `SUPPORTED_LANGUAGE` 대조 |
 | `ageRange` | string | 필수 | 이용 연령대를 `min~max` 1칸으로 받는다(예 `20~35`). 서버가 `ageMin`·`ageMax`로 파싱 |
 | `arcRequired` | `ArcRequirement` | 필수 | 외국인등록증(ARC) 필수 요구 여부. 카탈로그 `ARC_REQUIREMENT` 대조 |
-| `facilities.heatingSystem` | `HeatingSystem[]` | 필수 | 난방시설. 카탈로그 `HEATING_SYSTEM` 대조 |
-| `facilities.kitchen` | `KitchenFacility[]` | 필수 | 주방시설(복수 선택). 카탈로그 `KITCHEN` 대조 |
-| `facilities.laundry` | `LaundryFacility[]` | 필수 | 세탁시설(복수 선택). 카탈로그 `LAUNDRY` 대조 |
-| `facilities.livingAmenities` | `LivingAmenity[]` | 필수 | 생활시설(복수 선택). 카탈로그 `LIVING_AMENITY` 대조 |
-| `facilities.securityFeatures` | `SecurityFeature[]` | 필수 | 안전시설(복수 선택). 카탈로그 `SECURITY_FEATURE` 대조 |
-| `facilities.commonSpaces` | `CommonSpaceType[]` | 필수 | 공용공간(복수 선택). 카탈로그 `COMMON_SPACE` 대조 |
-| `facilities.providedSupplies` | `ProvidedSupply[]` | 필수 | 제공비품(복수 선택). 카탈로그 `PROVIDED_SUPPLY` 대조 |
-| `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조 |
+| `facilities.heatingSystem` | `HeatingSystem[]` | 필수 | 난방시설. 카탈로그 `HEATING_SYSTEM` 대조. 없으면 `["NONE"]` |
+| `facilities.kitchen` | `KitchenFacility[]` | 필수 | 주방시설(복수 선택). 카탈로그 `KITCHEN` 대조. 없으면 `["NONE"]` |
+| `facilities.laundry` | `LaundryFacility[]` | 필수 | 세탁시설(복수 선택). 카탈로그 `LAUNDRY` 대조. 없으면 `["NONE"]` |
+| `facilities.livingAmenities` | `LivingAmenity[]` | 필수 | 생활시설(복수 선택). 카탈로그 `LIVING_AMENITY` 대조. 없으면 `["NONE"]` |
+| `facilities.securityFeatures` | `SecurityFeature[]` | 필수 | 안전시설(복수 선택). 카탈로그 `SECURITY_FEATURE` 대조. 없으면 `["NONE"]` |
+| `facilities.commonSpaces` | `CommonSpaceType[]` | 필수 | 공용공간(복수 선택). 카탈로그 `COMMON_SPACE` 대조. 없으면 `["NONE"]` |
+| `facilities.providedSupplies` | `ProvidedSupply[]` | 필수 | 제공비품(복수 선택). 카탈로그 `PROVIDED_SUPPLY` 대조. 없으면 `["NONE"]` |
+| `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조. 없으면 `["NONE"]` |
 | `nearestTransit.type` | `TransitType` | 필수 | 현재 허용값은 `SUBWAY` 하나다. 카탈로그 `TRANSIT_TYPE` 대조 |
 | `nearestTransit.name` | string | 필수 | 근처 지하철역명. **역 검색 응답의 `name`을 그대로** 보낸다 |
 | `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상. 역 검색이 준 `suggestedWalkMinutes`를 그대로 담으면 된다. **키를 생략하면 `400 INVALID_INPUT`이다** — 예전에는 조용히 `0`이 저장됐다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)) |
@@ -616,7 +618,7 @@ Request Body:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액, `address.lat`·`address.lng`가 WGS84 범위 밖), `address.lat`·`address.lng` 누락, `roomOffers` 0개. 위반 필드는 `errors[]`에 실린다 |
+| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액, `address.lat`·`address.lng`가 WGS84 범위 밖), `address.lat`·`address.lng` 누락, `roomOffers` 0개, **시설 8종 중 어느 하나가 `NONE`을 다른 코드와 함께 담음**. 위반 필드는 `errors[]`에 실린다 |
 | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
 | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |

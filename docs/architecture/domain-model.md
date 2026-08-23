@@ -368,7 +368,7 @@
 | | `totalFloors` | int | 건물 전체 층수 |
 | | `parkingAvailable` | boolean | 주차 가능 여부 |
 | | `elevatorAvailable` | boolean | 엘리베이터 여부 |
-| `Facilities` | `heatingSystem` | `Set<HeatingSystem>` | 난방 방식 |
+| `Facilities` | `heatingSystem` | `Set<HeatingSystem>` | 난방 방식(없으면 `NONE` 하나) |
 | | `kitchen` | `Set<KitchenFacility>` | 주방 시설 |
 | | `laundry` | `Set<LaundryFacility>` | 세탁 시설 |
 | | `livingAmenities` | `Set<LivingAmenity>` | 생활 편의시설 |
@@ -419,6 +419,7 @@
 | | `MIXED_USE` | 주상복합 |
 | `HeatingSystem` | `CENTRAL` | 중앙난방 |
 | | `INDIVIDUAL` | 개별난방 |
+| | `NONE` | 해당 없음 |
 | `GenderPolicy` | `ANY` | 성별 무관 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MALE_ONLY` | 남성 전용 |
@@ -434,6 +435,7 @@
 | | `HOSPITAL_PHARMACY` | 병원/약국 |
 | | `PARK` | 공원 |
 | | `LAUNDROMAT` | 세탁소 |
+| | `NONE` | 해당 없음 |
 | `ConditionTag` | `MOVE_IN_NOW` | 즉시 입주 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MEALS_INCLUDED` | 식사 제공 |
@@ -457,10 +459,12 @@
 | | `TOASTER` | 토스트기 |
 | | `COFFEE_MACHINE` | 커피머신 |
 | | `WATER_PURIFIER` | 정수기 |
+| | `NONE` | 해당 없음 |
 | `LaundryFacility` | `WASHER` | 세탁기 |
 | | `DRYER` | 건조기 |
 | | `DRYING_RACK` | 건조대 |
 | | `IRON` | 다리미 |
+| | `NONE` | 해당 없음 |
 | `LivingAmenity` | `WIFI` | 와이파이 |
 | | `TV` | TV |
 | | `SOFA` | 소파 |
@@ -469,18 +473,21 @@
 | | `PROJECTOR` | 프로젝터 |
 | | `AIR_PURIFIER` | 공기청정기 |
 | | `SHARED_PC` | 공용 PC |
+| | `NONE` | 해당 없음 |
 | `SecurityFeature` | `CCTV` | CCTV |
 | | `ENTRANCE_DOOR_LOCK` | 공동현관 도어락 |
 | | `DOOR_LOCK` | 방별 도어락 |
 | | `FIRE_EXTINGUISHER` | 소화기 |
 | | `FIRE_ALARM` | 화재경보기 |
 | | `SECURITY_GUARD` | 경비원 |
+| | `NONE` | 해당 없음 |
 | `ProvidedSupply` | `BEDDING` | 침구류 |
 | | `LAUNDRY_DETERGENT` | 세탁세제 |
 | | `SEASONING` | 조미료 |
 | | `SLIPPERS` | 실내화 |
 | | `TISSUE` | 휴지 |
 | | `TOWEL` | 수건 |
+| | `NONE` | 해당 없음 |
 | `CommonSpaceType` | `SHARED_KITCHEN` | 공용 주방 |
 | | `SHARED_TOILET` | 공용 화장실 |
 | | `SHARED_BATH` | 공용 욕실 |
@@ -488,6 +495,7 @@
 | | `STUDY_ROOM` | 스터디룸 |
 | | `MEETING_ROOM` | 회의실 |
 | | `ROOFTOP` | 옥상 |
+| | `NONE` | 해당 없음 |
 | `Nationality` | `JAPAN` | 일본(등록 폼 설문 — 선호 국적) |
 | | `USA` | 미국 |
 | | `CHINA` | 중국 |
@@ -505,6 +513,8 @@
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox·마커 결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 요청 bbox의 중심 좌표를 기준으로 하며, bbox 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 
 > `RoomFeature` enum은 코드에 남아 있지만 현재 `RoomOffer` 속성이나 MongoDB 저장 스키마에서는 사용하지 않는다. 방 검색 조건의 현재 정본은 `RoomOffer.filterTags`의 `ConditionTag`다.
+>
+> 시설 8종(`HeatingSystem`·`KitchenFacility`·`LaundryFacility`·`LivingAmenity`·`SecurityFeature`·`CommonSpaceType`·`ProvidedSupply`·`NearbyFacility`)은 전부 `NONE`(해당 없음)을 갖는다 — 등록 폼이 각 칸에 최소 하나를 강제하므로 「없음」을 보낼 코드가 필요하기 때문이다. **`NONE`은 단독으로만 보낼 수 있고**(다른 코드와 섮이면 `400 INVALID_INPUT`), 응답에는 다른 코드와 똑같이 `{code, label}`로 나간다. 행정구역의 `ETC`·설문의 `OTHER`가 「목록 밖의 값」인 것과 뜻이 다르다.
 >
 > `Nationality`·`ContractDifficulty`는 등록 폼 설문 응답 전용이라 `listingCatalog`에 카테고리가 없다 — 세입자 응답에 나가지 않아 라벨을 번역할 소비처가 없다. `ListingStatus`도 같은 이유로 카탈로그 대상이 아니다(임대인·관리자만 읽는다).
 
