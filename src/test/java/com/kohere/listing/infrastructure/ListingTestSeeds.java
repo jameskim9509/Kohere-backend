@@ -10,6 +10,8 @@ import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
 import org.bson.Document;
+import org.bson.json.JsonMode;
+import org.bson.json.JsonWriterSettings;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
@@ -81,8 +83,15 @@ final class ListingTestSeeds {
     }
   }
 
-  /** extended JSON({@code $oid}·{@code $date}·{@code $numberLong})을 BSON 타입 그대로 보존해 변환한다. */
+  /**
+   * extended JSON({@code $oid}·{@code $date}·{@code $numberLong})을 BSON 타입 그대로 보존해 변환한다.
+   *
+   * <p><b>출력 모드를 EXTENDED로 못박는다.</b> 기본값인 RELAXED는 int 범위에 들어가는 {@code $numberLong}을 평범한 숫자로 써 버려,
+   * 되읽을 때 {@code Integer}가 된다 — {@code landlordId}가 {@code bsonType: "long"} 검증에 걸리는 원인이었다.
+   * validator가 테스트에 적용되지 않아(mongock 비활성) 지금까지 드러나지 않았다.
+   */
   private static Document toDocument(BsonDocument bson) {
-    return Document.parse(bson.toJson());
+    return Document.parse(
+        bson.toJson(JsonWriterSettings.builder().outputMode(JsonMode.EXTENDED).build()));
   }
 }

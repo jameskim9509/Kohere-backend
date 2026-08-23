@@ -65,6 +65,7 @@ public class BookingService {
   private final ReportReasonRepository reportReasonRepository;
   private final BookingListingQueryService listingQueryService;
   private final UserAccountService userAccountService;
+  private final AppUserGuard appUserGuard;
   private final UserBlockService userBlockService;
   private final BookingCreatedEventFactory bookingCreatedEventFactory;
   private final ApplicationEventPublisher eventPublisher;
@@ -135,6 +136,7 @@ public class BookingService {
    */
   @Transactional(readOnly = true)
   public PageResponse<?> getBookings(long userId, int page, int size) {
+    appUserGuard.requireAppUser(userId);
     validatePage(page, size);
     List<Long> blockedIds = userBlockService.findBlockedUserIds(userId);
 
@@ -169,6 +171,7 @@ public class BookingService {
    */
   @Transactional(readOnly = true)
   public Object getBooking(long userId, long bookingId) {
+    appUserGuard.requireAppUser(userId);
     List<Long> blockedIds = userBlockService.findBlockedUserIds(userId);
     if (USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
       Booking booking =
@@ -191,6 +194,7 @@ public class BookingService {
    */
   @Transactional
   public void deleteBooking(long userId, long bookingId) {
+    appUserGuard.requireAppUser(userId);
     Booking booking =
         bookingRepository.findByIdForMutation(bookingId).orElseThrow(BookingNotFoundException::new);
     Instant now = Instant.now();
@@ -209,6 +213,7 @@ public class BookingService {
    */
   @Transactional
   public void blockBooking(long userId, long bookingId) {
+    appUserGuard.requireAppUser(userId);
     Booking booking =
         bookingRepository.findByIdForMutation(bookingId).orElseThrow(BookingNotFoundException::new);
     userBlockService.block(userId, counterpartOf(booking, userId));
@@ -221,6 +226,7 @@ public class BookingService {
   @Transactional
   public BookingReportResponse reportBooking(
       long userId, long bookingId, BookingReportRequest request) {
+    appUserGuard.requireAppUser(userId);
     Booking booking =
         bookingRepository.findByIdForMutation(bookingId).orElseThrow(BookingNotFoundException::new);
     if (!isParticipant(booking, userId)) {
@@ -241,6 +247,7 @@ public class BookingService {
    */
   @Transactional(readOnly = true)
   public ReportReasonResponse getReportReasons(long userId) {
+    appUserGuard.requireAppUser(userId);
     String lang = userAccountService.getLanguage(userId);
     List<ReportReasonResponse.Reason> reasons =
         reportReasonRepository.findActiveOrdered(lang).stream()

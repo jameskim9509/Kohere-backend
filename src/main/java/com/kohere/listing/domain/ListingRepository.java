@@ -15,6 +15,21 @@ public interface ListingRepository {
   /** ObjectId 문자열로 매물 한 건을 조회한다. */
   Optional<Listing> findById(String listingId);
 
+  /**
+   * 심사용 조회. 상태 필터가 비어 있으면 <b>모든 상태</b>를 대상으로 한다(관리자 전용).
+   *
+   * <p>세입자용 조회 3종({@link #findPublished} · {@link #search} · {@link #searchForMap})은 구현에서 {@code
+   * status = PUBLISHED}를 조건 앞머리에 고정한다. 그 자리를 파라미터로 열면 호출자가 상태를 넘기지 않았을 때 비공개 매물이 세입자에게 샐 수 있으므로,
+   * 상태를 받는 경로를 <b>따로</b> 두어 "세입자 경로는 공개 고정, 관리자 경로만 상태를 받는다"를 타입으로 가른다.
+   *
+   * @param statuses 조회할 상태 집합. 비어 있으면 상태 조건을 생략한다
+   * @param page 0부터 시작하는 페이지 번호
+   * @param size 페이지 크기
+   * @param sort 정렬 키. {@code null}이면 등록 최신순
+   */
+  PageResponse<Listing> findForAdmin(
+      Set<Listing.ListingStatus> statuses, int page, int size, String sort);
+
   /** 공개 중이고 활성 방 상품이 있는 매물만 페이지로 조회한다. */
   PageResponse<Listing> findPublished(int page, int size);
 

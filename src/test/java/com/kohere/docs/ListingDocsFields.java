@@ -201,7 +201,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -214,6 +214,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
@@ -227,7 +228,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -240,6 +241,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
@@ -253,7 +255,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -267,6 +269,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   // ── §9 최근 본 매물 — GET /api/v2/users/me/recent-listings ─────────────────
@@ -279,7 +282,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -293,6 +296,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   // ── §10-1 매물 사진 업로드 — POST /api/v2/listings/images ──────────────────
@@ -824,6 +828,17 @@ public final class ListingDocsFields {
             "설문 — 계약 과정에서 겪은 어려움. 1개 이상이며 응답에는 나오지 않는다"));
     fields.add(
         optField("serviceFeedback", JsonFieldType.STRING, "설문 — 서비스에 전하고 싶은 말. 응답에는 나오지 않는다"));
+    fields.add(field("consents", JsonFieldType.OBJECT, "매물 이용약관 동의 2종. 객체가 없으면 400"));
+    fields.add(
+        field(
+            "consents.privacyPolicyAgreed",
+            JsonFieldType.BOOLEAN,
+            "개인정보 수집·이용 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
+    fields.add(
+        field(
+            "consents.listingExposureAgreed",
+            JsonFieldType.BOOLEAN,
+            "매물 정보 제공 및 노출 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
     return List.copyOf(fields);
   }
 
@@ -961,6 +976,197 @@ public final class ListingDocsFields {
     fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     fields.addAll(listingDocumentFields("data", null));
     fields.add(errorNull());
+    return fields;
+  }
+
+  // ── 관리자 매물 심사 — /api/v1/admin/listings ─────────────────────────────
+
+  public static final String ADMIN_LISTING_LIST_SUMMARY = "매물 심사 목록 조회(관리자)";
+
+  public static final String ADMIN_LISTING_LIST_DESCRIPTION =
+      """
+      심사 화면에 보여줄 매물을 조회한다. 세입자용 목록과 달리 **`status`와 무관하게 모두** 나온다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - `status`를 **보내지 않으면 전체**다. 콤마로 여러 개 보낼 수 있다(`?status=PENDING,REJECTED`).
+      - `sort`는 `createdAt,asc`만 인식하고, 그 밖의 값이나 생략은 **등록 최신순**이다.
+
+      **응답 주의사항**
+
+      - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
+      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
+      - `listing.favorited`는 **항상 false**다. 관리자에게는 찜 개념이 없다.
+      - `{code,label}`의 `label`은 **항상 한국어**다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `status`에 정의되지 않은 값, `size`가 1~100 밖 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      """;
+
+  public static final String ADMIN_LISTING_DETAIL_SUMMARY = "매물 심사 상세 조회(관리자)";
+
+  public static final String ADMIN_LISTING_DETAIL_DESCRIPTION =
+      """
+      심사할 매물 한 건을 조회한다. 세입자용 상세와 달리 **저장된 값을 감추지 않고**, `status`와 무관하게 조회된다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **응답 주의사항**
+
+      - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
+      - `businessRegistrationNumber`는 **마스킹 없이 원문**이다. 심사에서 진위를 직접 확인하는 값이다.
+      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
+      - `listing.favorited`는 **항상 false**다.
+      - `{code,label}`의 `label`은 **항상 한국어**다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
+      """;
+
+  public static final String ADMIN_LISTING_APPROVAL_SUMMARY = "매물 승인(관리자)";
+
+  public static final String ADMIN_LISTING_APPROVAL_DESCRIPTION =
+      """
+      매물을 `PUBLISHED`로 바꿔 세입자에게 공개한다. **요청 본문이 없다.**
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - **`status`를 가리지 않는다.** `PENDING`은 물론 `REJECTED`인 매물도 승인할 수 있다.
+      - **이미 `PUBLISHED`이면 아무것도 바뀌지 않는다.** `updatedAt`도 그대로라 목록 정렬이 흔들리지 않는다. 반복 호출해도 안전하다.
+
+      **응답 주의사항**
+
+      - 응답 구조는 심사 상세(`GET /api/v1/admin/listings/{listingId}`)와 같다.
+      - `status`가 `PUBLISHED`가 되고 `rejectionReason`은 **지워진다**(필드 자체가 생략된다).
+      - 승인 직후부터 그 매물이 세입자의 목록·지도·상세 조회에 나타난다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
+      """;
+
+  public static final String ADMIN_LISTING_REJECTION_SUMMARY = "매물 반려(관리자)";
+
+  public static final String ADMIN_LISTING_REJECTION_DESCRIPTION =
+      """
+      매물을 `REJECTED`로 바꾸고 사유를 남긴다. 반려된 매물은 세입자 조회에서 사라진다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - **`status`를 가리지 않는다.** 심사 대기 매물은 물론 이미 공개된 매물도 이 요청으로 내릴 수 있다.
+      - **이미 `REJECTED`인 매물에도 보낼 수 있다.** 그때는 `reason`이 새 값으로 덮인다.
+      - `reason`은 임대인이 읽는 값이라 **번역하지 않는다.** 보낸 문자열이 그대로 저장된다.
+
+      **응답 주의사항**
+
+      - 응답 구조는 심사 상세(`GET /api/v1/admin/listings/{listingId}`)와 같다.
+      - `status`가 `REJECTED`가 되고 `rejectionReason`에 보낸 사유가 실린다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `reason` 누락·공백만·500자 초과 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
+      """;
+
+  public static final String[] ADMIN_LISTING_400 = {"INVALID_INPUT"};
+  public static final String[] ADMIN_LISTING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] ADMIN_LISTING_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] ADMIN_LISTING_404 = {"LISTING_NOT_FOUND"};
+
+  /** 반려 요청 본문 필드다. */
+  public static List<FieldDescriptor> rejectionRequestFields() {
+    return List.of(field("reason", JsonFieldType.STRING, "반려 사유. 공백 불가, 1~500자. 번역하지 않는다"));
+  }
+
+  /** 심사 상세 200 응답 필드다. 세입자 상세를 그대로 싣고 감춰진 값을 나란히 더한다. */
+  public static List<FieldDescriptor> adminListingResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(adminListingFields("data"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /** 심사 목록 200 응답 필드다. */
+  public static List<FieldDescriptor> adminListingPageResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(adminListingFields("data.content[]"));
+    fields.addAll(pageFields("심사 대상 매물 총 개수"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /** 심사 응답 한 건의 필드다. 세입자 상세는 {@code listing} 아래에 그대로 실린다. */
+  private static List<FieldDescriptor> adminListingFields(String prefix) {
+    List<FieldDescriptor> fields =
+        new ArrayList<>(
+            listingDocumentFields(prefix + ".listing", null, ListingDocumentVariant.REGISTERED));
+    fields.add(field(prefix + ".landlordId", JsonFieldType.NUMBER, "매물 소유 임대인 계정 id. 세입자 응답에는 없다"));
+    fields.add(
+        field(
+            prefix + ".businessRegistrationNumber",
+            JsonFieldType.STRING,
+            "사업자등록번호 원문. 심사에서 진위를 수동 확인하는 값이라 관리자에게만 내려간다"));
+    fields.add(
+        enumArrayField(prefix + ".preferredNationalities", Nationality.class, "등록 폼 설문 — 선호 국적"));
+    fields.add(
+        enumArrayField(
+            prefix + ".contractDifficulties", ContractDifficulty.class, "등록 폼 설문 — 계약 시 어려움"));
+    fields.add(
+        optField(
+            prefix + ".serviceFeedback", JsonFieldType.STRING, "등록 폼 설문 — 서비스 의견. 없으면 키가 빠진다"));
+    fields.add(field(prefix + ".consents", JsonFieldType.OBJECT, "등록 시 받은 이용약관 동의"));
+    fields.add(
+        field(prefix + ".consents.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보 수집·이용 동의"));
+    fields.add(
+        field(
+            prefix + ".consents.listingExposureAgreed", JsonFieldType.BOOLEAN, "매물 정보 제공 및 노출 동의"));
+    fields.add(
+        field(prefix + ".consents.version", JsonFieldType.STRING, "동의한 약관 버전. 회원 약관 버전과 별개 값이다"));
+    fields.add(field(prefix + ".consents.agreedAt", JsonFieldType.STRING, "동의 시각(UTC ISO-8601)"));
+    fields.add(
+        optField(prefix + ".rejectionReason", JsonFieldType.STRING, "반려 사유. 반려 상태가 아니면 키가 빠진다"));
     return fields;
   }
 

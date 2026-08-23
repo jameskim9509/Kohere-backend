@@ -693,7 +693,8 @@ class WebLandlordAccountLinkingFlowTest {
             }
           ],
           "preferredNationalities": ["JAPAN"],
-          "contractDifficulties": ["LANGUAGE"]
+          "contractDifficulties": ["LANGUAGE"],
+          "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
         }
         """
         .formatted(landlordId);

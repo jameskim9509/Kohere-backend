@@ -37,8 +37,10 @@ import static com.kohere.docs.BookingDocsFields.reportRequestFields;
 import static com.kohere.docs.BookingDocsFields.reportResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -119,6 +121,9 @@ class BookingManagementDocsTest {
 
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) {
+    // 사용자용 API 허용 목록 게이트(세입자·임대인만 통과)가 실제로 돈다. userType 을 스텁하지 않으면
+    // mock 이 null 을 돌려줘 403 이 나고, 정작 검증하려던 경로에 닿지 못한다.
+    lenient().when(userAccountService.getUserType(anyLong())).thenReturn("TENANT");
     mockMvc =
         MockMvcBuilders.webAppContextSetup(context)
             .apply(springSecurity())
