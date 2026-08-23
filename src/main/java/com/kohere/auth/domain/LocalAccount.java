@@ -86,6 +86,29 @@ public class LocalAccount {
         .build();
   }
 
+  /**
+   * 비밀번호 재설정 — 해시를 갈아 끼우고 <b>실패 카운터와 잠금을 함께</b> 되돌린다(US-1-17).
+   *
+   * <p><b>이 한 메서드가 잠금 해제 API의 실체다.</b> 별도 {@code unlock()}을 두지 않는 것은 의도다 — 잠금 해제가 비밀번호 교체와 분리돼 존재하면
+   * "게이트가 더 약한 해제 경로"가 생기고, 같은 결과를 내는 두 경로가 있으면 <b>약한 쪽이 실질 정책</b>이 된다. 잠긴 사람이 아는 비밀번호는 이미 틀린
+   * 비밀번호라, 잠금만 풀어 주는 것은 애초에 쓸모도 없다.
+   *
+   * <p><b>세 값을 한 번에 되돌리는 것도 계약이다.</b> 나눠 쓰면 비밀번호는 바뀌었는데 {@code lockedAt}이 남는 중간 상태가 생기고, 그 계정은
+   * <b>맞는 비밀번호로도 423</b>이다(잠금 판정이 대조보다 먼저다 — {@link #isLocked()}).
+   *
+   * <p>{@code failedLoginAttempts}까지 0으로 되돌리는 것은 {@link #recordLoginFailure}의 "잠기지 않았는데 카운터가 상한
+   * 이상이면 1부터 다시 센다" 규칙과 겹쳐 보이지만 중복이 아니다 — 그 규칙은 <b>운영자가 {@code locked_at}만 비운</b> 예외 경로를 위한 보정이고,
+   * 이쪽은 애초에 어긋난 상태를 만들지 않는다.
+   */
+  public LocalAccount resetPassword(String newPasswordHash, Instant now) {
+    return toBuilder()
+        .passwordHash(newPasswordHash)
+        .failedLoginAttempts(0)
+        .lockedAt(null)
+        .updatedAt(now)
+        .build();
+  }
+
   /** 로그인 성공 — 실패 카운터를 0으로 되돌린다. 잠금이 대조보다 먼저 걸리므로 여기 도달했다면 잠기지 않은 계정이다. */
   public LocalAccount recordLoginSuccess(Instant now) {
     return toBuilder().failedLoginAttempts(0).updatedAt(now).build();

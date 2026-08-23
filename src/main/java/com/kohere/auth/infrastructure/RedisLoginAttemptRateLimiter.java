@@ -76,4 +76,16 @@ public class RedisLoginAttemptRateLimiter implements LoginAttemptRateLimiter {
     }
     return count > maxPerHour;
   }
+
+  /**
+   * 이메일 축 카운터 삭제(멱등). 키를 만드는 규칙은 {@link #recordAttempt}와 <b>같은 한 줄</b>이어야 한다 — 한쪽만 {@code
+   * toLowerCase}를 빠뜨리면 지운다고 부른 키가 실제로 세고 있던 키와 달라 아무 일도 일어나지 않고, 사용자는 재설정을 마치고도 429를 맞는다.
+   */
+  @Override
+  public void clearEmailCounter(String email) {
+    if (!StringUtils.hasText(email)) {
+      return;
+    }
+    redis.delete(EMAIL_PREFIX + email.toLowerCase(Locale.ROOT));
+  }
 }
