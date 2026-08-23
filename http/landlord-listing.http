@@ -8,6 +8,9 @@
 #   2) 앱:      ./gradlew bootRun
 #   3) 계정·시드: admin-listing-review.http 의 「관리자 계정 만들기」·「시드」를 먼저 끝낸다.
 #      이 파일은 그 파일로 **매물 하나를 등록해 반려까지 해 둔 상태**에서 이어 쓴다.
+#      임대인·세입자는 **마스터 계정**(app.auth.test-login.enabled=true 로 시드된다)을 쓰므로 따로
+#      가입할 것이 없고, admin-listing-review.http 의 임대인과 같은 계정이라 매물이 그대로 보인다.
+#      관리자만 소셜 경로가 없어 웹 가입 + DB 승격이 필요하다.
 #   4) 0번부터 순서대로 "Send Request" — 토큰·매물 id·사진 키가 이름붙은 응답으로 자동 전달된다.
 #
 # ★ 이 파일의 핵심 두 가지
@@ -21,10 +24,12 @@
 #    18번(latest) → 19~21번 경계 케이스.
 
 @host = http://localhost:8080
-@landlordEmail = landlord@kohere.test
-@landlordPassword = Password123!
+# 임대인은 마스터 계정을 쓴다 — admin-listing-review.http 와 같은 계정이라 그 파일이 만든
+# 매물을 그대로 이어받는다. 시크릿은 local 기본값이며 dev 는 SSM(TEST_LOGIN_SECRET) 값으로 바꾼다.
+@secret = local-dev-test-login-secret
+# 관리자는 소셜 경로가 없다 — 웹 가입 후 DB 승격이 유일한 생성 방법이다(admin-listing-review.http).
 @adminEmail = admin@kohere.test
-@adminPassword = Password123!
+@adminPassword = Kohere1!
 
 ### 0. 관리자 웹 로그인 (승인 단계에서 쓴다)
 # @name adminLogin
@@ -36,14 +41,16 @@ Content-Type: application/json
   "password": "{{adminPassword}}"
 }
 
-### 1. 임대인 웹 로그인
+### 1. 임대인(LANDLORD) 마스터 로그인 → 정식 토큰
+# 실제 소셜 로그인 없이 미리 시드된 마스터 계정으로 받는다(dev·local 전용 — test-master-login.http).
+# admin-listing-review.http 의 임대인과 **같은 계정**이라 그 파일이 등록·반려해 둔 매물을 그대로 본다.
 # @name landlordLogin
-POST {{host}}/api/v1/auth/login
+POST {{host}}/api/v1/auth/social-login
 Content-Type: application/json
 
 {
-  "email": "{{landlordEmail}}",
-  "password": "{{landlordPassword}}"
+  "provider": "GOOGLE",
+  "idToken": "master:landlord:{{secret}}"
 }
 
 ### 2. 내 매물 목록 — 상태 무관 전체
@@ -416,9 +423,24 @@ Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
 ### 25. 토큰 없이 내 매물 조회 — 401 UNAUTHENTICATED
 GET {{host}}/api/v2/users/me/listings
 
-### 26. 세입자 토큰으로 내 매물 조회 — 403 FORBIDDEN
-# auth-onboarding-tenant.http 로 세입자 토큰을 받은 뒤 아래 값을 채워 보낸다.
-@tenantToken = 세입자_accessToken
+### 26. 세입자(TENANT) 마스터 로그인 — 27번이 쓴다
+# @name tenantLogin
+POST {{host}}/api/v1/auth/social-login
+Content-Type: application/json
 
+{
+  "provider": "GOOGLE",
+  "idToken": "master:tenant:{{secret}}"
+}
+
+### 27. 세입자 토큰으로 내 매물 조회 — 403 FORBIDDEN
+# 정식 회원이지만 임대인이 아니다. 보안 매처는 통과하고 서비스의 재검사가 막는다.
 GET {{host}}/api/v2/users/me/listings
-Authorization: Bearer {{tenantToken}}
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 28. 세입자 토큰으로 매물 수정 — 403 FORBIDDEN
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{ "title": "세입자가 수정 시도" }
