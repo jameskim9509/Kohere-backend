@@ -45,7 +45,7 @@ public record AdminListingDetailResponse(
       String version,
       Instant agreedAt) {
 
-    static ConsentsResponse from(Listing.Consents consents) {
+    public static ConsentsResponse from(Listing.Consents consents) {
       if (consents == null) {
         return null;
       }

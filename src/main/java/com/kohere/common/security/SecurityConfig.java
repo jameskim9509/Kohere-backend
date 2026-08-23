@@ -161,6 +161,16 @@ public class SecurityConfig {
                         "/api/v2/users/me/favorites",
                         "/api/v2/users/me/recent-listings")
                     .hasRole("USER")
+                    // 임대인 「내 매물」 조회 — 정확 경로 나열이라 자동으로 덮이지 않는다. 이 경로를
+                    // /api/v2/listings/mine에 두면 위의 GET /api/v2/listings/* permitAll에 먼저 걸려
+                    // 비로그인에 열린다. 임대인 여부와 소유권은 서비스에서 재검사한다(403/404).
+                    .requestMatchers(
+                        HttpMethod.GET, "/api/v2/users/me/listings", "/api/v2/users/me/listings/*")
+                    .hasRole("USER")
+                    // 매물 수정 — GET 한정 permitAll에 걸리지 않지만, 명시하지 않으면
+                    // anyRequest().authenticated()로 떨어져 ROLE_ONBOARDING 토큰이 컨트롤러까지 닿는다.
+                    .requestMatchers(HttpMethod.PUT, "/api/v2/listings/*")
+                    .hasRole("USER")
                     // 매물 예약(신청) — ACTIVE(ROLE_USER) 세입자만. TENANT 여부는 서비스에서 재검사한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/bookings")
                     .hasRole("USER")
