@@ -1,0 +1,210 @@
+# Kohere — 임대인 매물 수정·전용 조회 로컬 수동 테스트 — #267
+# 흐름: 임대인 로그인 → 내 매물 목록·상세 → 반려 매물 수정(→ 심사 대기) → 승인 → 공개 매물 수정(→ 수정 심사 대기) → 경계 확인
+# 스펙: docs/api/specs/03-listings-favorites.md 「임대인 매물 관리」
+# 유저스토리: US-3-8(임대인 전용 조회) · US-3-9(임대인 매물 수정)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
+#   2) 앱:      ./gradlew bootRun
+#   3) 시드·관리자 계정 준비는 admin-listing-review.http 의 안내를 그대로 따른다.
+#      이 파일은 그 파일로 매물 하나를 등록·반려까지 해 둔 상태에서 이어 쓰는 것을 전제한다.
+#   4) 1번부터 순서대로 "Send Request".
+#
+# ★ 이 파일의 핵심은 두 가지다.
+#   · 수정은 **전체 교체**다. 등록 때 보낸 속성을 그대로 다시 보낸다 — 빠뜨린 필드는 지워진다.
+#   · 사진은 **임시 키와 기존 확정 키를 섞어** 보낸다. 그대로 둘 사진은 상세 응답의 `imageKeys` 값을
+#     그대로 되돌려 보내고, 새로 올린 사진만 업로드가 준 `uploads/…` 키로 보낸다.
+
+@host = http://localhost:8080
+@landlordEmail = landlord@kohere.test
+@landlordPassword = Password123!
+
+### 1. 임대인 웹 로그인
+# @name landlordLogin
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{landlordEmail}}",
+  "password": "{{landlordPassword}}"
+}
+
+###
+@landlordToken = {{landlordLogin.response.body.data.accessToken}}
+
+### 2. 내 매물 목록 — 상태 무관 전체
+# 최근 수정순 고정이다. sort 파라미터는 없다.
+GET {{host}}/api/v2/users/me/listings
+Authorization: Bearer {{landlordToken}}
+
+### 3. 내 매물 목록 — 반려된 것만
+GET {{host}}/api/v2/users/me/listings?status=REJECTED
+Authorization: Bearer {{landlordToken}}
+
+### 4. 내 매물 목록 — 상태 여러 개(콤마)
+GET {{host}}/api/v2/users/me/listings?status=PENDING,UPDATE_PENDING&page=0&size=20
+Authorization: Bearer {{landlordToken}}
+
+###
+# ↓ 2~4번 응답에서 고친다. 반려된 매물의 id 를 넣는다.
+@listingId = 여기에_매물_id를_넣는다
+
+### 5. 내 매물 상세 — 수정 폼 프리필용
+# 응답의 `imageKeys` · `rooms[].roomImageKeys` · `rooms[].roomOfferId` · `rooms[].status` 를
+# 그대로 7번 요청 본문에 옮겨 담는다. 비활성 방도 여기 나온다.
+# @name myListing
+GET {{host}}/api/v2/users/me/listings/{{listingId}}
+Authorization: Bearer {{landlordToken}}
+
+### 6. 새 사진 한 장 올리기 (교체할 때만)
+# 응답의 key 가 uploads/{landlordId}/… 형태의 임시 키다.
+# @name newCover
+POST {{host}}/api/v2/listings/images
+Authorization: Bearer {{landlordToken}}
+Content-Type: multipart/form-data; boundary=----KohereBoundary
+
+------KohereBoundary
+Content-Disposition: form-data; name="file"; filename="cover.jpg"
+Content-Type: image/jpeg
+
+< ./images/cover-1.jpg
+------KohereBoundary--
+
+###
+@newCoverKey = {{newCover.response.body.data.key}}
+
+### 7. 반려 매물 수정 → 심사 대기(PENDING)
+# ★ 5번 응답을 보고 값을 채운다. 아래는 뼈대다.
+#   · imageKeys: 유지할 확정 키(5번의 imageKeys) + 새로 올린 임시 키({{newCoverKey}})를 섞는다.
+#   · roomOffers[].roomOfferId: 5번의 rooms[].roomOfferId. 새 방은 null 로 둔다.
+#   · roomOffers[].status: ACTIVE 또는 INACTIVE. 방을 내릴 때 요청에서 빼지 말고 INACTIVE 로 보낸다.
+#   · consents: 등록과 똑같이 둘 다 true 여야 한다. 저장된 최초 동의 시각은 그대로 유지된다.
+PUT {{host}}/api/v2/listings/{{listingId}}
+Authorization: Bearer {{landlordToken}}
+Content-Type: application/json
+
+{
+  "title": "코히어 고시원 (수정)",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "1112233344",
+  "blogUrl": null,
+  "address": {
+    "fullAddress": "서울특별시 서대문구 신촌로 1",
+    "detail": "3층",
+    "lat": 37.5595,
+    "lng": 126.9425
+  },
+  "building": {
+    "type": "COMMERCIAL_BUILDING",
+    "totalFloors": 8,
+    "usedFloorRange": "3~5",
+    "parkingAvailable": false,
+    "elevatorAvailable": true
+  },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["SHARED_KITCHEN"],
+    "providedSupplies": ["BED"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다. (수정)",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["여기에_5번의_유지할_커버_확정키", "{{newCoverKey}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "여기에_5번의_roomOfferId",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": ["여기에_5번의_방사진_확정키1", "여기에_5번의_방사진_확정키2"]
+    }
+  ],
+  "preferredNationalities": ["VIETNAM"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 8. 수정 직후 상태 확인 — PENDING 이어야 한다
+GET {{host}}/api/v2/users/me/listings/{{listingId}}
+Authorization: Bearer {{landlordToken}}
+
+### 9. 심사 중에는 다시 수정할 수 없다 — 422 LISTING_NOT_EDITABLE
+# 7번 본문을 그대로 다시 보낸다. 상태가 PENDING 이라 거절된다.
+PUT {{host}}/api/v2/listings/{{listingId}}
+Authorization: Bearer {{landlordToken}}
+Content-Type: application/json
+
+{ "title": "다시 수정 시도" }
+
+### 10. 관리자 승인 (admin-listing-review.http 의 관리자 토큰이 필요하다)
+@adminToken = 여기에_관리자_accessToken을_넣는다
+
+POST {{host}}/api/v1/admin/listings/{{listingId}}/approval
+Authorization: Bearer {{adminToken}}
+
+### 11. 공개 매물 수정 → 수정 심사 대기(UPDATE_PENDING)
+# 7번과 같은 본문을 보낸다. 이번에는 PUBLISHED 에서 출발하므로 UPDATE_PENDING 으로 넘어간다.
+# ★ 이 시점부터 세입자 조회(12번)에서 사라진다 — 의도된 동작이다.
+PUT {{host}}/api/v2/listings/{{listingId}}
+Authorization: Bearer {{landlordToken}}
+Content-Type: application/json
+
+{ "여기에": "7번 본문을 그대로 다시 넣는다" }
+
+### 12. 세입자 조회에서 사라졌는지 확인 — 404 LISTING_NOT_FOUND
+GET {{host}}/api/v2/listings/{{listingId}}
+
+### 13. 임대인 조회에는 그대로 보인다 — 200, status=UPDATE_PENDING
+GET {{host}}/api/v2/users/me/listings/{{listingId}}
+Authorization: Bearer {{landlordToken}}
+
+### 14. 관리자 승인 → 다시 공개. 찜 수·찜 문서·최근 본 기록이 그대로 복구된다
+POST {{host}}/api/v1/admin/listings/{{listingId}}/approval
+Authorization: Bearer {{adminToken}}
+
+# ─────────────────────────────── 경계 확인 ───────────────────────────────
+
+### 15. 남의 매물 수정 — 404 LISTING_NOT_FOUND (403 이 아니다)
+# 다른 임대인의 매물 id 를 넣는다. 존재 여부를 누설하지 않으려고 404 로 통일한다.
+PUT {{host}}/api/v2/listings/000000000000000000000000
+Authorization: Bearer {{landlordToken}}
+Content-Type: application/json
+
+{ "title": "남의 매물" }
+
+### 16. 남의 매물 조회 — 404 LISTING_NOT_FOUND
+GET {{host}}/api/v2/users/me/listings/000000000000000000000000
+Authorization: Bearer {{landlordToken}}
+
+### 17. 동의 누락 — 422 LISTING_REQUIRED_AGREEMENT_MISSING
+# 7번 본문에서 consents 만 false 로 바꿔 보낸다. 수정에도 게이트가 그대로 걸린다.
+
+### 18. 다른 방의 사진 키를 커버 자리에 — 400 LISTING_IMAGE_KEY_NOT_FOUND
+# imageKeys 에 listings/{id}/rooms/{roomOfferId}/… 키를 넣는다.
+# 문서에 실재하는 키여도 **그 자리의 것이 아니면** 거부된다. 대표사진으로 쓰려면 다시 업로드한다.
+
+### 19. 모든 방을 INACTIVE 로 — 400
+# roomOffers 의 status 를 전부 INACTIVE 로 바꿔 보낸다.
+# 상태만 공개인데 목록·상세에는 나타나지 않는 매물이 만들어지는 것을 막는다.
+
+### 20. 세입자 토큰으로 수정 — 403 FORBIDDEN
+# auth-onboarding-tenant.http 로 받은 세입자 토큰으로 7번을 보낸다.
+
+### 21. 관리자 목록에서 수정 심사 건을 최근 수정순으로 본다
+# 수정 재심사 건은 원래 오래된 매물이라 등록 최신순 큐의 바닥에 가라앉는다.
+GET {{host}}/api/v1/admin/listings?status=UPDATE_PENDING&sort=updatedAt,desc
+Authorization: Bearer {{adminToken}}

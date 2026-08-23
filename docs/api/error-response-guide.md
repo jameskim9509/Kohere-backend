@@ -244,7 +244,7 @@ RuntimeException
 ```
 
 - `ErrorCode`는 **enum**으로 `code(String)` + `httpStatus` + 기본 `message`를 보유한다. 새 에러는 enum 상수 추가로 등록한다.
-- **새 코드는 메시지 리소스 번들 2벌에도 함께 넣는다** — `src/main/resources/messages.properties`(영어)와 `messages_ko.properties`(한국어) **양쪽**이다. 키가 없으면 `Accept-Language`와 무관하게 enum의 기본 메시지(한국어)로 폴백하므로, 빠뜨려도 빌드·테스트는 통과한 채 **영어 클라이언트에 조용히 한국어가 나간다**(현재 `AUTH_EMAIL_REQUIRED`·`AUTH_EMAIL_MISMATCH`가 두 파일 모두에서 누락된 상태다 — 같은 실수를 반복하지 않는다).
+- **새 코드는 메시지 리소스 번들 2벌에도 함께 넣는다** — `src/main/resources/messages.properties`(영어)와 `messages_ko.properties`(한국어) **양쪽**이다. 키가 없으면 `Accept-Language`와 무관하게 enum의 기본 메시지(한국어)로 폴백하므로, 빠뜨려도 빌드·테스트는 통과한 채 **영어 클라이언트에 조용히 한국어가 나간다**이제 `ErrorCodeMessageBundleTest`가 **모든 코드에 두 벌이 다 있는지 강제**하므로 빠뜨리면 빌드가 깨진다. 이 테스트를 넣으면서 그때까지 누락돼 있던 세 키(`AUTH_EMAIL_REQUIRED`·`AUTH_EMAIL_MISMATCH`·`LISTING_REQUIRED_AGREEMENT_MISSING`)를 함께 채웠다.
 - 모든 비즈니스 예외는 `BusinessException(ErrorCode)`를 상속해 던진다. 컨트롤러에서 `try/catch`로 응답을 만들지 않는다.
 - 전역 핸들러는 **`@RestControllerAdvice`** 하나에 모은다.
 

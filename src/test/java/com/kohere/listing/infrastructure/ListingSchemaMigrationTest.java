@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.kohere.listing.infrastructure.migration.ContactSmsDropChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingConsentsChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingLocationRequiredChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingStatusEnumExpandChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingStatusEnumShrinkChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingV4BaselineChangeUnit;
 import com.mongodb.MongoWriteException;
@@ -105,6 +106,22 @@ class ListingSchemaMigrationTest {
   }
 
   @Test
+  @DisplayName("추가된 상태 값(UPDATE_PENDING)은 저장이 허용된다")
+  void acceptsExpandedStatus() {
+    // 0121이 validationAction=error로 조여 두었으므로 0122 없이는 이 저장이 거부된다.
+    // 체인에서 0122를 빠뜨리면 rejectsRemovedStatus는 옛 validator를 검증하며 통과해 버린다 —
+    // 이 테스트가 그 짝이다.
+    applyChangeUnitChain();
+
+    Document updatePending = ListingTestSeeds.listingDocuments().getFirst();
+    updatePending.put("status", "UPDATE_PENDING");
+
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(updatePending);
+
+    assertThat(mongoTemplate.getCollection(LISTINGS_COLLECTION).countDocuments()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("baseline 없이 후속 changeUnit을 돌리면 기동을 막는다")
   void refusesToRunWithoutBaseline() {
     assertThatThrownBy(() -> new ListingConsentsChangeUnit().execution(mongoTemplate))
@@ -118,5 +135,6 @@ class ListingSchemaMigrationTest {
     new ContactSmsDropChangeUnit().execution(mongoTemplate);
     new ListingConsentsChangeUnit().execution(mongoTemplate);
     new ListingStatusEnumShrinkChangeUnit().execution(mongoTemplate);
+    new ListingStatusEnumExpandChangeUnit().execution(mongoTemplate);
   }
 }

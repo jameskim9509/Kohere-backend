@@ -56,7 +56,10 @@ class AdminListingServiceTest {
             new ListingLocalizationService(catalogRepository),
             userAccountService);
     given(catalogRepository.findAll()).willReturn(List.of());
-    given(listingRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
+    // 심사도 「읽은 시점의 상태」를 조건으로 저장한다 — 임대인 수정이 같은 문서를 통째로
+    // 교체하므로 조건 없이 쓰면 서로를 소리 없이 덮는다.
+    given(listingRepository.saveIfStatus(any(), any()))
+        .willAnswer(invocation -> Optional.of(invocation.getArgument(0)));
   }
 
   @Test
