@@ -460,7 +460,7 @@
 | `type` | string (enum `ListingType`) | NOT NULL · `GOSHIWON`/`CO_LIVING`/`SHARE_HOUSE` |
 | `rentalType` | string (enum `RentalType`) | 매물 공통 임대 방식 · `MONTHLY_RENT` 단일값 |
 | `status` | string (enum `ListingStatus`) | NOT NULL · `PENDING`/`PUBLISHED`/`REJECTED`/`UPDATE_PENDING` · 값 집합의 정본은 validator다(changeUnit `0121`이 3종으로 조이고 `0122`가 `UPDATE_PENDING`을 더한다 — [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인)). `UPDATE_PENDING`은 공개 중이던 매물을 임대인이 수정해 재심사를 기다리는 상태이며, 세입자 조회는 전부 `PUBLISHED` equality라 이 값이면 자동으로 빠진다 |
-| `rejectionReason` | string | nullable · 관리자 반려 사유 · `REJECTED`에서만 채운다 · 임대인 수정 요청은 이 필드를 싣지 않으며 수정이 성공하면 서버가 무조건 비운다 |
+| `rejectionReason` | string | nullable · 관리자 반려 사유 · `REJECTED`와 고쳐서 재심사 중인 `PENDING`에 값이 있고 승인 시 지운다 · 임대인 수정 요청은 이 필드를 싣지 않으며 수정이 성공하면 서버가 무조건 비운다 |
 | `genderPolicy` | string (enum `GenderPolicy`) | 매물 공통 성별 정책 |
 | `languagesSupported` | string[] (enum `SupportedLanguage`) | 임대인이 응대 가능한 언어 코드 |
 | `arcRequired` | string (enum `ArcRequirement`) | NOT NULL · `REQUIRED`/`NOT_REQUIRED` · 매물 공통 ARC 요구 여부(아래 註) |

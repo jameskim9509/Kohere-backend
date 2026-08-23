@@ -21,7 +21,8 @@ import java.util.Set;
  * @param landlordId 매물 소유 임대인 계정 id
  * @param businessRegistrationNumber 사업자등록번호 원문. 심사에서 진위를 수동 확인한다
  * @param consents 등록 시 받은 이용약관 동의. 등록 게이트가 강제하므로 항상 동의된 상태다
- * @param rejectionReason 반려 사유. {@code REJECTED}일 때만 값이 있어 그 외에는 키가 빠진다
+ * @param rejectionReason 반려 사유. {@code REJECTED}와, 고쳐서 재심사 중인 {@code PENDING}에 값이 있다. 승인되면 사라지므로 그
+ *     외에는 키가 빠진다
  */
 public record AdminListingDetailResponse(
     ListingDetailResponse listing,

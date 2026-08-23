@@ -324,8 +324,10 @@ class ListingUpdateDocsTest {
         // REJECTED → PENDING. 최초 등록과 같은 줄에 선다.
         .andExpect(jsonPath("$.data.status").value("PENDING"))
         .andExpect(jsonPath("$.data.listing.status").value("PENDING"))
-        // 수정에 성공하면 서버가 반려 사유를 무조건 비운다 — 값이 null이 아니라 키가 빠진다.
-        .andExpect(jsonPath("$.data.rejectionReason").doesNotExist())
+        // 반려 사유는 수정으로 지워지지 않는다 — 심사를 기다리는 동안 무엇을 고치라고 했는지
+        // 임대인이 다시 볼 수 있어야 하고, 재심사하는 관리자도 이전 반려 맥락을 본다.
+        // 지우는 것은 승인 시점뿐이다.
+        .andExpect(jsonPath("$.data.rejectionReason").value(REJECTION_REASON))
         // 세입자에게 감추는 값이 임대인 응답에는 그대로 실린다. 전부 수정 요청 필드다.
         .andExpect(jsonPath("$.data.businessRegistrationNumber").value("1234567890"))
         .andExpect(jsonPath("$.data.serviceFeedback").isString())

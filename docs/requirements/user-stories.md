@@ -1628,11 +1628,11 @@
 - 시나리오: 반려된 매물을 고쳐 다시 심사를 받는다
   Given 온보딩을 마친(`ACTIVE`) 임대인이 정식 access 토큰(`ROLE_USER`)을 보유하고 자기 매물이 사유와 함께 `REJECTED`이고
   When 고친 값을 등록과 같은 전 필드로 담아 `PUT /api/v2/listings/{listingId}`를 호출하면
-  Then `200 OK`이고 본문이 통째로 교체되며 상태가 `PENDING`으로, `rejectionReason`이 `null`로 바뀌고 `updatedAt`이 갱신된다. 세입자 조회에는 여전히 나타나지 않는다
+  Then `200 OK`이고 본문이 통째로 교체되며 상태가 `PENDING`으로 바뀌고 `updatedAt`이 갱신된다. **`rejectionReason`은 그대로 남는다** — 심사를 기다리는 동안 임대인이 다시 볼 수 있어야 하고 재심사하는 관리자도 이전 맥락을 본다. 세입자 조회에는 여전히 나타나지 않는다
 - 시나리오: 공개된 매물을 고치면 심사 동안 내려간다
   Given 매물이 `PUBLISHED`로 세입자 조회에 노출되고 있고
   When 임대인이 수정을 호출하면
-  Then `200 OK`이고 상태가 `UPDATE_PENDING`으로 바뀌며 `rejectionReason`이 `null`이 된다. 그 즉시 목록·지도·상세·진단 추천·찜 목록·최근 본 목록에서 **모두 사라진다** — 의도된 동작이며 에러가 아니다
+  Then `200 OK`이고 상태가 `UPDATE_PENDING`으로 바뀐다(`rejectionReason`은 공개 중이던 매물이라 애초에 없다). 그 즉시 목록·지도·상세·진단 추천·찜 목록·최근 본 목록에서 **모두 사라진다** — 의도된 동작이며 에러가 아니다
 - 시나리오: 수정 심사가 끝나면 노출이 복구된다
   Given 위 매물이 `UPDATE_PENDING`이고 세입자의 찜 문서·최근 본 기록이 남아 있고
   When 관리자가 승인(US-3-7)을 호출하면

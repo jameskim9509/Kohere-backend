@@ -58,7 +58,15 @@ public class Listing {
   /** 매물의 게시/심사 상태다. */
   private final ListingStatus status;
 
-  /** 관리자가 심사에서 반려한 사유다. {@link ListingStatus#REJECTED}일 때만 채워진다. 임대인만 읽는 값이라 번역하지 않는다. */
+  /**
+   * 관리자가 심사에서 반려한 사유다. 임대인만 읽는 값이라 번역하지 않는다.
+   *
+   * <p><b>{@code REJECTED}에서만 살아 있는 값이 아니다.</b> 임대인이 고쳐 다시 올리면 상태는 {@code PENDING}으로 가지만 이 값은 그대로
+   * 남는다 — 임대인은 심사를 기다리는 동안 무엇을 고치라고 했는지 다시 볼 수 있고, 재심사하는 관리자는 이 매물이 전에 왜 반려됐는지 알 수 있다. 상태가 「지금 고쳐야
+   * 한다({@code REJECTED})」와 「고쳐서 재심사 중({@code PENDING})」을 이미 구분해 주므로 값이 남아도 혼동되지 않는다.
+   *
+   * <p>지워지는 것은 <b>승인 시점</b>뿐이다({@link #approve}). 공개된 매물이 지난 반려 사유를 달고 다니지 않게 한다.
+   */
   private final String rejectionReason;
 
   /** 성별 입주 제한 또는 분리 운영 정책이다. */
@@ -195,17 +203,17 @@ public class Listing {
   /**
    * 수정이 반영된 빌더를 받아 전이를 마무리한다.
    *
-   * <p><b>상태와 반려 사유를 서비스가 아니라 여기서 정한다.</b> 서비스가 지우게 하면 다음에 생기는 수정 경로가 빠뜨린다 — {@link #approve}가 같은
-   * 이유로 소거를 직접 하는 것과 같다.
+   * <p><b>전이 상태를 서비스가 아니라 여기서 정한다.</b> 서비스가 정하게 하면 다음에 생기는 수정 경로가 규칙을 다시 쓰게 된다.
    *
-   * <p>반려 사유는 <b>원래 상태를 가리지 않고 항상</b> 지운다. {@code PUBLISHED}였다면 이미 {@code null}이라 결과가 같고, 분기를 두면
-   * 그만큼 틀릴 여지가 생긴다.
+   * <p><b>반려 사유는 건드리지 않는다.</b> 고쳐서 다시 올린 매물이 {@code PENDING}으로 가면서 사유를 그대로 들고 가는 것이 의도다 — 임대인은 심사를
+   * 기다리는 동안 무엇을 고치라고 했는지 다시 볼 수 있고, 재심사하는 관리자는 이 매물이 전에 왜 반려됐는지 알 수 있다. 상태가 두 경우를 이미 구분하므로 값이 남아도
+   * 혼동되지 않는다. 지우는 것은 {@link #approve} 하나뿐이다.
    *
-   * @param edited 수정 요청이 반영된 빌더. 상태·사유·수정 시각은 아직 이 매물의 값이다
+   * @param edited 수정 요청이 반영된 빌더. 상태·수정 시각은 아직 이 매물의 값이다
    * @param now 수정한 시각
    */
   public Listing afterEdit(ListingBuilder edited, Instant now) {
-    return edited.status(nextStatusAfterEdit()).rejectionReason(null).updatedAt(now).build();
+    return edited.status(nextStatusAfterEdit()).updatedAt(now).build();
   }
 
   /**

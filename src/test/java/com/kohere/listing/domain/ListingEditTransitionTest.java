@@ -43,16 +43,22 @@ class ListingEditTransitionTest {
   }
 
   @Test
-  @DisplayName("수정은 반려 사유를 항상 지운다")
-  void editAlwaysClearsRejectionReason() {
-    // 고쳐서 다시 올린 매물이 지난 반려 사유를 달고 심사 대기로 돌아가면,
-    // 임대인 화면에 이미 해결한 사유가 계속 남는다.
+  @DisplayName("수정은 반려 사유를 지우지 않는다 — 지우는 것은 승인뿐이다")
+  void editPreservesRejectionReason() {
+    // 사유가 남아야 임대인은 심사를 기다리는 동안 무엇을 고치라고 했는지 다시 볼 수 있고,
+    // 재심사하는 관리자는 이 매물이 전에 왜 반려됐는지 알 수 있다.
+    // 「지금 고쳐야 한다(REJECTED)」와 「고쳐서 재심사 중(PENDING)」은 상태가 이미 구분한다.
     Listing rejected =
         listing(Listing.ListingStatus.REJECTED).toBuilder()
             .rejectionReason("사업자등록번호가 일치하지 않습니다")
             .build();
 
-    assertThat(rejected.afterEdit(rejected.toBuilder(), NOW).getRejectionReason()).isNull();
+    Listing resubmitted = rejected.afterEdit(rejected.toBuilder(), NOW);
+
+    assertThat(resubmitted.getStatus()).isEqualTo(Listing.ListingStatus.PENDING);
+    assertThat(resubmitted.getRejectionReason()).isEqualTo("사업자등록번호가 일치하지 않습니다");
+    // 공개되는 시점에야 사라진다.
+    assertThat(resubmitted.approve(NOW).getRejectionReason()).isNull();
   }
 
   @ParameterizedTest
