@@ -116,8 +116,8 @@ class ListingWriteAssembler {
         .nearbyFacilities(request.nearbyFacilities())
         .arcRequired(request.arcRequired())
         .refundPolicy(bilingual(request.refundPolicy()))
-        .preferredNationalities(request.preferredNationalities())
-        .contractDifficulties(request.contractDifficulties())
+        .preferredNationalities(orEmpty(request.preferredNationalities()))
+        .contractDifficulties(orEmpty(request.contractDifficulties()))
         .serviceFeedback(request.serviceFeedback());
   }
 
@@ -222,6 +222,21 @@ class ListingWriteAssembler {
     requireAlone("facilities.commonSpaces", facilities.commonSpaces());
     requireAlone("facilities.providedSupplies", facilities.providedSupplies());
     requireAlone("nearbyFacilities", request.nearbyFacilities());
+  }
+
+  /**
+   * 선택 필드로 온 코드 집합을 <b>빈 집합</b>으로 접는다(#270). 키 생략·{@code null}·{@code []} 셋을 한 모양으로 만든다.
+   *
+   * <p><b>{@code Set.copyOf} 단독으로 쓰면 안 된다</b> — {@code null}에 NPE(500)라, 400을 없애려던 변경이 500을 만든다. 이
+   * 레포의 컬렉션 정규화 선례({@code Listing.Facilities}·{@code RoomOffer}의 compact constructor)가 그 형태라 그대로
+   * 복사하기 쉽다.
+   *
+   * <p>접는 이유는 <b>저장 계약이 요청 계약과 다르기 때문</b>이다 — 요청은 생략을 허용하지만 MongoDB {@code $jsonSchema}는 두 필드를 여전히
+   * {@code required}로 걸고 있고, Spring Data는 {@code null} 프로퍼티의 키를 문서에 아예 쓰지 않는다. 여기서 접지 않으면 키가 사라져
+   * 저장이 거부된다. 그 대신 항상 {@code []}로 남으므로 스키마를 손대지 않아도 되고 응답도 늘 배열이라 클라이언트에 null 분기가 생기지 않는다.
+   */
+  private static <T> Set<T> orEmpty(Set<T> values) {
+    return values == null ? Set.of() : Set.copyOf(values);
   }
 
   /** 상수 이름이 {@code NONE}인 원소가 섞여 있는데 크기가 1이 아니면 거절한다. */

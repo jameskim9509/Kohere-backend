@@ -69,8 +69,8 @@ public record ListingRegisterRequest(
     @NotBlank String refundPolicy,
     @NotEmpty List<String> imageKeys,
     @NotEmpty @Valid List<RoomOfferRequest> roomOffers,
-    @NotEmpty Set<Nationality> preferredNationalities,
-    @NotEmpty Set<ContractDifficulty> contractDifficulties,
+    Set<Nationality> preferredNationalities,
+    Set<ContractDifficulty> contractDifficulties,
     String serviceFeedback,
     @NotNull @Valid ConsentsRequest consents)
     implements ListingWriteRequest {

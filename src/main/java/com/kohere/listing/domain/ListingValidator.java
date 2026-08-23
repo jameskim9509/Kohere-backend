@@ -10,6 +10,11 @@ import java.util.List;
  * <p>MongoDB는 스키마리스라 잘못된 모양의 문서도 저장 자체는 가능하다. 그래서 애플리케이션이 저장하기 직전에 v4 스키마의 필수 필드와 값 범위를 검증해, 조회 시점의
  * NullPointerException이나 잘못된 검색 결과를 미리 막는다.
  *
+ * <p><b>「요청에서 선택」과 「저장에서 선택」은 다르다.</b> {@code preferredNationalities}·{@code contractDifficulties}는
+ * 등록·수정 요청에서 생략할 수 있지만(#270) 저장 계약은 그대로다 — 응용 계층이 빈 집합으로 접어 넘기므로 여기서는 계속 non-null을 요구한다. 이 두 줄을
+ * 「요청이 선택이 됐으니」라는 이유로 지우면 접기를 빠뜨린 경로가 생겼을 때 아무도 못 잡는다(테스트 프로파일은 {@code mongock.enabled: false}라
+ * MongoDB validator가 걸리지 않는다).
+ *
  * <p>{@code blogUrl}·{@code rejectionReason}·{@code serviceFeedback}은 값이 없을 수 있어 필수로 보지 않는다.
  * MongoDB validator의 {@code required} 목록도 같은 셋을 제외한다. {@code location}은 지오코딩이 없던 시절에 같은 예외였지만, 등록이
  * 주소 검색이 준 좌표를 받게 되면서 필수로 조였다(ADR-0042 · changeUnit {@code 0116}).

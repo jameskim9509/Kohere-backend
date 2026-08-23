@@ -456,12 +456,6 @@
     "label": { "ko": "일본어", "en": "Japanese" }
   },
   {
-    "_id": "SUPPORTED_LANGUAGE:OTHER",
-    "category": "SUPPORTED_LANGUAGE",
-    "code": "OTHER",
-    "label": { "ko": "기타", "en": "Other" }
-  },
-  {
     "_id": "NEARBY_FACILITY:CONVENIENCE_STORE",
     "category": "NEARBY_FACILITY",
     "code": "CONVENIENCE_STORE",
