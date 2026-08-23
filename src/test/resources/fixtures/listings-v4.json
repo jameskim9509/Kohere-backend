@@ -234,8 +234,7 @@
     "genderPolicy": "ANY",
     "languagesSupported": [
       "ENGLISH",
-      "JAPANESE",
-      "OTHER"
+      "JAPANESE"
     ],
     "arcRequired": "REQUIRED",
     "favoriteCount": 0,

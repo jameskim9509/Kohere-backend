@@ -39,8 +39,9 @@
 **알려진 제약**(설계상 수용한 한계 — 해당 절에서 다시 짚는다):
 
 - **번호 정규화 백필 없음** — 정규화(숫자만 남김)는 **입력 경로에만** 적용하고 기존 데이터는 손대지 않는다. 하이픈으로 저장된 기존 임대인 번호는 연동·병합 매칭에서 누락될 수 있다(§1-3·§5-2).
-- **계정 잠금 해제 경로 없음** — 5회 실패로 잠긴 계정은 운영자가 DB에서 `locked_at`을 비우는 것 외에 풀 방법이 없다. 시간 경과 자동 해제도 없다(§1-4). 다만 **`locked_at`만 비우면 그것으로 완전한 해제**다 — `failed_login_attempts`를 함께 지울 필요가 없다(§1-4).
-- **의도적 계정 잠금(DoS)** — 남의 이메일로 5회 틀리면 그 계정을 잠글 수 있다. 로그인 시도 레이트리밋(IP 30회/시간·이메일 10회/시간)으로 완화하나 완전히 막을 수 없다(§1-4).
+- **계정 잠금 해제 경로 없음** — 10회 실패로 잠긴 계정은 운영자가 DB에서 `locked_at`을 비우는 것 외에 풀 방법이 없다. 시간 경과 자동 해제도 없다(§1-4). 다만 **`locked_at`만 비우면 그것으로 완전한 해제**다 — `failed_login_attempts`를 함께 지울 필요가 없다(§1-4).
+- **의도적 계정 잠금(DoS)** — 남의 이메일로 10회 틀리면 그 계정을 잠글 수 있다. 로그인 시도 레이트리밋(IP 60회/시간·이메일 20회/시간)으로 완화하나 완전히 막을 수 없다(§1-4).
+- **계정 열거 가능** — 로그인 실패 응답의 `error.details` 유무로 그 이메일의 가입 여부를 알 수 있다. 잠기기 전에 남은 시도를 알려 주기 위해 수용한 결과다(§1-4).
 - **세입자 → 임대인 전환 불가** — 세입자는 `phone_number`가 NULL이라 구조적으로 매칭 후보에서 빠진다. 앱 세입자가 웹에 임대인으로 가입하면 별개 계정이 생기며, 서버는 두 계정이 동일인인지 알 수 없다(§1-3).
 - **양쪽 모두 완주한 계정은 자동 병합 없음** — 앱·웹 양쪽에 같은 번호의 `ACTIVE` 계정이 각각 있으면 병합 트리거가 없다. 운영 수동 처리 대상이다(§5-2).
 - **병합 시 진단 기록 미삭제** — 병합은 임시 `users` 행만 삭제하고 진단 문서는 남긴다(§5-2).
@@ -64,7 +65,7 @@
 | 사용자 역할 `userType` | `TENANT`(세입자·외국인), `LANDLORD`(임대인), `ADMIN`(관리자) | `TENANT`·`LANDLORD`는 온보딩 제출 엔드포인트(세입자 `/auth/onboarding` · 임대인 `/auth/landlord/onboarding`)로 확정·이후 불변. 소셜·약관 단계에서는 미확정. **`ADMIN`만 예외** — 가입 경로가 없고 운영자가 기존 계정을 온보딩 이후에 수동 승격한다([03-listings-favorites](03-listings-favorites.md) 관리자 매물 심사) |
 | 이름 `name` | 문자열 | **세입자·임대인 공통** · 성·이름을 합친 **단일 이름**(#192에서 세입자의 `firstName`/`lastName`을 단일 `name`으로 통합해 임대인과 완전히 통일). 빈 문자열 불가. API 필드명·저장 모두 단일 `name`(`FullName` VO의 단일 `name` 속성 · `users.name` 컬럼). 세입자·임대인 모두 소셜 로그인 시 provider 값으로 채우고(§1) 이후 `PATCH /users/me`(§9)로 수정한다(#192에서 임대인도 온보딩 수집을 폐지해 세입자와 수집 시점까지 완전히 통일) |
 | 연락처 `phoneNumber` | 전화번호 문자열 | **임대인 온보딩 필수** · SMS 인증번호로 사전 검증(§4-1·§4-2) 필요. 응답·로그 마스킹(예 `010-****-5678`). **웹 트랙에서는 계정 연동의 유일한 매칭 키**이므로 입력 경로에서 **숫자만 남겨 정규화**해 저장·조회한다(§1-1·§1-3, `users.phone_number` UNIQUE) |
-| 비밀번호 `password` | 문자열 | **임대인 웹 전용**(소셜 트랙에는 없다) · 영문자(`A-Za-z`) 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~10**, 공백 불허(한글 불허). 위반은 `INVALID_INPUT`(400). **BCrypt 해시로만 보관**하고 원문은 저장·로그·응답 어디에도 남기지 않는다 |
+| 비밀번호 `password` | 문자열 | **임대인 웹 전용**(소셜 트랙에는 없다) · 영문자(`A-Za-z`) 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~20**, 공백 불허(한글 불허). 위반은 `INVALID_INPUT`(400). **BCrypt 해시로만 보관**하고 원문은 저장·로그·응답 어디에도 남기지 않는다 |
 | 연동 여부 `linked` | boolean | **웹 회원가입(§1-3) 응답 전용** · 같은 번호의 기존 앱 계정을 찾아 그 `user_id`에 자격증명만 붙였으면 `true`(새 `users` 행 없음), 못 찾아 새 계정을 만들었으면 `false` |
 | 사업자등록번호 `businessRegistrationNumber` | 숫자 10자리 문자열 | **임대인 전용** · **온보딩 제출에는 미포함**(온보딩은 약관·연락처 인증만으로 완료). 온보딩 후 **매물 등록(`POST /api/v2/listings`) 요청 본문**으로 받아 **형식(숫자 10자리)만 검증하고 매물 문서에 저장**한다 — 등록 시점에 별도 검증 API(§5-1)를 자동 호출하지 않으며 진위는 관리자 승인 심사에서 수동 확인한다. 응답·로그 마스킹(매물 응답에서는 아예 제외) |
 
@@ -83,7 +84,7 @@
 | POST | `/api/v1/auth/phone/signup/verification-code` | 가입용 연락처 SMS 인증번호 발송(임대인 웹·비로그인) — 번호 키 챌린지 | 불필요 | 200 |
 | POST | `/api/v1/auth/phone/signup/verify` | 가입용 인증번호 확인(임대인 웹·비로그인) → 번호 키 검증 마커 저장 | 불필요 | 200 |
 | POST | `/api/v1/auth/signup` | 임대인 웹 회원가입(한 트랜잭션으로 ACTIVE 완주 + 같은 번호의 기존 앱 계정과 연동), refresh는 쿠키 | 불필요 | 200 |
-| POST | `/api/v1/auth/login` | 임대인 웹 로그인(이메일·비밀번호, 5회 실패 잠금), refresh는 쿠키 | 불필요 | 200 |
+| POST | `/api/v1/auth/login` | 임대인 웹 로그인(이메일·비밀번호, 10회 실패 잠금), refresh는 쿠키 | 불필요 | 200 |
 | POST | `/api/v1/auth/terms` | 약관 동의 제출(이용약관·개인정보처리방침·마케팅), 약관 동의 완료(TERMS_AGREED 전이) | 필수(온보딩 토큰) | 200 |
 | POST | `/api/v1/auth/email/verification-code` | 이메일로 인증번호 발송(세입자) — 정식(ACTIVE) 사용자 전용(#192) | 필수(정식 토큰(ACTIVE, ROLE_USER)) | 200 |
 | POST | `/api/v1/auth/email/verify` | 인증번호 확인(세입자) — 접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈 | 필수(정식 토큰(ACTIVE, ROLE_USER)) | 200 |
@@ -363,7 +364,7 @@ SMS는 §4-1과 같이 **동기 발송**하며 **발송에 성공한 뒤에만**
 | `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) — 온보딩(§5·§5-2)과 동일 규칙. `name`과 같이 연동 시에는 스냅샷으로만 저장 |
 | `phoneNumber` | string | 필수 | 휴대폰 번호 형식(하이픈 허용 — 서버가 숫자만 남겨 정규화). **§1-1·§1-2로 인증된 번호**여야 함(마커 부재·만료 `AUTH_PHONE_NOT_VERIFIED` 422). 신규 가입이면 정규화 값을 `users.phone_number`에 기록한다(그래야 반대 방향 §5-2에서 이 계정이 매칭 후보가 된다) |
 | `email` | string | 필수 | 이메일 형식(`@NotBlank`·`@Email`). **웹 로그인 ID** — `local_accounts.email`에 UNIQUE이며 중복이면 `AUTH_EMAIL_ALREADY_REGISTERED`(409). **신규 가입일 때만** `users.email`에도 함께 기록하고, 연동이면 소셜 진본을 유지한다(`users.email` 미갱신) |
-| `password` | string | 필수 | 영문자(`A-Za-z`) 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~10**, 공백 불허(`@NotBlank`·`@Pattern`). 위반은 `INVALID_INPUT`(400, `errors[].field=password`). **BCrypt 해시로만 보관**하고 원문은 저장·로그하지 않는다 |
+| `password` | string | 필수 | 영문자(`A-Za-z`) 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~20**, 공백 불허(`@NotBlank`·`@Pattern`). 위반은 `INVALID_INPUT`(400, `errors[].field=password`). **BCrypt 해시로만 보관**하고 원문은 저장·로그하지 않는다 |
 | `termsOfServiceAgreed` | boolean | 필수 | 이용약관 동의. `false`면 `AUTH_REQUIRED_AGREEMENT_MISSING`(422). 앱 `POST /auth/terms`(§2)와 같은 3필드를 가입 폼이 대신 받는다 |
 | `privacyPolicyAgreed` | boolean | 필수 | 개인정보처리방침 동의. `false`면 `AUTH_REQUIRED_AGREEMENT_MISSING`(422) |
 | `marketingAgreed` | boolean | 선택 | 마케팅 수신 동의(기본 `false`). 이후 `PATCH /users/me`(§9)로 변경한다 |
@@ -426,13 +427,14 @@ Set-Cookie: refreshToken=rt_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2; HttpOnly;
 
 **웹 계정은 항상 `ACTIVE`다** — 웹 가입이 한 트랜잭션으로 완주하므로(§1-3) 로그인에 **온보딩 재개 분기가 없다**. `onboardingRequired`는 항상 `false`, `status`는 항상 `"ACTIVE"`이며 앱처럼 `PENDING`/`TERMS_AGREED`로 로그인하는 경로가 존재하지 않는다.
 
-> **자격증명 오류는 한 코드로 수렴한다** — 등록되지 않은 이메일과 비밀번호 불일치를 **동일하게 `401 AUTH_INVALID_CREDENTIALS`** 로 응답해 이메일 존재 여부를 노출하지 않는다.
-> **비밀번호 5회 연속 실패 시 계정을 잠근다** — 5회째 실패에서 `failed_login_attempts=5`·`locked_at`을 기록하고, 이후에는 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED`다(잠금 판정이 자격증명 검증보다 우선한다). 로그인에 성공하면 실패 카운터를 0으로 되돌린다. 실패 횟수·잠금 시각은 **`local_accounts`의 컬럼**에 둔다 — Redis TTL로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책이 깨진다.
-> **시도 자체에 레이트리밋을 건다** — 자격증명 조회·해시 대조보다 **먼저** IP 30회/시간·이메일 10회/시간을 세고, 어느 한쪽이라도 넘으면 `429 TOO_MANY_REQUESTS`다. 두 가지를 동시에 막는다: ① 남의 이메일로 5회 틀려 잠그는 DoS(해제 경로가 없어 피해가 영구적이다) ② 선행 조건 없이 BCrypt 라운드를 강제할 수 있는 `permitAll` 경로의 CPU 증폭(가입은 SMS 인증 마커 게이트 뒤에 있다). **한도를 먼저 보는 순서가 계약**이다 — 뒤에서 보면 막힌 요청도 이미 해시 비용을 치른 뒤라 ②를 막지 못한다. IP 축은 `X-Forwarded-For`가 호출자 손에 있어 위조 가능하므로 비용 가드일 뿐이고, 잠금 DoS를 실제로 묶는 것은 **이메일 축**이다.
+> **자격증명 오류는 한 코드로 수렴한다** — 등록되지 않은 이메일과 비밀번호 불일치를 **동일하게 `401 AUTH_INVALID_CREDENTIALS`** 로 응답한다(status·code·문구가 같다). 다만 **`error.details`는 등록된 계정의 비밀번호 불일치에만 실리므로 그 유무로 가입 여부가 드러난다** — 아래 알려진 제약 참조.
+> **비밀번호 10회 연속 실패 시 계정을 잠근다** — 10회째 실패에서 `failed_login_attempts=10`·`locked_at`을 기록하고, 이후에는 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED`다(잠금 판정이 자격증명 검증보다 우선한다). 로그인에 성공하면 실패 카운터를 0으로 되돌린다. 실패 횟수·잠금 시각은 **`local_accounts`의 컬럼**에 둔다 — Redis TTL로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책이 깨진다.
+> **시도 자체에 레이트리밋을 건다** — 자격증명 조회·해시 대조보다 **먼저** IP 60회/시간·이메일 20회/시간을 세고, 어느 한쪽이라도 넘으면 `429 TOO_MANY_REQUESTS`다. 두 가지를 동시에 막는다: ① 남의 이메일로 10회 틀려 잠그는 DoS(해제 경로가 없어 피해가 영구적이다) ② 선행 조건 없이 BCrypt 라운드를 강제할 수 있는 `permitAll` 경로의 CPU 증폭(가입은 SMS 인증 마커 게이트 뒤에 있다). **한도를 먼저 보는 순서가 계약**이다 — 뒤에서 보면 막힌 요청도 이미 해시 비용을 치른 뒤라 ②를 막지 못한다. IP 축은 `X-Forwarded-For`가 호출자 손에 있어 위조 가능하므로 비용 가드일 뿐이고, 잠금 DoS를 실제로 묶는 것은 **이메일 축**이다.
 
 > **알려진 제약**
 > — **잠금 해제 경로가 없다.** 해제 API도, 시간 경과 자동 해제도 구현하지 않는다. 잠긴 계정은 **운영자가 DB에서 `locked_at`을 비우는 것 외에 풀 방법이 없으므로**, 잠긴 임대인이 연락할 창구와 해제 절차를 운영에서 정해 두어야 한다(코드 변경 없음). **`locked_at`만 비우면 그것으로 끝이다** — 잠기지 않았는데 카운터가 이미 상한 이상인 계정은 다음 실패를 `1`부터 다시 세므로, `failed_login_attempts`를 함께 지우는 것을 잊어 다음 오타 한 번에 재잠금되는 일은 없다.
-> — **의도적 계정 잠금(DoS)이 가능하다.** 남의 이메일로 5회 틀리면 그 계정을 잠글 수 있다. 잠금 정책의 고전적 부작용이며 시도 레이트리밋(IP 30회/시간·이메일 10회/시간)으로 완화하나 완전히 막을 수 없다 — 수용하고 진행한다.
+> — **의도적 계정 잠금(DoS)이 가능하다.** 남의 이메일로 10회 틀리면 그 계정을 잠글 수 있다. 잠금 정책의 고전적 부작용이며 시도 레이트리밋(IP 60회/시간·이메일 20회/시간)으로 완화하나 완전히 막을 수 없다 — 수용하고 진행한다.
+> — **계정 열거가 가능하다.** `error.details`가 등록된 계정의 비밀번호 불일치에만 실리므로, 임의의 비밀번호로 한 번 호출해 보면 그 이메일의 가입 여부를 알 수 있다. 잠긴 계정이 `423`으로 이미 존재를 드러내고 있고 **잠기기 전에 남은 시도를 알려 주는 것이 이 필드의 목적**이므로 수용한다. 시도 레이트리밋은 이메일 축이 이메일 단위라 열거를 막지 못하고 IP 축은 위조 가능하므로 완화책이 아니다.
 
 - **인증**: 불필요(permitAll — 로그인 이전 단계).
 - Path/Query 파라미터: 없음.
@@ -475,15 +477,39 @@ Set-Cookie: refreshToken=rt_3b1e7c5a2f9d04e8b6c1a07f5d2e93b4c8a16f0d; HttpOnly; 
 
 > 필드 구성은 §1-3에서 `linked`만 뺀 것과 같다. `email`·`name`은 **`users`의 값**(표시 규칙)이라 **연동된 계정은 로그인에 쓴 이메일과 응답 `email`이 다를 수 있다** — 로그인 ID는 `local_accounts.email`이고 응답은 프로필의 정본을 보여 준다. refresh는 본문에 없고 쿠키로만 내려가며 속성은 §1-3과 동일하다.
 
+#### 실패 Response — 401 (비밀번호 불일치)
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "AUTH_INVALID_CREDENTIALS",
+    "message": "이메일 또는 비밀번호가 올바르지 않습니다.",
+    "errors": [],
+    "details": { "failedAttempts": 3, "maxFailedAttempts": 10 }
+  }
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `error.details.failedAttempts` | number | 이 계정에 누적된 연속 실패 횟수 |
+| `error.details.maxFailedAttempts` | number | 계정을 잠그는 상한 |
+
+> **`failedAttempts`가 `maxFailedAttempts`에 도달한 응답이 곧 잠금 시점이다** — 그 요청도 `401`이지만 그 시점에 `locked_at`이 기록되며, 다음 요청부터 `423`이다. 클라이언트는 두 값이 같아지면 잠금 안내를 띄운다.
+>
+> **`error.details`가 실리지 않는 실패** — 등록되지 않은 이메일, `ACTIVE`가 아닌 계정, `423`, `429`에서는 값이 `null`이 아니라 **필드 자체가 생략된다**.
+
 #### 발생 가능한 에러
 
 | status | code | 시점 |
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `email`/`password` 누락·빈값, `email` 형식 위반 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
-| 401 | `AUTH_INVALID_CREDENTIALS` | 등록되지 않은 이메일 **또는** 비밀번호 불일치 — 둘을 구분하지 않는다(계정 존재 여부 비노출) |
-| 423 | `AUTH_ACCOUNT_LOCKED` | 비밀번호 5회 연속 실패로 잠긴 계정(`locked_at` 기록됨) — **비밀번호가 맞아도** 잠금이 우선하며 해제 경로가 없다 |
-| 429 | `TOO_MANY_REQUESTS` | 로그인 시도 한도 초과 — 같은 IP 30회/시간 또는 같은 이메일 10회/시간. **자격증명을 조회하기 전에** 판정하므로 이메일 존재 여부와 무관하고, 어느 축에 걸렸는지도 구분해 알리지 않는다(한도 역산 방지) |
+| 401 | `AUTH_INVALID_CREDENTIALS` | 등록되지 않은 이메일 **또는** 비밀번호 불일치 — code·status·문구가 같다. 비밀번호 불일치일 때만 `error.details`가 실린다 |
+| 423 | `AUTH_ACCOUNT_LOCKED` | 비밀번호 10회 연속 실패로 잠긴 계정(`locked_at` 기록됨) — **비밀번호가 맞아도** 잠금이 우선하며 해제 경로가 없다 |
+| 429 | `TOO_MANY_REQUESTS` | 로그인 시도 한도 초과 — 같은 IP 60회/시간 또는 같은 이메일 20회/시간. **자격증명을 조회하기 전에** 판정하므로 이메일 존재 여부와 무관하고, 어느 축에 걸렸는지도 구분해 알리지 않는다(한도 역산 방지) |
 
 ---
 
@@ -1367,8 +1393,8 @@ Set-Cookie: refreshToken=; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Ma
 | --- | --- | --- |
 | `AUTH_MISSING_CREDENTIAL` | 400 | provider의 자격 필드 누락(Google `idToken` 또는 Apple `authorizationCode` 미전송) |
 | `AUTH_INVALID_SOCIAL_TOKEN` | 401 | Google `idToken` 검증 실패(서명/`aud`/`iss`/`exp`), 또는 Apple `authorizationCode` 교환 실패·교환 `id_token` 검증 실패(위조·만료·앱 불일치·재사용 코드) |
-| `AUTH_INVALID_CREDENTIALS` | 401 | 임대인 웹 로그인(`POST /auth/login`) 실패 — 등록되지 않은 이메일 **또는** 비밀번호 불일치(둘을 구분하지 않는다: 계정 존재 여부 비노출) |
-| `AUTH_ACCOUNT_LOCKED` | 423 | 임대인 웹 로그인에서 비밀번호 5회 연속 실패로 잠긴 계정(비밀번호가 맞아도 잠금이 우선 — 해제 경로 없음) |
+| `AUTH_INVALID_CREDENTIALS` | 401 | 임대인 웹 로그인(`POST /auth/login`) 실패 — 등록되지 않은 이메일 **또는** 비밀번호 불일치(code·status·문구가 같고, 비밀번호 불일치일 때만 `error.details`가 실린다) |
+| `AUTH_ACCOUNT_LOCKED` | 423 | 임대인 웹 로그인에서 비밀번호 10회 연속 실패로 잠긴 계정(비밀번호가 맞아도 잠금이 우선 — 해제 경로 없음) |
 | `AUTH_EMAIL_REQUIRED` | 422 | 소셜 로그인(`POST /auth/social-login`) 시 토큰의 `email` 클레임·요청 `email` 어느 쪽에도 이메일이 없음(provider 진본 이메일 확정 불가) |
 | `AUTH_EMAIL_MISMATCH` | 422 | 소셜 로그인 요청 `email`이 토큰의 `email` 클레임과 불일치(email은 provider 진본으로 확정) |
 | `AUTH_EMAIL_VERIFICATION_FAILED` | 422 | 이메일 인증번호 불일치 또는 만료(미발송·만료·오입력) — 세입자(정식(ACTIVE) 사용자 이메일 인증 §3·§4) |

@@ -1,5 +1,6 @@
 package com.kohere.listing.application;
 
+import com.kohere.common.exception.InvalidInputException;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRequiredAgreementMissingException;
@@ -33,6 +34,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class ListingWriteAssembler {
 
+  /** 시설 8종의 「해당 없음」 코드. 여덟 enum이 각자 같은 이름의 상수를 갖고, 카탈로그도 카테고리별로 따로 둔다. */
+  private static final String NONE_CODE = "NONE";
+
   /** 행정구역 카탈로그가 모르는 지역에 쓰는 코드다(ADR-0046). 관리자 심사가 확정한다. */
   private static final String UNMAPPED_REGION_CODE = "ETC";
 
@@ -62,6 +66,7 @@ class ListingWriteAssembler {
       ListingWriteRequest request,
       List<Set<ConditionTag>> roomFilterTags,
       ListingCatalogCodes catalog) {
+    requireNoneIsExclusive(request);
     requireCatalogCodes(request, roomFilterTags, catalog);
     requireConsents(request.consents());
 
@@ -111,8 +116,8 @@ class ListingWriteAssembler {
         .nearbyFacilities(request.nearbyFacilities())
         .arcRequired(request.arcRequired())
         .refundPolicy(bilingual(request.refundPolicy()))
-        .preferredNationalities(request.preferredNationalities())
-        .contractDifficulties(request.contractDifficulties())
+        .preferredNationalities(orEmpty(request.preferredNationalities()))
+        .contractDifficulties(orEmpty(request.contractDifficulties()))
         .serviceFeedback(request.serviceFeedback());
   }
 
@@ -188,6 +193,58 @@ class ListingWriteAssembler {
    */
   static LocalizedText bilingual(String korean) {
     return new LocalizedText(korean, korean);
+  }
+
+  /**
+   * 시설 8종의 {@code NONE}이 <b>단독</b>인지 확인한다. {@code NONE}은 「해당 시설이 없음」이라 다른 코드와 공존할 수 없다.
+   *
+   * <p><b>카탈로그 대조로는 못 잡는다</b> — {@code NONE}은 카탈로그에 실재하는 정상 코드라 {@link #requireCatalogCodes}를 그대로
+   * 통과한다. 아무 데서도 막지 않으면 {@code ["NONE","WIFI"]}가 저장돼 응답에 「없음, 와이파이」로 나간다(Mongo validator도 문자열 배열이라
+   * 값을 보지 않는다).
+   *
+   * <p><b>왜 여기인가</b> — 등록·수정이 공유하는 유일한 조립 지점이라 한 곳이면 두 경로가 다 덮인다. 요청 DTO에 걸면 등록·수정 레코드 두 벌에 같은 규칙을
+   * 복붙하게 되고, 도메인 검증에 걸면 어느 요청 필드가 문제인지 알려 줄 수 없다. {@link InvalidInputException}은 필드명을 함께 실어 {@code
+   * 400 INVALID_INPUT} + {@code errors[].field}로 나간다.
+   *
+   * <p><b>{@code nearbyFacilities}를 빠뜨리지 않는다</b> — 이 필드만 {@code facilities} 밖의 루트 필드라 시설 묶음만 훑으면
+   * 8분의 1이 조용히 빠진다.
+   *
+   * <p>이 규칙은 JSON Schema로 표현할 수 없어 생성된 OpenAPI는 {@code ["NONE","WIFI"]}를 타입상 유효하다고 말한다. 오퍼레이션 설명과
+   * 400 예시가 그 자리를 대신한다.
+   */
+  private static void requireNoneIsExclusive(ListingWriteRequest request) {
+    ListingRegisterRequest.FacilitiesRequest facilities = request.facilities();
+    requireAlone("facilities.heatingSystem", facilities.heatingSystem());
+    requireAlone("facilities.kitchen", facilities.kitchen());
+    requireAlone("facilities.laundry", facilities.laundry());
+    requireAlone("facilities.livingAmenities", facilities.livingAmenities());
+    requireAlone("facilities.securityFeatures", facilities.securityFeatures());
+    requireAlone("facilities.commonSpaces", facilities.commonSpaces());
+    requireAlone("facilities.providedSupplies", facilities.providedSupplies());
+    requireAlone("nearbyFacilities", request.nearbyFacilities());
+  }
+
+  /**
+   * 선택 필드로 온 코드 집합을 <b>빈 집합</b>으로 접는다(#270). 키 생략·{@code null}·{@code []} 셋을 한 모양으로 만든다.
+   *
+   * <p><b>{@code Set.copyOf} 단독으로 쓰면 안 된다</b> — {@code null}에 NPE(500)라, 400을 없애려던 변경이 500을 만든다. 이
+   * 레포의 컬렉션 정규화 선례({@code Listing.Facilities}·{@code RoomOffer}의 compact constructor)가 그 형태라 그대로
+   * 복사하기 쉽다.
+   *
+   * <p>접는 이유는 <b>저장 계약이 요청 계약과 다르기 때문</b>이다 — 요청은 생략을 허용하지만 MongoDB {@code $jsonSchema}는 두 필드를 여전히
+   * {@code required}로 걸고 있고, Spring Data는 {@code null} 프로퍼티의 키를 문서에 아예 쓰지 않는다. 여기서 접지 않으면 키가 사라져
+   * 저장이 거부된다. 그 대신 항상 {@code []}로 남으므로 스키마를 손대지 않아도 되고 응답도 늘 배열이라 클라이언트에 null 분기가 생기지 않는다.
+   */
+  private static <T> Set<T> orEmpty(Set<T> values) {
+    return values == null ? Set.of() : Set.copyOf(values);
+  }
+
+  /** 상수 이름이 {@code NONE}인 원소가 섞여 있는데 크기가 1이 아니면 거절한다. */
+  private static void requireAlone(String field, Set<? extends Enum<?>> codes) {
+    boolean hasNone = codes.stream().anyMatch(code -> NONE_CODE.equals(code.name()));
+    if (hasNone && codes.size() > 1) {
+      throw new InvalidInputException(field, "validation.noneMustBeAlone");
+    }
   }
 
   /** 요청의 코드값이 전부 카탈로그에 있는지 확인한다. 라벨 없는 코드는 응답에서 코드 문자열로 새어 나간다. */

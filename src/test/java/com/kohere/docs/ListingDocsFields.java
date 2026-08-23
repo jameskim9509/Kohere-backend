@@ -7,6 +7,7 @@ import static com.kohere.docs.ApiDocsFields.enumArrayField;
 import static com.kohere.docs.ApiDocsFields.enumField;
 import static com.kohere.docs.ApiDocsFields.errorNull;
 import static com.kohere.docs.ApiDocsFields.field;
+import static com.kohere.docs.ApiDocsFields.optEnumArrayField;
 import static com.kohere.docs.ApiDocsFields.optField;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
@@ -396,6 +397,8 @@ public final class ListingDocsFields {
 
       **요청 주의사항**
 
+      - **시설 8종은 「없음」을 `NONE`으로 보낸다.** 해당 시설이 하나도 없으면 `["NONE"]` **하나만** 싱는다 — `NONE`을 다른 코드와 함께 보내면 `400 INVALID_INPUT`이고 `error.errors[].field`에 그 필드 이름이 실린다. ※ **이 규칙은 아래 스키마에 드러나지 않는다** — `NONE`은 허용값 목록의 평범한 값이라 타입상으로는 조합이 유효해 보인다.
+      - `NONE`은 행정구역의 `ETC`나 설문의 `OTHER`와 다르다 — 그쪽은 「목록 밖의 값」이고 `NONE`은 「해당하는 것이 없음」이다.
       - **주소를 먼저 검색한다** — 주소 칸은 자유 입력이 아니다. `GET /api/v1/listings/addresses`로 검색해 고른 후보의 값을 아래 세 필드에 그대로 담는다. 검색 결과는 모두 고를 수 있다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다.**
 
       | 검색 응답 | 등록 요청 | 내용 |
@@ -430,7 +433,7 @@ public final class ListingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
+      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개, **시설 8종 중 어느 하나가 `NONE`을 다른 코드와 함께 담음**. 위반 필드는 `error.errors[]`에 실린다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
       | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -795,18 +798,45 @@ public final class ListingDocsFields {
     fields.add(enumField("arcRequired", ArcRequirement.class, "입주에 외국인등록증(ARC)이 필요한지 여부"));
     fields.add(field("facilities", JsonFieldType.OBJECT, "공용 시설·비품"));
     fields.add(
-        enumArrayField("facilities.heatingSystem", Listing.HeatingSystem.class, "난방시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.kitchen", KitchenFacility.class, "주방시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.laundry", LaundryFacility.class, "세탁시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.livingAmenities", LivingAmenity.class, "생활시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.securityFeatures", SecurityFeature.class, "안전시설. 1개 이상"));
+        enumArrayField(
+            "facilities.heatingSystem",
+            Listing.HeatingSystem.class,
+            "난방시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.kitchen",
+            KitchenFacility.class,
+            "주방시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.laundry",
+            LaundryFacility.class,
+            "세탁시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.livingAmenities",
+            LivingAmenity.class,
+            "생활시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.securityFeatures",
+            SecurityFeature.class,
+            "안전시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
     fields.add(
         enumArrayField(
             "facilities.commonSpaces",
             Listing.CommonSpaceType.class,
-            "공용공간. 1개 이상. 수량 없이 종류만 보낸다"));
-    fields.add(enumArrayField("facilities.providedSupplies", ProvidedSupply.class, "제공비품. 1개 이상"));
-    fields.add(enumArrayField("nearbyFacilities", NearbyFacility.class, "주변 편의시설. 1개 이상"));
+            "공용공간. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다). 수량 없이 종류만 보낸다"));
+    fields.add(
+        enumArrayField(
+            "facilities.providedSupplies",
+            ProvidedSupply.class,
+            "제공비품. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "nearbyFacilities",
+            NearbyFacility.class,
+            "주변 편의시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
     fields.add(field("nearestTransit", JsonFieldType.OBJECT, "가장 가까운 대중교통"));
     fields.add(enumField("nearestTransit.type", Listing.TransitType.class, "가까운 교통수단"));
     fields.add(
@@ -878,19 +908,19 @@ public final class ListingDocsFields {
                     + " 신규 방(roomOfferId가 null)은 아직 확정 키가 없어 임시 키만 가능하다"
                 : "그 객실 사진의 저장 키 2~5개"));
     fields.add(
-        enumArrayField(
+        optEnumArrayField(
             "preferredNationalities",
             Nationality.class,
             update
-                ? "설문 — 선호하는 입주자 국적. 1개 이상이며 임대인 상세 응답에 그대로 실린다"
-                : "설문 — 선호하는 입주자 국적. 1개 이상이며 응답에는 나오지 않는다"));
+                ? "설문 — 선호하는 입주자 국적(선택). 보내지 않으면 저장된 값이 빈 배열로 지워진다"
+                : "설문 — 선호하는 입주자 국적(선택). 보내지 않으면 빈 배열로 저장되며 세입자 응답에는 나오지 않는다"));
     fields.add(
-        enumArrayField(
+        optEnumArrayField(
             "contractDifficulties",
             ContractDifficulty.class,
             update
-                ? "설문 — 계약 과정에서 겪은 어려움. 1개 이상이며 임대인 상세 응답에 그대로 실린다"
-                : "설문 — 계약 과정에서 겪은 어려움. 1개 이상이며 응답에는 나오지 않는다"));
+                ? "설문 — 계약 과정에서 겪은 어려움(선택). 보내지 않으면 저장된 값이 빈 배열로 지워진다"
+                : "설문 — 계약 과정에서 겪은 어려움(선택). 보내지 않으면 빈 배열로 저장되며 세입자 응답에는 나오지 않는다"));
     fields.add(
         optField(
             "serviceFeedback",
@@ -1075,6 +1105,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
+      - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
       - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
       - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
       - `listing.favorited`는 **항상 false**다. 관리자에게는 찜 개념이 없다.
@@ -1103,6 +1134,7 @@ public final class ListingDocsFields {
 
       **응답 주의사항**
 
+      - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
       - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
       - `businessRegistrationNumber`는 **마스킹 없이 원문**이다. 심사에서 진위를 직접 확인하는 값이다.
       - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
@@ -1231,10 +1263,15 @@ public final class ListingDocsFields {
             JsonFieldType.STRING,
             "사업자등록번호 원문. 심사에서 진위를 수동 확인하는 값이라 관리자에게만 내려간다"));
     fields.add(
-        enumArrayField(prefix + ".preferredNationalities", Nationality.class, "등록 폼 설문 — 선호 국적"));
+        enumArrayField(
+            prefix + ".preferredNationalities",
+            Nationality.class,
+            "등록 폼 설문 — 선호 국적. 답하지 않았으면 빈 배열이다"));
     fields.add(
         enumArrayField(
-            prefix + ".contractDifficulties", ContractDifficulty.class, "등록 폼 설문 — 계약 시 어려움"));
+            prefix + ".contractDifficulties",
+            ContractDifficulty.class,
+            "등록 폼 설문 — 계약 시 어려움. 답하지 않았으면 빈 배열이다"));
     fields.add(
         optField(
             prefix + ".serviceFeedback", JsonFieldType.STRING, "등록 폼 설문 — 서비스 의견. 없으면 키가 빠진다"));
@@ -1304,7 +1341,7 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - `listing`은 세입자 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이며 **표시·미리보기용**이다. 다시 제출할 값은 그 바깥에 있다.
-      - 세입자에게 감추는 값이 함께 실린다 — `businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`). **전부 수정 요청 필드**라 빠지면 그대로 다시 제출할 수 없다.
+      - 세입자에게 감추는 값이 함께 실린다 — `businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`). **전부 수정 요청 필드**다. 설문 3종은 선택이지만 **보내지 않으면 빈 값으로 덮이므로**, 유지하려면 이 응답이 준 값을 그대로 다시 실어야 한다.
       - 사진은 URL과 **키**를 함께 준다. 그대로 둘 사진은 `imageKeys`·`rooms[].roomImageKeys`의 확정 키를 수정 요청에 되돌려 보낸다. **URL에서 키를 역산하지 않는다** — 주소 형식에 묶이면 CDN을 바꿀 때 같이 깨진다.
       - `rooms[]`는 **`INACTIVE` 방까지** 담는다(`listing.roomOffers[]`는 `ACTIVE`만 담는다). 내렸던 방을 되살리려면 이 배열이 필요하다.
       - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
@@ -1343,6 +1380,8 @@ public final class ListingDocsFields {
       | " | `roomOffers[].status` | `ACTIVE`·`INACTIVE`. 방을 내리는 것은 요청에서 빼는 것이 아니라 `INACTIVE`로 보내는 것이다 |
       | 사진 키에 기존 사진을 섞는다 | `imageKeys` · `roomOffers[].roomImageKeys` | 새로 올린 **임시 키**(`uploads/…`)와 그 자리에 이미 있던 **확정 키**(`listings/…`)를 섞어 보낸다 |
 
+      - **시설 8종은 「없음」을 `NONE`으로 보낸다.** 해당 시설이 하나도 없으면 `["NONE"]` **하나만** 싱는다 — `NONE`을 다른 코드와 함께 보내면 `400 INVALID_INPUT`이고 `error.errors[].field`에 그 필드 이름이 실린다. ※ **이 규칙은 아래 스키마에 드러나지 않는다** — `NONE`은 허용값 목록의 평범한 값이라 타입상으로는 조합이 유효해 보인다.
+      - `NONE`은 행정구역의 `ETC`나 설문의 `OTHER`와 다르다 — 그쪽은 「목록 밖의 값」이고 `NONE`은 「해당하는 것이 없음」이다.
       - **보내지 않은 필드는 지워진다.** 주소에서 좌표·행정구역·주변 대학이 파생되므로 일부만 보내면 파생값이 본문과 어긋난다. 폼 프리필은 `GET /api/v2/users/me/listings/{listingId}`가 준다.
       - **수정할 수 있는지는 매물의 현재 상태 하나가 정한다.** 임대인이 고를 것은 없다.
 
@@ -1372,7 +1411,7 @@ public final class ListingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 등록과 같은 필수값·형식·범위 위반. 더해서 그 매물의 것이 아닌 `roomOfferId`, 저장 결과에 `ACTIVE` 방 0개 |
+      | 400 | `INVALID_INPUT` | 등록과 같은 필수값·형식·범위 위반(**시설 8종의 `NONE` 단독 규칙** 포함). 더해서 그 매물의 것이 아닌 `roomOfferId`, 저장 결과에 `ACTIVE` 방 0개 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `LISTING_IMAGE_REQUIRED` | 최종 배열이 대표 1~5장 · 방 2~5장을 벗어남 |
       | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 키가 남의 것·없는 것·만료된 것이거나, 확정 키를 원래 자리가 아닌 곳에 넣음 |
@@ -1437,12 +1476,14 @@ public final class ListingDocsFields {
             "사업자등록번호. 세입자에게는 감추지만 수정 요청 필드라 그대로 되돌려 보낸다"));
     fields.add(
         enumArrayField(
-            "data.preferredNationalities", Nationality.class, "등록 폼 설문 — 선호 국적. 수정 요청 필드다"));
+            "data.preferredNationalities",
+            Nationality.class,
+            "등록 폼 설문 — 선호 국적. 수정 요청 필드이며 답하지 않았으면 빈 배열이다"));
     fields.add(
         enumArrayField(
             "data.contractDifficulties",
             ContractDifficulty.class,
-            "등록 폼 설문 — 계약 시 어려움. 수정 요청 필드다"));
+            "등록 폼 설문 — 계약 시 어려움. 수정 요청 필드이며 답하지 않았으면 빈 배열이다"));
     fields.add(
         optField(
             "data.serviceFeedback",

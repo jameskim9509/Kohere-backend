@@ -531,7 +531,7 @@ public final class AuthDocsFields {
       - **선행 조건은 `POST /api/v1/auth/phone/signup/verification-code`·`/verify`** 다. 제출 번호의 인증 마커가 없으면 422이고 계정 생성도 연동도 하지 않는다.
       - 연동 판정 키는 **정규화한 `phoneNumber` 단독**이다 — 이름은 매칭 조건이 아니다(앱 이름과 웹 이름이 달라도 연동된다).
       - 이메일 중복은 **웹 로그인 ID(`local_accounts.email`)** 에만 건다 — 앱 소셜 계정과 같은 이메일로 가입하는 것은 정상이다.
-      - `password`는 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~10**, 공백 불가다. 위반은 400 `INVALID_INPUT`이며 `errors[].field=password`로 온다.
+      - `password`는 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~20**, 공백 불가다. 위반은 400 `INVALID_INPUT`이며 `errors[].field=password`로 온다.
       - 폼은 연동 여부와 무관하게 항상 전체 필드를 받는다(화면이 하나다).
 
       **응답 주의사항**
@@ -576,15 +576,17 @@ public final class AuthDocsFields {
       **요청 주의사항**
 
       - 로그인 ID는 회원 프로필 이메일이 아니라 **가입할 때 정한 웹 이메일**이다.
-      - **등록되지 않은 이메일과 비밀번호 불일치는 똑같은 401**이다 — 계정 존재 여부를 노출하지 않는다.
-      - **비밀번호 5회 연속 실패면 계정이 잠긴다**(423). 잠긴 뒤에는 **비밀번호가 맞아도** 423이며 시간이 지나도 자동으로 풀리지 않는다 — 해제는 운영자만 할 수 있다.
-      - 시도 자체에 한도가 있다 — 자격증명을 조회하기 **전에** 같은 IP 30회/시간·같은 이메일 10회/시간을 세고 초과하면 429다.
+      - **등록되지 않은 이메일과 비밀번호 불일치는 똑같은 401**이다 — `error.code`·문구가 같다.
+      - **비밀번호 10회 연속 실패면 계정이 잠긴다**(423). 잠긴 뒤에는 **비밀번호가 맞아도** 423이며 시간이 지나도 자동으로 풀리지 않는다 — 해제는 운영자만 할 수 있다.
+      - 시도 자체에 한도가 있다 — 자격증명을 조회하기 **전에** 같은 IP 60회/시간·같은 이메일 20회/시간을 세고 초과하면 429다.
 
       **응답 주의사항**
 
       - **refresh 토큰은 응답 본문에 없다** — 회원가입과 같은 속성의 `Set-Cookie: refreshToken`으로만 내려간다.
       - `onboardingRequired`는 항상 `false`, `status`는 항상 `"ACTIVE"`다 — 웹 로그인에는 온보딩 재개 분기가 없다.
       - `email`·`name`은 **회원 프로필(`users`)의 값**이라 로그인에 쓴 이메일과 다를 수 있다(앱 계정에 연동된 임대인).
+      - **비밀번호가 틀린 401에는 `error.details`가 실린다** — `failedAttempts`(누적 실패)와 `maxFailedAttempts`(잠금 상한)다. **`failedAttempts`가 `maxFailedAttempts`에 닿은 응답이 곧 잠금 시점**이므로, 두 값이 같아지면 그 응답이 401이어도 잠금 안내를 띄운다.
+      - 그 밖의 실패(등록되지 않은 이메일, 잠긴 계정, 시도 한도 초과)에서는 값이 `null`이 아니라 **`error.details` 필드 자체가 생략된다**.
 
       **에러 코드**
 
@@ -592,13 +594,32 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `email`·`password` 누락·빈값이거나 `email` 형식 위반 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 401 | `AUTH_INVALID_CREDENTIALS` | 등록되지 않은 이메일 **또는** 비밀번호 불일치 — 둘을 구분하지 않는다. 탈퇴 등으로 `ACTIVE`가 아닌 계정도 같은 코드다 |
-      | 423 | `AUTH_ACCOUNT_LOCKED` | 비밀번호 5회 연속 실패로 잠긴 계정 — 비밀번호가 맞아도 잠금이 우선하며 자동 해제 경로가 없다 |
-      | 429 | `TOO_MANY_REQUESTS` | 로그인 시도 한도 초과(IP 30회/시간 또는 이메일 10회/시간) — 자격증명 조회 전에 판정하므로 이메일 존재 여부와 무관하고, 어느 축에 걸렸는지 구분해 알리지 않는다 |
+      | 401 | `AUTH_INVALID_CREDENTIALS` | 등록되지 않은 이메일 **또는** 비밀번호 불일치 — `error.code`가 같다. 탈퇴 등으로 `ACTIVE`가 아닌 계정도 같은 코드다 |
+      | 423 | `AUTH_ACCOUNT_LOCKED` | 비밀번호 10회 연속 실패로 잠긴 계정 — 비밀번호가 맞아도 잠금이 우선하며 자동 해제 경로가 없다 |
+      | 429 | `TOO_MANY_REQUESTS` | 로그인 시도 한도 초과(IP 60회/시간 또는 이메일 20회/시간) — 자격증명 조회 전에 판정하므로 이메일 존재 여부와 무관하고, 어느 축에 걸렸는지 구분해 알리지 않는다 |
       """;
 
   public static final String[] WEB_LOGIN_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
   public static final String[] WEB_LOGIN_401 = {"AUTH_INVALID_CREDENTIALS"};
+
+  /**
+   * 웹 로그인 401 응답 기술자(#270). {@code error.details}가 실리는 케이스와 실리지 않는 케이스가 <b>같은 {@code (path, method,
+   * status)}</b>라 반드시 이 한 벌을 공유해야 한다 — 한쪽만 상세를 선언하면 dedup·last-wins로 승자가 파일 순회 순서에 좌우된다.
+   */
+  public static List<FieldDescriptor> webLogin401Fields() {
+    return ApiDocsFields.errorFieldsWith(
+        List.of(
+            optField(
+                "error.details.failedAttempts",
+                JsonFieldType.NUMBER,
+                "이 계정에 누적된 연속 실패 횟수(비밀번호 불일치에서만)"),
+            optField(
+                "error.details.maxFailedAttempts",
+                JsonFieldType.NUMBER,
+                "계정을 잠그는 상한(비밀번호 불일치에서만) — failedAttempts가 이 값에 닿은 응답이 곧 잠금 시점이다")),
+        WEB_LOGIN_401);
+  }
+
   public static final String[] WEB_LOGIN_423 = {"AUTH_ACCOUNT_LOCKED"};
   public static final String[] WEB_LOGIN_429 = {"TOO_MANY_REQUESTS"};
 
@@ -840,7 +861,7 @@ public final class AuthDocsFields {
         field(
             "password",
             JsonFieldType.STRING,
-            "비밀번호(필수) — 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, 길이 8~10, 공백 불가. 위반은 400 INVALID_INPUT(errors[].field=password)"),
+            "비밀번호(필수) — 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, 길이 8~20, 공백 불가. 위반은 400 INVALID_INPUT(errors[].field=password)"),
         field("termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의(필수). false면 422"),
         field("privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의(필수). false면 422"),
         optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택, 보내지 않으면 false)"));
