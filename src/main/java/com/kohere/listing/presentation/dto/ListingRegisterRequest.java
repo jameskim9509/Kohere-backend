@@ -72,7 +72,8 @@ public record ListingRegisterRequest(
     @NotEmpty Set<Nationality> preferredNationalities,
     @NotEmpty Set<ContractDifficulty> contractDifficulties,
     String serviceFeedback,
-    @NotNull @Valid ConsentsRequest consents) {
+    @NotNull @Valid ConsentsRequest consents)
+    implements ListingWriteRequest {
 
   /**
    * 매물 이용약관 동의 2종이다. <b>둘 다 {@code true}여야 등록된다</b> — 하나라도 빠지거나 {@code false}면 {@code 422

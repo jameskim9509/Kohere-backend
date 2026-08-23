@@ -256,9 +256,14 @@ public class BookingService {
     return new ReportReasonResponse(reasons);
   }
 
+  /**
+   * 이미 존재하는 예약의 카드 값을 읽는다. <b>매물·방 상태를 보지 않는다.</b>
+   *
+   * <p>표시 경로가 여기 하나로 모여 있어야 한다 — 예전에는 목록이 저장소 포트를 직접 불러, 상세만 고치면 목록 카드가 계속 빈 채로 남는 모양이었다.
+   */
   private RoomOfferBookingView offerOf(Booking booking) {
     return listingQueryService
-        .findPublishedRoomOffer(booking.getListingId(), booking.getRoomOfferId())
+        .findRoomOfferForExistingBooking(booking.getListingId(), booking.getRoomOfferId())
         .orElse(null);
   }
 
@@ -311,10 +316,7 @@ public class BookingService {
   }
 
   private BookingSummaryResponse toSummary(Booking booking) {
-    RoomOfferBookingView offer =
-        listingQueryService
-            .findPublishedRoomOffer(booking.getListingId(), booking.getRoomOfferId())
-            .orElse(null);
+    RoomOfferBookingView offer = offerOf(booking);
     return new BookingSummaryResponse(
         booking.getId(),
         booking.getListingId(),

@@ -160,6 +160,8 @@ class BookingManagementDocsTest {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
     String body =
         mockMvc
             .perform(
@@ -240,6 +242,8 @@ class BookingManagementDocsTest {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
         .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(anyString(), anyString()))
+        .willReturn(Optional.of(offerView()));
 
     mockMvc
         .perform(get("/api/v1/bookings").header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)))
@@ -291,6 +295,8 @@ class BookingManagementDocsTest {
     // 차단 후 같은 상대(매물 소유자) 매물에 신규 신청 → 403(양방향 가드, 블랙홀 예약 방지)
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
     // 이 스니펫만은 예약 "생성" 오퍼레이션에 병합된다 — 문구·path 파라미터·코드 배열을 공유 상수에서 가져온다.
     perform(

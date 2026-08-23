@@ -49,6 +49,7 @@ import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,6 +110,95 @@ class ListingMongoIntegrationTest {
     mongoTemplate.getCollection(UNIVERSITIES_COLLECTION).deleteMany(new Document());
     // 응답의 label 자리가 코드값으로 새지 않도록 운영과 같은 정본 카탈로그를 심는다.
     ListingTestSeeds.seedCatalog(mongoTemplate, LISTING_CATALOG_COLLECTION);
+  }
+
+  /**
+   * 임대인 소유 매물을 상태와 무관하게, 최근 수정순으로 돌려준다(US-3-8).
+   *
+   * <p>세입자 조회 3종이 {@code PUBLISHED}를 고정하는 것과 달리 이 경로는 {@code landlordId}로 먼저 좁히므로 상태를 열어도 비공개 매물이
+   * 새지 않는다. 그 「먼저 좁힌다」가 실제로 성립하는지가 이 테스트의 핵심이다.
+   */
+  @Test
+  void findByLandlord_소유_매물만_상태무관_최근수정순으로_돌려준다() {
+    Instant base = Instant.parse("2026-08-01T00:00:00Z");
+    listingRepository.save(
+        landlordListing(1, 100L, Listing.ListingStatus.PENDING, base.plusSeconds(10)));
+    listingRepository.save(
+        landlordListing(2, 100L, Listing.ListingStatus.PUBLISHED, base.plusSeconds(30)));
+    listingRepository.save(
+        landlordListing(3, 100L, Listing.ListingStatus.UPDATE_PENDING, base.plusSeconds(20)));
+    // 다른 임대인의 매물 — 소유권 필터가 살아 있으면 절대 섞이지 않는다.
+    listingRepository.save(
+        landlordListing(4, 200L, Listing.ListingStatus.PUBLISHED, base.plusSeconds(40)));
+
+    PageResponse<Listing> found = listingRepository.findByLandlord(100L, Set.of(), 0, 20);
+
+    assertThat(found.page().totalElements()).isEqualTo(3);
+    assertThat(found.content())
+        .extracting(Listing::getStatus)
+        .containsExactly(
+            Listing.ListingStatus.PUBLISHED,
+            Listing.ListingStatus.UPDATE_PENDING,
+            Listing.ListingStatus.PENDING);
+  }
+
+  /** 상태 필터는 여러 값을 받고, 비어 있으면 조건 자체를 걸지 않는다. */
+  @Test
+  void findByLandlord_상태필터는_여러값을_받는다() {
+    Instant base = Instant.parse("2026-08-01T00:00:00Z");
+    listingRepository.save(landlordListing(1, 100L, Listing.ListingStatus.PENDING, base));
+    listingRepository.save(
+        landlordListing(2, 100L, Listing.ListingStatus.REJECTED, base.plusSeconds(10)));
+    listingRepository.save(
+        landlordListing(3, 100L, Listing.ListingStatus.PUBLISHED, base.plusSeconds(20)));
+
+    PageResponse<Listing> found =
+        listingRepository.findByLandlord(
+            100L, Set.of(Listing.ListingStatus.PENDING, Listing.ListingStatus.REJECTED), 0, 20);
+
+    assertThat(found.page().totalElements()).isEqualTo(2);
+    assertThat(found.content())
+        .extracting(Listing::getStatus)
+        .containsExactly(Listing.ListingStatus.REJECTED, Listing.ListingStatus.PENDING);
+  }
+
+  /**
+   * 조건부 교체는 읽은 시점의 상태가 그대로일 때만 쓴다.
+   *
+   * <p>매물 문서에는 낙관적 락 필드가 없고 저장이 문서 전체 교체라, 조건이 없으면 나중에 쓴 쪽이 앞의 변경을 <b>소리 없이</b> 지운다. 임대인 수정은 읽기와 저장
+   * 사이에 사진 확정 복사가 끼어 그 창이 넓다.
+   */
+  @Test
+  void saveIfStatus_기대상태가_같을때만_교체한다() {
+    Listing saved = listingRepository.save(sampleListing());
+
+    Optional<Listing> replaced =
+        listingRepository.saveIfStatus(
+            saved.toBuilder().title(localized("조건이 맞아 교체된다")).build(), saved.getStatus());
+
+    assertThat(replaced).isPresent();
+    assertThat(listingRepository.findById(saved.getId()).orElseThrow().getTitle().ko())
+        .isEqualTo("조건이 맞아 교체된다");
+  }
+
+  /** 그 사이 누가 상태를 바꿨으면 아무것도 쓰지 않고 빈 값을 돌려준다 — 409의 근거다. */
+  @Test
+  void saveIfStatus_기대상태가_다르면_아무것도_쓰지_않는다() {
+    // 임대인이 읽은 시점의 상태는 REJECTED다.
+    Listing read =
+        listingRepository.save(
+            sampleListing().toBuilder().status(Listing.ListingStatus.REJECTED).build());
+    // 그 사이 관리자가 심사를 끝냈다.
+    listingRepository.save(read.toBuilder().status(Listing.ListingStatus.PUBLISHED).build());
+
+    Optional<Listing> replaced =
+        listingRepository.saveIfStatus(
+            read.toBuilder().title(localized("덮어써서는 안 된다")).build(), read.getStatus());
+
+    assertThat(replaced).isEmpty();
+    Listing untouched = listingRepository.findById(read.getId()).orElseThrow();
+    assertThat(untouched.getStatus()).isEqualTo(Listing.ListingStatus.PUBLISHED);
+    assertThat(untouched.getTitle().ko()).isNotEqualTo("덮어써서는 안 된다");
   }
 
   /** 도메인 매물을 저장한 뒤 중첩 roomOffers와 GeoJSON 좌표가 보존되는지 확인한다. */
@@ -1497,6 +1587,15 @@ class ListingMongoIntegrationTest {
   }
 
   /** 반복 테스트에서 충돌 없는 고정 listingId를 만든다. */
+  /** 임대인 조회 테스트용 매물이다. 소유자·상태·수정 시각만 바꿔 쓴다. */
+  private static Listing landlordListing(
+      int index, long landlordId, Listing.ListingStatus status, Instant updatedAt) {
+    return listingWithIndex(index, status).toBuilder()
+        .landlordId(landlordId)
+        .updatedAt(updatedAt)
+        .build();
+  }
+
   private static String listingId(int index) {
     return String.format("6858e200000000000000%04x", index);
   }
@@ -1540,6 +1639,7 @@ class ListingMongoIntegrationTest {
         .landlordId(1L)
         .contact(new Listing.Contact("김담당", "+82) 10-1111-2222"))
         .businessRegistrationNumber("1112233344")
+        .consents(new Listing.Consents(true, true, "v1.0", Instant.parse("2026-06-24T00:00:00Z")))
         .blogUrl(null)
         .ageMin(20)
         .ageMax(35)

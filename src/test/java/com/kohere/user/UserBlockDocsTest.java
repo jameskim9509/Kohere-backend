@@ -132,6 +132,8 @@ class UserBlockDocsTest {
                 TENANT_ID, "테스트 세입자", "OTHER", "KR", "대한민국", "tenant@example.com"));
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
         .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(anyString(), anyString()))
+        .willReturn(Optional.of(offerView()));
     String body =
         mockMvc
             .perform(
