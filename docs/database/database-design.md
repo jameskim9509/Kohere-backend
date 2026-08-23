@@ -209,7 +209,7 @@
 | `name` | VARCHAR(200) | NULL · 가입 폼이 준 이름(**폼 스냅샷**) — `users.name`(정본)과 별개 · 민감정보(PII) |
 | `birth_date` | DATE | NULL · 가입 폼이 준 생년월일(**폼 스냅샷**) · 민감정보(PII) |
 | `failed_login_attempts` | INT | NOT NULL DEFAULT 0 · 연속 로그인 실패 횟수 · 성공 시 0으로 초기화 |
-| `locked_at` | DATETIME(6) | NULL · 잠금 시각 — 5회 연속 실패 시 기록. 채워져 있으면 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED` |
+| `locked_at` | DATETIME(6) | NULL · 잠금 시각 — 10회 연속 실패 시 기록. 채워져 있으면 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED` |
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
