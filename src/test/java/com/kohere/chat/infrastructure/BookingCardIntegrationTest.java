@@ -87,6 +87,8 @@ class BookingCardIntegrationTest {
     given(userBlockService.isBlockedBetween(TENANT_ID, LANDLORD_ID)).willReturn(false);
     given(bookingListingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offer()));
+    given(bookingListingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offer()));
     given(chatListingQueryService.findPublishedListing(LISTING_ID))
         .willReturn(
             Optional.of(

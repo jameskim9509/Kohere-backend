@@ -118,7 +118,7 @@ v4 `$jsonSchema`는 `0115` 안에 **동결**한다. `ListingMongoIndexInitialize
   - 응답 구조가 하위 호환을 깬다. 구버전 앱 대응은 별도 ADR(API 버전 분리)에서 다룬다.
 - **후속 작업**
   - 임대인 탈퇴 시 매물 문서 PII 처리 — [ADR-0014](./0014-withdrawal-pii-anonymization.md)의 익명화 대상이 MySQL `users` 컬럼뿐이라 `contact`·사업자등록번호가 남는다. **임대인 탈퇴 기능 구현 시 함께 설계한다.**
-  - 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API. **승인 조건에 `location` 보유를 넣어** 좌표 없는 매물이 공개되지 않게 한다.
+  - **관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API — 나왔다.** `POST /api/v1/admin/listings/{listingId}/approval`·`/rejection`이고, 임대인이 반려·공개된 매물을 다시 제출하는 `PUT /api/v2/listings/{listingId}`(승인 매물을 수정하면 `UPDATE_PENDING`으로 다시 심사)도 함께 정해졌다([03-listings-favorites](../api/specs/03-listings-favorites.md)). **승인 조건에 `location` 보유를 넣는 안은 불필요해졌다** — 등록 검증이 `location`을 필수로 요구해 좌표 없는 매물이 애초에 저장되지 않는다.
   - 지오코딩으로 `location`·`nearbyUniversityCodes` 채우기.
 
 ## Validation

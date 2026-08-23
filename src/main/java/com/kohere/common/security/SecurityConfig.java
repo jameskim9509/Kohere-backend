@@ -120,6 +120,18 @@ public class SecurityConfig {
                     // 세입자 이메일 인증은 온보딩 완료 후 호출하는 API라 정식 토큰 전용이다(#192).
                     .requestMatchers("/api/v1/users/me")
                     .hasRole("USER")
+                    // 관리자 매물 심사 — ACTIVE(ROLE_USER)만 통과시키고 userType=ADMIN 여부는
+                    // 서비스에서 재검사한다(403). 임대인 게이트와 같은 이중 인가이며, 토큰에
+                    // 관리자 여부를 담지 않으므로 권한 회수가 즉시 반영된다.
+                    // 명시하지 않으면 anyRequest().authenticated()로 떨어져 ROLE_ONBOARDING
+                    // 토큰이 컨트롤러까지 도달한다.
+                    .requestMatchers("/api/v1/admin/**")
+                    .hasRole("USER")
+                    // 커뮤니티 — 지금까지 명시 매처가 없어 anyRequest().authenticated()로 떨어져
+                    // 있었다(온보딩 토큰이 컨트롤러에 닿는다). 관리자 차단은 서비스의 허용 목록
+                    // 게이트가 하지만, 온보딩 토큰이 새는 것은 여기서 막는 것이 맞다.
+                    .requestMatchers("/api/v1/community/**")
+                    .hasRole("USER")
                     .requestMatchers(
                         HttpMethod.POST,
                         "/api/v1/auth/email/verification-code",
@@ -148,6 +160,16 @@ public class SecurityConfig {
                         "/api/v1/users/me/recent-listings",
                         "/api/v2/users/me/favorites",
                         "/api/v2/users/me/recent-listings")
+                    .hasRole("USER")
+                    // 임대인 「내 매물」 조회 — 정확 경로 나열이라 자동으로 덮이지 않는다. 이 경로를
+                    // /api/v2/listings/mine에 두면 위의 GET /api/v2/listings/* permitAll에 먼저 걸려
+                    // 비로그인에 열린다. 임대인 여부와 소유권은 서비스에서 재검사한다(403/404).
+                    .requestMatchers(
+                        HttpMethod.GET, "/api/v2/users/me/listings", "/api/v2/users/me/listings/*")
+                    .hasRole("USER")
+                    // 매물 수정 — GET 한정 permitAll에 걸리지 않지만, 명시하지 않으면
+                    // anyRequest().authenticated()로 떨어져 ROLE_ONBOARDING 토큰이 컨트롤러까지 닿는다.
+                    .requestMatchers(HttpMethod.PUT, "/api/v2/listings/*")
                     .hasRole("USER")
                     // 매물 예약(신청) — ACTIVE(ROLE_USER) 세입자만. TENANT 여부는 서비스에서 재검사한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/bookings")

@@ -68,6 +68,15 @@ public enum ErrorCode {
   LISTING_IMAGE_KEY_NOT_FOUND(HttpStatus.BAD_REQUEST, "사진을 찾을 수 없습니다. 다시 올려 주세요."),
   LISTING_IMAGE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "사진 한 장의 크기가 허용 범위를 넘었습니다."),
   LISTING_IMAGE_UNSUPPORTED_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "지원하지 않는 사진 형식입니다."),
+  // 등록 동의는 INVALID_INPUT(400)이 아니라 422다 — 값의 형식이 아니라 「동의하지 않았다」는 의미상 거부이고,
+  // 회원 약관의 AUTH_REQUIRED_AGREEMENT_MISSING과 같은 성격이라 status를 맞춘다.
+  LISTING_REQUIRED_AGREEMENT_MISSING(HttpStatus.UNPROCESSABLE_ENTITY, "매물 등록에 필요한 약관에 동의해야 합니다."),
+  // 심사 중이라 지금은 수정할 수 없다 — 값이 틀린 것이 아니라 때가 아니라는 의미상 거부이고,
+  // 관리자가 심사를 마치면 같은 요청이 그대로 성공하므로 400이 아니라 422다.
+  LISTING_NOT_EDITABLE(HttpStatus.UNPROCESSABLE_ENTITY, "심사가 진행 중인 매물은 수정할 수 없습니다."),
+  // 읽은 뒤 저장하기 전에 상태가 바뀌었다 — 재조회 후 다시 시도하면 성공할 수 있어 409다.
+  // 기다려야 하는 LISTING_NOT_EDITABLE(422)과 클라이언트의 행동이 다르므로 코드를 나눈다.
+  LISTING_STATE_CHANGED(HttpStatus.CONFLICT, "매물 상태가 변경되었습니다. 다시 조회한 뒤 시도해 주세요."),
 
   // --- 신청·채팅 (booking/chat) — docs/api/specs/04-booking-inquiry-chat.md ---
   BOOKING_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신청한 매물입니다."),
