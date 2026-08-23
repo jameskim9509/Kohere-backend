@@ -1395,6 +1395,8 @@ public final class ListingDocsFields {
   public static final String[] LANDLORD_LISTING_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
   public static final String[] LANDLORD_LISTING_404 = {"LISTING_NOT_FOUND"};
 
+  public static final String[] LISTING_UPDATE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+
   public static final String[] LISTING_UPDATE_400 = {
     "INVALID_INPUT",
     "LISTING_UNKNOWN_CATALOG_CODE",

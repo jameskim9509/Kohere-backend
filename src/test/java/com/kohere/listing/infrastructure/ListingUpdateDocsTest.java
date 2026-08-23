@@ -6,6 +6,7 @@ import static com.kohere.docs.ApiDocsErrors.errorSnippet;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static com.kohere.docs.ListingDocsFields.LISTING_UPDATE_400;
+import static com.kohere.docs.ListingDocsFields.LISTING_UPDATE_401;
 import static com.kohere.docs.ListingDocsFields.LISTING_UPDATE_403;
 import static com.kohere.docs.ListingDocsFields.LISTING_UPDATE_404;
 import static com.kohere.docs.ListingDocsFields.LISTING_UPDATE_409;
@@ -149,15 +150,6 @@ class ListingUpdateDocsTest {
 
   private static final String PROMOTED_ROOM_KEY =
       "listings/" + LISTING_ID + "/rooms/" + ROOM_OFFER_ID + "/" + NEW_ROOM_FILE;
-
-  /**
-   * 수정 오퍼레이션의 401 코드다.
-   *
-   * <p>{@code ListingDocsFields}의 {@code ADMIN_LISTING_401}·{@code LANDLORD_LISTING_401}과 값은 같지만
-   * 재사용하지 않는다 — 같은 {@code (path, type)}에 서로 다른 배열이 실리면 dedup 승자가 파일 순회 순서에 좌우되므로 오퍼레이션마다 한 벌씩 둔다.
-   * 나머지 코드 배열처럼 {@code ListingDocsFields}로 올리는 편이 맞고, 그 파일을 손댈 때 함께 옮긴다.
-   */
-  private static final String[] LISTING_UPDATE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
 
   /** 수정 본문이 반드시 가리켜야 하는 키다. 하나라도 어긋나면 400이 나 원인이 흐려지므로 요청 전에 대조한다. */
   private static final List<String> REFERENCED_KEYS =
