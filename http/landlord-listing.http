@@ -212,8 +212,11 @@ Content-Type: application/json
 POST {{host}}/api/v1/admin/listings/{{myListing.response.body.$.data.listing.listingId}}/approval
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-### 11. 공개 매물 수정 준비 — 키가 바뀌었으므로 상세를 다시 읽는다
+### 11. 공개 매물 수정 준비 — **사진 확정 키**가 바뀌었으므로 상세를 다시 읽는다
 # 승인됐으므로 status=PUBLISHED 이고 rejectionReason 이 사라진 것을 여기서 확인한다.
+# ★ listingId 와 기존 roomOfferId 는 **바뀌지 않는다**(수정은 그 값을 승계한다).
+#   7번에서 커버 한 장을 갈아 끼웠으므로 imageKeys 만 달라졌다 — 새로 올린 사진이 확정 위치로
+#   복사되면서 새 키를 얻고, 교체된 옛 키는 저장 성공 뒤에 지워진다. 옛 키를 다시 보내면 400 이다.
 # @name publishedListing
 GET {{host}}/api/v2/users/me/listings/{{myListing.response.body.$.data.listing.listingId}}
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
