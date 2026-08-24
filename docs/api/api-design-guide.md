@@ -107,7 +107,8 @@ deprecated된 경로도 **표에서 지우지 않는다.** 설명에 `deprecated
   "error": {
     "code": "LISTING_NOT_FOUND",
     "message": "해당 매물을 찾을 수 없습니다.",
-    "errors": [ /* 입력 검증 실패 시 필드별 상세 (선택) */ ]
+    "errors": [ /* 입력 검증 실패 시 필드별 상세 (선택) */ ],
+    "details": { /* 코드별 부가 데이터 (선택). 값이 없으면 키 자체가 없다 */ }
   }
 }
 ```

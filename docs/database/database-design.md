@@ -13,7 +13,7 @@
 
 | 모듈 | 스토어 | 테이블/컬렉션(키스페이스) | MVP |
 | --- | --- | --- | --- |
-| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}`·`signup-phone:code:{정규화번호}`·`signup-phone:verified:{정규화번호}`·`signup-phone:rate:phone:{정규화번호}`·`signup-phone:rate:ip:{IP}`(가입용 SMS 인증·레이트리밋) / `social_accounts`·`local_accounts`(웹 로컬 자격증명) | ✅ |
+| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}`·`signup-phone:code:{정규화번호}`·`signup-phone:verified:{정규화번호}`·`signup-phone:rate:phone:{정규화번호}`·`signup-phone:rate:ip:{IP}`(가입용 SMS 인증·레이트리밋)·`find-email:code:{정규화번호}`·`find-email:verified:{정규화번호}`·`find-email:rate:phone:{정규화번호}`·`find-email:rate:ip:{IP}`(이메일 찾기, US-1-16)·`pwd-reset:{tokenHash}`·`pwd-reset:rate:email:{소문자이메일}`·`pwd-reset:rate:ip:{IP}`(비밀번호 재설정=잠금 해제, US-1-17) / `social_accounts`·`local_accounts`(웹 로컬 자격증명) | ✅ |
 | [`user`](#4-2-user) | **MySQL** | `users`·`user_blocks`(사용자 차단, US-4-8)·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안)·`diagnosisFlowSessions`(v2 서버 주도 진행 세션) — 인라인 언어-키 맵 번역, US-2-5·US-2-6·US-2-7 | ✅ |
@@ -167,8 +167,51 @@
 - **레이트리밋 한도**(`app.auth.signup-phone.*`): **번호 5회/1시간 · IP 20회/1시간**(#229 D6). 카운터는 `INCR` + 첫 증가에서만 `EXPIRE`를 거는 **고정 창**이고, **발송 성공이 아니라 시도**를 센다 — 성공분만 세면 provider 장애를 반복시키는 것만으로 한도를 무력화할 수 있다. IP는 리버스 프록시(Caddy) 뒤라 `X-Forwarded-For` 최좌측 값을 쓰며, 그 값은 호출자가 위조할 수 있으므로 **IP 한도는 비용 가드이지 인가가 아니다**(우회 불가한 방어는 번호 한도·쿨다운).
 - **검증**: 입력 인증번호 해시가 `codeHash`와 일치하고 미만료·시도 미초과면 `signup-phone:verified:{정규화번호}`에 마커를 남기고 코드 키를 삭제한다. **챌린지 부재·불일치·만료·시도 상한 초과가 모두 `422 AUTH_PHONE_VERIFICATION_FAILED`** 로, 시도 초과를 `429`로 구분하는 (A-3)과 다르다 — 비로그인 경로에서는 응답의 차이 자체가 챌린지 존재·시도 잔량을 알려 주는 신호가 된다.
 - **계정 존재 여부 비노출**: 발송·확인 어느 쪽도 `users`를 조회하지 않는다. 가입 이력이 있는 번호든 없는 번호든 같은 응답이며, 연동 판정은 가입 제출 시점에만 이뤄진다.
+- **이 마커는 다른 용도로 재사용하지 않는다**: 값이 상수 `"1"`이라 **무슨 용도로 인증했는지가 값에 없고**, 그 전제는 소비처가 웹 회원가입 하나뿐이라서 성립한다. 이메일 찾기(US-1-16)가 같은 마커를 세우면 전제가 깨져 **이메일을 찾으려고 받은 인증번호 하나로 회원가입까지 통과**하게 된다 — 인증의 인가 범위가 조용히 넓어지는 것이다. 그래서 값에 용도 필드를 더하는 대신 **키스페이스를 갈랐다**(아래 **(A-6)** `find-email:*`) — 필드로 갈라도 소비처 한쪽이 그 필드를 안 보면 같은 사고가 나지만, 키가 다르면 애초에 잘못 쓸 수 없다.
 - **앱 심사용 고정 인증번호 우회(`FixedVerificationPolicy`) 미적용**: 그 우회는 `userId` + Google 소셜 계정으로 판정하는데 가입 전 단계에는 둘 다 없다. 이 경로는 프로파일과 무관하게 항상 실제 발급·발송을 타며, 로컬은 `LoggingVerificationSmsSender`가 인증번호를 콘솔에 찍는다.
 - **민감정보**: 번호·IP가 **키에 실리지만** 전부 TTL(코드 5분·마커 30분·카운터 1시간)로 소멸해 영속하지 않는다. 응답·로그의 번호는 마스킹(예 `010-****-5678`), 인증번호 원문은 보관·로그하지 않는다(해시만).
+
+#### (A-6) Redis — 이메일 찾기용 연락처 인증(임대인 웹·비로그인)
+
+가입한 이메일을 잊은 임대인이 **번호 소유를 먼저 증명하고** 자기 이메일을 마스킹 형태로 돌려받는 경로(US-1-16)다. 인증번호 정책(6자리·코드 TTL 5분·검증 마커 30분·검증 시도 5회·재발송 간격 60초 — `app.phone.*`)·발송 포트 `VerificationSmsSender`·해시(SHA-256+pepper)·permitAll·`422` 한 코드 통일까지 **(A-5)와 전부 같다**. 다른 것은 **키스페이스 하나**이고, 그 하나가 이 절이 따로 있는 이유다 — (A-5)의 `signup-phone:verified:*`는 용도 구분 필드가 없어(그쪽 소비처가 하나뿐이라 필요가 없었다) **재사용하면 이메일 찾기용 인증 하나로 회원가입까지 통과**한다. 인가 범위가 조용히 넓어지는 종류의 사고라 **키를 갈라 잘못 쓸 수 없게** 만든다.
+
+**키스페이스** (Redis · AWS ElastiCache)
+
+| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
+| --- | --- | --- | --- | --- |
+| `find-email:code:{정규화번호}` | Hash | `codeHash` · `attempts`(int) · `issuedAt` · `expiresAt` | 인증번호 만료((A-5)와 동일 — 5분) | 이메일 찾기용 인증번호 발송·검증. 대조 대상 번호는 (A-5)와 같이 **값이 아니라 키**다 |
+| `find-email:verified:{정규화번호}` | String | 상수 `"1"`(존재 자체가 의미) | 검증 마커 만료((A-5)와 동일 — 30분, `app.phone.verified-ttl-seconds`) | `POST /api/v1/auth/email/find`가 대조하고 **성공 시 소비(삭제)** 한다. 이 마커도 소비처가 하나뿐이라 용도 필드가 없다 — **키스페이스가 곧 용도**다 |
+| `find-email:rate:phone:{정규화번호}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 같은 번호로의 발송 남용 차단 — 초과 시 `429 TOO_MANY_REQUESTS` |
+| `find-email:rate:ip:{IP}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 번호를 바꿔가며 발송비를 태우는 남용 차단 — 초과 시 `429` |
+
+- **레이트리밋 버킷도 (A-5)와 나눠 쓴다**(`app.auth.find-email.*` — 번호 5회/1시간 · IP 20회/1시간): 버킷을 공유하면 이메일을 찾느라 한도를 태운 사람이 **회원가입 인증번호를 못 받는**, 즉 한쪽 남용이 다른 쪽 정상 흐름을 막는 결합이 생긴다. 카운터 방식(고정 창 `INCR` + 첫 증가에서만 `EXPIRE`, 성공이 아니라 **시도**를 셈)과 판정 순서(재발송 쿨다운 — 번호·IP 한도)는 (A-5)와 같다.
+- **가입 여부를 노출하지 않는다**: 발송·확인 어느 쪽도 `users`·`local_accounts`를 조회하지 않는다 — 가입 이력이 있는 번호든 없는 번호든 같은 응답이다. 계정 존재 판정은 마커를 소비하는 `email/find` **한 곳에서만** 일어나고, 거기서는 호출자가 **소유를 증명한 자기 번호**로만 조회할 수 있어 `404 AUTH_WEB_ACCOUNT_NOT_FOUND`로 존재를 드러내도 열거 표면이 열리지 않는다.
+- **이름 대조는 `local_accounts.name` 단독**([§4-1 C](#4-1-auth)): `users.name`으로 폴백하지 않는다. 폼 스냅샷이라 정본과 다를 수 있다는 것을 알면서도 그렇게 두는 이유는, 대조 대상을 둘로 늘리면 **"둘 중 하나만 맞아도 통과"** 가 되어 대조가 느슨해지기 때문이다. **이름 불일치와 계정 미존재는 같은 `404`로 수렴**시킨다 — 가르면 번호 소유자에게 "이 번호의 이름은 무엇인가"를 맞혀 보게 해 주는 오라클이 된다.
+- **성공하면 마커를 소비한다**: 조회에 성공한 순간 `find-email:verified:*`를 지운다. 남겨 두면 마커 하나로 30분 동안 무제한 반복 조회가 되어, 이름을 바꿔 가며 대조를 시도할 수 있다.
+- **민감정보**: 번호·IP가 **키에 실리지만** 전부 TTL(코드 5분·마커 30분·카운터 1시간)로 소멸해 영속하지 않는다. 응답의 이메일은 마스킹(예 `ki***@work.com`), 번호도 마스킹(예 `010-****-5678`)해 내보내고 인증번호 원문은 보관·로그하지 않는다(해시만).
+
+#### (A-7) Redis — 비밀번호 재설정 토큰(임대인 웹·비로그인 · 잠금 해제 겸용)
+
+비밀번호를 잊었거나 10회 연속 실패로 **잠긴**([§4-1 C](#4-1-auth) `locked_at`) 임대인이 메일로 받은 일회용 링크로 자격증명을 되찾는 경로(US-1-17)다. **"비밀번호 찾기"와 "계정 잠금 해제"는 같은 API**이고 화면만 둘이다 — 잠금을 풀 자격이 "새 비밀번호를 세울 수 있는 메일함 소유자"와 정확히 같아서, 해제 전용 API를 따로 두면 **같은 증명으로 열리는 문이 둘**이 되고 둘 다 영원히 같이 관리해야 한다. **`app.auth.web.password-reset.enabled` 토글 뒤에 있으며 local·dev만 켠다**(prod 미배포).
+
+토큰은 **불투명 난수**(`"pr_" + Base64Url(SecureRandom 32바이트)` — refresh의 `rt_`와 같은 모양)이고, 서버는 **`SHA-256(토큰 + pepper)`만** 키에 담는다(원문 비저장). pepper는 refresh·인증번호가 쓰는 `app.auth.email-pepper`를 그대로 재사용해 **새로 배선할 시크릿이 없다**. MySQL 컬럼이 아니라 Redis에 두는 이유는 **만료가 곧 삭제**여야 하기 때문이다 — 30분짜리 일회용 토큰을 컬럼으로 두면 만료 레코드 청소가 별도 배치가 된다. 잠금(`locked_at`)이 반대로 컬럼인 것과 짝을 이룬다: **잠금은 저절로 풀리면 안 되고, 토큰은 저절로 죽어야 한다.**
+
+**키스페이스** (Redis · AWS ElastiCache)
+
+| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
+| --- | --- | --- | --- | --- |
+| `pwd-reset:{tokenHash}` | String(JSON) | `userId`(→ users.id) · `email` · `issuedAt` · `expiresAt` | 토큰 만료(`app.auth.web.password-reset.token-ttl-seconds` — 30분) | 링크 사전 확인이 **읽기만** 하고, 재설정 확정이 **원자 소비**한다 |
+| `pwd-reset:rate:email:{소문자이메일}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 한 사람 메일함에 링크를 퍼붓는 남용 차단 — 초과 시 `429 TOO_MANY_REQUESTS` |
+| `pwd-reset:rate:ip:{IP}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 이메일을 바꿔가며 발송비를 태우는 남용 차단 — 초과 시 `429` |
+
+- **Hash가 아니라 값 하나(JSON)다 — 원자 소비 때문이다.** 필드를 Hash로 쪼개면 소비가 `HGETALL` + `DEL` 두 명령이 되어 원자적일 수 없고, 같은 링크를 동시에 두 번 눌렀을 때 둘 다 통과해 **일회용이 아니게 된다**(메일 클라이언트 prefetch·더블클릭이 흔하다). 값 하나로 두면 `GETDEL` 한 명령이 읽기와 삭제를 함께 끝낸다 — Lua 스크립트를 들이지 않고 같은 보장을 얻는다.
+- **소비는 원자적이어야 한다**: 확정 시 `GETDEL`(또는 Lua) **한 번**으로 읽고 지운다. `find` → 검증 → `delete`로 쪼개면 동시에 들어온 두 요청이 같은 토큰으로 통과해 **한 링크가 두 번 쓰인다**.
+- **사전 확인은 소비하지 않는다**: 메일 클라이언트·보안 스캐너가 링크를 미리 여는 일이 흔해, 확인 단계에서 지우면 **사용자가 클릭하기도 전에 링크가 죽는다**. 사전 확인이 돌려주는 `expiresIn`은 고정값이 아니라 그 키의 **남은 TTL**이다.
+- **확정 순서가 계약이다**: 토큰 원자 소비 → `local_accounts.password_hash` 교체(MySQL) → 그 사용자 refresh 전량 무효화(Redis, (A) `refresh:user:{userId}`) → 로그인 시도 레이트리밋 카운터 삭제(Redis). MySQL과 Redis에 걸친 원자성은 불가능하므로([§2-4](#2-4-제약무결성-공통) 교차 스토어 트랜잭션 금지), 중간에 끊겼을 때 **남는 상태가 "토큰만 소비됨"**(사용자가 링크를 다시 요청하면 그만)이 되도록 이 순서를 지킨다. 뒤집으면 비밀번호는 이미 바뀌었는데 토큰이 살아 있는 **재사용 창**이 남는다.
+- **잠금 해제는 컬럼 갱신으로 일어난다**: 비밀번호를 교체하는 같은 트랜잭션에서 `failed_login_attempts=0`·`locked_at=NULL`로 되돌린다([§4-1 C](#4-1-auth)) — 잠긴 채로 새 비밀번호만 세워지면 재설정을 마치고도 `423`으로 막혀 사용자가 같은 링크를 다시 요구하게 된다.
+- **새 세션은 발급하지 않는다**: 재설정 응답에 refresh 쿠키를 싣지 않고 로그인 화면으로 보낸다. 메일함이 털린 경우 "비밀번호가 바뀐다"와 "공격자가 즉시 로그인된 세션을 쥔다"는 피해 크기가 다르고, 로그인 한 번을 더 요구하는 비용이 그보다 싸다.
+- **발송은 계정 존재를 가르지 않는다**: 가입되지 않은 이메일에도 **같은 200**을 준다(키를 만들지 않고 메일만 보내지 않는다). 이 엔드포인트는 선행 게이트가 없어 임의 이메일로 부를 수 있어서, 응답을 가르는 순간 **완전한 열거 오라클**이 된다. 다만 발송이 동기라 **가입 계정은 SMTP 왕복 시간이 들고 `502`가 날 수 있는 반면 미가입은 즉시 200**이라 응답 시간·status 분포로는 존재가 드러난다 — 레이트리밋은 이 누출의 완화책이 아니라 발송비·남용 방어다. 이 한계는 **받아들인다**.
+- **민감정보**: 토큰 원문은 저장·로그하지 않고(해시만), 값의 `email`은 사전 확인 응답에서 마스킹해 내보낸다. 키·값·카운터 전부 TTL로 소멸해 영속하지 않는다.
 
 #### (B) MySQL — 소셜 연동(`social_accounts`)
 
@@ -208,8 +251,8 @@
 | `password_hash` | VARCHAR(100) | NOT NULL · **BCrypt 해시**(60자 + 여유) · 원문은 저장·로그 어디에도 남기지 않는다 |
 | `name` | VARCHAR(200) | NULL · 가입 폼이 준 이름(**폼 스냅샷**) — `users.name`(정본)과 별개 · 민감정보(PII) |
 | `birth_date` | DATE | NULL · 가입 폼이 준 생년월일(**폼 스냅샷**) · 민감정보(PII) |
-| `failed_login_attempts` | INT | NOT NULL DEFAULT 0 · 연속 로그인 실패 횟수 · 성공 시 0으로 초기화 |
-| `locked_at` | DATETIME(6) | NULL · 잠금 시각 — 5회 연속 실패 시 기록. 채워져 있으면 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED` |
+| `failed_login_attempts` | INT | NOT NULL DEFAULT 0 · 연속 로그인 실패 횟수 · 로그인 성공·비밀번호 재설정 확정 시 0으로 초기화 |
+| `locked_at` | DATETIME(6) | NULL · 잠금 시각 — 10회 연속 실패 시 기록. 채워져 있으면 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED`. 비밀번호 재설정 확정이 `NULL`로 되돌린다(US-1-17 — 이것이 유일한 애플리케이션 해제다) |
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
@@ -219,7 +262,9 @@
 - **`uq_local_accounts_user_id`가 지키는 불변식**: 번호로 찾은 기존 계정에 자격증명을 덧붙이는 **연동 경로**(US-1-11)는 "조회 후 INSERT"라 동시 요청에 check-then-act가 깨지는데, 두 번째 INSERT가 이 제약에서 막힌다. 선검사에서 걸리는 경우가 `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS`다.
 - **정본은 `users`, 이 테이블은 스냅샷**: `name`·`birth_date`는 가입 폼 값의 사본이라 NULL 허용이며, **연동 시 `users`의 프로필을 갱신하지 않으므로 두 값이 다를 수 있다**. 모든 응답의 `name`·`email`은 `users`에서 나가고 이 표의 사본은 어떤 응답에도 싣지 않는다([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) §6). `social_accounts.email`·`name`(provider 스냅샷)과 같은 취급이다.
 - **이메일 중복 검사는 이 테이블에만**: 웹 가입의 이메일 중복(`409 AUTH_EMAIL_ALREADY_REGISTERED`)은 `local_accounts.email`만 본다. **`users.email`에는 UNIQUE를 걸지 않는다** — 걸면 "본인이 본인 소셜 이메일로 웹 가입"이라는 가장 흔한 정상 경로가 막힌다([§4-2](#4-2-user)). 신규 가입일 때만 폼 이메일을 `users.email`에도 기록하고, 연동일 때는 소셜 진본을 유지한다.
-- **잠금은 컬럼이지 Redis TTL이 아니다**: `failed_login_attempts`·`locked_at`을 TTL 키로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책(US-1-12)이 깨진다. 해제 경로는 없고 운영자가 `locked_at`을 비우는 것이 유일하다(수용된 제약).
+- **잠금은 컬럼이지 Redis TTL이 아니다**: `failed_login_attempts`·`locked_at`을 TTL 키로 두면 **만료와 함께 잠금이 저절로 풀린다** — 시간 경과 자동 해제는 지금도 없는 정책이므로 이 근거는 그대로 유효하다. 해제 경로가 생긴(US-1-17 비밀번호 재설정) 뒤로는 근거가 하나 더 정확해진다: **해제가 언제 일어났는지가 행에 남아야 한다.** 컬럼이면 `locked_at`이 `NULL`로 되돌아간 시각이 `updated_at`에 찍혀 "잠겼다가 본인 재설정으로 풀렸다"를 사후에 확인할 수 있지만, TTL 키는 **아무도 아무것도 하지 않아도 사라지므로** 해제와 방치를 구분할 수 없다. 잠금은 사고 조사 대상이라 그 차이가 곧 감사 가능성이다. 운영자가 `locked_at`을 직접 비우는 경로는 재설정 토글(`app.auth.web.password-reset.enabled`)이 꺼진 구간에서 여전히 유일한 해제로 남는다.
+- **V22 주석은 옛 근거인 채로 남는다**: [`V22__create_local_accounts.sql`](../../src/main/resources/db/migration/V22__create_local_accounts.sql)의 주석은 잠금을 컬럼으로 둔 이유를 "해제 기능 없음 정책"으로 적고 있지만, **이미 적용된 마이그레이션은 체크섬이 고정이라 주석 한 줄도 고칠 수 없다**(고치면 Flyway `validate`가 기동을 막는다 — [migration-policy](./migration-policy.md)). 근거의 정본은 이 문서이고 그 주석은 **낡은 사본으로 남는다** — 파일을 읽고 정책을 되짚지 않도록 여기 적어 둔다.
+- **계정 복구는 스키마를 바꾸지 않는다**: 이메일 찾기(US-1-16)·비밀번호 재설정(US-1-17)은 **새 테이블도 새 컬럼도 만들지 않는다** — 읽는 것은 이미 있는 `email`·`name`이고 쓰는 것은 `password_hash`·`failed_login_attempts`·`locked_at`이며, 새로 생기는 상태(인증 마커·재설정 토큰·레이트리밋 카운터)는 전부 **TTL이 있는 Redis 키**([§4-1](#4-1-auth) A-6·A-7)라 이 테이블에 남지 않는다. 그래서 이번 기능에는 Flyway 마이그레이션이 없다.
 - **연동 매핑은 불변, 자격증명은 가변**: `user_id`·`email`은 생성 이후 바뀌지 않지만 `password_hash`·실패 카운터·`locked_at`은 갱신되므로 `social_accounts`와 달리 `updated_at`을 둔다([§2-2](#2-2-공통-컬럼-표준)).
 - **탈퇴 시 이 행도 함께 지운다**: 탈퇴는 `users` PII 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)) + `social_accounts` 삭제 + **`local_accounts` 삭제** + refresh 무효화다(`UserWithdrawnEventListener` — 자격증명 두 채널을 같은 자리에서 지운다). 남기면 두 가지가 동시에 무너진다 — ① 탈퇴는 `users` 행을 지우지 않고 `user_type`도 `LANDLORD` 그대로라, 남은 웹 자격증명으로 **권한이 온전한 세션을 다시 받는다**(앱 소셜이 그렇지 않은 것은 `social_accounts`를 지우기 때문이다) ② `uq_local_accounts_email`이 살아남아 **본인이 같은 이메일로 재가입할 수 없다**(409 `AUTH_EMAIL_ALREADY_REGISTERED`). 웹 계정이 없는 세입자·앱 전용 임대인은 0행 삭제라 무해하다.
 - **민감정보**: `email`·`name`·`birth_date`는 로그·응답 마스킹 대상이고(응답에는 애초에 `users` 값만 나간다), 비밀번호는 **해시만** 보관한다. 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
@@ -486,8 +531,8 @@
 | `roomOffers[].pricing` | object | `monthlyRent`·`deposit`·`maintenanceFee`·`currency`(KRW 정수, 단일값) |
 | `roomOffers[].filterTags` | string[] (enum `ConditionTag`) | 등록 폼의 방 옵션 선택값 · 응답 태그와 1:1(파생 태그 없음) |
 | `roomOffers[].roomImageUrls` | string[] | 방 상품 전용 이미지 · 2~5개 · 등록 확정 시 복사한 CDN URL(`listings/{listingId}/rooms/{roomOfferId}/{uuid}.{ext}`) |
-| `preferredNationalities` | string[] | 임대인 설문 — 선호 국적 · 응답 비노출(아래 註) |
-| `contractDifficulties` | string[] | 임대인 설문 — 계약 시 겪은 어려움 · 응답 비노출(아래 註) |
+| `preferredNationalities` | string[] | 임대인 설문 — 선호 국적 · 응답 비노출(아래 註). **요청에서는 선택**이지만 저장은 항상 배열이다(값이 없으면 `[]`) |
+| `contractDifficulties` | string[] | 임대인 설문 — 계약 시 겪은 어려움 · 응답 비노출(아래 註). **요청에서는 선택**이지만 저장은 항상 배열이다(값이 없으면 `[]`) |
 | `serviceFeedback` | string | nullable · 임대인 설문 — 서비스 개선 의견 · 응답 비노출(아래 註) |
 | `consents` | object | **필수** · 매물 이용약관 동의(changeUnit `0120`) |
 | `consents.privacyPolicyAgreed` | bool | 필수 · 개인정보 수집·이용 동의 |
@@ -510,7 +555,7 @@
 
 **인덱스**: UNIQUE `(category, code)`. `displayOrder`·`active`는 현재 MVP 요구가 없어 저장하지 않는다.
 
-저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 예시 몇 건이 아니라 Listing UI가 사용하는 전체 공통 코드 **19종 카테고리·105건**이다 — `ARC_REQUIREMENT`(2)·`BUILDING_TYPE`(7)·`CITY`(4 — `ETC` 포함)·`COMMON_SPACE`(7)·`CONDITION_TAG`(8)·`DISTRICT`(10 — `ETC` 포함)·`GENDER_POLICY`(4)·`HEATING_SYSTEM`(2)·`KITCHEN`(9)·`LAUNDRY`(4)·`LISTING_TYPE`(3)·`LIVING_AMENITY`(8)·`NEARBY_FACILITY`(5)·`PROVIDED_SUPPLY`(6)·`RENTAL_TYPE`(1)·`SECURITY_FEATURE`(6)·`SUPPORTED_LANGUAGE`(4)·`TRANSIT_TYPE`(1)·`UNIVERSITY`(14). `status`(`ListingStatus`)는 임대인에게만 보이는 관리 상태라 번역 대상이 아니고, 대응하는 카탈로그 카테고리도 없다.
+저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 예시 몇 건이 아니라 Listing UI가 사용하는 전체 공통 코드 **19종 카테고리·112건**이다 — `ARC_REQUIREMENT`(2)·`BUILDING_TYPE`(7)·`CITY`(4 — `ETC` 포함)·`COMMON_SPACE`(8 — `NONE` 포함)·`CONDITION_TAG`(8)·`DISTRICT`(10 — `ETC` 포함)·`GENDER_POLICY`(4)·`HEATING_SYSTEM`(3 — `NONE` 포함)·`KITCHEN`(10 — `NONE` 포함)·`LAUNDRY`(5 — `NONE` 포함)·`LISTING_TYPE`(3)·`LIVING_AMENITY`(9 — `NONE` 포함)·`NEARBY_FACILITY`(6 — `NONE` 포함)·`PROVIDED_SUPPLY`(7 — `NONE` 포함)·`RENTAL_TYPE`(1)·`SECURITY_FEATURE`(7 — `NONE` 포함)·`SUPPORTED_LANGUAGE`(3)·`TRANSIT_TYPE`(1)·`UNIVERSITY`(14). `status`(`ListingStatus`)는 임대인에게만 보이는 관리 상태라 번역 대상이 아니고, 대응하는 카탈로그 카테고리도 없다.
 
 `universities`
 
@@ -531,7 +576,7 @@
 - 주변 시설은 자유 텍스트가 아니라 `nearbyFacilities`의 `NearbyFacility` 코드 배열이다. API 응답에서도 `nearbyFacilities`로 내려주며 다른 공통 코드와 같이 카탈로그 label과 조합한다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
 - **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. 이어 `0116 listing-location-required`가 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. `0118 listing-university-collection`이 `universities` validator를 세우고([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)), `0119 listing-contact-sms-drop`이 담당자 연락처에서 `sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제) — **다섯 다 스키마만 다루고 문서를 넣지 않는다**. 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
-- **시드(`listings` 2건 · `listingCatalog` 105건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
+- **시드(`listings` 2건 · `listingCatalog` 112건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
 - seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
 
 > **장소 후보 검색(`GET /api/v1/listings/places`) — 무상태, 컬렉션 없음**: 지도 검색창 키워드는 네이버 지역 검색 API로 조회한다(아웃바운드 포트 `PlaceSearchClient`, 인프라 어댑터 `NaverPlaceSearchClient`, 설정 `NaverSearchProperties`(prefix `app.naver.search`)). 결과(최대 5개 장소 후보)를 서버에 저장하지 않으므로 이 절엔 관련 스키마가 없다. **경로가 `/api/v1`인 이유**: 매물 조회 계열은 `/api/v2`로 이관되고 `/api/v1` 조회는 DB에 닿지 않는 `deprecated` 스텁이 됐지만, 이 엔드포인트만은 매물 데이터를 쓰지 않아 영향을 받지 않으므로 `/api/v1`에 그대로 둔다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md) · [03-listings-favorites](../api/specs/03-listings-favorites.md)).

@@ -74,6 +74,21 @@ public class SecurityConfig {
                     // PublicPaths.ALL에도 같은 두 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
                     .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login")
                     .permitAll()
+                    // 임대인 웹 계정 복구(US-1-16·US-1-17, #272) — 로그인 ID를 모르거나 비밀번호를 잊어
+                    // "로그인하지 못해서" 들어오는 자리라 주체가 없다. 여섯 경로 모두 POST이며, 재설정 링크가
+                    // 겨누는 곳은 백엔드가 아니라 SPA 페이지다 — GET 링크형 엔드포인트를 만들면 SameSite=Lax가
+                    // top-level GET 내비게이션에 쿠키를 실어 csrf.disable() 전제가 그 자리에서 깨진다.
+                    // PublicPaths.ALL에도 같은 여섯 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
+                    // 이 화면들은 "로그인이 안 돼서 오는" 자리라 만료 토큰이 남아 있을 확률이 가장 높다.
+                    .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/auth/phone/find-email/verification-code",
+                        "/api/v1/auth/phone/find-email/verify",
+                        "/api/v1/auth/email/find",
+                        "/api/v1/auth/password/reset-link",
+                        "/api/v1/auth/password/reset-token/verify",
+                        "/api/v1/auth/password/reset")
+                    .permitAll()
                     // WebSocket handshake는 통로만 만드는 HTTP upgrade 요청이다. 실제 사용자는 직후
                     // STOMP CONNECT의 Bearer JWT로 다시 인증하므로 이 한 경로만 공개한다.
                     .requestMatchers("/actuator/health", "/swagger-ui/**", "/ws/chat")

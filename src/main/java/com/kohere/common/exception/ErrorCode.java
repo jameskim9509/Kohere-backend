@@ -50,6 +50,12 @@ public enum ErrorCode {
   AUTH_ACCOUNT_LOCKED(HttpStatus.LOCKED, "비밀번호를 여러 번 틀려 계정이 잠겼습니다."),
   AUTH_EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
   AUTH_WEB_ACCOUNT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 웹 계정이 존재합니다. 로그인해 주세요."),
+  // 계정 복구(#272). 이메일 찾기에서 번호에 붙은 웹 계정이 없거나 제출한 이름이 다르면 같은 404다 —
+  // 둘을 가르면 자기 번호로 인증한 사람이 그 계정의 명의자 이름을 한 후보씩 확인하는 오라클이 된다.
+  AUTH_WEB_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 정보로 가입된 웹 계정을 찾을 수 없습니다."),
+  // 토큰 부재·만료·이미 사용됨을 한 코드로 묶는다. 구분 자체가 "이 토큰은 살아 있다"는 신호다.
+  AUTH_PASSWORD_RESET_TOKEN_INVALID(
+      HttpStatus.UNPROCESSABLE_ENTITY, "비밀번호 재설정 링크가 유효하지 않거나 만료되었습니다."),
   USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
   USER_ALREADY_WITHDRAWN(HttpStatus.CONFLICT, "이미 탈퇴한 사용자입니다."),
 

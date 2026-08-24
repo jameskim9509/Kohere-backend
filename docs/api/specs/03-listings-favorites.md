@@ -19,6 +19,8 @@
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
 - `ConditionTag`(매물 옵션 필터 8종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음)
 - `ArcRequirement`(매물 루트 `arcRequired` 값): `REQUIRED`, `NOT_REQUIRED`. ARC 없이 입주할 수 있는지는 조건 태그가 아니라 이 필드로 표현한다
+- **시설 8종**은 전부 `NONE`(해당 없음)을 갖는다 — `HeatingSystem`: `CENTRAL`, `INDIVIDUAL`, `NONE` / `KitchenFacility`·`LaundryFacility`·`LivingAmenity`·`SecurityFeature`·`CommonSpaceType`·`ProvidedSupply`·`NearbyFacility`도 각자 목록 끝에 `NONE`이 붙는다. **해당 시설이 하나도 없으면 `NONE` 하나만 보낸다** — 이 값은 다른 코드와 함께 보낼 수 없다(아래 등록 요청 참조).
+  - **`NONE`과 `ETC`/`OTHER`는 다르다.** `ETC`(행정구역)·`OTHER`는 「목록에 없는 그 외의 값」이고, `NONE`은 「해당하는 것이 없음」이다. 응답에서도 `NONE`은 다른 코드와 똑같이 `{code, label}`로 나가므로 화면은 「없음」 칩을 그대로 그리면 된다.
 
 > `ListingSort`는 api-design-guide §6의 일반 `?sort=field,(asc|desc)` 형식이 아닌 **이름 기반 정렬 프리셋**이다(추천 정렬 등 단일 필드로 표현되지 않는 정렬이 있어 enum으로 둔다). 찜 목록은 별도 정렬 파라미터 없이 `favoritedAt desc`로 고정된다.
 
@@ -435,14 +437,14 @@ Request Body:
 | `languagesSupported` | `SupportedLanguage[]` | 필수 | 외국어 응대(복수 선택). 카탈로그 `SUPPORTED_LANGUAGE` 대조 |
 | `ageRange` | string | 필수 | 이용 연령대를 `min~max` 1칸으로 받는다(예 `20~35`). 서버가 `ageMin`·`ageMax`로 파싱 |
 | `arcRequired` | `ArcRequirement` | 필수 | 외국인등록증(ARC) 필수 요구 여부. 카탈로그 `ARC_REQUIREMENT` 대조 |
-| `facilities.heatingSystem` | `HeatingSystem[]` | 필수 | 난방시설. 카탈로그 `HEATING_SYSTEM` 대조 |
-| `facilities.kitchen` | `KitchenFacility[]` | 필수 | 주방시설(복수 선택). 카탈로그 `KITCHEN` 대조 |
-| `facilities.laundry` | `LaundryFacility[]` | 필수 | 세탁시설(복수 선택). 카탈로그 `LAUNDRY` 대조 |
-| `facilities.livingAmenities` | `LivingAmenity[]` | 필수 | 생활시설(복수 선택). 카탈로그 `LIVING_AMENITY` 대조 |
-| `facilities.securityFeatures` | `SecurityFeature[]` | 필수 | 안전시설(복수 선택). 카탈로그 `SECURITY_FEATURE` 대조 |
-| `facilities.commonSpaces` | `CommonSpaceType[]` | 필수 | 공용공간(복수 선택). 카탈로그 `COMMON_SPACE` 대조 |
-| `facilities.providedSupplies` | `ProvidedSupply[]` | 필수 | 제공비품(복수 선택). 카탈로그 `PROVIDED_SUPPLY` 대조 |
-| `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조 |
+| `facilities.heatingSystem` | `HeatingSystem[]` | 필수 | 난방시설. 카탈로그 `HEATING_SYSTEM` 대조. 없으면 `["NONE"]` |
+| `facilities.kitchen` | `KitchenFacility[]` | 필수 | 주방시설(복수 선택). 카탈로그 `KITCHEN` 대조. 없으면 `["NONE"]` |
+| `facilities.laundry` | `LaundryFacility[]` | 필수 | 세탁시설(복수 선택). 카탈로그 `LAUNDRY` 대조. 없으면 `["NONE"]` |
+| `facilities.livingAmenities` | `LivingAmenity[]` | 필수 | 생활시설(복수 선택). 카탈로그 `LIVING_AMENITY` 대조. 없으면 `["NONE"]` |
+| `facilities.securityFeatures` | `SecurityFeature[]` | 필수 | 안전시설(복수 선택). 카탈로그 `SECURITY_FEATURE` 대조. 없으면 `["NONE"]` |
+| `facilities.commonSpaces` | `CommonSpaceType[]` | 필수 | 공용공간(복수 선택). 카탈로그 `COMMON_SPACE` 대조. 없으면 `["NONE"]` |
+| `facilities.providedSupplies` | `ProvidedSupply[]` | 필수 | 제공비품(복수 선택). 카탈로그 `PROVIDED_SUPPLY` 대조. 없으면 `["NONE"]` |
+| `nearbyFacilities` | `NearbyFacility[]` | 필수 | 주변 편의시설(복수 선택). 카탈로그 `NEARBY_FACILITY` 대조. 없으면 `["NONE"]` |
 | `nearestTransit.type` | `TransitType` | 필수 | 현재 허용값은 `SUBWAY` 하나다. 카탈로그 `TRANSIT_TYPE` 대조 |
 | `nearestTransit.name` | string | 필수 | 근처 지하철역명. **역 검색 응답의 `name`을 그대로** 보낸다 |
 | `nearestTransit.walkMinutes` | integer | 필수 | 도보 소요시간(분). 0 이상. 역 검색이 준 `suggestedWalkMinutes`를 그대로 담으면 된다. **키를 생략하면 `400 INVALID_INPUT`이다** — 예전에는 조용히 `0`이 저장됐다([ADR-0044](../../adr/0044-nearby-station-search-with-kakao-local.md)) |
@@ -459,8 +461,8 @@ Request Body:
 | `roomOffers[].pricing.maintenanceFee` | integer(KRW) | 필수 | 관리비. 0 이상 |
 | `roomOffers[].filterTags` | `ConditionTag[]` | 필수 | 타입별 매물 옵션(복수 선택). 카탈로그 `CONDITION_TAG` 대조 |
 | `roomOffers[].roomImageKeys` | string[] | 필수 | 그 객실 사진의 저장 키. **2~5개**. 방마다 따로 담는다 |
-| `preferredNationalities` | `Nationality[]` | 필수 | 설문 — 선호하는 국적(복수 선택). 응답에 포함하지 않는다 |
-| `contractDifficulties` | `ContractDifficulty[]` | 필수 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 응답에 포함하지 않는다 |
+| `preferredNationalities` | `Nationality[]` | 선택 | 설문 — 선호하는 국적(복수 선택). 키를 생략하거나 `null`·`[]`을 보내도 된다. 서버가 빈 배열로 정규화하므로 **저장 문서에는 항상 키가 있다**. 세입자 응답에 포함하지 않는다 |
+| `contractDifficulties` | `ContractDifficulty[]` | 선택 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 키를 생략하거나 `null`·`[]`을 보내도 된다. 서버가 빈 배열로 정규화한다. 세입자 응답에 포함하지 않는다 |
 | `serviceFeedback` | string | 선택 | 설문 — Kohere에 전하고 싶은 말. 응답에 포함하지 않는다 |
 | `consents` | object | 필수 | 매물 이용약관 동의 2종. 객체 자체가 없으면 `400 INVALID_INPUT` |
 | `consents.privacyPolicyAgreed` | boolean | 필수 | 개인정보 수집·이용 동의. `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING` |
@@ -616,7 +618,7 @@ Request Body:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액, `address.lat`·`address.lng`가 WGS84 범위 밖), `address.lat`·`address.lng` 누락, `roomOffers` 0개. 위반 필드는 `errors[]`에 실린다 |
+| 400 | `INVALID_INPUT` | 필수값 누락·빈값, 형식 위반(`usedFloorRange`·`ageRange`의 `min~max`, 전화번호, URL, 사업자등록번호 숫자 10자리, `{ko,en}` 한쪽 누락), 범위 위반(`ageMin>ageMax`, `usedFloorMin>usedFloorMax`, `usedFloorMax>totalFloors`, `minStayMonths>maxStayMonths`, 음수 금액, `address.lat`·`address.lng`가 WGS84 범위 밖), `address.lat`·`address.lng` 누락, `roomOffers` 0개, **시설 8종 중 어느 하나가 `NONE`을 다른 코드와 함께 담음**. 위반 필드는 `errors[]`에 실린다 |
 | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
 | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
 | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -1468,7 +1470,8 @@ Request Body: 없음
 
 ### PUT /api/v2/listings/{listingId} — 매물 수정(임대인)
 
-- 설명: 임대인이 자기 매물의 내용을 고친다. **부분 수정이 아니라 전체 교체**이므로 등록 때 보낸 속성을 그대로 다시 보낸다 — 보내지 않은 필드는 지워진다. 저장에 성공하면 위 전이표대로 상태가 바뀌어 재심사에 오른다.
+- 설명: 임대인이 자기 매물의 내용을 고친다. **부분 수정이 아니라 전체 교체**이므로 등록 때 보낸 속성을 그대로 다시 보낸다 — 보내지 않은 필드는 지워진다.
+- **설문 2종(`preferredNationalities`·`contractDifficulties`)은 선택이지만 전체 교체 규칙은 그대로 적용된다** — 보내지 않으면 저장돼 있던 응답이 **빈 배열로 지워진다**(`blogUrl`·`serviceFeedback`과 같다). 값을 유지하려면 `GET /api/v2/users/me/listings/{listingId}`가 준 값을 그대로 다시 실어야 한다. 저장에 성공하면 위 전이표대로 상태가 바뀌어 재심사에 오른다.
 - 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`) 중 **임대인**(`userType=LANDLORD`). 소유자 판정은 access 토큰의 사용자와 매물의 `landlordId`를 대조하며, 남의 매물이면 `404 LISTING_NOT_FOUND`다.
 - 메서드: **`PUT`이다.** `location`·`address.city`/`district`·`nearbyUniversityCodes`가 모두 주소에서 파생되는 값이라, 일부만 보내는 `PATCH`를 허용하면 파생값이 본문과 어긋난 상태로 남는다([api-design-guide](../api-design-guide.md)).
 - 선행 호출: 수정 화면의 프리필은 `GET /api/v2/users/me/listings/{listingId}`가 준다. 주소·역은 등록과 같이 `GET /api/v1/listings/addresses`·`GET /api/v1/listings/stations`로 다시 검색해 고른 값을 담고, 새로 넣을 사진은 `POST /api/v2/listings/images`로 먼저 올려 키를 받는다.
@@ -1584,7 +1587,7 @@ Request Body: 없음
 | 묶음 | 내용 | 왜 |
 | --- | --- | --- |
 | 매물 상세 전 필드 | 세입자 상세(`GET /api/v2/listings/{listingId}`)가 주는 것 전부 | 프리필의 본체 |
-| 세입자에게 감추는 값 | `businessRegistrationNumber` · 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`) | **전부 등록·수정 요청 필드**라 빠지면 그대로 다시 제출할 수 없다 |
+| 세입자에게 감추는 값 | `businessRegistrationNumber` · 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`) | **전부 등록·수정 요청 필드**다. 설문 3종은 선택이지만 **보내지 않으면 빈 값으로 덮이므로**(전체 교체) 유지하려면 이 응답이 준 값을 그대로 다시 실어야 한다 |
 | 사진 키 | `imageKeys` · `roomOffers[].roomImageKeys` | 유지할 사진을 그대로 되돌려 보내려면 URL이 아니라 **키**가 필요하다. 미리보기용 URL(`imageUrls`·`roomImageUrls`)도 함께 내려간다 |
 | 방 식별자·상태 | `roomOffers[].roomOfferId` · `roomOffers[].status` | 수정 요청이 요구하는 값이다. **`INACTIVE` 방도 포함해** 내려간다(세입자·관리자 응답은 `ACTIVE`만 준다) — 그래야 되살릴 수 있다 |
 | 읽기 전용 | `status` · `rejectionReason` | 같은 화면이 상태 배지와 반려 사유를 보여준다. 요청에는 칸이 없다 |

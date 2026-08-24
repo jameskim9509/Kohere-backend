@@ -89,6 +89,12 @@ Content-Type: image/jpeg
 ------KohereBoundary--
 
 ### 7. 반려 매물 수정 → 심사 대기(PENDING)
+#    ※ 시설 8종은 해당하는 것이 하나도 없으면 ["NONE"] 하나만 보낸다.
+#      NONE 을 다른 코드와 같이 보내면 400 INVALID_INPUT 이고 errors[].field 에 필드명이 실린다.
+#      아래 laundry 를 ["NONE"] 으로 바꿔 보면 8번 상세에서 { "code": "NONE", "label": "없음" } 으로 되돌아온다.
+#    ※ 설문 2종(preferredNationalities · contractDifficulties)은 **선택**이다 — 키를 빼도 된다.
+#      다만 수정은 전체 교체라 **보내지 않으면 저장돼 있던 값이 [] 로 지워진다**(blogUrl · serviceFeedback 과 같다).
+#      지우고 싶지 않으면 5번 상세가 준 값을 그대로 다시 실으면 된다. 지워진 것은 8번에서 확인한다.
 # imageKeys = 5번의 첫 커버 키(유지) + 6번의 임시 키(신규) 혼합.
 # roomImageKeys = 5번의 방 사진 확정 키 두 장을 그대로 유지.
 PUT {{host}}/api/v2/listings/{{myListing.response.body.$.data.listing.listingId}}

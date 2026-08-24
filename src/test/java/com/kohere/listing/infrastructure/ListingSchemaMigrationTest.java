@@ -121,6 +121,30 @@ class ListingSchemaMigrationTest {
     assertThat(mongoTemplate.getCollection(LISTINGS_COLLECTION).countDocuments()).isEqualTo(1);
   }
 
+  /**
+   * 설문 2종은 요청에서 선택이 됐지만 <b>저장 계약은 그대로</b>다(#270) — 빈 배열은 통과하고 키 제거는 여전히 거부돼야 한다.
+   *
+   * <p>이 두 케이스가 「Mongock changeUnit 없이 간다」는 결정을 코드로 고정한다. 나머지 테스트는 {@code mongock.enabled: false}라
+   * 실제 {@code $jsonSchema}를 밟지 않으므로, 누군가 {@code required}에서 두 필드를 빼도 여기 말고는 아무도 알아채지 못한다.
+   */
+  @Test
+  @DisplayName("설문 2종은 빈 배열이면 저장되고 키가 없으면 거부된다")
+  void acceptsEmptySurveyArraysButRejectsMissingKeys() {
+    applyChangeUnitChain();
+
+    Document emptySurvey = ListingTestSeeds.listingDocuments().getFirst();
+    emptySurvey.put("preferredNationalities", java.util.List.of());
+    emptySurvey.put("contractDifficulties", java.util.List.of());
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(emptySurvey);
+    assertThat(mongoTemplate.getCollection(LISTINGS_COLLECTION).countDocuments()).isEqualTo(1);
+
+    Document missingSurvey = ListingTestSeeds.listingDocuments().get(1);
+    missingSurvey.remove("preferredNationalities");
+    assertThatThrownBy(
+            () -> mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(missingSurvey))
+        .isInstanceOf(MongoWriteException.class);
+  }
+
   @Test
   @DisplayName("baseline 없이 후속 changeUnit을 돌리면 기동을 막는다")
   void refusesToRunWithoutBaseline() {
