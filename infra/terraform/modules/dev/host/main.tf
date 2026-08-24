@@ -86,7 +86,6 @@ resource "aws_instance" "host" {
     })
     compose_yml                   = local.compose_yml
     google_wif_credentials_base64 = base64encode(var.google_wif_credential_configuration)
-    configure_chat_translation    = local.configure_chat_translation_script
   }))
 
   lifecycle {
