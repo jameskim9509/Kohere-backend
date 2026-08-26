@@ -39,7 +39,7 @@ sequenceDiagram
         DIAG->>FS: 새 세션 저장 upsertByUserId(DiagnosisFlowSession.start(userId))<br/>draft=빈 초안, pendingField=region, guestSessionId=null
         FS-->>DIAG: 새 세션
     else 게스트 (userId == null)
-        Note over DIAG: 게스트 세션 키 발급 — 값 형식 anonymous&lt;uuid&gt;<br/>요청자마다 다른 값(공용·상수 키 금지 — 진단 id가 전역 순차 채번이라<br/>소유권 검사가 유일한 IDOR 방어선)
+        Note over DIAG: 게스트 세션 키 발급 — 값 형식 anonymous{uuid}<br/>요청자마다 다른 값(공용·상수 키 금지 — 진단 id가 전역 순차 채번이라<br/>소유권 검사가 유일한 IDOR 방어선)
         DIAG->>FS: 새 세션 저장 (guestSessionId 키, userId=null)<br/>draft=빈 초안, pendingField=region
         FS-->>DIAG: 새 세션
         Note over DIAG,FS: userId UNIQUE 인덱스는 partial(userId 존재 시)로 좁히고<br/>guestSessionId partial UNIQUE 인덱스를 따로 둔다<br/>(한 인덱스에 섞으면 게스트 문서의 userId=null이 서로 충돌)
@@ -57,7 +57,7 @@ sequenceDiagram
     alt 회원 (userId != null)
         DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>question(step=1, field=region, select, options)
     else 게스트 (userId == null)
-        DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>data.guestSessionId=anonymous&lt;uuid&gt; (회원 응답에서는 생략, NON_NULL)<br/>question(step=1, field=region, select, options)
+        DIAG-->>C: 200 OK, resultCode=NEXT_QUESTION<br/>data.guestSessionId=anonymous{uuid} (회원 응답에서는 생략, NON_NULL)<br/>question(step=1, field=region, select, options)
         Note over C: 클라이언트는 이 키를 보관했다가 이후 next·추천 요청에<br/>X-Guest-Session-Id 헤더로 에코한다 — 잃어버리면 처음부터 다시<br/>(서버가 매 요청 새 키를 만들면 next가 세션 미스로 죽는다)
     end
     C-->>U: ① 지역 질문·선택지 표시
@@ -65,7 +65,7 @@ sequenceDiagram
 
     loop 대화 루프 — 매 호출이 resultCode 중 정확히 하나로 응답
         U->>C: 현재 문항 답 선택
-        C->>SEC: POST /api/v2/diagnoses/next<br/>body: AnswerRequest (현재 문항 답 1개 — 필수)<br/>Authorization: Bearer accessToken<br/>(게스트는 대신 X-Guest-Session-Id: anonymous&lt;uuid&gt; 에코)
+        C->>SEC: POST /api/v2/diagnoses/next<br/>body: AnswerRequest (현재 문항 답 1개 — 필수)<br/>Authorization: Bearer accessToken<br/>(게스트는 대신 X-Guest-Session-Id: anonymous{uuid} 에코)
         Note over SEC: Authorization 헤더가 있을 때만 JWT 검증 (서명·만료·클레임)<br/>인가는 permitAll — 인증 없이도 통과
         alt 토큰 없음 · 위조/형식 오류 → 게스트
             SEC->>DIAG: 게스트 요청 전달 (userId = null, guestSessionId, answer)
@@ -170,7 +170,7 @@ sequenceDiagram
     Note over C,DB: ── ④ 매물 조회는 클라이언트가 결정한다(여기서 처음 추천 쿼리가 돈다) ──
     opt COMPLETED를 받은 뒤 — 조회 시점은 클라가 정함
         U->>C: 진단 결과 화면 진입
-        C->>SEC: GET /api/v2/diagnoses/{diagnosisId}/recommendations<br/>?page=0&size=20<br/>Authorization: Bearer accessToken<br/>(게스트는 대신 X-Guest-Session-Id: anonymous&lt;uuid&gt; 에코)
+        C->>SEC: GET /api/v2/diagnoses/{diagnosisId}/recommendations<br/>?page=0&size=20<br/>Authorization: Bearer accessToken<br/>(게스트는 대신 X-Guest-Session-Id: anonymous{uuid} 에코)
         Note over C,DIAG: 이 호출 자체가 "매물을 받겠다"는 클라의 결정<br/>v1 §7과 같은 조회지만 suggestions 필드가 없다
         alt 토큰 없음 · 위조/형식 오류 → 게스트
             SEC->>DIAG: 게스트 요청 전달 (userId = null, guestSessionId, diagnosisId)
