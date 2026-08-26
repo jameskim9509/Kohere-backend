@@ -85,10 +85,12 @@ app:
     key-id: ${APPLE_KEY_ID:}
     private-key: ${APPLE_PRIVATE_KEY:}
   mail:
-    # 인증번호 메일 발송 채널(app.solapi.enabled 의 이메일판). 로컬은 false → LoggingVerificationEmailSender 폴백
-    # (실발송 안 함, 콘솔 [DEV MAIL] 로그). MailHog 로 실제 수신을 보려면 MAIL_ENABLED=true 로 켠다.
+    # 인증번호 메일 발송 채널(app.solapi.enabled 의 이메일판이지만 기본값이 반대다). 로컬도 기본 true —
+    # MailHog 가 docker-compose 의 로컬 인프라 세트에 있어 실제로 보내고 http://localhost:8025 에서 읽는 것이
+    # 정상 흐름이고, 온보딩 이메일 인증이 이미 그 방식으로 굴러왔다(미가용 시 502 — 위 spring.mail 주석 참조).
+    # MailHog 없이 돌리려면 MAIL_ENABLED=false — 인증번호가 메일 대신 앱 로그([DEV MAIL])로 나간다.
     # 인증 절차 자체는 이 값과 무관하게 항상 동작한다 — 이건 기능 스위치가 아니라 발송 채널 스위치다.
-    enabled: ${MAIL_ENABLED:false}
+    enabled: ${MAIL_ENABLED:true}
   solapi:
     # 연락처 SMS(SOLAPI, ADR-0034). 로컬은 enabled=false → LoggingVerificationSmsSender 폴백(실발송 안 함, 콘솔 로그).
     # API KEY·SECRET은 환경변수 관리 — 로컬은 폴백값(운영 미사용). 실연동 테스트 시 env로 실제 값 주입.

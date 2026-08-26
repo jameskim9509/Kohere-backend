@@ -7,9 +7,10 @@
 # (계정 복구 — 이메일 찾기 · 비밀번호 재설정 = 계정 잠금 해제 — 는 auth-web-recovery.http)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
-#   1) 인프라:  docker compose up -d mysql mongo redis
+#   1) 인프라:  docker compose up -d mysql mongo redis mailhog
 #      (인증 흐름 자체는 mysql·redis 만 쓰지만 앱 기동에 Mongock 마이그레이션이 붙어 mongo 가 필요하다.
-#       메일·MinIO 는 이 흐름에 필요 없다 — 연락처 인증은 SMS 이고 사진 업로드가 없다.)
+#       mailhog 는 가입용 이메일 인증(#285)이 실제로 메일을 보내기 때문에 필요하다 — 로컬 기본값이
+#       app.mail.enabled=true 다. MinIO 는 이 흐름에 필요 없다(사진 업로드가 없다).)
 #   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
 #   3) 아래 @phone·@email 을 이 실행에서 처음 쓰는 값으로 바꾼다(둘 다 유일해야 한다 — 아래 「재실행」 참고).
 #   4) 0번부터 순서대로 "Send Request" 를 클릭한다. 1번 발송 뒤 **콘솔에서 인증번호를 읽어** @code 에 넣는다.
@@ -21,11 +22,12 @@
 #     [DEV SMS] SOLAPI 비활성 — 연락처 ***5678 인증번호 [482913] (실발송 안 함). 실연동은 app.solapi.enabled=true.
 #   (연락처는 뒤 4자리만 남기고 마스킹되므로, 여러 번호를 동시에 테스트 중이면 뒤 4자리로 줄을 구분한다.)
 #
-#   ★ 가입용 **이메일** 인증번호도 같은 자리에서 읽는다 (#285). 로컬 기본값이 app.mail.enabled=false 라
-#     LoggingVerificationEmailSender 가 SMTP 대신 WARN 한 줄을 찍는다:
+#   ★ 가입용 **이메일** 인증번호는 여기가 아니라 **MailHog 웹 UI** 에서 읽는다 (#285).
+#     로컬 기본값이 app.mail.enabled=true 라 실제로 SMTP(mailhog:1025)로 나가며,
+#     2-1 발송 후 http://localhost:8025 를 열어 받은 메일의 6자리를 @emailCode 에 입력한다.
+#     (온보딩 이메일 인증이 쓰던 방식 그대로다 — MailHog 가 안 떠 있으면 발송이 502 다.)
+#     MailHog 없이 돌리려면 MAIL_ENABLED=false 로 내린다 — 그러면 SMS 처럼 앱 콘솔에서 읽는다:
 #       [DEV MAIL] SMTP 비활성 — 이메일 ki***@work.com 인증번호 [482913] (실발송 안 함). 실연동은 app.mail.enabled=true.
-#     즉 **MailHog 컨테이너가 필요 없다.** 실제 수신까지 보려면 MAIL_ENABLED=true 로 켜고
-#     docker compose up -d mailhog 후 http://localhost:8025 에서 확인한다.
 #     (이 토글은 발송 채널만 가른다 — 인증 절차 자체는 모든 환경에서 동일하게 필수다.)
 #
 #   ※ 앱스토어 심사용 고정 인증번호 우회(app.auth.fixed-verification)는 **이 경로에 적용되지 않는다.**
@@ -123,7 +125,7 @@ Content-Type: application/json
   "code": "{{code}}"
 }
 
-### 2-1. 가입용 이메일 인증번호 발송 (비로그인 · permitAll) — 앱 콘솔의 [DEV MAIL] 줄에서 6자리를 @emailCode 에 넣는다
+### 2-1. 가입용 이메일 인증번호 발송 (비로그인 · permitAll) — http://localhost:8025 에서 6자리를 @emailCode 에 넣는다
 #    이메일 키 챌린지(signup-email:code:{정규화이메일}) — 대소문자·앞뒤 공백은 서버가 접는다.
 #    한도: 재발송 60초 · 같은 이메일 5회/1시간 · 같은 IP 20회/1시간 → 초과 시 429.
 #    ★ SMS(1번)와 갈리는 지점: **이미 가입된 주소면 메일을 보내지 않고 409** 다. 감추면 남의 메일함으로
@@ -136,7 +138,7 @@ Content-Type: application/json
   "email": "{{email}}"
 }
 
-### --- 앱 콘솔 [DEV MAIL] 로그에서 받은 인증번호로 교체 ---
+### --- MailHog(http://localhost:8025)에서 받은 인증번호로 교체 (MAIL_ENABLED=false 면 앱 콘솔 [DEV MAIL]) ---
 @emailCode = 000000
 
 ### 2-2. 가입용 이메일 인증번호 확인 (비로그인) — 성공 시 검증 마커(TTL 30분) 저장. 그 안에 3번을 제출해야 한다
@@ -529,7 +531,7 @@ Content-Type: application/json
 }
 
 ### E10. 이미 가입된 이메일로 인증번호 요청 → 409 AUTH_EMAIL_ALREADY_REGISTERED (#285)
-#    ★ **콘솔에 [DEV MAIL] 줄이 찍히지 않는 것까지 확인하는 것이 이 케이스의 요지다** — 메일을 보내지도,
+#    ★ **MailHog 에 새 메일이 오지 않는 것까지 확인하는 것이 이 케이스의 요지다** — 메일을 보내지도,
 #      챌린지를 만들지도 않는다. 감추고 발송하면 남의 메일함으로 인증번호가 실제로 날아간다.
 #    대가로 이 응답의 200/409 차이로 임의 주소의 가입 여부를 알 수 있다(계정 열거 — 수용한 결과).
 #    한도 판정이 중복 검사보다 **먼저**라 이 관찰도 시간당 예산을 한 칸 쓴다.
