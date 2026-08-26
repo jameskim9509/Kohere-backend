@@ -128,7 +128,8 @@ class WebLandlordAccountLinkingFlowTest {
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @MockitoBean private VerificationSmsSender smsSender; // 실제 SMS 발송 대체(인증번호 캡처)
-  @MockitoBean private VerificationEmailSender emailSender; // 이 흐름 미사용(컨텍스트 충족용)
+  @MockitoBean private VerificationEmailSender emailSender; // 가입용 이메일 인증번호 캡처(#285)
+  private final Map<String, String> sentEmailCodes = new ConcurrentHashMap<>();
   @MockitoBean private AppleAuthClient appleAuthClient; // 실제 Apple HTTP 대체
 
   private final ObjectMapper objectMapper = new ObjectMapper();
@@ -144,6 +145,14 @@ class WebLandlordAccountLinkingFlowTest {
               return null;
             })
         .when(smsSender)
+        .send(any(), any());
+    // 가입용 이메일 인증번호도 캡처한다 — 가입 제출이 연락처·이메일 두 마커를 모두 요구한다(#285).
+    doAnswer(
+            inv -> {
+              sentEmailCodes.put(inv.getArgument(0), inv.getArgument(1));
+              return null;
+            })
+        .when(emailSender)
         .send(any(), any());
 
     mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
@@ -179,6 +188,7 @@ class WebLandlordAccountLinkingFlowTest {
 
     // 2) 웹 — 가입용(번호 키) SMS 인증. 앱 트랙의 userId 키 챌린지와 별개 경로다(§1-1·§1-2).
     verifySignupPhone(APP_FIRST_PHONE);
+    verifySignupEmail("app-first@work.com");
 
     // 3) 웹 회원가입 — 같은 번호라 연동된다. users 행이 늘지 않는 것이 "연결"의 정의다.
     long usersBefore = countUsers();
@@ -262,6 +272,7 @@ class WebLandlordAccountLinkingFlowTest {
   void 웹먼저_앱온보딩이_임시계정을병합하고_매물소유권을유지한다() throws Exception {
     // 1) 웹 — 가입용 SMS 인증 → 회원가입(신규 생성이므로 linked=false)
     verifySignupPhone(WEB_FIRST_PHONE);
+    verifySignupEmail("web-first@work.com");
     String signupBody =
         mockMvc
             .perform(
@@ -332,6 +343,7 @@ class WebLandlordAccountLinkingFlowTest {
   void 두번병합해_소셜매핑이2행이어도_탈퇴가성공한다() throws Exception {
     // 1) 웹 가입 — 병합이 수렴할 대상 계정
     verifySignupPhone(TWICE_MERGED_PHONE);
+    verifySignupEmail("twice@work.com");
     String signupBody =
         mockMvc
             .perform(
@@ -498,6 +510,24 @@ class WebLandlordAccountLinkingFlowTest {
                         + "\",\"code\":\""
                         + sentCodes.get(phone)
                         + "\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.verified").value(true));
+  }
+
+  /** 가입 트랙(이메일 키·비로그인) 이메일 인증 — 발송·확인(§1-11·§1-12). 가입 제출의 두 번째 게이트다(#285). */
+  private void verifySignupEmail(String email) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verification-code")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"email\":\"" + email + "\",\"code\":\"" + sentEmailCodes.get(email) + "\"}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.verified").value(true));
   }

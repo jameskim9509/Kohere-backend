@@ -530,7 +530,8 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - **선행 조건은 `POST /api/v1/auth/phone/signup/verification-code`·`/verify`** 다. 제출 번호의 인증 마커가 없으면 422이고 계정 생성도 연동도 하지 않는다.
+      - **선행 조건은 인증 둘이다** — `POST /api/v1/auth/phone/signup/verification-code`·`/verify`(연락처)와 `POST /api/v1/auth/email/signup/verification-code`·`/verify`(이메일). 어느 한쪽 마커라도 없으면 422이고 계정 생성도 연동도 하지 않는다. 두 인증은 서로 순서가 무관하다.
+      - 이메일 인증이 지키는 것은 **본인의 복구 경로**다 — 로그인 ID로 쓸 주소가 닿지 않으면 비밀번호 재설정 메일을 받을 수 없고, 그 재설정이 계정 잠금 해제를 겸한다.
       - 연동 판정 키는 **정규화한 `phoneNumber` 단독**이다 — 이름은 매칭 조건이 아니다(앱 이름과 웹 이름이 달라도 연동된다).
       - 이메일 중복은 **웹 로그인 ID(`local_accounts.email`)** 에만 건다 — 앱 소셜 계정과 같은 이메일로 가입하는 것은 정상이다.
       - `password`는 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~20**, 공백 불가다. 위반은 400 `INVALID_INPUT`이며 `errors[].field=password`로 온다.
@@ -560,7 +561,7 @@ public final class AuthDocsFields {
     "AUTH_EMAIL_ALREADY_REGISTERED", "AUTH_WEB_ACCOUNT_ALREADY_EXISTS", "RESOURCE_CONFLICT"
   };
   public static final String[] WEB_SIGNUP_422 = {
-    "AUTH_PHONE_NOT_VERIFIED", "AUTH_REQUIRED_AGREEMENT_MISSING"
+    "AUTH_PHONE_NOT_VERIFIED", "AUTH_EMAIL_NOT_VERIFIED", "AUTH_REQUIRED_AGREEMENT_MISSING"
   };
 
   // ── 임대인 웹 로그인 — POST /api/v1/auth/login ───────────────────────────────
