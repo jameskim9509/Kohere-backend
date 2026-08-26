@@ -65,7 +65,7 @@
 | 비자정보 `visaType` | `SHORT_TERM_VISIT`(단기방문), `STUDENTS_TRAINEES`(유학·연수), `NON_PROFESSIONAL_WORKERS`(비전문취업), `WORKING_HOLIDAY_WORK_AND_VISIT`(워킹홀리데이·방문취업), `OVERSEAS_KOREANS`(재외동포), `FAMILY_MARRIAGE_MIGRANTS`(방문동거·거주·결혼이민), `PERMANENT_RESIDENTS`(영주), `PROFESSIONALS`(전문인력), `DIPLOMATIC_OFFICIAL_AND_OTHERS`(외교·공무·기타), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). API는 상수명, DB 저장은 표시 라벨 |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
 | 표시 언어 `lang` | ISO 639-1 소문자 코드 — 지원값 `en`, `ko`, `ja` | **세입자 온보딩·프로필 수정 모두 선택** · 사용자가 앱 지구본 아이콘에서 직접 고른다. `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`이다. 지원 목록(`en`·`ko`·`ja`)으로 서버가 검증하고 목록 밖 값은 `INVALID_INPUT`이다(값은 소문자 코드로 주고받되 서버는 내부적으로 `Language` enum으로 모델링한다). **임대인은 서버가 `ko`로 고정 부여하며 변경할 수 없다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) |
-| 이메일 `email` | 이메일 문자열 | **세입자** 소셜 로그인 시 provider(Apple/Google) 진본으로 확정 — 요청 `email`이 토큰 `email` 클레임과 일치해야 하며(§1) 온보딩에서 재수집·재인증하지 않는다(#192). 정식(ACTIVE) 사용자의 이메일 인증 API는 §3·§4(접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈). 임대인도 소셜 로그인 시 provider 값을 `User.email`에 보유한다(더는 미수집·NULL 아님 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192): 수집 폼이 아니라 소셜 로그인 provider 값 보유이며 인증 대상 아님, 수정은 후속 이슈). **임대인 웹 트랙에서는 이메일이 곧 로그인 ID**라 유일성이 필요하지만, 그 유일성은 **`local_accounts.email`에만** 걸고 **`users.email`에는 걸지 않는다**(§1-3 — 앱 소셜 이메일과 같은 주소로 웹 가입하는 것이 가장 흔한 정상 경로다). 웹 가입에서는 **제출 전에 인증번호로 소유를 증명**해야 한다(§1-11·§1-12) — 이 주소로 비밀번호 재설정 메일이 가고 그것이 계정 잠금 해제를 겸하므로, 미검증 주소로 가입한 계정은 잠기는 순간 복구 경로를 잃는다. 서버는 대소문자·앞뒤 공백을 정규화해 챌린지·마커 키로 쓴다 |
+| 이메일 `email` | 이메일 문자열 | **세입자** 소셜 로그인 시 provider(Apple/Google) 진본으로 확정 — 요청 `email`이 토큰 `email` 클레임과 일치해야 하며(§1) 온보딩에서 재수집·재인증하지 않는다(#192). 정식(ACTIVE) 사용자의 이메일 인증 API는 §3·§4(접근만 ACTIVE 전용, 실제 이메일 변경 반영은 후속 이슈). 임대인도 소셜 로그인 시 provider 값을 `User.email`에 보유한다(더는 미수집·NULL 아님 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 이메일 미수집" 결정을 개정(#192): 수집 폼이 아니라 소셜 로그인 provider 값 보유이며 인증 대상 아님, 수정은 후속 이슈). **임대인 웹 트랙에서는 형식을 `@Email`보다 좁게 받는다** — `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`로 최상위 도메인을 요구해 인증 메일이 닿을 수 없는 주소를 입구에서 거른다(§1-3·§1-11·§1-12 공통). 또 **이메일이 곧 로그인 ID**라 유일성이 필요하지만, 그 유일성은 **`local_accounts.email`에만** 걸고 **`users.email`에는 걸지 않는다**(§1-3 — 앱 소셜 이메일과 같은 주소로 웹 가입하는 것이 가장 흔한 정상 경로다). 웹 가입에서는 **제출 전에 인증번호로 소유를 증명**해야 한다(§1-11·§1-12) — 이 주소로 비밀번호 재설정 메일이 가고 그것이 계정 잠금 해제를 겸하므로, 미검증 주소로 가입한 계정은 잠기는 순간 복구 경로를 잃는다. 서버는 대소문자·앞뒤 공백을 정규화해 챌린지·마커 키로 쓴다 |
 | 닉네임 `nickname` | `형용사 + 사물` 문자열 | 서버가 자동 배정(사용자 입력·수정 불가), 전역 유니크 |
 | 사용자 역할 `userType` | `TENANT`(세입자·외국인), `LANDLORD`(임대인), `ADMIN`(관리자) | `TENANT`·`LANDLORD`는 온보딩 제출 엔드포인트(세입자 `/auth/onboarding` · 임대인 `/auth/landlord/onboarding`)로 확정·이후 불변. 소셜·약관 단계에서는 미확정. **`ADMIN`만 예외** — 가입 경로가 없고 운영자가 기존 계정을 온보딩 이후에 수동 승격한다([03-listings-favorites](03-listings-favorites.md) 관리자 매물 심사) |
 | 이름 `name` | 문자열 | **세입자·임대인 공통** · 성·이름을 합친 **단일 이름**(#192에서 세입자의 `firstName`/`lastName`을 단일 `name`으로 통합해 임대인과 완전히 통일). 빈 문자열 불가. API 필드명·저장 모두 단일 `name`(`FullName` VO의 단일 `name` 속성 · `users.name` 컬럼). 세입자·임대인 모두 소셜 로그인 시 provider 값으로 채우고(§1) 이후 `PATCH /users/me`(§9)로 수정한다(#192에서 임대인도 온보딩 수집을 폐지해 세입자와 수집 시점까지 완전히 통일) |
@@ -380,7 +380,7 @@ SMS는 §4-1과 같이 **동기 발송**하며 **발송에 성공한 뒤에만**
 | `name` | string | 필수 | 성·이름을 합친 단일 이름(`@NotBlank`). 빈 문자열 불가. 신규 가입이면 `users.name`에 기록하고, **연동이면 `local_accounts.name` 스냅샷으로만 저장**한다(`users` 미갱신) |
 | `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) — 온보딩(§5·§5-2)과 동일 규칙. `name`과 같이 연동 시에는 스냅샷으로만 저장 |
 | `phoneNumber` | string | 필수 | 휴대폰 번호 형식(하이픈 허용 — 서버가 숫자만 남겨 정규화). **§1-1·§1-2로 인증된 번호**여야 함(마커 부재·만료 `AUTH_PHONE_NOT_VERIFIED` 422). 신규 가입이면 정규화 값을 `users.phone_number`에 기록한다(그래야 반대 방향 §5-2에서 이 계정이 매칭 후보가 된다) |
-| `email` | string | 필수 | 이메일 형식(`@NotBlank`·`@Email`). **§1-11·§1-12로 인증된 주소**여야 함(마커 부재·만료 `AUTH_EMAIL_NOT_VERIFIED` 422). **웹 로그인 ID** — `local_accounts.email`에 UNIQUE이며 중복이면 `AUTH_EMAIL_ALREADY_REGISTERED`(409). 대소문자·앞뒤 공백은 마커 조회 시 정규화하므로 §1-11에 넣은 표기와 달라도 같은 마커를 가리킨다. **신규 가입일 때만** `users.email`에도 함께 기록하고, 연동이면 소셜 진본을 유지한다(`users.email` 미갱신) |
+| `email` | string | 필수 | 이메일 형식(`@NotBlank` · `@Pattern` — §1-11과 **같은 정규식**이며 `@Email`보다 좁다). **§1-11·§1-12로 인증된 주소**여야 함(마커 부재·만료 `AUTH_EMAIL_NOT_VERIFIED` 422). **웹 로그인 ID** — `local_accounts.email`에 UNIQUE이며 중복이면 `AUTH_EMAIL_ALREADY_REGISTERED`(409). 대소문자·앞뒤 공백은 마커 조회 시 정규화하므로 §1-11에 넣은 표기와 달라도 같은 마커를 가리킨다. **신규 가입일 때만** `users.email`에도 함께 기록하고, 연동이면 소셜 진본을 유지한다(`users.email` 미갱신) |
 | `password` | string | 필수 | 영문자(`A-Za-z`) 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~20**, 공백 불허(`@NotBlank`·`@Pattern`). 위반은 `INVALID_INPUT`(400, `errors[].field=password`). **BCrypt 해시로만 보관**하고 원문은 저장·로그하지 않는다 |
 | `termsOfServiceAgreed` | boolean | 필수 | 이용약관 동의. `false`면 `AUTH_REQUIRED_AGREEMENT_MISSING`(422). 앱 `POST /auth/terms`(§2)와 같은 3필드를 가입 폼이 대신 받는다 |
 | `privacyPolicyAgreed` | boolean | 필수 | 개인정보처리방침 동의. `false`면 `AUTH_REQUIRED_AGREEMENT_MISSING`(422) |
@@ -864,7 +864,7 @@ SPA가 `/reset-password?token=…`에 도착하자마자 호출해 **링크가 �
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `email` | string | 필수 | 이메일 형식(`@NotBlank` · `@Email` · `@Size(max = 255)`). 상한은 저장 컬럼(`local_accounts.email` VARCHAR(255))과 맞춘다 — 없으면 300자짜리 값이 게이트를 다 지나 INSERT에서 죽어 **400이어야 할 입력 오류가 500**이 된다. 대소문자·앞뒤 공백은 서버가 정규화하므로 확인(§1-12)·가입(§1-3)에서 표기가 달라도 같은 챌린지를 가리킨다 |
+| `email` | string | 필수 | 이메일 형식(`@NotBlank` · `@Pattern` — `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`). Bean Validation의 `@Email`보다 **좁다** — 최상위 도메인이 없는 `kim@work`나 IP 리터럴은 거부한다. 인증 메일이 도착할 수 없는 값을 입력 시점에 거르기 위해서이며, 같은 이유로 `@Email`을 함께 달지 않는다(같은 필드에 위반이 두 번 실린다). 상한 255자는 저장 컬럼(`local_accounts.email` VARCHAR(255))과 맞춘다 — 없으면 300자짜리 값이 게이트를 다 지나 INSERT에서 죽어 **400이어야 할 입력 오류가 500**이 된다. 대소문자·앞뒤 공백은 서버가 정규화하므로 확인(§1-12)·가입(§1-3)에서 표기가 달라도 같은 챌린지를 가리킨다 |
 
 #### 성공 Response — 200 OK
 
@@ -915,7 +915,7 @@ SPA가 `/reset-password?token=…`에 도착하자마자 호출해 **링크가 �
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `email` | string | 필수 | 인증번호를 발송한 주소와 일치해야 함(정규화 후 비교 — 대소문자·앞뒤 공백은 무관) |
+| `email` | string | 필수 | 인증번호를 발송한 주소와 일치해야 함(정규화 후 비교 — 대소문자·앞뒤 공백은 무관). 형식 규칙은 §1-11과 같다 |
 | `code` | string | 필수 | 발송된 인증번호. 빈 문자열 불가. **길이 제약을 두지 않는다** — 자릿수는 서버 정책(`app.email.code-length`)이고 검증은 해시 대조라, 요청 검증으로 자릿수를 알려 주면 무차별 대입의 탐색 공간만 좁혀 준다(§1-2와 동일) |
 
 #### 성공 Response — 200 OK

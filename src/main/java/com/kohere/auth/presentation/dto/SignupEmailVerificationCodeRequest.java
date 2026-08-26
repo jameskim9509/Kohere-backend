@@ -1,7 +1,8 @@
 package com.kohere.auth.presentation.dto;
 
-import jakarta.validation.constraints.Email;
+import com.kohere.common.request.Emails;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -14,4 +15,5 @@ import jakarta.validation.constraints.Size;
  * <p>형식 위반은 {@code INVALID_INPUT}으로 <b>메일 발송·레이트리밋 카운트 이전에</b> 거른다 — 걸러 내지 않으면 형식이 깨진 값이 그대로 Redis
  * 키가 된다. docs/api/specs/01-auth-onboarding.md §1-11.
  */
-public record SignupEmailVerificationCodeRequest(@NotBlank @Size(max = 255) @Email String email) {}
+public record SignupEmailVerificationCodeRequest(
+    @NotBlank @Size(max = 255) @Pattern(regexp = Emails.PATTERN) String email) {}

@@ -500,18 +500,19 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - 정식 사용자용 발송(`POST /api/v1/auth/email/verification-code`)과 정책(6자리·5분 만료·시도 5회·재발송 60초)은 같지만 **챌린지 키가 이메일**이라 로그인이 필요 없다.
-      - 대소문자·앞뒤 공백은 서버가 정규화하므로 확인·가입에서 표기가 달라도 같은 챌린지를 가리킨다.
-      - **이미 웹 로그인 ID로 쓰이는 주소면 메일을 보내지 않고 409** 다. 감추면 남의 메일함으로 인증번호가 실제 발송되므로 알려 주는 쪽을 택했고, 그 대가로 이 응답으로 가입 여부를 알 수 있다(수용한 결과).
-      - 발송이 실패하면(메일 provider 장애·타임아웃) 인증번호가 새로 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
+      - 정식 사용자용 이메일 인증(`POST /api/v1/auth/email/verification-code`)과는 **다른 엔드포인트**다. 인증번호 정책(6자리·5분 만료·시도 5회·재발송 60초)은 같다.
+      - `email`은 **`name@example.com` 형식**이어야 한다 — 최상위 도메인이 없는 주소(`kim@work`)는 400이다. 인증 메일이 도착할 수 없는 값을 입력 시점에 거른다.
+      - 이메일은 대소문자·앞뒤 공백을 무시하고 처리한다 — 확인(`/verify`)·회원가입에서 표기가 달라도 같은 주소로 인식된다.
+      - **이미 웹 로그인 ID로 쓰이는 주소면 메일이 발송되지 않고 409** 다. 다른 주소를 입력하거나 로그인 화면으로 보낸다.
+      - 발송이 실패하면(메일 provider 장애·타임아웃) 인증번호가 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `email` 누락·빈값이거나 이메일 형식 위반·255자 초과 |
+      | 400 | `INVALID_INPUT` | `email` 누락·빈값이거나 `name@example.com` 형식 위반(최상위 도메인 누락 포함)·255자 초과 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 409 | `AUTH_EMAIL_ALREADY_REGISTERED` | 그 주소가 이미 웹 로그인 ID로 쓰이고 있음 — 메일을 보내지 않고 챌린지도 만들지 않는다 |
+      | 409 | `AUTH_EMAIL_ALREADY_REGISTERED` | 그 주소가 이미 웹 로그인 ID로 쓰이고 있음 — 메일이 발송되지 않는다 |
       | 429 | `TOO_MANY_REQUESTS` | 재발송 간격 60초 미달, 같은 이메일 5회/1시간 초과, 같은 IP 20회/1시간 초과 — 어느 축에 걸렸는지 구분해 알리지 않는다 |
       | 502 | `UPSTREAM_ERROR` | 메일 provider 장애·타임아웃으로 발송 실패 |
       """;
@@ -535,16 +536,16 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - 성공하면 **검증 마커를 30분간** 남긴다 — 그 안에 회원가입을 제출해야 하고, 넘기면 가입이 422 `AUTH_EMAIL_NOT_VERIFIED`로 거절된다.
-      - 중복 여부는 여기서 다시 보지 않는다 — 판정은 발송 단계가 이미 했다.
+      - 인증은 **30분간 유효**하다 — 그 안에 회원가입을 제출해야 하고, 넘기면 가입이 422 `AUTH_EMAIL_NOT_VERIFIED`로 거절되므로 인증번호부터 다시 받는다.
+      - 인증번호는 1회용이다 — 성공한 번호를 다시 제출하면 422다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `email`·`code` 누락·빈값이거나 `email` 형식 위반 |
+      | 400 | `INVALID_INPUT` | `email`·`code` 누락·빈값이거나 `email`이 `name@example.com` 형식 위반 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 인증번호 불일치·만료·시도 상한(5회) 초과, 또는 챌린지 부재(미발송·이미 검증) — **시도 초과도 429가 아니라 이 코드**다 |
+      | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 인증번호 불일치·만료·시도 상한(5회) 초과, 또는 인증번호를 요청한 적이 없거나 이미 사용한 경우 — **시도 상한 초과도 429가 아니라 이 코드**다 |
       """;
 
   public static final String[] SIGNUP_EMAIL_VERIFY_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -594,8 +595,7 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - **선행 조건은 인증 둘이다** — `POST /api/v1/auth/phone/signup/verification-code`·`/verify`(연락처)와 `POST /api/v1/auth/email/signup/verification-code`·`/verify`(이메일). 어느 한쪽 마커라도 없으면 422이고 계정 생성도 연동도 하지 않는다. 두 인증은 서로 순서가 무관하다.
-      - 이메일 인증이 지키는 것은 **본인의 복구 경로**다 — 로그인 ID로 쓸 주소가 닿지 않으면 비밀번호 재설정 메일을 받을 수 없고, 그 재설정이 계정 잠금 해제를 겸한다.
+      - **선행 조건은 인증 둘이다** — `POST /api/v1/auth/phone/signup/verification-code`·`/verify`(연락처)와 `POST /api/v1/auth/email/signup/verification-code`·`/verify`(이메일). 어느 한쪽이라도 인증되지 않았거나 30분이 지났으면 422이고 계정이 만들어지지 않는다. 두 인증은 서로 순서가 무관하다.
       - 연동 판정 키는 **정규화한 `phoneNumber` 단독**이다 — 이름은 매칭 조건이 아니다(앱 이름과 웹 이름이 달라도 연동된다).
       - 이메일 중복은 **웹 로그인 ID(`local_accounts.email`)** 에만 건다 — 앱 소셜 계정과 같은 이메일로 가입하는 것은 정상이다.
       - `password`는 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~20**, 공백 불가다. 위반은 400 `INVALID_INPUT`이며 `errors[].field=password`로 온다.
@@ -611,12 +611,13 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 필수 필드 누락·빈값, `email` 형식 위반, `phoneNumber` 형식 위반, `birthDate` 형식 위반·미래 날짜, **비밀번호 정책 위반**(`errors[].field=password`) |
+      | 400 | `INVALID_INPUT` | 필수 필드 누락·빈값, `email`이 `name@example.com` 형식 위반(최상위 도메인 누락 포함), `phoneNumber` 형식 위반, `birthDate` 형식 위반·미래 날짜, **비밀번호 정책 위반**(`errors[].field=password`) |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 409 | `AUTH_EMAIL_ALREADY_REGISTERED` | 같은 이메일의 웹 자격증명이 이미 있음(로그인 ID 중복) |
       | 409 | `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 번호로 매칭된 계정에 이미 웹 자격증명이 붙어 있음 → 로그인으로 유도한다. 그 계정의 이메일은 마스킹해서도 응답에 싣지 않는다 |
       | 409 | `RESOURCE_CONFLICT` | 같은 번호의 앱 임대인 온보딩(`POST /api/v1/auth/landlord/onboarding`)이 거의 동시에 계정을 확정해 연락처 유니크 제약에 걸림 — **그대로 다시 제출하면** 그 계정과 연동돼 성공한다 |
-      | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`의 가입용 인증 마커가 없거나 만료(이미 가입에 소비한 마커 포함) |
+      | 422 | `AUTH_PHONE_NOT_VERIFIED` | 제출 `phoneNumber`가 인증되지 않았거나 인증 후 30분이 지남(이미 가입에 사용한 인증 포함) |
+      | 422 | `AUTH_EMAIL_NOT_VERIFIED` | 제출 `email`이 인증되지 않았거나 인증 후 30분이 지남(이미 가입에 사용한 인증 포함) |
       | 422 | `AUTH_REQUIRED_AGREEMENT_MISSING` | 필수 동의 2종(`termsOfServiceAgreed`·`privacyPolicyAgreed`) 중 하나라도 `false` |
       """;
 
@@ -1122,7 +1123,7 @@ public final class AuthDocsFields {
         field(
             "email",
             JsonFieldType.STRING,
-            "인증번호를 받을 이메일(필수, 빈값 불가 · 255자 이하 — 대소문자·앞뒤 공백은 서버가 정규화한다). 가입 후 웹 로그인 ID가 되며, 이미 쓰이는 주소면 발송하지 않고 409다"));
+            "인증번호를 받을 이메일(필수, 255자 이하 — name@example.com 형식이며 최상위 도메인은 영문 2자 이상이어야 한다. 대소문자·앞뒤 공백은 무시된다). 가입 후 웹 로그인 ID가 되며, 이미 쓰이는 주소면 메일이 발송되지 않고 409다"));
   }
 
   public static List<FieldDescriptor> signupEmailCodeResponseFields() {
@@ -1135,7 +1136,10 @@ public final class AuthDocsFields {
 
   public static List<FieldDescriptor> signupEmailVerifyRequestFields() {
     return List.of(
-        field("email", JsonFieldType.STRING, "인증번호를 발송한 주소와 일치(필수 — 대소문자·공백 차이는 정규화로 흡수한다)"),
+        field(
+            "email",
+            JsonFieldType.STRING,
+            "인증번호를 발송한 주소와 일치(필수, 255자 이하 — 발송과 같은 형식 규칙이며 대소문자·앞뒤 공백 차이는 무시된다)"),
         field("code", JsonFieldType.STRING, "발송된 인증번호(필수, 빈값 불가)"));
   }
 
@@ -1146,7 +1150,7 @@ public final class AuthDocsFields {
         field(
             "data.verified",
             JsonFieldType.BOOLEAN,
-            "검증 완료 여부 — 성공 응답은 항상 true. 인증 마커는 30분만 유지되므로 그 안에 회원가입을 제출해야 하고, 넘기면 422 AUTH_EMAIL_NOT_VERIFIED라 다시 인증해야 한다"),
+            "인증 완료 여부 — 성공 응답은 항상 true. 인증은 30분만 유효하므로 그 안에 회원가입을 제출해야 하고, 넘기면 422 AUTH_EMAIL_NOT_VERIFIED라 다시 인증해야 한다"),
         errorNull());
   }
 
@@ -1178,7 +1182,7 @@ public final class AuthDocsFields {
         field(
             "email",
             JsonFieldType.STRING,
-            "웹 로그인 ID(필수, 이메일 형식, 255자 이내). 중복이면 409 AUTH_EMAIL_ALREADY_REGISTERED다. 신규 가입일 때만 회원 프로필 이메일로도 기록한다"),
+            "웹 로그인 ID(필수, 255자 이내 — name@example.com 형식이며 최상위 도메인은 영문 2자 이상이어야 한다). 가입용 이메일 인증을 마친 주소여야 하고, 미인증·만료는 422다. 중복이면 409 AUTH_EMAIL_ALREADY_REGISTERED다. 신규 가입일 때만 회원 프로필 이메일로도 기록한다"),
         field(
             "password",
             JsonFieldType.STRING,

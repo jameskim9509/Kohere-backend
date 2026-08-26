@@ -12,6 +12,7 @@ import com.kohere.auth.domain.SignupEmailRateLimiter;
 import com.kohere.auth.domain.SignupEmailVerification;
 import com.kohere.auth.domain.SignupEmailVerificationCodeIssuer;
 import com.kohere.auth.domain.SignupEmailVerificationRepository;
+import com.kohere.common.request.Emails;
 import java.time.Instant;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;

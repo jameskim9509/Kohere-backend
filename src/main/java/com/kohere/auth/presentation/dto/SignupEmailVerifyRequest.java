@@ -1,7 +1,8 @@
 package com.kohere.auth.presentation.dto;
 
-import jakarta.validation.constraints.Email;
+import com.kohere.common.request.Emails;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -12,4 +13,5 @@ import jakarta.validation.constraints.Size;
  * 검증으로 알려 주면 무차별 대입의 탐색 공간만 좁혀 준다. docs/api/specs/01-auth-onboarding.md §1-12.
  */
 public record SignupEmailVerifyRequest(
-    @NotBlank @Size(max = 255) @Email String email, @NotBlank String code) {}
+    @NotBlank @Size(max = 255) @Pattern(regexp = Emails.PATTERN) String email,
+    @NotBlank String code) {}
