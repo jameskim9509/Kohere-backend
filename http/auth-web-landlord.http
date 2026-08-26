@@ -1,7 +1,7 @@
 # Kohere — 임대인 웹(로컬 자격증명) 인증 로컬 수동 테스트 — #229
-# 흐름: 가입용 SMS 발송 → SMS 확인 → 회원가입 → 로그인 → 재발급(쿠키) → 로그아웃(쿠키) → (선택) 탈퇴
-# 스펙: docs/api/specs/01-auth-onboarding.md §1-1·§1-2·§1-3·§1-4·§6·§7·§10
-# 유저스토리: US-1-11(웹 회원가입) · US-1-12(웹 로그인) · US-1-13(가입 전 연락처 인증) · US-1-15(앱 온보딩 시 병합)
+# 흐름: 가입용 SMS 발송 → SMS 확인 → 이메일 발송 → 이메일 확인 → 회원가입 → 로그인 → 재발급(쿠키) → 로그아웃(쿠키) → (선택) 탈퇴
+# 스펙: docs/api/specs/01-auth-onboarding.md §1-1·§1-2·§1-11·§1-12·§1-3·§1-4·§6·§7·§10
+# 유저스토리: US-1-11(웹 회원가입) · US-1-12(웹 로그인) · US-1-13(가입 전 연락처 인증) · US-1-18(가입 전 이메일 인증) · US-1-15(앱 온보딩 시 병합)
 # 결정: ADR-0047(웹 로컬 자격증명 분리 · 휴대폰 번호 계정 공유) · ADR-0048(refresh HttpOnly 쿠키 채널)
 # (앱 소셜 트랙은 auth-onboarding-landlord.http — 이쪽은 소셜 로그인이 없다)
 # (계정 복구 — 이메일 찾기 · 비밀번호 재설정 = 계정 잠금 해제 — 는 auth-web-recovery.http)
@@ -20,6 +20,13 @@
 #   1번 발송 후 bootRun 콘솔에서 아래 형태의 줄을 찾아 **대괄호 안 6자리**를 @code 에 입력한다:
 #     [DEV SMS] SOLAPI 비활성 — 연락처 ***5678 인증번호 [482913] (실발송 안 함). 실연동은 app.solapi.enabled=true.
 #   (연락처는 뒤 4자리만 남기고 마스킹되므로, 여러 번호를 동시에 테스트 중이면 뒤 4자리로 줄을 구분한다.)
+#
+#   ★ 가입용 **이메일** 인증번호도 같은 자리에서 읽는다 (#285). 로컬 기본값이 app.mail.enabled=false 라
+#     LoggingVerificationEmailSender 가 SMTP 대신 WARN 한 줄을 찍는다:
+#       [DEV MAIL] SMTP 비활성 — 이메일 ki***@work.com 인증번호 [482913] (실발송 안 함). 실연동은 app.mail.enabled=true.
+#     즉 **MailHog 컨테이너가 필요 없다.** 실제 수신까지 보려면 MAIL_ENABLED=true 로 켜고
+#     docker compose up -d mailhog 후 http://localhost:8025 에서 확인한다.
+#     (이 토글은 발송 채널만 가른다 — 인증 절차 자체는 모든 환경에서 동일하게 필수다.)
 #
 #   ※ 앱스토어 심사용 고정 인증번호 우회(app.auth.fixed-verification)는 **이 경로에 적용되지 않는다.**
 #     그 정책은 userId + Google 소셜 계정으로 판정하는데(FixedVerificationPolicy) 웹 가입은 둘 다 없는 단계이고,
@@ -59,7 +66,8 @@
 #     `; Path=...; HttpOnly` 가 붙어 있어 서버가 쿠키 목록으로 파싱하다 깨질 수 있다. 값만 잘라 쓴다.
 #
 # ─────────────────────────── 재실행 · 데이터 유일성 ───────────────────────────
-# 한 번 성공한 뒤 그대로 다시 돌리면 3번이 409 다. 유일해야 하는 값이 둘이다:
+# 한 번 성공한 뒤 그대로 다시 돌리면 **2-1번(이메일 발송)부터** 409 다 — 이제 이미 가입된 주소는
+# 인증번호 발송 단계에서 먼저 끊긴다(#285). 유일해야 하는 값이 둘이다:
 #   · @email  → local_accounts.email UNIQUE (중복 시 409 AUTH_EMAIL_ALREADY_REGISTERED)
 #   · @phone  → users.phone_number UNIQUE (같은 번호에 이미 웹 계정이 있으면 409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS)
 # 재실행할 때는 둘 다 새 값으로 바꾸거나 로컬 DB 를 비운다(docker compose down -v 후 재기동).
@@ -115,8 +123,38 @@ Content-Type: application/json
   "code": "{{code}}"
 }
 
+### 2-1. 가입용 이메일 인증번호 발송 (비로그인 · permitAll) — 앱 콘솔의 [DEV MAIL] 줄에서 6자리를 @emailCode 에 넣는다
+#    이메일 키 챌린지(signup-email:code:{정규화이메일}) — 대소문자·앞뒤 공백은 서버가 접는다.
+#    한도: 재발송 60초 · 같은 이메일 5회/1시간 · 같은 IP 20회/1시간 → 초과 시 429.
+#    ★ SMS(1번)와 갈리는 지점: **이미 가입된 주소면 메일을 보내지 않고 409** 다. 감추면 남의 메일함으로
+#      인증번호가 실제로 날아가기 때문이고, 그 대가로 이 응답으로 가입 여부를 알 수 있다(수용한 결과).
+# @name signupEmailSend
+POST {{baseUrl}}/api/v1/auth/email/signup/verification-code
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+### --- 앱 콘솔 [DEV MAIL] 로그에서 받은 인증번호로 교체 ---
+@emailCode = 000000
+
+### 2-2. 가입용 이메일 인증번호 확인 (비로그인) — 성공 시 검증 마커(TTL 30분) 저장. 그 안에 3번을 제출해야 한다
+#    불일치·만료·시도 5회 초과·챌린지 부재를 **모두 422 AUTH_EMAIL_VERIFICATION_FAILED** 한 코드로 응답한다.
+#    연락처 마커(signup-phone:*)와 **키스페이스가 갈려 있어** 서로의 게이트를 통과시키지 못한다.
+# @name signupEmailVerify
+POST {{baseUrl}}/api/v1/auth/email/signup/verify
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "code": "{{emailCode}}"
+}
+
 ### 3. 회원가입 (비로그인) — 한 트랜잭션으로 ACTIVE 까지 완주. refresh 는 응답 본문이 아니라 Set-Cookie 로 온다
-#    게이트 순서: ① 인증 마커 부재 422 → ② 필수 약관 미동의 422 → ③ 이메일 중복 409 → ④ 이미 웹 계정 있음 409.
+#    게이트 순서: ① 연락처 마커 부재 422 → ② 이메일 마커 부재 422 → ③ 필수 약관 미동의 422 →
+#                ④ 이메일 중복 409 → ⑤ 이미 웹 계정 있음 409.
+#    ①과 ② 사이에는 지켜야 할 순서가 없다 — 둘 다 부수효과 없는 조회이고 둘 다 422다. 둘 다 미인증이면 ①이 먼저다.
 #    응답의 linked 가 연동 여부다 — 같은 번호의 앱 임대인 계정을 찾으면 true(users 행을 만들지 않는다).
 #    ★ 응답 패널의 Set-Cookie 헤더를 확인한다: refreshToken=rt_...; Path=/api/v1/auth; HttpOnly; SameSite=Lax
 # @name signup
@@ -230,6 +268,12 @@ Content-Type: application/json
 }
 
 ### E1-c. 이메일 중복 → 409 AUTH_EMAIL_ALREADY_REGISTERED
+#    ⚠️ **이제 이 경로로는 여기까지 오지 못한다** (#285) — 이미 가입된 주소는 2-1번(이메일 발송)이 먼저 409 로
+#      끊어 마커를 만들 수 없고, 마커가 없으면 가입은 422 AUTH_EMAIL_NOT_VERIFIED 다.
+#      그래도 이 게이트는 남아 있다: 인증번호를 받고 제출하기까지 **최대 30분** 사이에 남이 같은 주소로 가입을
+#      마칠 수 있고(TOCTOU), 그때 이 코드가 나간다. 빼면 그 상황에서 uq_local_accounts_email 위반이
+#      RESOURCE_CONFLICT("잠시 후 재시도")로 나가는데, 이메일 중복은 재시도로 절대 풀리지 않는다.
+#      재현하려면 다른 창에서 같은 주소의 가입을 완주시킨 뒤 이 요청을 보낸다.
 #    번호는 새 값(@altPhone)이라 연동·중복에 걸리지 않고 **이메일만** 겹친다.
 #    검사 대상은 local_accounts.email 뿐이다 — users.email 은 보지 않는다(소셜과 같은 이메일로 가입하는
 #    것이 가장 흔한 정상 경로라 거기까지 유일하게 걸면 본인이 본인 이메일로 가입하다 막힌다).
@@ -464,6 +508,37 @@ Content-Type: application/json
 #    rest-client.rememberCookiesForSubsequentRequests 를 잠시 끈다.
 #    ※ 반대로 **본문을 보냈는데 깨진 JSON**이면 종전대로 400 MALFORMED_REQUEST 다.
 POST {{baseUrl}}/api/v1/auth/reissue
+
+### E9. 이메일 인증 마커 없이 가입 제출 → 422 AUTH_EMAIL_NOT_VERIFIED (#285)
+#    연락처(1·2번)는 통과했지만 이메일 인증(2-1·2-2)을 건너뛴 경우다. 두 마커 게이트는 서로 순서가
+#    무관하고 둘 다 없으면 연락처 코드가 먼저 나가므로, 이 코드를 보려면 **연락처만** 인증한 상태여야 한다.
+#    이 게이트가 지키는 것은 남의 계정이 아니라 **본인의 복구 경로**다 — 닿지 않는 주소로 가입하면
+#    비밀번호를 반복 실패해 잠겼을 때 재설정 메일을 받을 수 없어 스스로 풀 방법이 사라진다.
+POST {{baseUrl}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "birthDate": "{{birthDate}}",
+  "phoneNumber": "{{phone}}",
+  "email": "never-verified-email@work.com",
+  "password": "{{password}}",
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### E10. 이미 가입된 이메일로 인증번호 요청 → 409 AUTH_EMAIL_ALREADY_REGISTERED (#285)
+#    ★ **콘솔에 [DEV MAIL] 줄이 찍히지 않는 것까지 확인하는 것이 이 케이스의 요지다** — 메일을 보내지도,
+#      챌린지를 만들지도 않는다. 감추고 발송하면 남의 메일함으로 인증번호가 실제로 날아간다.
+#    대가로 이 응답의 200/409 차이로 임의 주소의 가입 여부를 알 수 있다(계정 열거 — 수용한 결과).
+#    한도 판정이 중복 검사보다 **먼저**라 이 관찰도 시간당 예산을 한 칸 쓴다.
+POST {{baseUrl}}/api/v1/auth/email/signup/verification-code
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
 
 ### E8. 가입용 SMS 재발송 간격 미달 → 429 TOO_MANY_REQUESTS (선행 조건 있음 — 여기서 그냥 보내면 200이다)
 #    ⚠️ **1번을 보낸 뒤 2번을 아직 보내지 않은 상태에서, 60초 안에** 다시 보내야 429다.
