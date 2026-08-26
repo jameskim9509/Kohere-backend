@@ -486,6 +486,70 @@ public final class AuthDocsFields {
   public static final String[] SIGNUP_PHONE_CODE_429 = {"TOO_MANY_REQUESTS"};
   public static final String[] SIGNUP_PHONE_CODE_502 = {"UPSTREAM_ERROR"};
 
+  // ── 가입용 이메일 인증번호 발송 — POST /api/v1/auth/email/signup/verification-code ──
+
+  public static final String SIGNUP_EMAIL_CODE_SUMMARY = "가입용 이메일 인증번호 발송";
+
+  public static final String SIGNUP_EMAIL_CODE_DESCRIPTION =
+      """
+      임대인 웹 회원가입(`POST /api/v1/auth/signup`) 전에 로그인 ID로 쓸 이메일의 소유를 증명하도록 인증번호를 발송한다. 응답 `email`은 마스킹된다(예 `ki***@work.com`).
+
+      **헤더**
+
+      - 인증 불필요 — 계정이 아직 없는 가입 전 단계라 토큰 없이 호출한다.
+
+      **요청 주의사항**
+
+      - 정식 사용자용 발송(`POST /api/v1/auth/email/verification-code`)과 정책(6자리·5분 만료·시도 5회·재발송 60초)은 같지만 **챌린지 키가 이메일**이라 로그인이 필요 없다.
+      - 대소문자·앞뒤 공백은 서버가 정규화하므로 확인·가입에서 표기가 달라도 같은 챌린지를 가리킨다.
+      - **이미 웹 로그인 ID로 쓰이는 주소면 메일을 보내지 않고 409** 다. 감추면 남의 메일함으로 인증번호가 실제 발송되므로 알려 주는 쪽을 택했고, 그 대가로 이 응답으로 가입 여부를 알 수 있다(수용한 결과).
+      - 발송이 실패하면(메일 provider 장애·타임아웃) 인증번호가 새로 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `email` 누락·빈값이거나 이메일 형식 위반·255자 초과 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 409 | `AUTH_EMAIL_ALREADY_REGISTERED` | 그 주소가 이미 웹 로그인 ID로 쓰이고 있음 — 메일을 보내지 않고 챌린지도 만들지 않는다 |
+      | 429 | `TOO_MANY_REQUESTS` | 재발송 간격 60초 미달, 같은 이메일 5회/1시간 초과, 같은 IP 20회/1시간 초과 — 어느 축에 걸렸는지 구분해 알리지 않는다 |
+      | 502 | `UPSTREAM_ERROR` | 메일 provider 장애·타임아웃으로 발송 실패 |
+      """;
+
+  public static final String[] SIGNUP_EMAIL_CODE_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] SIGNUP_EMAIL_CODE_409 = {"AUTH_EMAIL_ALREADY_REGISTERED"};
+  public static final String[] SIGNUP_EMAIL_CODE_429 = {"TOO_MANY_REQUESTS"};
+  public static final String[] SIGNUP_EMAIL_CODE_502 = {"UPSTREAM_ERROR"};
+
+  // ── 가입용 이메일 인증번호 확인 — POST /api/v1/auth/email/signup/verify ──────────
+
+  public static final String SIGNUP_EMAIL_VERIFY_SUMMARY = "가입용 이메일 인증번호 확인";
+
+  public static final String SIGNUP_EMAIL_VERIFY_DESCRIPTION =
+      """
+      발송된 인증번호를 확인해 가입용 이메일 인증을 완료한다. 임대인 웹 회원가입(`POST /api/v1/auth/signup`)의 선행 단계이며, 연락처 인증과는 서로 순서가 무관하다.
+
+      **헤더**
+
+      - 인증 불필요 — 계정이 아직 없는 가입 전 단계라 토큰 없이 호출한다.
+
+      **요청 주의사항**
+
+      - 성공하면 **검증 마커를 30분간** 남긴다 — 그 안에 회원가입을 제출해야 하고, 넘기면 가입이 422 `AUTH_EMAIL_NOT_VERIFIED`로 거절된다.
+      - 중복 여부는 여기서 다시 보지 않는다 — 판정은 발송 단계가 이미 했다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `email`·`code` 누락·빈값이거나 `email` 형식 위반 |
+      | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
+      | 422 | `AUTH_EMAIL_VERIFICATION_FAILED` | 인증번호 불일치·만료·시도 상한(5회) 초과, 또는 챌린지 부재(미발송·이미 검증) — **시도 초과도 429가 아니라 이 코드**다 |
+      """;
+
+  public static final String[] SIGNUP_EMAIL_VERIFY_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] SIGNUP_EMAIL_VERIFY_422 = {"AUTH_EMAIL_VERIFICATION_FAILED"};
+
   // ── 가입용 인증번호 확인 — POST /api/v1/auth/phone/signup/verify ──────────────
 
   public static final String SIGNUP_PHONE_VERIFY_SUMMARY = "가입용 연락처 인증번호 확인";
@@ -1046,6 +1110,43 @@ public final class AuthDocsFields {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
         field("data.expiresIn", JsonFieldType.NUMBER, "인증번호 만료까지 초"),
+        errorNull());
+  }
+
+  /**
+   * 가입용 이메일 발송·확인은 가입용 연락처({@link #signupPhoneCodeRequestFields})와 응답 모양이 대칭이지만 <b>기술자를 공유하지
+   * 않는다</b> — path가 달라 다른 오퍼레이션이고, 같은 문구를 쓰면 "이쪽만 중복을 409로 알려 준다"는 이 경로만의 계약을 적을 자리가 사라진다.
+   */
+  public static List<FieldDescriptor> signupEmailCodeRequestFields() {
+    return List.of(
+        field(
+            "email",
+            JsonFieldType.STRING,
+            "인증번호를 받을 이메일(필수, 빈값 불가 · 255자 이하 — 대소문자·앞뒤 공백은 서버가 정규화한다). 가입 후 웹 로그인 ID가 되며, 이미 쓰이는 주소면 발송하지 않고 409다"));
+  }
+
+  public static List<FieldDescriptor> signupEmailCodeResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.email", JsonFieldType.STRING, "마스킹된 이메일(예: ki***@work.com)"),
+        field("data.expiresIn", JsonFieldType.NUMBER, "인증번호 만료까지 초"),
+        errorNull());
+  }
+
+  public static List<FieldDescriptor> signupEmailVerifyRequestFields() {
+    return List.of(
+        field("email", JsonFieldType.STRING, "인증번호를 발송한 주소와 일치(필수 — 대소문자·공백 차이는 정규화로 흡수한다)"),
+        field("code", JsonFieldType.STRING, "발송된 인증번호(필수, 빈값 불가)"));
+  }
+
+  public static List<FieldDescriptor> signupEmailVerifyResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.email", JsonFieldType.STRING, "마스킹된 이메일(예: ki***@work.com)"),
+        field(
+            "data.verified",
+            JsonFieldType.BOOLEAN,
+            "검증 완료 여부 — 성공 응답은 항상 true. 인증 마커는 30분만 유지되므로 그 안에 회원가입을 제출해야 하고, 넘기면 422 AUTH_EMAIL_NOT_VERIFIED라 다시 인증해야 한다"),
         errorNull());
   }
 
