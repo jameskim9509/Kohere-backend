@@ -73,6 +73,10 @@ app:
     team-id: ${APPLE_TEAM_ID}
     key-id: ${APPLE_KEY_ID}
     private-key: ${APPLE_PRIVATE_KEY}
+  mail:
+    # 인증번호 메일 발송 채널. 폴백 없이 주입을 강제한다(미주입은 설정 배선 오류) — false 로 떨어지면
+    # 인증번호가 메일 대신 로그로 나가고 사용자는 코드를 영원히 받지 못하는데, 기동은 정상이라 알림도 뜨지 않는다.
+    enabled: ${MAIL_ENABLED}
   solapi:
     # 연락처 SMS(SOLAPI, ADR-0034). enabled·from·API 키 모두 SSM→refresh-env(.env)로 주입(폴백 없음 — 전량 주입 강제).
     enabled: ${SOLAPI_ENABLED}

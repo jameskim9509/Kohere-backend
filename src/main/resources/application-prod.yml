@@ -43,6 +43,10 @@ app:
     team-id: ${APPLE_TEAM_ID}
     key-id: ${APPLE_KEY_ID}
     private-key: ${APPLE_PRIVATE_KEY} # .p8 PKCS#8 PEM — 절대 로깅 금지
+  mail:
+    # 인증번호 메일 발송 채널. dev 와 같은 이유로 폴백 없이 주입을 강제한다 — 운영에서 false 는 조용한 사고다
+    # (가입용 이메일 인증이 전 환경에서 동작하므로 이 값이 꺼지면 신규 임대인이 가입을 마칠 수 없다).
+    enabled: ${MAIL_ENABLED}
   solapi:
     # 연락처 SMS(SOLAPI, ADR-0034). enabled·from·API 키 모두 env(평문)/SSM(시크릿)로 주입(폴백 없음 — 미설정 시 기동 실패).
     enabled: ${SOLAPI_ENABLED}

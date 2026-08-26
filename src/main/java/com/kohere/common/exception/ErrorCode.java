@@ -40,6 +40,10 @@ public enum ErrorCode {
   AUTH_EMAIL_VERIFICATION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증번호가 올바르지 않거나 만료되었습니다."),
   AUTH_PHONE_VERIFICATION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "연락처 인증번호가 올바르지 않거나 만료되었습니다."),
   AUTH_PHONE_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "연락처 인증이 필요합니다."),
+  // 임대인 웹 가입 제출의 이메일 인증 게이트(#285). #192가 온보딩 게이트로 쓰이던 이 코드를 지웠지만
+  // 메시지 번들 2벌에는 키가 남아 있어 되살리는 데 번들 수정이 없다. 새 코드를 만들지 않는 것은
+  // AUTH_PHONE_NOT_VERIFIED가 온보딩·웹가입 양쪽에서 공유되는 선례를 따른 것이다.
+  AUTH_EMAIL_NOT_VERIFIED(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증이 필요합니다."),
   AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED(
       HttpStatus.UNPROCESSABLE_ENTITY, "사업자등록번호가 미등록·휴폐업이거나 검증에 실패했습니다."),
   AUTH_ONBOARDING_REQUIRED(HttpStatus.FORBIDDEN, "온보딩을 완료해야 합니다."),

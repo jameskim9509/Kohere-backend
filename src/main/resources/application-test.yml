@@ -9,6 +9,10 @@ spring:
     host: localhost
     port: 3025
 app:
+  mail:
+    # 발송 채널은 로깅 폴백을 쓴다 — 전체 컨텍스트 부팅 테스트가 SMTP 연결 빈을 요구하지 않게 한다.
+    # 실제 발송을 보는 테스트는 VerificationEmailSender 포트를 @MockitoBean 으로 대체하므로 이 값과 무관하다.
+    enabled: false
   mongo:
     indexes-enabled: false
   jwt:
