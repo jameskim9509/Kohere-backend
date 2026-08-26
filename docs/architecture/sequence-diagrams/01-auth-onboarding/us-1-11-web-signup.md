@@ -77,7 +77,7 @@ sequenceDiagram
             RDS-->>AUTH: 저장 완료
             AUTH->>RDS: signup-phone:verified:{정규화번호} · signup-email:verified:{정규화이메일} 삭제(마커 소비)<br/>커밋 이후에 실행된다(afterCommit) — 롤백된 가입이 마커를 태우지 않게 한다<br/>앞에서 지우면 커밋 실패 시 인증을 둘 다 다시 해야 한다
             RDS-->>AUTH: 삭제 완료
-            AUTH-->>C: 200 OK<br/>Set-Cookie: refreshToken=...; HttpOnly; Secure; SameSite=Lax;<br/>Path=/api/v1/auth; Max-Age=1209600<br/>{ linked, onboardingRequired: false, status: ACTIVE,<br/>tokenType: Bearer, accessToken, expiresIn: 3600, email, name }
+            AUTH-->>C: 200 OK<br/>Set-Cookie: refreshToken=... · HttpOnly · Secure · SameSite=Lax<br/>Path=/api/v1/auth · Max-Age=1209600<br/>{ linked, onboardingRequired: false, status: ACTIVE,<br/>tokenType: Bearer, accessToken, expiresIn: 3600, email, name }
             C-->>U: 가입 완료, 매물 등록 진입
         end
     end
