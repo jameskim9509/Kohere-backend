@@ -48,7 +48,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.auth.application.AuthProperties;
+import com.kohere.auth.domain.SignupEmailVerificationRepository;
 import com.kohere.auth.domain.SmsDispatchException;
+import com.kohere.auth.domain.VerificationEmailSender;
 import com.kohere.auth.domain.VerificationSmsSender;
 import com.kohere.docs.ApiDocsTags;
 import com.kohere.docs.AuthDocsFields;
@@ -126,12 +128,23 @@ class WebLandlordAuthDocsTest {
 
   private static final String EXISTING_EMAIL = "err-web-existing@work.example";
   private static final String AGREEMENT_PHONE = "01055550003";
+  private static final String AGREEMENT_EMAIL = "err-web-agreement@work.example";
+
+  /** 웹 계정 중복 409의 두 번째 이메일 — 중복 게이트는 통과하고 번호 매칭에서 갈린다. */
+  private static final String SECOND_EMAIL = "err-web-second@work.example";
+
+  /** 이메일 인증을 한 번도 하지 않는 주소 — 가입 422(이메일 미인증) 예시에 쓴다. */
+  private static final String UNVERIFIED_EMAIL = "err-web-email-unverified@work.example";
+
   private static final String DUPLICATE_EMAIL_PHONE = "01055550004";
   private static final String RESEND_PHONE = "01055550005";
   private static final String DISPATCH_FAIL_PHONE = "01055550006";
 
   /** 인증번호를 한 번도 발송하지 않는 번호 — 확인 422와 가입 422(미인증) 예시에 쓴다. */
   private static final String UNVERIFIED_PHONE = "01055550007";
+
+  /** 연락처만 인증하고 이메일은 인증하지 않는 번호 — 가입 422(이메일 미인증) 예시 전용. */
+  private static final String EMAIL_UNVERIFIED_PHONE = "01055550011";
 
   /** 비밀번호 불일치 401의 error.details 예시 전용 계정 — 잠금 예시와 카운터가 섞이면 안 된다. */
   private static final String WRONG_PASSWORD_PHONE = "01055550010";
@@ -150,10 +163,22 @@ class WebLandlordAuthDocsTest {
    */
   private static final String RATE_LIMIT_TEST_IP = "203.0.113.77";
 
+  /**
+   * 가입용 이메일 인증 발송 전용 IP. 기본 remote address(127.0.0.1)에 몰면 같은 컨테이너를 쓰는 다른 테스트 클래스와 IP 한도(20회/시간)를 나눠
+   * 쓰게 되어, 관계없는 단정이 429로 깨진다 — 위 {@code RATE_LIMIT_TEST_IP}를 둔 것과 같은 이유다.
+   */
+  private static final String SIGNUP_EMAIL_IP = "203.0.113.85";
+
   @Autowired private WebApplicationContext context;
   @Autowired private AuthProperties authProperties;
   @MockitoBean private VerificationSmsSender smsSender;
+  @MockitoBean private VerificationEmailSender emailSender;
+
+  /** 이메일 인증 마커를 <b>직접</b> 심을 때만 쓴다(아래 이메일 중복 409 케이스). 정상 경로는 실제 엔드포인트를 태운다. */
+  @Autowired private SignupEmailVerificationRepository signupEmailVerificationRepository;
+
   private final Map<String, String> sentCodes = new ConcurrentHashMap<>();
+  private final Map<String, String> sentEmailCodes = new ConcurrentHashMap<>();
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -171,6 +196,15 @@ class WebLandlordAuthDocsTest {
               return null;
             })
         .when(smsSender)
+        .send(any(), any());
+    // 이메일 인증번호도 같은 방식으로 캡처한다. 테스트 프로파일은 app.mail.enabled=false 라 원래
+    // LoggingVerificationEmailSender 가 등록되지만, 이 목이 그 자리를 대체해 코드를 돌려받는다.
+    doAnswer(
+            inv -> {
+              sentEmailCodes.put(inv.getArgument(0), inv.getArgument(1));
+              return null;
+            })
+        .when(emailSender)
         .send(any(), any());
   }
 
@@ -215,6 +249,9 @@ class WebLandlordAuthDocsTest {
                     .description(SIGNUP_PHONE_VERIFY_DESCRIPTION),
                 requestFields(signupPhoneVerifyRequestFields()),
                 responseFields(signupPhoneVerifyResponseFields())));
+
+    // 가입용 이메일 인증(발송 → 확인) — 연락처 인증과 함께 가입 제출의 선행 조건이다(순서는 무관하다).
+    verifySignupEmail(DOCS_EMAIL);
 
     // 웹 회원가입 — 같은 번호의 앱 계정이 없으므로 새 계정을 만들어 한 트랜잭션으로 ACTIVE까지 완주한다(linked=false).
     // refresh는 본문이 아니라 Set-Cookie로만 내려간다(ADR-0048) — 아래 단정이 그 계약의 유일한 회귀 방어다.
@@ -271,6 +308,7 @@ class WebLandlordAuthDocsTest {
   void generatesWebLandlordAuthErrorSnippets() throws Exception {
     // 에러 예시의 상대편 계정 — 이메일 중복(409)과 웹 계정 중복(409)이 둘 다 이 계정을 가리킨다.
     verifyPhone(EXISTING_PHONE);
+    verifySignupEmail(EXISTING_EMAIL);
     signup(EXISTING_PHONE, EXISTING_EMAIL, PASSWORD).andExpect(status().isOk());
 
     // ===== phone/signup/verification-code =====
@@ -424,14 +462,27 @@ class WebLandlordAuthDocsTest {
         WEB_SIGNUP_DESCRIPTION,
         WEB_SIGNUP_422);
 
-    // 필수 약관 미동의 → 422. @NotNull은 존재만 강제하고 false는 비즈니스 규칙 위반이라 400이 아니다.
-    verifyPhone(AGREEMENT_PHONE);
+    // 이메일 인증 마커 없음 → 422. 연락처는 인증했으므로 앞 게이트를 지나 여기서 걸린다.
+    // 두 마커 게이트는 서로 순서가 무관하고, 둘 다 없으면 연락처 코드가 먼저 나간다(기존 계약 유지).
+    verifyPhone(EMAIL_UNVERIFIED_PHONE);
     perform(
         post("/api/v1/auth/signup")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(
-                signupJson(
-                    AGREEMENT_PHONE, "err-web-agreement@work.example", PASSWORD, false, true)),
+            .content(signupJson(EMAIL_UNVERIFIED_PHONE, UNVERIFIED_EMAIL, PASSWORD)),
+        status().isUnprocessableEntity(),
+        "AUTH_EMAIL_NOT_VERIFIED",
+        "auth-signup-email-not-verified",
+        WEB_SIGNUP_SUMMARY,
+        WEB_SIGNUP_DESCRIPTION,
+        WEB_SIGNUP_422);
+
+    // 필수 약관 미동의 → 422. @NotNull은 존재만 강제하고 false는 비즈니스 규칙 위반이라 400이 아니다.
+    verifyPhone(AGREEMENT_PHONE);
+    verifySignupEmail(AGREEMENT_EMAIL);
+    perform(
+        post("/api/v1/auth/signup")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(signupJson(AGREEMENT_PHONE, AGREEMENT_EMAIL, PASSWORD, false, true)),
         status().isUnprocessableEntity(),
         "AUTH_REQUIRED_AGREEMENT_MISSING",
         "auth-signup-agreement-missing",
@@ -440,7 +491,14 @@ class WebLandlordAuthDocsTest {
         WEB_SIGNUP_422);
 
     // 웹 로그인 ID 중복 → 409. 번호는 처음 보는 번호라 연동 판정이 아니라 이메일 유일성에서 걸린다.
+    //
+    // ★ 이 케이스는 정상 경로로 재현할 수 없다 — 이미 가입된 주소는 이메일 인증 발송(§1-11)이 먼저
+    //   409로 끊어 마커를 만들 수 없기 때문이다. 그래서 마커를 직접 심어 **발송~제출 사이 30분 창에
+    //   남이 같은 주소로 가입을 마친 상황**(TOCTOU)을 그대로 만든다. 그 창이 실재하므로 이 게이트는
+    //   §1-11이 생긴 뒤에도 남으며, 빼면 같은 상황에서 나가는 코드가 "다른 이메일을 쓰라"가 아니라
+    //   RESOURCE_CONFLICT("잠시 후 재시도")로 바뀐다 — 재시도로 절대 풀리지 않는 상황에 재시도 안내다.
     verifyPhone(DUPLICATE_EMAIL_PHONE);
+    signupEmailVerificationRepository.markVerified(EXISTING_EMAIL, 1800L);
     perform(
         post("/api/v1/auth/signup")
             .contentType(MediaType.APPLICATION_JSON)
@@ -455,10 +513,11 @@ class WebLandlordAuthDocsTest {
     // 번호로 매칭된 계정에 이미 웹 자격증명이 있음 → 409(로그인으로 유도). 이메일은 새 값이라 중복 게이트는 통과한다 —
     // linked=true 성공과 같은 조회의 다른 가지다.
     verifyPhone(EXISTING_PHONE);
+    verifySignupEmail(SECOND_EMAIL);
     perform(
         post("/api/v1/auth/signup")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(signupJson(EXISTING_PHONE, "err-web-second@work.example", PASSWORD)),
+            .content(signupJson(EXISTING_PHONE, SECOND_EMAIL, PASSWORD)),
         status().isConflict(),
         "AUTH_WEB_ACCOUNT_ALREADY_EXISTS",
         "auth-signup-web-account-already-exists",
@@ -504,6 +563,7 @@ class WebLandlordAuthDocsTest {
     // 비밀번호 불일치 — 누적 실패 횟수와 상한이 실린다. 위 401과 같은 (path, method, status)라
     // 반드시 같은 필드 기술자를 쓴다(dedup·last-wins).
     verifyPhone(WRONG_PASSWORD_PHONE);
+    verifySignupEmail(WRONG_PASSWORD_EMAIL);
     signup(WRONG_PASSWORD_PHONE, WRONG_PASSWORD_EMAIL, PASSWORD).andExpect(status().isOk());
     performWith401Fields(
         post("/api/v1/auth/login")
@@ -518,6 +578,7 @@ class WebLandlordAuthDocsTest {
     // 상한+1회를 같은 이메일로 보내므로 이메일 시도 한도가 상한보다 커야 이 시나리오가 성립한다
     // (한도 이하면 423 대신 429가 나온다 — 두 설정값은 함께 움직인다).
     verifyPhone(LOCKED_PHONE);
+    verifySignupEmail(LOCKED_EMAIL);
     signup(LOCKED_PHONE, LOCKED_EMAIL, PASSWORD).andExpect(status().isOk());
     for (int i = 0; i < authProperties.getWeb().getLoginMaxFailedAttempts(); i++) {
       mockMvc
@@ -647,6 +708,29 @@ class WebLandlordAuthDocsTest {
             post("/api/v1/auth/phone/signup/verify")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(verifyJson(phoneNumber, sentCodes.get(phoneNumber))))
+        .andExpect(status().isOk());
+  }
+
+  /**
+   * 가입용 이메일 인증 완주(발송 → 확인) — 가입 제출이 소비할 검증 마커를 남긴다.
+   *
+   * <p>발송은 전용 IP로 보낸다({@link #SIGNUP_EMAIL_IP}) — 이 클래스 하나가 여섯 번을 쌓는데, 기본 IP에 몰면 같은 Redis를 쓰는 다른
+   * 테스트와 시간당 한도를 나눠 쓰게 된다.
+   */
+  private void verifySignupEmail(String email) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verification-code")
+                .header("X-Forwarded-For", SIGNUP_EMAIL_IP)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"email\":\"" + email + "\",\"code\":\"" + sentEmailCodes.get(email) + "\"}"))
         .andExpect(status().isOk());
   }
 

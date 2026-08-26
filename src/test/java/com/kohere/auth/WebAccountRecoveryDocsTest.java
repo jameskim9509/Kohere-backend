@@ -25,6 +25,7 @@ import com.kohere.auth.application.AuthProperties;
 import com.kohere.auth.domain.EmailDispatchException;
 import com.kohere.auth.domain.PasswordResetLinkEmailSender;
 import com.kohere.auth.domain.SmsDispatchException;
+import com.kohere.auth.domain.VerificationEmailSender;
 import com.kohere.auth.domain.VerificationSmsSender;
 import com.kohere.docs.ApiDocsTags;
 import com.kohere.docs.AuthDocsFields;
@@ -143,6 +144,8 @@ class WebAccountRecoveryDocsTest {
   @Autowired private AuthProperties authProperties;
   @MockitoBean private VerificationSmsSender smsSender;
   @MockitoBean private PasswordResetLinkEmailSender resetLinkEmailSender;
+  @MockitoBean private VerificationEmailSender emailSender;
+  private final Map<String, String> sentEmailCodes = new ConcurrentHashMap<>();
   private final Map<String, String> sentCodes = new ConcurrentHashMap<>();
   private final Map<String, String> sentResetTokens = new ConcurrentHashMap<>();
   private MockMvc mockMvc;
@@ -162,6 +165,14 @@ class WebAccountRecoveryDocsTest {
               return null;
             })
         .when(smsSender)
+        .send(any(), any());
+    // 가입용 이메일 인증번호도 캡처한다 — 가입 제출이 연락처·이메일 두 마커를 모두 요구한다(#285).
+    doAnswer(
+            inv -> {
+              sentEmailCodes.put(inv.getArgument(0), inv.getArgument(1));
+              return null;
+            })
+        .when(emailSender)
         .send(any(), any());
     // 재설정 토큰 원문을 수신 주소별로 기록. Redis에는 해시만 남아 되읽을 수 없으므로
     // 메일 본문이 원문을 볼 수 있는 유일한 자리이고, 실제 사용자도 여기서 토큰을 얻는다.
@@ -625,6 +636,7 @@ class WebAccountRecoveryDocsTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(verifyJson(phoneNumber, sentCodes.get(phoneNumber))))
         .andExpect(status().isOk());
+    verifySignupEmail(email);
     mockMvc
         .perform(
             post("/api/v1/auth/signup")
@@ -632,6 +644,28 @@ class WebAccountRecoveryDocsTest {
                 .content(signupJson(phoneNumber, email)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+  }
+
+  /**
+   * 가입용 이메일 인증 완주(발송 → 확인) — 가입 제출이 소비할 검증 마커를 남긴다(#285).
+   *
+   * <p>발송에 전용 IP를 싣는 것은 같은 Redis 를 쓰는 다른 테스트와 IP 축 예산(20회/시간)을 나눠 쓰지 않기 위해서다.
+   */
+  private void verifySignupEmail(String email) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verification-code")
+                .header("X-Forwarded-For", RECOVERY_TEST_IP)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"email\":\"" + email + "\",\"code\":\"" + sentEmailCodes.get(email) + "\"}"))
+        .andExpect(status().isOk());
   }
 
   /** 발송 경로에는 예약 IP를 실어 다른 테스트와 IP 축 예산을 나눠 쓰지 않게 한다. */

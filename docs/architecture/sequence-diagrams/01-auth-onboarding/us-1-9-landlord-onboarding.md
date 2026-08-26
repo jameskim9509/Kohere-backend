@@ -47,7 +47,7 @@ sequenceDiagram
             end
             Note over USER,SQL: 동시 온보딩 경합은 users.nickname UNIQUE 제약이 최종 차단(위반 시 재조합)<br/>재시도 상한 초과 시 fallback(예: 숫자 접미사)
             Note over USER: 임대인은 country='KR'·lang='ko'를 서버가 고정 부여<br/>(클라이언트는 전송하지 않는다 — 요청 본문은 phoneNumber·birthDate뿐)<br/>임대인은 진단·프로필을 ko로 본다
-            USER->>SQL: TERMS_AGREED→ACTIVE 전이 + userType=LANDLORD 확정(이후 불변)<br/>phoneNumber·birthDate·nickname 확정 + country='KR'·lang='ko' 고정, businessRegistrationNumberHash는 null로 설정<br/>(임대인은 gender/occupation/visaType 미수집; name·email은 소셜 로그인 캡처 값 보유)
+            USER->>SQL: TERMS_AGREED→ACTIVE 전이 + userType=LANDLORD 확정(이후 불변)<br/>phoneNumber·birthDate·nickname 확정 + country='KR'·lang='ko' 고정, businessRegistrationNumberHash는 null로 설정<br/>(임대인은 gender/occupation/visaType 미수집 — name·email은 소셜 로그인 캡처 값 보유)
             SQL-->>USER: 갱신 완료
             USER-->>AUTH: 온보딩 완료 (user{ userType: LANDLORD, status: ACTIVE, nickname })
             Note over AUTH: 정식 accessToken+refreshToken 발급

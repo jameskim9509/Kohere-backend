@@ -12,6 +12,7 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.auth.application.AuthProperties;
 import com.kohere.auth.domain.LocalAccount;
 import com.kohere.auth.domain.LocalAccountRepository;
+import com.kohere.auth.domain.VerificationEmailSender;
 import com.kohere.auth.domain.VerificationSmsSender;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,6 +65,12 @@ class WebLoginLockIntegrationTest {
   @Autowired private AuthProperties authProperties;
   @Autowired private LocalAccountRepository localAccountRepository;
   @MockitoBean private VerificationSmsSender smsSender;
+  @MockitoBean private VerificationEmailSender emailSender;
+  private final Map<String, String> sentEmailCodes = new ConcurrentHashMap<>();
+
+  /** 가입용 이메일 인증 발송 전용 IP — 기본 remote address 에 몰면 다른 테스트와 IP 한도를 나눠 쓴다. */
+  private static final String SIGNUP_EMAIL_IP = "203.0.113.86";
+
   private final Map<String, String> sentCodes = new ConcurrentHashMap<>();
   private MockMvc mockMvc;
 
@@ -76,6 +83,14 @@ class WebLoginLockIntegrationTest {
               return null;
             })
         .when(smsSender)
+        .send(any(), any());
+    // 가입용 이메일 인증번호도 캡처한다 — 가입 제출이 연락처·이메일 두 마커를 모두 요구한다(#285).
+    doAnswer(
+            inv -> {
+              sentEmailCodes.put(inv.getArgument(0), inv.getArgument(1));
+              return null;
+            })
+        .when(emailSender)
         .send(any(), any());
   }
 
@@ -132,7 +147,30 @@ class WebLoginLockIntegrationTest {
   }
 
   /** 가입용 SMS 인증을 거쳐 웹 계정을 만든다 — 잠금을 볼 수 있는 계정이 있어야 시작할 수 있다. */
+  /**
+   * 가입용 이메일 인증 완주(발송 → 확인) — 가입 제출이 소비할 검증 마커를 남긴다(#285).
+   *
+   * <p>발송에 전용 IP를 싣는 것은 같은 Redis 를 쓰는 다른 테스트와 IP 축 예산(20회/시간)을 나눠 쓰지 않기 위해서다.
+   */
+  private void verifySignupEmail(String email) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verification-code")
+                .header("X-Forwarded-For", SIGNUP_EMAIL_IP)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"email\":\"" + email + "\",\"code\":\"" + sentEmailCodes.get(email) + "\"}"))
+        .andExpect(status().isOk());
+  }
+
   private void signup() throws Exception {
+    verifySignupEmail(EMAIL);
     mockMvc
         .perform(
             post("/api/v1/auth/phone/signup/verification-code")

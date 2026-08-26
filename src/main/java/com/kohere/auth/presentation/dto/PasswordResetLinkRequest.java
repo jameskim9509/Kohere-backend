@@ -1,7 +1,8 @@
 package com.kohere.auth.presentation.dto;
 
-import jakarta.validation.constraints.Email;
+import com.kohere.common.request.Emails;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -19,4 +20,5 @@ import jakarta.validation.constraints.Size;
  *
  * <p>docs/api/specs/01-auth-onboarding.md §1-8.
  */
-public record PasswordResetLinkRequest(@NotBlank @Size(max = 255) @Email String email) {}
+public record PasswordResetLinkRequest(
+    @NotBlank @Size(max = 255) @Pattern(regexp = Emails.PATTERN) String email) {}

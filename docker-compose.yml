@@ -157,6 +157,12 @@ services:
       SPRING_DATA_REDIS_PORT: "6379"
       SPRING_MAIL_HOST: mailhog
       SPRING_MAIL_PORT: "1025"
+      # 인증번호 메일 발송 채널(#285) — 기본 활성. 위 mailhog 가 같은 스택에 있으니 실제로 보내고
+      # http://localhost:8025 에서 읽는 것이 로컬의 정상 흐름이다(온보딩 이메일 인증이 쓰던 방식 그대로).
+      # MailHog 를 띄우지 않고 돌리려면 .env/셸 env 로 MAIL_ENABLED=false — 그러면 발송 대신
+      # LoggingVerificationEmailSender 가 인증번호를 앱 로그([DEV MAIL])에 찍는다.
+      # 이건 기능 토글이 아니라 발송 채널 토글이다 — 이메일 인증 절차 자체는 값과 무관하게 항상 필수다.
+      MAIL_ENABLED: ${MAIL_ENABLED:-true}
       # 연락처 SMS(SOLAPI, ADR-0034) — 기본 비활성(LoggingVerificationSmsSender 폴백, 인증번호는 앱 로그).
       # 실발송 테스트 시에만 .env/셸 env로 SOLAPI_ENABLED=true + 키/발신번호를 채운다.
       SOLAPI_ENABLED: ${SOLAPI_ENABLED:-false}

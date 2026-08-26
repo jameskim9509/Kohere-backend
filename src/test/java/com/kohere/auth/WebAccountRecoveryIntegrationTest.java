@@ -19,6 +19,7 @@ import com.kohere.auth.application.AuthProperties;
 import com.kohere.auth.domain.LocalAccount;
 import com.kohere.auth.domain.LocalAccountRepository;
 import com.kohere.auth.domain.PasswordResetLinkEmailSender;
+import com.kohere.auth.domain.VerificationEmailSender;
 import com.kohere.auth.domain.VerificationSmsSender;
 import jakarta.servlet.http.Cookie;
 import java.util.Map;
@@ -83,6 +84,8 @@ class WebAccountRecoveryIntegrationTest {
 
   @MockitoBean private VerificationSmsSender smsSender;
   @MockitoBean private PasswordResetLinkEmailSender passwordResetLinkEmailSender;
+  @MockitoBean private VerificationEmailSender emailSender;
+  private final Map<String, String> sentEmailCodes = new ConcurrentHashMap<>();
 
   /** 번호 → 방금 발송된 인증번호. 발송기를 가로채지 않으면 §1-6·§1-2를 통과할 방법이 없다. */
   private final Map<String, String> sentCodes = new ConcurrentHashMap<>();
@@ -96,6 +99,7 @@ class WebAccountRecoveryIntegrationTest {
   void setUp() {
     mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     sentCodes.clear();
+    sentEmailCodes.clear();
     sentResetTokens.clear();
     doAnswer(
             inv -> {
@@ -103,6 +107,14 @@ class WebAccountRecoveryIntegrationTest {
               return null;
             })
         .when(smsSender)
+        .send(any(), any());
+    // 가입용 이메일 인증번호도 캡처한다 — 가입 제출이 연락처·이메일 두 마커를 모두 요구한다(#285).
+    doAnswer(
+            inv -> {
+              sentEmailCodes.put(inv.getArgument(0), inv.getArgument(1));
+              return null;
+            })
+        .when(emailSender)
         .send(any(), any());
     doAnswer(
             inv -> {
@@ -496,6 +508,28 @@ class WebAccountRecoveryIntegrationTest {
         .andExpect(jsonPath("$.data.verified").value(true));
   }
 
+  /**
+   * §1-11·§1-12 완주 — 가입용 이메일 검증 마커를 남긴다(§1-3의 두 번째 게이트, #285).
+   *
+   * <p>발송에도 호출자 IP를 싣는다({@code app.auth.signup-email.ip-max-per-hour}) — 연락처 쪽과 같은 이유다.
+   */
+  private void verifySignupEmail(String email, String ip) throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verification-code")
+                .header("X-Forwarded-For", ip)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(
+            post("/api/v1/auth/email/signup/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"email\":\"" + email + "\",\"code\":\"" + sentEmailCodes.get(email) + "\"}"))
+        .andExpect(status().isOk());
+  }
+
   /** §1-1·§1-2 완주 — 가입용 검증 마커를 남긴다(§1-3의 게이트). */
   private void verifySignupPhone(String phoneNumber, String ip) throws Exception {
     mockMvc
@@ -528,6 +562,7 @@ class WebAccountRecoveryIntegrationTest {
    */
   private String signup(String phoneNumber, String email, String ip) throws Exception {
     verifySignupPhone(phoneNumber, ip);
+    verifySignupEmail(email, ip);
     ResultActions signup =
         mockMvc
             .perform(

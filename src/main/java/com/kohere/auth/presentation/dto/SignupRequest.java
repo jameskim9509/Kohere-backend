@@ -1,8 +1,8 @@
 package com.kohere.auth.presentation.dto;
 
+import com.kohere.common.request.Emails;
 import com.kohere.common.request.PhoneNumbers;
 import com.kohere.common.request.RequestDates;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -34,7 +34,7 @@ public record SignupRequest(
     @NotBlank @Size(max = 200) String name,
     @NotBlank String birthDate,
     @NotBlank @Pattern(regexp = PhoneNumbers.PATTERN) String phoneNumber,
-    @NotBlank @Size(max = 255) @Email String email,
+    @NotBlank @Size(max = 255) @Pattern(regexp = Emails.PATTERN) String email,
     @NotBlank @Pattern(regexp = SignupRequest.PASSWORD_PATTERN) String password,
     @NotNull Boolean termsOfServiceAgreed,
     @NotNull Boolean privacyPolicyAgreed,
