@@ -54,7 +54,7 @@ sequenceDiagram
             RDS-->>AUTH: 무효화 완료
             AUTH-->>USER: 정리 완료
             Note over USER: 로그아웃과 동일한 Max-Age=0 삭제 쿠키를 함께 내린다(ADR-0048)<br/>단 조건 없이 — 쿠키 Path=/api/v1/auth 라 이 요청에는 쿠키가 실리지 않아<br/>요청만 보고 보유 여부를 알 수 없다(앱은 가진 적 없으므로 무해)
-            USER-->>C: 204 No Content<br/>Set-Cookie: refreshToken=; Max-Age=0; Path=/api/v1/auth
+            USER-->>C: 204 No Content<br/>Set-Cookie: refreshToken=(빈값) · Max-Age=0 · Path=/api/v1/auth
             C-->>U: 계정 정리 완료
         end
     end

@@ -47,7 +47,7 @@ sequenceDiagram
         Note over AUTH: 정식 accessToken+refreshToken 발급(issueFullTokens)
         AUTH->>RDS: refreshToken 해시 저장(14일 TTL — 앱과 동일)
         RDS-->>AUTH: 저장 완료
-        AUTH-->>C: 200 OK<br/>Set-Cookie: refreshToken=...; HttpOnly; Secure; SameSite=Lax;<br/>Path=/api/v1/auth; Max-Age=1209600<br/>{ onboardingRequired: false, status: ACTIVE,<br/>tokenType: Bearer, accessToken, expiresIn: 3600, email, name }
+        AUTH-->>C: 200 OK<br/>Set-Cookie: refreshToken=... · HttpOnly · Secure · SameSite=Lax<br/>Path=/api/v1/auth · Max-Age=1209600<br/>{ onboardingRequired: false, status: ACTIVE,<br/>tokenType: Bearer, accessToken, expiresIn: 3600, email, name }
         C-->>U: 매물 관리 화면
     end
 
@@ -76,7 +76,7 @@ sequenceDiagram
     SEC->>AUTH: 인증된 요청 전달 (userId)
     AUTH->>RDS: 쿠키에서 읽은 refreshToken 무효화(REVOKED · 이미 무효화면 멱등)
     RDS-->>AUTH: 무효화 완료
-    AUTH-->>C: 204 No Content<br/>Set-Cookie: refreshToken=; Max-Age=0 (삭제 쿠키)
+    AUTH-->>C: 204 No Content<br/>Set-Cookie: refreshToken=(빈값) · Max-Age=0 (삭제 쿠키)
     C-->>U: 세션 종료, 로그인 화면
 ```
 

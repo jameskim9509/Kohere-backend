@@ -70,6 +70,7 @@ public class WebAuthService {
   private static final boolean ONBOARDING_REQUIRED = false;
 
   private final SignupPhoneVerificationService signupPhoneVerificationService;
+  private final SignupEmailVerificationService signupEmailVerificationService;
   private final LocalAccountRepository localAccountRepository;
   private final PasswordHasher passwordHasher;
   private final UserAccountService userAccountService;
@@ -78,11 +79,19 @@ public class WebAuthService {
   private final LoginAttemptRateLimiter loginAttemptRateLimiter;
 
   /**
-   * 임대인 웹 회원가입. 게이트를 <b>인증 마커 → 필수 약관 → 이메일 중복 → 번호 매칭</b> 순서로 통과시킨 뒤 연동(자격증명만 추가) 또는 신규 생성(상태 체인
-   * 완주)으로 갈린다. 실패하면 <b>DB 쓰기는</b> 전부 롤백된다(Redis에 남는 refresh 해시 잔여물은 클래스 주석 참조).
+   * 임대인 웹 회원가입. 게이트를 <b>인증 마커 둘(연락처·이메일) → 필수 약관 → 이메일 중복 → 번호 매칭</b> 순서로 통과시킨 뒤 연동(자격증명만 추가) 또는 신규
+   * 생성(상태 체인 완주)으로 갈린다. 실패하면 <b>DB 쓰기는</b> 전부 롤백된다(Redis에 남는 refresh 해시 잔여물은 클래스 주석 참조).
    *
-   * <p><b>게이트 순서는 계약이다</b>(스펙 §1-3의 검증 게이트 우선순위) — 인증 마커를 가장 먼저 보는 이유는 번호가 비밀이 아니기 때문이다. 마커 없이 이메일
-   * 중복이나 번호 매칭을 먼저 판정하면, 남의 번호를 아는 사람이 응답 코드만으로 "그 번호에 계정이 있는지"를 읽어낼 수 있다.
+   * <p><b>게이트 순서는 계약이다</b>(스펙 §1-3의 검증 게이트 우선순위) — 인증 마커 둘을 가장 먼저 보는 이유는 번호가 비밀이 아니기 때문이다. 마커 없이
+   * 이메일 중복이나 번호 매칭을 먼저 판정하면, 남의 번호를 아는 사람이 응답 코드만으로 "그 번호에 계정이 있는지"를 읽어낼 수 있다.
+   *
+   * <p><b>단 두 마커 게이트 사이에는 지켜야 할 순서가 없다.</b> 연락처·이메일 모두 부수효과 없는 Redis 읽기이고 둘 다 422이며 어느 쪽도 계정 존재를
+   * 드러내지 않는다 — 갈리는 것은 "둘 다 미인증"일 때 나가는 코드 하나뿐이라, 기존 클라이언트·테스트·{@code .http}가 이미 기대하는 {@code
+   * AUTH_PHONE_NOT_VERIFIED}를 유지하는 쪽으로 고정한다. 계약인 것은 <b>「마커 둘이 중복·매칭 판정보다 앞」</b> 하나다.
+   *
+   * <p><b>두 게이트가 지키는 것도 서로 다르다.</b> 연락처 마커는 <b>남의 계정</b>을 지킨다(인증 없이 번호만으로 기존 계정에 자격증명이 붙으면 그 계정의
+   * 매물·예약·신청자 PII가 통째로 넘어간다). 이메일 마커가 지키는 것은 <b>본인의 복구 경로</b>다 — 이메일은 연동 매칭 키가 아니라 탈취 경로가 없는 대신, 닿지
+   * 않는 주소로 가입한 계정은 비밀번호를 반복 실패해 잠기는 순간 재설정 메일을 받을 수 없어 자력 해제가 불가능해진다(잠금은 시간으로 풀리지 않는다).
    *
    * <p><b>연동 판정 키는 번호 단독</b>이고 이름은 조건이 아니다 — 소유 증명은 전적으로 SMS 인증이 담당하므로 이름을 더해도 막히는 공격은 없는 반면, 앱
    * 이름(소셜 SDK 표기)과 웹 이름(직접 입력)의 자연스러운 불일치로 <b>계정이 조용히 갈라진다</b>(ADR-0047 §3).
@@ -98,6 +107,7 @@ public class WebAuthService {
     LocalDate birthDate = RequestDates.parsePast("birthDate", request.birthDate());
 
     signupPhoneVerificationService.assertVerified(phoneNumber);
+    signupEmailVerificationService.assertVerified(request.email());
     assertRequiredAgreements(request);
     // 로그인 ID 유일성만 본다 — users.email은 보지 않는다. 임대인 대다수가 소셜과 같은 이메일로 가입하므로
     // 거기까지 유일하게 걸면 본인이 본인 이메일로 가입하다 409를 맞는다(ADR-0047 §6).
@@ -124,7 +134,7 @@ public class WebAuthService {
     // 표시 규칙 — 응답의 name·email은 언제나 users의 값이다. 연동 경로에서는 폼 값이 아니라 소셜 진본이 나간다(의도된 동작).
     UserAccountView account = userAccountService.getAccount(userId);
     TokenResponse tokens = authService.issueFullTokens(userId);
-    consumeVerificationAfterCommit(phoneNumber);
+    consumeVerificationAfterCommit(phoneNumber, request.email());
 
     return new SignupResult(
         new SignupResponse(
@@ -281,19 +291,28 @@ public class WebAuthService {
    * <p>반대 방향(계정은 커밋됐는데 마커가 남음)은 애초에 무해하다 — 마커 재사용으로 할 수 있는 일은 같은 번호로 또 가입하는 것뿐이고 그건 409로 막힌다. 그래서
    * <b>"커밋된 뒤에만 지운다"</b>가 양쪽을 다 만족시키는 유일한 순서다.
    */
-  private void consumeVerificationAfterCommit(String phoneNumber) {
+  private void consumeVerificationAfterCommit(String phoneNumber, String email) {
     if (!TransactionSynchronizationManager.isSynchronizationActive()) {
       // 트랜잭션 밖 호출(테스트 등) — 미룰 커밋이 없으므로 즉시 소비한다.
-      signupPhoneVerificationService.consumeVerification(phoneNumber);
+      consumeVerifications(phoneNumber, email);
       return;
     }
     TransactionSynchronizationManager.registerSynchronization(
         new TransactionSynchronization() {
           @Override
           public void afterCommit() {
-            signupPhoneVerificationService.consumeVerification(phoneNumber);
+            consumeVerifications(phoneNumber, email);
           }
         });
+  }
+
+  /**
+   * 두 인증 마커를 <b>함께</b> 소비한다. 하나만 지우면 남은 쪽이 다음 가입 시도에서 그대로 통과해 "인증을 한 번만 하고 두 번 가입"이 성립하지는 않지만(다른
+   * 게이트가 막는다) 마커의 1회용 계약이 채널마다 갈리고, 무엇보다 <b>실패 시 사용자가 다시 해야 하는 인증이 무엇인지</b>가 예측 불가능해진다.
+   */
+  private void consumeVerifications(String phoneNumber, String email) {
+    signupPhoneVerificationService.consumeVerification(phoneNumber);
+    signupEmailVerificationService.consumeVerification(email);
   }
 
   /**

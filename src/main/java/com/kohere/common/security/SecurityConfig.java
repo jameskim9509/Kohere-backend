@@ -68,6 +68,16 @@ public class SecurityConfig {
                         "/api/v1/auth/phone/signup/verification-code",
                         "/api/v1/auth/phone/signup/verify")
                     .permitAll()
+                    // 임대인 웹 가입용 이메일 인증(US-1-18) — 위 SMS 인증과 같은 단계·같은 이유로 공개다.
+                    // 아래 (3)의 /auth/email/verification-code·/auth/email/verify는 정확 경로 매처라
+                    // 한 세그먼트 깊은 이 경로를 덮지 않지만, 명시하지 않으면 anyRequest().authenticated()로
+                    // 떨어져 401이 된다(덮이지 않는 것과 공개인 것은 다르다).
+                    // PublicPaths.ALL에도 같은 두 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
+                    .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/auth/email/signup/verification-code",
+                        "/api/v1/auth/email/signup/verify")
+                    .permitAll()
                     // 임대인 웹 회원가입(US-1-11)·로그인(US-1-12) — 계정을 만들거나 아직 토큰을 받기 전이라 주체가
                     // 있을 수 없다. 아래 (2)·(3)의 /auth/* 매처는 전부 정확 경로라 이 두 경로를 덮지 않지만,
                     // 순서가 뒤집혀도 안전하도록 공개 티어에 둔다.

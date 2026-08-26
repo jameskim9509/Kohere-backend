@@ -58,6 +58,7 @@ class WebAuthServiceTest {
   private static final int MAX_FAILED_ATTEMPTS = 5;
 
   @Mock private SignupPhoneVerificationService signupPhoneVerificationService;
+  @Mock private SignupEmailVerificationService signupEmailVerificationService;
   @Mock private LocalAccountRepository localAccountRepository;
   @Mock private PasswordHasher passwordHasher;
   @Mock private UserAccountService userAccountService;
@@ -73,6 +74,7 @@ class WebAuthServiceTest {
     webAuthService =
         new WebAuthService(
             signupPhoneVerificationService,
+            signupEmailVerificationService,
             localAccountRepository,
             passwordHasher,
             userAccountService,

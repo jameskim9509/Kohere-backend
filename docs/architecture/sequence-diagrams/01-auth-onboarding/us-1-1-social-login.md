@@ -53,7 +53,7 @@ sequenceDiagram
             USER->>SQL: users에 PENDING 사용자 write<br/>(name·email 포함)
             SQL-->>USER: 저장 완료
             USER-->>S: userId(PENDING)
-            S->>SQL: social_accounts 매핑(provider, providerUserId, email, name, userId) 생성<br/>(Apple은 apple_refresh_token 함께 저장; email·name은 provider 스냅샷)
+            S->>SQL: social_accounts 매핑(provider, providerUserId, email, name, userId) 생성<br/>(Apple은 apple_refresh_token 함께 저장 — email·name은 provider 스냅샷)
             SQL-->>S: 저장 완료
             Note over S: 온보딩 임시 accessToken(onboardingCompleted=false)<br/>refreshToken 미발급
             S-->>C: 200 OK<br/>{ onboardingRequired: true, status: PENDING, name, email,<br/>tokenType: Bearer, accessToken, refreshToken: null, expiresIn: 1800 }
