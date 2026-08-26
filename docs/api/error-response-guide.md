@@ -130,13 +130,14 @@
 
 #### auth 도메인 코드
 
-`AUTH_*` 전체 목록의 정본은 [01-auth-onboarding](./specs/01-auth-onboarding.md)이며, 여기에는 **임대인 웹 로그인·회원가입(#229)** 과 **웹 계정 복구(이메일 찾기·비밀번호 재설정 — #272)** 가 추가한 코드를 싣는다. 소셜 로그인·약관·온보딩 계열 코드는 그대로다.
+`AUTH_*` 전체 목록의 정본은 [01-auth-onboarding](./specs/01-auth-onboarding.md)이며, 여기에는 **임대인 웹 로그인·회원가입(#229)** · **웹 계정 복구(이메일 찾기·비밀번호 재설정 — #272)** · **가입용 이메일 인증(#285)** 이 추가한 코드를 싣는다. 소셜 로그인·약관·온보딩 계열 코드는 그대로다.
 
 | code | status | 의미 |
 | --- | --- | --- |
 | `AUTH_INVALID_CREDENTIALS` | 401 | 웹 로그인(`POST /api/v1/auth/login`) 실패. **이메일 없음과 비밀번호 불일치를 한 코드로 묶는다**(계정 존재 여부 비노출) |
 | `AUTH_ACCOUNT_LOCKED` | 423 | 비밀번호 10회 연속 실패로 잠긴 계정. **비밀번호가 맞아도** 잠금이 우선한다. 해제는 비밀번호 재설정이 겸한다(아래 주) |
-| `AUTH_EMAIL_ALREADY_REGISTERED` | 409 | 웹 회원가입(`POST /api/v1/auth/signup`)의 이메일을 이미 다른 사람이 웹 로그인 ID로 쓰고 있음(`local_accounts.email` 중복) |
+| `AUTH_EMAIL_ALREADY_REGISTERED` | 409 | 그 이메일을 이미 다른 사람이 웹 로그인 ID로 쓰고 있음(`local_accounts.email` 중복). **두 자리에서 난다** — 가입용 이메일 인증번호 발송(`POST /api/v1/auth/email/signup/verification-code`, 메일을 보내기 전에 끊는다)과 가입 제출(`POST /api/v1/auth/signup`) |
+| `AUTH_EMAIL_NOT_VERIFIED` | 422 | 가입 제출(`POST /api/v1/auth/signup`)의 이메일에 가입용 인증 마커가 없거나 만료됨. **계정 생성도 연동도 하지 않는다**. `AUTH_PHONE_NOT_VERIFIED`와 같은 성격의 선행조건 게이트다 |
 | `AUTH_WEB_ACCOUNT_ALREADY_EXISTS` | 409 | 인증된 휴대폰 번호로 찾은 계정에 웹 자격증명이 이미 붙어 있음. 가입이 아니라 로그인으로 보낸다 |
 | `AUTH_WEB_ACCOUNT_NOT_FOUND` | 404 | 이메일 찾기(`POST /api/v1/auth/email/find`)에서 인증된 휴대폰 번호·이름에 맞는 웹 계정이 없음. **이름 불일치도 같은 코드**다(아래 주) |
 | `AUTH_PASSWORD_RESET_TOKEN_INVALID` | 422 | 비밀번호 재설정 링크의 토큰이 없거나, 만료됐거나, 이미 사용됨. 사전 확인(`POST /api/v1/auth/password/reset-token/verify`)과 확정(`POST /api/v1/auth/password/reset`)이 같은 코드를 쓴다 |
@@ -151,6 +152,8 @@
 >
 > 반대로 **재설정 링크 발송(`POST /api/v1/auth/password/reset-link`)에는 전용 코드가 없다** — 가입되지 않은 이메일도 **같은 200**을 받고 메일만 나가지 않는다. 이 경로에는 선행 게이트가 없어 임의의 주소로 부를 수 있으므로, 응답을 가르는 순간 완전한 열거 오라클이 된다. **알려진 한계**: 발송이 동기라 가입 계정만 SMTP 왕복 시간을 쓰고 `UPSTREAM_ERROR`(502)가 날 수 있어 **응답 시간·status 분포로는 존재가 드러난다.** 받아들인 결과이며, 레이트리밋(429)은 열거 방어가 아니라 발송비·남용 방어다.
 >
+> **그 감춤은 #285로 우회 가능해졌다.** 가입용 이메일 인증번호 발송(`POST /api/v1/auth/email/signup/verification-code`)이 **선행 게이트 없는 같은 자리에서** 이미 가입된 주소에 `AUTH_EMAIL_ALREADY_REGISTERED`(409)를 주므로, 위 문단이 막으려던 오라클은 그쪽에 성립한다. 가입 폼에서 즉시 "이미 사용 중"을 알리고 **남의 메일함으로 가는 인증번호를 막는** 값이 더 크다고 보아 열거를 명시적으로 수용한 결과다. 그래도 **재설정 링크 발송은 계속 감춘다** — 우회로가 있다는 것과 이 엔드포인트가 직접 오라클이 되는 것은 다르고(깊이 방어), 그쪽 열거는 레이트리밋 뒤에 있어 관찰마다 예산을 쓴다.
+>
 > `AUTH_PASSWORD_RESET_TOKEN_INVALID`(422)는 **토큰 부재·만료·이미 사용됨을 한 코드로 묶는다.** 셋을 구분해 알려주면 "그 토큰은 있었는데 이미 썼다"가 새어 나가고, 클라이언트가 할 일은 셋 다 같다 — 링크를 다시 요청한다. 사전 확인 엔드포인트가 **토큰을 소비하지 않는 것도 계약**이다: 메일 클라이언트·보안 스캐너가 링크를 미리 여는 일이 흔해, 소비하면 사용자가 클릭하기도 전에 링크가 죽는다.
 
 > **잠금 해제는 비밀번호 재설정이 겸한다(#272)** — `AUTH_ACCOUNT_LOCKED`는 **시간이 지나도 저절로 풀리지 않는다.** 푸는 방법은 본인이 재설정 링크를 받아 새 비밀번호를 확정하는 것이고(`POST /api/v1/auth/password/reset` — 비밀번호 교체와 함께 `failed_login_attempts`를 0으로 되돌리고 `locked_at`을 비운다), 독립 잠금 해제 API는 두지 않는다. 잠긴 사람은 대개 비밀번호를 모르는 상태라 해제만 해 주면 곧바로 다시 잠기기 때문이다. 운영자가 DB의 `locked_at`을 비우는 수동 해제는 **예외 수단으로 남는다** — 재설정 경로는 토글로 켜며 지금은 `local`·`dev`에만 배포돼 있어 **prod에서는 여전히 수동 해제뿐**이다.
@@ -164,6 +167,9 @@
 > **웹 인증에서 의도적으로 신설하지 않은 코드** — 리뷰어가 누락으로 오해하지 않도록 근거를 남긴다.
 > - **SMS 인증 없는 가입 제출**: 기존 `AUTH_PHONE_NOT_VERIFIED`(422)를 재사용한다. 임대인 온보딩의 게이트와 뜻이 같고, 이때는 **계정 생성도 연동도 하지 않는다**.
 > - **가입용 인증번호 불일치·만료·시도 초과**: 기존 `AUTH_PHONE_VERIFICATION_FAILED`(422). 비로그인 경로라고 코드를 나누지 않는다.
+> - **가입용 이메일 인증번호 불일치·만료·시도 초과**(#285): 기존 `AUTH_EMAIL_VERIFICATION_FAILED`(422). 정식 사용자용 이메일 인증(`/auth/email/verify`)과 같은 코드이며, **시도 초과도 429가 아니라 이 422**다 — 비로그인 경로에서는 코드가 갈리는 것 자체가 챌린지 존재·시도 잔량을 알려 주는 신호다.
+> - **이메일 미인증 가입 제출**(#285): `AUTH_EMAIL_NOT_VERIFIED`(422)를 **되살렸다**. #192에서 온보딩 게이트로 쓰이던 것이 폐지돼 enum에서 사라졌지만 메시지 번들 2벌에는 키가 남아 있었고, `AUTH_PHONE_NOT_VERIFIED`가 온보딩·웹가입 양쪽에서 공유되는 선례가 있어 **새 코드를 만들지 않고 뜻을 그대로 재사용**한다.
+> - **가입용 이메일 발송 남용**(#285): 공통 `TOO_MANY_REQUESTS`(429). 재발송 쿨다운 60초·이메일 5회/시간·IP 20회/시간이 모두 이 코드이며 어느 축인지 구분하지 않는다. 예산은 가입용 SMS·이메일 찾기·재설정 링크와 **각각 따로** 둔다.
 > - **필수 약관 미동의**: 기존 `AUTH_REQUIRED_AGREEMENT_MISSING`(422). 웹 가입도 앱과 같은 약관 3필드를 받는다.
 > - **웹 로그인 시도 남용**: 공통 `TOO_MANY_REQUESTS`(429) 하나로 낸다 — 같은 IP 60회/시간·같은 이메일 20회/시간이 모두 이 코드이며, 어느 축에 걸렸는지 구분하지 않는다. **자격증명 조회·BCrypt 대조보다 먼저** 판정하므로 이메일 존재 여부를 드러내지 않고, `permitAll` 경로에서 해시 비용을 강제하는 CPU 증폭도 이 지점에서 끊긴다.
 > - **가입용 SMS 남용**: 공통 `TOO_MANY_REQUESTS`(429) 하나로 낸다 — 재발송 쿨다운 60초·번호 5회/시간·IP 20회/시간이 모두 이 코드다. 어느 한도에 걸렸는지 구분해 알려주면 한도를 역산할 수 있다. 발송 실패는 공통 `UPSTREAM_ERROR`(502)이며 챌린지를 저장하지 않는다.
@@ -314,7 +320,7 @@ public class GlobalExceptionHandler {
 - 먼저 **HTTP status**로 큰 분기(2xx/4xx/5xx), 다음 **`error.code`** 로 세부 분기한다. **`message` 문자열로 분기하지 않는다.**
 - `401 TOKEN_EXPIRED` → `POST /api/v1/auth/reissue`로 토큰 재발급 후 원요청 1회 재시도. 재발급도 실패하면 로그인 화면으로. **웹은 refresh를 HttpOnly 쿠키로 들고 있어 본문 없이 호출한다**(서버가 쿠키 우선·본문 fallback으로 읽으며, 둘 다 없으면 `400 INVALID_INPUT` + `errors[].field="refreshToken"`이다). 앱은 종전대로 본문에 담는다.
 - `400 INVALID_INPUT` → `errors[]`의 `field`를 입력 폼에 매핑해 표시.
-- **임대인 웹 로그인**(`POST /api/v1/auth/login`)은 `401 AUTH_INVALID_CREDENTIALS`와 `423 AUTH_ACCOUNT_LOCKED`를 다르게 안내한다 — 401은 어느 쪽이 틀렸는지 밝히지 않고 "이메일 또는 비밀번호를 확인하라"로, 423은 **재시도로 풀리지 않으므로** 재시도 버튼 대신 **비밀번호 재설정 화면으로 보낸다**(재설정이 잠금 해제를 겸한다 — §4). 가입(`POST /api/v1/auth/signup`)의 `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS`는 **로그인 화면으로**, `409 AUTH_EMAIL_ALREADY_REGISTERED`는 **다른 이메일 입력**으로 보낸다.
+- **임대인 웹 로그인**(`POST /api/v1/auth/login`)은 `401 AUTH_INVALID_CREDENTIALS`와 `423 AUTH_ACCOUNT_LOCKED`를 다르게 안내한다 — 401은 어느 쪽이 틀렸는지 밝히지 않고 "이메일 또는 비밀번호를 확인하라"로, 423은 **재시도로 풀리지 않으므로** 재시도 버튼 대신 **비밀번호 재설정 화면으로 보낸다**(재설정이 잠금 해제를 겸한다 — §4). 가입(`POST /api/v1/auth/signup`)의 `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS`는 **로그인 화면으로**, `409 AUTH_EMAIL_ALREADY_REGISTERED`는 **다른 이메일 입력**으로 보낸다(가입용 이메일 인증번호 발송에서 같은 409를 받았을 때도 같다 — 사용자는 대개 여기서 먼저 만난다). `422 AUTH_EMAIL_NOT_VERIFIED`·`422 AUTH_PHONE_NOT_VERIFIED`는 **해당 인증 단계로 되돌린다** — 마커가 만료된 경우가 대부분이라 인증번호를 다시 받으면 그대로 진행된다.
 - **이메일 찾기**(`POST /api/v1/auth/email/find`)의 `404 AUTH_WEB_ACCOUNT_NOT_FOUND`는 **이름·휴대폰 번호 입력을 다시 확인**하게 한다 — 서버가 이름 불일치와 계정 미존재를 구분해 주지 않으므로 "가입한 적 없다"로 단정해 안내하지 않는다.
 - **비밀번호 재설정**(`POST /api/v1/auth/password/reset-token/verify`·`/reset`)의 `422 AUTH_PASSWORD_RESET_TOKEN_INVALID`는 재시도 버튼이 아니라 **재설정 링크를 다시 요청**하게 한다 — 그 토큰은 이미 만료됐거나 사용됐으므로 같은 값을 다시 보내도 결과가 같다.
 - 매물 등록(`POST /api/v2/listings`)의 코드들은 사용자에게 요구할 행동이 서로 다르다: `400 LISTING_UNKNOWN_CATALOG_CODE`는 입력 교정이 아니라 **코드 카탈로그 재조회(또는 앱 갱신)** 를 안내한다 — 사용자가 앱이 준 선택지에서 골랐는데도 거절됐다는 뜻이기 때문이다. 사진 관련 `400 LISTING_IMAGE_REQUIRED`는 **장수 조정**, `413 LISTING_IMAGE_TOO_LARGE`는 **더 작은 파일**, `415 LISTING_IMAGE_UNSUPPORTED_TYPE`은 **지원 형식으로 변환**을 안내한다. `400 LISTING_IMAGE_KEY_NOT_FOUND`는 임시 사진이 사라졌다는 뜻이므로 **사진을 다시 올리게** 한다.
