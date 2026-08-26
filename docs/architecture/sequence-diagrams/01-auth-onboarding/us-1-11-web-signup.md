@@ -23,13 +23,17 @@ sequenceDiagram
     SEC->>AUTH: 인증 주체 없이 요청 전달
     Note over AUTH: Bean Validation — 비밀번호는 영문자·숫자·ASCII 특수문자 각 1자 이상,<br/>길이 8~20, 공백 불허. 위반 시 400 INVALID_INPUT (errors 배열에 field=password)
     Note over AUTH,SQL: 아래 MySQL 쓰기는 한 트랜잭션이다 — 어느 단계에서 실패해도 함께 롤백한다<br/>users만 생기고 local_accounts가 없는(로그인 불가) 계정도,<br/>자격증명만 뜬 계정도 남기지 않는다<br/>단 아래 Redis 두 단계는 이 보장 밖이다(각 단계 주석 참조)
-    Note over AUTH: phoneNumber 정규화(숫자만 남김)
-    AUTH->>RDS: signup-phone:verified:{정규화번호} 조회
-    RDS-->>AUTH: 인증 마커(있음/없음)
-    alt 인증 마커 없음
+    Note over AUTH: phoneNumber 정규화(숫자만 남김) · email 정규화(trim + 소문자)
+    AUTH->>RDS: signup-phone:verified:{정규화번호} 조회<br/>signup-email:verified:{정규화이메일} 조회
+    RDS-->>AUTH: 인증 마커 둘(있음/없음)
+    alt 연락처 인증 마커 없음
         AUTH-->>C: 422 AUTH_PHONE_NOT_VERIFIED
         Note over AUTH: 계정 생성도 연동도 하지 않는다<br/>이름과 번호만으로는 절대 연동되지 않는다
         C-->>U: 휴대폰 인증 안내(US-1-13)
+    else 이메일 인증 마커 없음
+        AUTH-->>C: 422 AUTH_EMAIL_NOT_VERIFIED
+        Note over AUTH: 계정 생성도 연동도 하지 않는다<br/>닿지 않는 주소로 가입하면 잠겼을 때 복구 경로가 사라진다<br/>(두 마커 게이트는 서로 순서 무관 — 둘 다 없으면 연락처 코드가 먼저다)
+        C-->>U: 이메일 인증 안내(US-1-18)
     else 필수 약관 미동의 (이용약관·개인정보 중 하나라도 false)
         AUTH-->>C: 422 AUTH_REQUIRED_AGREEMENT_MISSING
         C-->>U: 약관 동의 안내
@@ -71,7 +75,7 @@ sequenceDiagram
             Note over AUTH: 정식 accessToken+refreshToken 발급<br/>(issueFullTokens — 앱과 같은 메서드, 규칙을 두 벌로 만들지 않는다)
             AUTH->>RDS: refreshToken 해시 저장(14일 TTL — 앱과 동일)<br/>Redis라 롤백되지 않는다 — 커밋 시점에 실패하면 해시만 남는다(알려진 제약)
             RDS-->>AUTH: 저장 완료
-            AUTH->>RDS: signup-phone:verified:{정규화번호} 삭제(마커 소비)<br/>커밋 이후에 실행된다(afterCommit) — 롤백된 가입이 마커를 태우지 않게 한다
+            AUTH->>RDS: signup-phone:verified:{정규화번호} · signup-email:verified:{정규화이메일} 삭제(마커 소비)<br/>커밋 이후에 실행된다(afterCommit) — 롤백된 가입이 마커를 태우지 않게 한다<br/>앞에서 지우면 커밋 실패 시 인증을 둘 다 다시 해야 한다
             RDS-->>AUTH: 삭제 완료
             AUTH-->>C: 200 OK<br/>Set-Cookie: refreshToken=...; HttpOnly; Secure; SameSite=Lax;<br/>Path=/api/v1/auth; Max-Age=1209600<br/>{ linked, onboardingRequired: false, status: ACTIVE,<br/>tokenType: Bearer, accessToken, expiresIn: 3600, email, name }
             C-->>U: 가입 완료, 매물 등록 진입
@@ -83,7 +87,7 @@ sequenceDiagram
 
 - **`POST /api/v1/auth/signup`은 permitAll이다.** 가입 전이라 토큰이 없으므로 `SecurityConfig` 공개 티어와 [`PublicPaths.ALL`](../../../../src/main/java/com/kohere/common/security/PublicPaths.java)에 **함께** 등록한다(한쪽만 등록하면 만료 토큰을 든 브라우저가 가입에서 401을 맞는다). 필터는 주체를 세우지 않고 그대로 통과시킨다.
 - **본문 검증은 게이트보다 먼저, Bean Validation이 끝낸다.** 비밀번호는 영문자·숫자·ASCII 특수문자 각 1자 이상 · 길이 8~20 · 공백 불허이며 위반 시 `400 INVALID_INPUT`(`errors[].field=password`)이고, `name`·`phoneNumber` 누락과 `email`·`birthDate` 형식 위반도 같은 `400`이다(부수효과 없음). 검증을 통과한 뒤의 게이트·상태 전이·INSERT는 **전부 한 트랜잭션**이라 어느 단계에서 실패해도 전체 롤백한다 — `users`만 생기고 `local_accounts`가 없는(로그인 불가) 계정도, 자격증명만 뜬 계정도 남기지 않는다.
-- **게이트 순서는 인증 마커 → 약관 → 이메일 중복 → 번호 매칭이다.** 정규화한 번호로 Redis 마커(`signup-phone:verified:{정규화번호}`)를 먼저 확인해 없으면 `422 AUTH_PHONE_NOT_VERIFIED`로 끊고 **계정 생성도 연동도 하지 않는다** — 번호는 *조회 키*이지 *인증 수단*이 아니며, 소유 증명은 [US-1-13](us-1-13-signup-phone-verification.md)이 전담한다. 이어 필수 약관 2종(`termsOfServiceAgreed`·`privacyPolicyAgreed`)이 모두 `true`가 아니면 `422 AUTH_REQUIRED_AGREEMENT_MISSING`이다(`marketingAgreed`는 선택).
+- **게이트 순서는 인증 마커 둘 → 약관 → 이메일 중복 → 번호 매칭이다.** 정규화한 번호로 Redis 마커(`signup-phone:verified:{정규화번호}`)를 먼저 확인해 없으면 `422 AUTH_PHONE_NOT_VERIFIED`로 끊고 **계정 생성도 연동도 하지 않는다** — 번호는 *조회 키*이지 *인증 수단*이 아니며, 소유 증명은 [US-1-13](us-1-13-signup-phone-verification.md)이 전담한다. 이어 정규화한 이메일 마커(`signup-email:verified:{정규화이메일}`)를 확인해 없으면 `422 AUTH_EMAIL_NOT_VERIFIED`다([US-1-18](us-1-18-signup-email-verification.md)) — **이 게이트가 지키는 것은 남의 계정이 아니라 본인의 복구 경로**다(닿지 않는 주소로 가입하면 잠겼을 때 재설정 메일을 받을 수 없어 자력 해제가 불가능해진다). **두 마커 게이트 사이에는 지켜야 할 순서가 없다** — 둘 다 부작용 없는 Redis 읽기이고 둘 다 `422`라, 갈리는 것은 "둘 다 미인증"일 때 나가는 코드 하나뿐이며 기존 계약을 유지하는 쪽으로 연락처를 먼저 본다. **계약인 것은 「마커 둘이 중복·매칭 판정보다 앞」** 이다. 이어 필수 약관 2종(`termsOfServiceAgreed`·`privacyPolicyAgreed`)이 모두 `true`가 아니면 `422 AUTH_REQUIRED_AGREEMENT_MISSING`이다(`marketingAgreed`는 선택).
 - **이메일 중복은 `local_accounts.email`만 본다.** 이메일은 **연동 키가 아니라 웹 로그인 ID**여서 유일해야 하지만, `users.email`은 소셜 provider 진본이고 로그인 판정에 쓰이지 않는다(소셜은 `(provider, provider_user_id)`로 판정한다). `users.email`까지 검사하면 **본인이 본인 소셜 이메일로 가입하려다 409**를 맞는 가장 흔한 정상 경로가 막힌다. `users.email`에 UNIQUE를 걸지 않는 것도 같은 이유다. 그 반대급부로 **남의 소셜 이메일과 같은 주소로 웹 가입하는 것은 막히지 않으며**(`users.email`이 같은 사용자가 둘 생길 수 있다) 이는 수용한 제약이다 — 매물·예약은 `user_id`로 갈려 섞이지 않고, 이메일은 웹 로그인 ID일 뿐 계정 복구 수단이 아니라 탈취 경로가 되지 않는다.
 - **연동 판정은 `SELECT ... FOR UPDATE`로 대상 행을 잠근 뒤 수행한다.** 조건은 정규화 번호 + `status='ACTIVE'` + `user_type='LANDLORD'`이며, 뒤 두 조건은 지금은 중복이지만(번호가 채워진 계정은 사실상 `ACTIVE` 임대인뿐이다) **암묵 불변식에 기대지 않기 위해 명시**한다.
 - **`linked=true`(성공)와 `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS`는 같은 조회의 서로 다른 가지다.** 번호로 기존 계정을 찾은 것까지는 같고, **그 계정에 웹 자격증명이 이미 붙어 있는지**에서 갈린다 — 앱만 쓰던 사람이 웹에 처음 가입하면 붙일 자리가 비어 있어 연동 성공이고, 웹 계정이 있는 사람이 또 가입하면 자리가 이미 차 있어 409다. 이 경우 남은 동작은 기존 자격증명을 **덮어쓰는 것**뿐인데 그건 가입이 아니라 자격증명 교체이고, 로그인 ID까지 조용히 바뀌는 놀라운 동작이라 하지 않는다. 응답에는 **마스킹 이메일도 싣지 않고** 공통 에러 스키마(`code`·`message`)만 내려 번호 소유자에게 남의 이메일 일부가 새지 않게 한다.
@@ -102,7 +106,8 @@ sequenceDiagram
 | 판정 | 조건 | 결과 |
 | --- | --- | --- |
 | **필드 검증** | 비밀번호 정책 위반, 필수 필드 누락·형식 오류 | `400 INVALID_INPUT` (`errors[]`에 field·reason) — 아무것도 쓰지 않는다 |
-| **인증 마커** | `signup-phone:verified:{정규화번호}` 없음 | `422 AUTH_PHONE_NOT_VERIFIED` — 아무것도 쓰지 않는다 |
+| **연락처 인증 마커** | `signup-phone:verified:{정규화번호}` 없음 | `422 AUTH_PHONE_NOT_VERIFIED` — 아무것도 쓰지 않는다 |
+| **이메일 인증 마커** | `signup-email:verified:{정규화이메일}` 없음 | `422 AUTH_EMAIL_NOT_VERIFIED` — 아무것도 쓰지 않는다(앞 게이트와 서로 순서 무관) |
 | **약관** | 필수 2종 중 하나라도 `false` | `422 AUTH_REQUIRED_AGREEMENT_MISSING` |
 | **로그인 ID** | `local_accounts.email` 중복 | `409 AUTH_EMAIL_ALREADY_REGISTERED` |
 | **번호 매칭 O · 웹 계정 O** | 매칭된 `user_id`에 `local_accounts` 행 존재 | `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS` — 로그인 화면으로 |
