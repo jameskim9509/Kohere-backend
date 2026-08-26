@@ -137,7 +137,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `email` 누락·빈값이거나 이메일 형식 위반 |
+      | 400 | `INVALID_INPUT` | `email` 누락·빈값이거나 `name@example.com` 형식 위반(최상위 도메인 누락 포함)·255자 초과 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -169,7 +169,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `email`·`code` 누락·빈값이거나 `email`이 이메일 형식 위반 |
+      | 400 | `INVALID_INPUT` | `email`·`code` 누락·빈값이거나 `email`이 `name@example.com` 형식 위반(최상위 도메인 누락 포함) |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `UNAUTHENTICATED` | 토큰 누락·위조 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
@@ -468,7 +468,7 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - 온보딩용 발송(`POST /api/v1/auth/phone/verification-code`)과 정책(6자리·5분 만료·시도 5회·재발송 60초)은 같지만 **챌린지 키가 번호**라 로그인이 필요 없다.
+      - 온보딩용 발송(`POST /api/v1/auth/phone/verification-code`)과는 **다른 엔드포인트**다. 인증번호 정책(6자리·5분 만료·시도 5회·재발송 60초)은 같다.
       - 가입 이력이 있는 번호든 없는 번호든 **응답이 같다** — 이 응답으로 계정 존재 여부를 알 수 없다.
       - 발송이 실패하면(SMS provider 장애·타임아웃) 인증번호가 새로 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
 
@@ -565,8 +565,8 @@ public final class AuthDocsFields {
 
       **응답 주의사항**
 
-      - 인증 마커는 **30분간만** 유효하다 — 그 안에 회원가입을 제출해야 하고, 넘기면 422 `AUTH_PHONE_NOT_VERIFIED`라 발송부터 다시 한다.
-      - 마커는 가입 제출이 **1회 소비**한다 — 같은 인증으로 두 번 가입할 수 없다.
+      - 인증은 **30분간만** 유효하다 — 그 안에 회원가입을 제출해야 하고, 넘기면 422 `AUTH_PHONE_NOT_VERIFIED`라 발송부터 다시 한다.
+      - 한 번의 인증으로 가입은 **한 번만** 할 수 있다 — 가입에 성공하면 그 인증은 소모된다.
       - 이 응답은 **연동 대상 계정의 유무를 알려주지 않는다** — 가입 폼은 연동 여부와 무관하게 항상 전체 필드를 받는다.
 
       **에러 코드**
@@ -587,7 +587,7 @@ public final class AuthDocsFields {
 
   public static final String WEB_SIGNUP_DESCRIPTION =
       """
-      가입 폼 한 페이지의 값을 받아 한 트랜잭션에서 `ACTIVE`까지 완주한다. 같은 번호의 앱 임대인 계정이 있으면 새 계정을 만들지 않고 그 계정에 웹 자격증명만 붙인다(`linked=true`).
+      가입 폼 한 페이지의 값을 받아 **한 번에 가입을 완료**한다 — 중간 상태가 남지 않아 실패하면 계정이 아예 만들어지지 않는다. 같은 번호의 앱 임대인 계정이 있으면 새 계정을 만들지 않고 그 계정에 웹 자격증명만 붙인다(`linked=true`).
 
       **헤더**
 
@@ -596,8 +596,8 @@ public final class AuthDocsFields {
       **요청 주의사항**
 
       - **선행 조건은 인증 둘이다** — `POST /api/v1/auth/phone/signup/verification-code`·`/verify`(연락처)와 `POST /api/v1/auth/email/signup/verification-code`·`/verify`(이메일). 어느 한쪽이라도 인증되지 않았거나 30분이 지났으면 422이고 계정이 만들어지지 않는다. 두 인증은 서로 순서가 무관하다.
-      - 연동 판정 키는 **정규화한 `phoneNumber` 단독**이다 — 이름은 매칭 조건이 아니다(앱 이름과 웹 이름이 달라도 연동된다).
-      - 이메일 중복은 **웹 로그인 ID(`local_accounts.email`)** 에만 건다 — 앱 소셜 계정과 같은 이메일로 가입하는 것은 정상이다.
+      - 연동 판정은 **`phoneNumber` 하나로만** 한다 — 이름은 매칭 조건이 아니다(앱 이름과 웹 이름이 달라도 연동된다).
+      - 이메일 중복은 **웹 로그인 ID에만** 건다 — 앱 소셜 계정과 같은 이메일로 가입하는 것은 정상이다.
       - `password`는 영문자 1자 이상 + 숫자 1자 이상 + ASCII 특수문자 1자 이상, **길이 8~20**, 공백 불가다. 위반은 400 `INVALID_INPUT`이며 `errors[].field=password`로 온다.
       - 폼은 연동 여부와 무관하게 항상 전체 필드를 받는다(화면이 하나다).
 
@@ -660,7 +660,7 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `email`·`password` 누락·빈값이거나 `email` 형식 위반 |
+      | 400 | `INVALID_INPUT` | `email`·`password` 누락·빈값이거나 `email`이 `name@example.com` 형식 위반(최상위 도메인 누락 포함) |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 401 | `AUTH_INVALID_CREDENTIALS` | 등록되지 않은 이메일 **또는** 비밀번호 불일치 — `error.code`가 같다. 탈퇴 등으로 `ACTIVE`가 아닌 계정도 같은 코드다 |
       | 423 | `AUTH_ACCOUNT_LOCKED` | 비밀번호 10회 연속 실패로 잠긴 계정 — 비밀번호가 맞아도 잠금이 우선한다. 시간 경과 자동 해제는 없고 본인이 비밀번호 재설정을 완주해야 풀린다 |
@@ -705,7 +705,7 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - 인증번호 정책(6자리·5분 만료·검증 시도 5회·재발송 60초)은 가입용 발송(`POST /api/v1/auth/phone/signup/verification-code`)과 같지만 **챌린지·마커 키스페이스가 다르다** — 가입용 마커로는 이메일 찾기(`POST /api/v1/auth/email/find`)를 통과할 수 없고 그 반대도 마찬가지다.
+      - 인증번호 정책(6자리·5분 만료·검증 시도 5회·재발송 60초)은 가입용 발송(`POST /api/v1/auth/phone/signup/verification-code`)과 같지만 **서로 다른 인증**이다 — 가입용으로 받은 인증으로는 이메일 찾기(`POST /api/v1/auth/email/find`)를 통과할 수 없고 그 반대도 마찬가지다.
       - 레이트리밋 예산도 가입용과 **합산하지 않는다** — 가입 SMS를 태워 막힌 사람이 복구 경로까지 막히지 않게 한다.
       - 가입 이력이 있는 번호든 없는 번호든 **응답이 같다** — 이 응답으로 계정 존재 여부를 알 수 없다. 계정 판정은 이름까지 받는 `POST /api/v1/auth/email/find`에서만 한다.
       - 발송이 실패하면(SMS provider 장애·타임아웃) 인증번호가 새로 발급되지 않는다 — 502를 받으면 다시 발송해야 인증번호를 받는다.
@@ -730,7 +730,7 @@ public final class AuthDocsFields {
 
   public static final String FIND_EMAIL_PHONE_VERIFY_DESCRIPTION =
       """
-      발송된 인증번호를 확인해 **이메일 찾기 전용** 검증 마커(30분)를 만든다. 가입 이메일 찾기(`POST /api/v1/auth/email/find`)의 선행 단계다.
+      발송된 인증번호를 확인해 **이메일 찾기 전용** 인증(30분)을 만든다. 가입 이메일 찾기(`POST /api/v1/auth/email/find`)의 선행 단계다.
 
       **헤더**
 
@@ -742,9 +742,9 @@ public final class AuthDocsFields {
 
       **응답 주의사항**
 
-      - 마커는 **30분간만** 유효하고 소비처는 `POST /api/v1/auth/email/find` **하나뿐**이다 — 넘기면 422 `AUTH_PHONE_NOT_VERIFIED`라 발송부터 다시 한다.
-      - **가입용 마커와 서로 통하지 않는다** — 키스페이스가 갈려 있어 조회 자체가 실패한다.
-      - 이 응답은 **계정의 유무를 말하지 않는다** — "번호를 검증했다"는 사실만 알린다. 여기서 미리 알려 주면 발송·확인 두 번만으로 번호 열거가 성립한다.
+      - 이 인증은 **30분간만** 유효하고 `POST /api/v1/auth/email/find` **에서만** 쓸 수 있다 — 넘기면 422 `AUTH_PHONE_NOT_VERIFIED`라 발송부터 다시 한다.
+      - **가입용 인증과 서로 통하지 않는다** — 이메일 찾기에는 이 경로로 받은 인증만 쓸 수 있다.
+      - 이 응답은 **계정의 유무를 말하지 않는다** — "번호를 검증했다"는 사실만 알린다. 그 번호로 가입된 계정이 있는지는 `POST /api/v1/auth/email/find`가 판정한다.
 
       **에러 코드**
 
@@ -764,7 +764,7 @@ public final class AuthDocsFields {
 
   public static final String FIND_EMAIL_DESCRIPTION =
       """
-      연락처 인증 마커를 소비하고 제출한 이름을 대조해, 그 번호로 가입된 웹 계정의 **마스킹된 로그인 이메일**을 돌려준다.
+      앞서 마친 연락처 인증을 사용하고 제출한 이름을 대조해, 그 번호로 가입된 웹 계정의 **마스킹된 로그인 이메일**을 돌려준다.
 
       **헤더**
 
@@ -772,14 +772,14 @@ public final class AuthDocsFields {
 
       **요청 주의사항**
 
-      - **선행 조건은 `POST /api/v1/auth/phone/find-email/verification-code`·`/verify`** 다. 마커가 없거나 만료면 422이고 계정 조회 자체를 하지 않는다. 가입용 마커로는 통과하지 못한다.
-      - `name`은 **`local_accounts.name`(가입 폼에 직접 적은 값)과 대조**하며 회원 프로필 이름(`users.name`) 폴백이 없다. 공백을 모두 지우고 대소문자를 무시해 비교하므로 `홍 길동`·`홍길동`은 같은 이름이다.
+      - **선행 조건은 `POST /api/v1/auth/phone/find-email/verification-code`·`/verify`** 다. 인증이 없거나 30분이 지났으면 422다. 가입용 인증으로는 통과하지 못한다.
+      - `name`은 **웹 가입 폼에 직접 적었던 이름**과 대조한다 — 앱 프로필에서 바꾼 이름으로는 찾을 수 없다. 공백을 모두 지우고 대소문자를 무시해 비교하므로 `홍 길동`·`홍길동`은 같은 이름이다.
 
       **응답 주의사항**
 
-      - 응답 `email`은 **웹 로그인 ID(`local_accounts.email`)** 를 마스킹한 값이다 — 회원 프로필 이메일이 아니다. 연동된 계정은 두 값이 다를 수 있고, 이 화면이 알려 줘야 하는 것은 로그인 화면에 입력할 ID다.
-      - **성공하면 마커를 소비(삭제)한다** — 마커 하나로 무제한 반복 조회하는 것을 막는다. 실패한 조회는 마커를 태우지 않으므로 이름 오타는 다시 시도할 수 있다.
-      - 이 경로만 **계정 존재를 404로 드러낸다** — SMS 인증 마커 뒤라 호출자가 조회할 수 있는 번호가 자기 번호 하나로 닫혀 있기 때문이다(재설정 링크 발송은 반대로 존재를 숨긴다).
+      - 응답 `email`은 **웹 로그인 ID**를 마스킹한 값이다 — 회원 프로필 이메일이 아니다. 연동된 계정은 두 값이 다를 수 있고, 이 화면이 알려 줘야 하는 것은 로그인 화면에 입력할 ID다.
+      - **성공하면 그 인증은 소모된다** — 한 번 인증으로 한 번만 조회할 수 있다. 실패한 조회는 인증을 소모하지 않으므로 **이름 오타는 다시 시도할 수 있다**.
+      - 찾지 못하면 **404**다 — 계정이 없는 경우와 이름이 다른 경우를 구분하지 않는다(아래 에러 코드).
 
       **에러 코드**
 
@@ -787,8 +787,8 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `phoneNumber`·`name` 누락·빈값, `phoneNumber` 형식 위반, `name` 200자 초과 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 404 | `AUTH_WEB_ACCOUNT_NOT_FOUND` | 그 번호로 가입된 웹 계정이 없음 **또는** 제출한 이름이 불일치 — **두 경우를 구분하지 않는다**(이름 오라클 차단) |
-      | 422 | `AUTH_PHONE_NOT_VERIFIED` | 이메일 찾기용 검증 마커가 없거나 만료(이미 소비한 마커 포함) |
+      | 404 | `AUTH_WEB_ACCOUNT_NOT_FOUND` | 그 번호로 가입된 웹 계정이 없음 **또는** 제출한 이름이 불일치 — **두 경우를 구분하지 않는다** |
+      | 422 | `AUTH_PHONE_NOT_VERIFIED` | 이메일 찾기용 인증이 없거나 만료(이미 조회에 사용한 인증 포함) |
       """;
 
   public static final String[] FIND_EMAIL_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -810,9 +810,8 @@ public final class AuthDocsFields {
       **요청 주의사항**
 
       - 이름·연락처 같은 추가 확인 값을 받지 않는다 — 소유 증명은 **메일 수신 자체**가 한다.
-      - 조회 대상은 `local_accounts.email`(웹 로그인 ID)이고 회원 프로필 이메일은 보지 않는다.
-      - **가입되지 않은 이메일도 같은 200**이다(`expiresIn`까지 같다) — 메일만 보내지 않는다. 선행 게이트가 없어 임의의 이메일로 부를 수 있으므로, 응답을 가르는 순간 완전한 가입 여부 오라클이 된다.
-      - **다만 발송이 동기라 응답 시간과 502 발생 여부로는 존재가 드러난다** — 본문이 같다는 수준까지만 방어하고 타이밍 누출은 알면서 남긴다.
+      - 조회 대상은 **웹 로그인 ID**이고 회원 프로필 이메일은 보지 않는다.
+      - **가입되지 않은 이메일도 같은 200**이다(`expiresIn`까지 같다) — 메일만 보내지 않는다. 즉 **이 응답으로는 가입 여부를 알 수 없다**.
 
       **응답 주의사항**
 
@@ -824,10 +823,10 @@ public final class AuthDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | `email` 누락·빈값·형식 위반·255자 초과 |
+      | 400 | `INVALID_INPUT` | `email` 누락·빈값, `name@example.com` 형식 위반(최상위 도메인 누락 포함), 255자 초과 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
       | 429 | `TOO_MANY_REQUESTS` | 같은 이메일 5회/1시간 또는 같은 IP 20회/1시간 초과 — 어느 축인지 구분해 알리지 않는다. 로그인 시도 한도와 버킷을 공유하지 않는다 |
-      | 502 | `UPSTREAM_ERROR` | 메일 발송 실패(SMTP 장애·타임아웃). **가입된 이메일에서만 날 수 있어 그 자체가 존재 신호**이며 위 타이밍 누출과 같은 성격으로 수용한다 |
+      | 502 | `UPSTREAM_ERROR` | 메일 발송 실패(SMTP 장애·타임아웃) — 잠시 후 다시 요청한다 |
       """;
 
   public static final String[] PASSWORD_RESET_LINK_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -863,7 +862,7 @@ public final class AuthDocsFields {
       |---|---|---|
       | 400 | `INVALID_INPUT` | `token` 누락·빈값 |
       | 400 | `MALFORMED_REQUEST` | 요청 본문 JSON을 해석할 수 없음 |
-      | 422 | `AUTH_PASSWORD_RESET_TOKEN_INVALID` | 토큰 부재·만료·이미 사용됨 — **세 경우를 구분하지 않는다**(구분하면 "존재했지만 이미 쓰였다"까지 알려 주는 오라클이 된다) |
+      | 422 | `AUTH_PASSWORD_RESET_TOKEN_INVALID` | 토큰 부재·만료·이미 사용됨 — **세 경우를 구분하지 않는다**. 셋 다 링크를 다시 요청하면 된다 |
       """;
 
   public static final String[] PASSWORD_RESET_TOKEN_VERIFY_400 = {
@@ -974,7 +973,11 @@ public final class AuthDocsFields {
   }
 
   public static List<FieldDescriptor> emailCodeRequestFields() {
-    return List.of(field("email", JsonFieldType.STRING, "인증번호를 받을 이메일(필수, 이메일 형식)"));
+    return List.of(
+        field(
+            "email",
+            JsonFieldType.STRING,
+            "인증번호를 받을 이메일(필수, 255자 이하 — name@example.com 형식이며 최상위 도메인은 영문 2자 이상이어야 한다)"));
   }
 
   public static List<FieldDescriptor> emailCodeResponseFields() {
@@ -1227,7 +1230,7 @@ public final class AuthDocsFields {
         field(
             "email",
             JsonFieldType.STRING,
-            "웹 로그인 ID(필수, 이메일 형식, 빈값 불가). 형식은 맞지만 등록되지 않은 주소는 400이 아니라 401이다"),
+            "웹 로그인 ID(필수, 255자 이하 — name@example.com 형식이며 최상위 도메인은 영문 2자 이상이어야 한다). 형식은 맞지만 등록되지 않은 주소는 400이 아니라 401이다"),
         field("password", JsonFieldType.STRING, "비밀번호(필수, 빈값 불가). 값이 틀리면 401이다"));
   }
 
@@ -1315,7 +1318,7 @@ public final class AuthDocsFields {
         field(
             "email",
             JsonFieldType.STRING,
-            "웹 로그인 ID(필수, 이메일 형식, 255자 이내). 형식만 맞으면 가입 여부와 무관하게 200이며 미가입 주소는 메일만 나가지 않는다"));
+            "웹 로그인 ID(필수, 255자 이하 — name@example.com 형식이며 최상위 도메인은 영문 2자 이상이어야 한다). 형식만 맞으면 가입 여부와 무관하게 200이며 미가입 주소는 메일만 나가지 않는다"));
   }
 
   public static List<FieldDescriptor> passwordResetLinkResponseFields() {

@@ -1,7 +1,9 @@
 package com.kohere.auth.presentation.dto;
 
-import jakarta.validation.constraints.Email;
+import com.kohere.common.request.Emails;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 /**
  * 임대인 웹 로그인 요청 DTO(POST /api/v1/auth/login, 비로그인). 웹 로그인 ID는 {@code local_accounts.email}이므로 계정을
@@ -21,4 +23,6 @@ import jakarta.validation.constraints.NotBlank;
  *
  * <p>docs/api/specs/01-auth-onboarding.md §1-4 · ADR-0047.
  */
-public record LoginRequest(@NotBlank @Email String email, @NotBlank String password) {}
+public record LoginRequest(
+    @NotBlank @Size(max = 255) @Pattern(regexp = Emails.PATTERN) String email,
+    @NotBlank String password) {}

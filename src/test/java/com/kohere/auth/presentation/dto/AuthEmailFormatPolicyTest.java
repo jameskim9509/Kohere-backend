@@ -17,19 +17,19 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * 가입 경로 이메일 형식의 <b>경계</b>를 고정한다(US-1-11·US-1-18).
+ * {@code auth} 요청 DTO 이메일 형식의 <b>경계</b>를 고정한다(US-1-11·US-1-18 및 로그인·계정 복구·정식 사용자 인증).
  *
  * <p><b>왜 따로 두는가</b> — 문서화 테스트의 400 예시는 {@code "not-an-email"}처럼 {@code @}조차 없는 값이라
  * <b>{@code @Email}만 붙어 있어도 그대로 통과</b>한다. 즉 규칙을 느슨하게 되돌려도 그 테스트는 초록이다. "최상위 도메인을 요구한다"는 이 경로만의 계약을
  * 실제로 지키는 것은 이 파일뿐이다.
  *
- * <p><b>세 DTO를 함께 본다</b> — 발송·확인·가입이 같은 규칙을 써야 한다. 한 곳만 느슨해지면 인증은 통과했는데 가입에서 400이 나거나(그 반대) 하는,
- * 사용자가 원인을 알 수 없는 조합이 생긴다.
+ * <p><b>일곱 DTO를 함께 본다</b> — 같은 주소를 다루는 경로가 같은 규칙을 써야 한다. 한 곳만 느슨해지면 인증은 통과했는데 가입에서 400이 나거나, 가입은
+ * 됐는데 그 주소로 재설정 링크를 못 받는, 사용자가 원인을 알 수 없는 조합이 생긴다.
  *
  * <p>검증 대상이 {@code @Pattern} 하나이므로 Spring 컨텍스트 없이 Bean Validation만 띄운다. 다른 필드는 이 테스트의 관심사가 아니라 전부
  * 유효한 값으로 채우고 {@code email} 위반만 센다.
  */
-class SignupEmailFormatPolicyTest {
+class AuthEmailFormatPolicyTest {
 
   private static ValidatorFactory factory;
   private static Validator validator;
@@ -50,15 +50,31 @@ class SignupEmailFormatPolicyTest {
     return Stream.of(
         new Object[] {
           "발송(§1-11)",
-          (Function<String, Set<String>>) SignupEmailFormatPolicyTest::codeRequestViolations
+          (Function<String, Set<String>>) AuthEmailFormatPolicyTest::codeRequestViolations
         },
         new Object[] {
           "확인(§1-12)",
-          (Function<String, Set<String>>) SignupEmailFormatPolicyTest::verifyRequestViolations
+          (Function<String, Set<String>>) AuthEmailFormatPolicyTest::verifyRequestViolations
         },
         new Object[] {
           "가입(§1-3)",
-          (Function<String, Set<String>>) SignupEmailFormatPolicyTest::signupRequestViolations
+          (Function<String, Set<String>>) AuthEmailFormatPolicyTest::signupRequestViolations
+        },
+        new Object[] {
+          "웹 로그인(§1-4)",
+          (Function<String, Set<String>>) AuthEmailFormatPolicyTest::loginRequestViolations
+        },
+        new Object[] {
+          "재설정 링크 발송(§1-8)",
+          (Function<String, Set<String>>) AuthEmailFormatPolicyTest::resetLinkRequestViolations
+        },
+        new Object[] {
+          "정식 사용자 인증번호 발송(§3)",
+          (Function<String, Set<String>>) AuthEmailFormatPolicyTest::emailCodeRequestViolations
+        },
+        new Object[] {
+          "정식 사용자 인증번호 확인(§4)",
+          (Function<String, Set<String>>) AuthEmailFormatPolicyTest::emailVerifyRequestViolations
         });
   }
 
@@ -102,6 +118,22 @@ class SignupEmailFormatPolicyTest {
     // @Email 이 허용하는 값 — 규칙을 @Email 로 되돌리면 이 단정이 깨진다.
     assertThat("kim@work".matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")).isFalse();
     assertThat(signupRequestViolations("kim@work")).contains("email");
+  }
+
+  private static Set<String> loginRequestViolations(String email) {
+    return fields(validator.validate(new LoginRequest(email, "Kohere1!")));
+  }
+
+  private static Set<String> resetLinkRequestViolations(String email) {
+    return fields(validator.validate(new PasswordResetLinkRequest(email)));
+  }
+
+  private static Set<String> emailCodeRequestViolations(String email) {
+    return fields(validator.validate(new EmailVerificationCodeRequest(email)));
+  }
+
+  private static Set<String> emailVerifyRequestViolations(String email) {
+    return fields(validator.validate(new EmailVerifyRequest(email, "482913")));
   }
 
   private static Set<String> codeRequestViolations(String email) {

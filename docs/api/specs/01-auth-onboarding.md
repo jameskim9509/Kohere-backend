@@ -468,7 +468,7 @@ Set-Cookie: refreshToken=rt_9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2; HttpOnly;
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `email` | string | 필수 | 이메일 형식(`@NotBlank`·`@Email`). 빈 문자열 불가. 누락·형식 위반은 `INVALID_INPUT`(400)이고, **형식은 맞지만 등록되지 않은 주소는 `AUTH_INVALID_CREDENTIALS`(401)** 다 |
+| `email` | string | 필수 | 이메일 형식(`@NotBlank` · `@Pattern`(§1-11과 **같은 정규식**) · `@Size(max = 255)`). 빈 문자열 불가. 누락·형식 위반은 `INVALID_INPUT`(400)이고, **형식은 맞지만 등록되지 않은 주소는 `AUTH_INVALID_CREDENTIALS`(401)** 다 |
 | `password` | string | 필수 | 빈 문자열 불가(`@NotBlank`). 누락·빈값은 `INVALID_INPUT`(400), 값이 틀리면 `AUTH_INVALID_CREDENTIALS`(401) |
 
 #### 성공 Response — 200 OK
@@ -714,7 +714,7 @@ Set-Cookie: refreshToken=rt_3b1e7c5a2f9d04e8b6c1a07f5d2e93b4c8a16f0d; HttpOnly; 
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `email` | string | 필수 | 이메일 형식(`@NotBlank` · `@Email` · `@Size(max = 255)`). **`local_accounts.email`(웹 로그인 ID)로 조회**하고 `users.email`은 보지 않는다 — 재설정 대상은 프로필이 아니라 웹 자격증명이다. **형식만 맞으면 등록 여부와 무관하게 `200`** 이다 |
+| `email` | string | 필수 | 이메일 형식(`@NotBlank` · `@Pattern`(§1-11과 **같은 정규식**) · `@Size(max = 255)`). **`local_accounts.email`(웹 로그인 ID)로 조회**하고 `users.email`은 보지 않는다 — 재설정 대상은 프로필이 아니라 웹 자격증명이다. **형식만 맞으면 등록 여부와 무관하게 `200`** 이다 |
 
 #### 성공 Response — 200 OK
 
@@ -1017,7 +1017,7 @@ SPA가 `/reset-password?token=…`에 도착하자마자 호출해 **링크가 �
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `email` | string | 필수 | 이메일 형식(`@Email`). 빈 문자열 불가 |
+| `email` | string | 필수 | 이메일 형식(`@NotBlank` · `@Pattern`(§1-11과 **같은 정규식**) · `@Size(max = 255)`). 빈 문자열 불가 |
 
 #### 성공 Response — 200 OK
 
@@ -1067,7 +1067,7 @@ SPA가 `/reset-password?token=…`에 도착하자마자 호출해 **링크가 �
 
 | 필드 | 타입 | 필수 | 검증 |
 | --- | --- | --- | --- |
-| `email` | string | 필수 | 인증번호를 발송한 이메일과 일치해야 함 |
+| `email` | string | 필수 | 인증번호를 발송한 이메일과 일치해야 함. 형식 규칙은 §3과 같다 |
 | `code` | string | 필수 | 발송된 인증번호. 빈 문자열 불가 |
 
 #### 성공 Response — 200 OK
