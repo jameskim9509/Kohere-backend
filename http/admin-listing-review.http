@@ -52,6 +52,9 @@
 # ↓ 1번 발송 후 앱 콘솔의 [DEV SMS] 줄에서 6자리를 읽어 채운다
 @code = 000000
 
+# ↓ 2-1번 발송 후 MailHog(http://localhost:8025)에서 6자리를 읽어 채운다. MAIL_ENABLED=false 면 앱 콘솔 [DEV MAIL]
+@adminEmailCode = 000000
+
 ### 0. 헬스 체크
 GET {{baseUrl}}/actuator/health
 
@@ -66,6 +69,20 @@ POST {{baseUrl}}/api/v1/auth/phone/signup/verify
 Content-Type: application/json
 
 { "phoneNumber": "{{adminPhone}}", "code": "{{code}}" }
+
+### 2-1. 관리자 계정 — 가입용 이메일 인증번호 발송
+#    연락처 인증과 별개 게이트다. 둘 다 통과해야 3번이 지나간다 — 키스페이스가 갈려 있어 서로를 대신하지 못한다.
+#    ★ 이미 가입된 주소면 메일을 보내지 않고 409 다(남의 메일함으로 인증번호가 날아가는 것을 막는다).
+POST {{baseUrl}}/api/v1/auth/email/signup/verification-code
+Content-Type: application/json
+
+{ "email": "{{adminEmail}}" }
+
+### 2-2. 관리자 계정 — 이메일 인증번호 확인. 성공 시 검증 마커(TTL 30분) 안에 3번을 제출한다
+POST {{baseUrl}}/api/v1/auth/email/signup/verify
+Content-Type: application/json
+
+{ "email": "{{adminEmail}}", "code": "{{adminEmailCode}}" }
 
 ### 3. 관리자 계정 — 웹 회원가입 → user_type=LANDLORD · ACTIVE 로 생성된다
 #    여기까지는 임대인 가입과 완전히 같다. 관리자로 만드는 것은 위 ② 의 UPDATE 다.
