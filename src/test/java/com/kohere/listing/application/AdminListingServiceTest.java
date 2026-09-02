@@ -54,11 +54,15 @@ class AdminListingServiceTest {
 
   @BeforeEach
   void setUp() {
+    // LandlordNameLookup은 목이 아니라 실물을 쓴다 — 빈 문자열·부재를 null로 접는 규칙이 이 테스트의
+    // 검증 대상이기 때문이다. 다만 직접 생성이라 @Transactional은 걸리지 않으므로, 그것이 지키는
+    // 성질(호출자 트랜잭션을 망가뜨리지 않는다)은 LandlordNameLookupIntegrationTest가 따로 본다.
     service =
         new AdminListingService(
             listingRepository,
             new ListingLocalizationService(catalogRepository),
-            userAccountService);
+            userAccountService,
+            new LandlordNameLookup(userAccountService));
     given(catalogRepository.findAll()).willReturn(List.of());
     // 심사도 「읽은 시점의 상태」를 조건으로 저장한다 — 임대인 수정이 같은 문서를 통째로
     // 교체하므로 조건 없이 쓰면 서로를 소리 없이 덮는다.

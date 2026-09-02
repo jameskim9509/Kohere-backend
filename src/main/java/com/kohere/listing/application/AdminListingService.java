@@ -1,7 +1,5 @@
 package com.kohere.listing.application;
 
-import com.kohere.common.exception.BusinessException;
-import com.kohere.common.exception.ErrorCode;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.application.dto.AdminListingDetailResponse;
 import com.kohere.listing.domain.AdminOnlyListingException;
@@ -55,6 +53,7 @@ public class AdminListingService {
   private final ListingRepository listingRepository;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
+  private final LandlordNameLookup landlordNameLookup;
 
   /**
    * 모든 상태의 매물을 조회한다. {@code statuses}가 비면 상태 조건을 걸지 않는다.
@@ -187,33 +186,14 @@ public class AdminListingService {
   /**
    * 임대인 계정 이름을 조회한다. <b>알 수 없으면 {@code null}</b>이고 응답에서는 그 키가 빠진다.
    *
-   * <p><b>이 메서드가 예외를 삼키는 것은 의도다.</b> {@code getUserName}은 이름이 없을 때만 빈 문자열을 주고 계정 행이 없거나 탈퇴했으면 예외를
-   * 던진다. 그대로 흘리면 매물 한 건의 임대인 때문에 <b>심사 목록 전체가 {@code 404 USER_NOT_FOUND}</b>가 되는데, 그 코드는 "매물이 없다"도
-   * "관리자가 없다"도 아니라 관리자 화면이 해석할 수 없다. 심사 대상은 매물이고 이름은 표시 보조값이라, 이름 하나 때문에 심사가 멈추는 쪽이 훨씬 나쁘다.
+   * <p>이름을 알 수 없다고 심사가 멈춰서는 안 된다 — 매물 한 건의 임대인 때문에 <b>심사 목록 전체가 죽으면</b> 관리자가 아무것도 처리할 수 없다. 심사 대상은
+   * 매물이고 이름은 표시 보조값이다. 같은 쿼리를 쓰는 {@code chat}(상대 이름)·{@code booking}(예약자 성명)이 부재를 그대로 흘리는 것과 갈리는
+   * 지점이다 — 거기서는 상대가 없으면 그 대화·예약 자체가 성립하지 않아 실패가 곧 정답이지만, 심사는 임대인 계정이 사라져도 그 매물을 내릴지 판단해야 한다.
    *
-   * <p>같은 쿼리를 쓰는 {@code chat}(상대 이름)·{@code booking}(예약자 성명)이 이 예외를 잡지 않는 것과 갈리는 지점이다 — 거기서는 상대가
-   * 없으면 그 대화·예약 자체가 성립하지 않아 실패가 곧 정답이지만, 심사는 임대인 계정이 사라져도 그 매물을 내릴지 판단해야 한다.
-   *
-   * <p><b>예외 타입이 아니라 {@link ErrorCode}로 가려내는 이유는 모듈 경계다.</b> {@code UserNotFoundException}은 {@code
-   * user}의 내부 도메인 타입이라 이 모듈이 잡을 수 있는 이름이 아니다({@code user}가 노출하는 것은 {@code api} 하나뿐이고, 그 {@code
-   * package-info}가 "내부 도메인/영속 타입은 노출하지 않는다"고 못박았다). 두 모듈이 함께 아는 것은 공유 커널의 {@link
-   * BusinessException}과 {@link ErrorCode}뿐이므로 그것으로 판정한다.
-   *
-   * <p>잡는 것은 <b>"없음" 하나뿐</b>이다. 그 밖의 코드는 그대로 다시 던져 조용한 실패로 덮지 않는다. 빈 문자열도 {@code null}로 접어 "이름이
-   * 없다"와 "이름이 빈칸이다"가 응답에서 갈리지 않게 한다({@code null}은 계약상 오지 않지만 접는 규칙이 같아 함께 둔다).
+   * <p>부재를 삼키는 일이 <b>별도 빈</b>({@link LandlordNameLookup})에 있는 이유는 그 일이 <b>이 메서드의 트랜잭션 밖에서</b> 일어나야
+   * 하기 때문이다. 여기서 잡으면 잡히기도 전에 트랜잭션이 rollback-only로 표시돼 커밋이 터진다 — 자세한 사정은 그 클래스에 적어 두었다.
    */
   private String landlordNameOf(Long landlordId) {
-    if (landlordId == null) {
-      return null;
-    }
-    try {
-      String name = userAccountService.getUserName(landlordId);
-      return name == null || name.isBlank() ? null : name;
-    } catch (BusinessException e) {
-      if (e.getErrorCode() != ErrorCode.USER_NOT_FOUND) {
-        throw e;
-      }
-      return null;
-    }
+    return landlordNameLookup.nameOf(landlordId);
   }
 }
