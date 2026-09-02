@@ -189,7 +189,7 @@ class AdminListingDocsTest {
                     parameterWithName("size").description("페이지 크기(기본 20, 최대 100)").optional(),
                     parameterWithName("sort")
                         .description(
-                            "정렬 키. createdAt,asc · updatedAt,desc. 그 밖의 값이나 생략은 등록 최신순(400이 아니다)")
+                            "정렬 키. createdAt,asc(등록 오래된 순) · updatedAt,desc(최근 수정순). 생략하면 등록 최신순")
                         .optional()),
                 responseFields(adminListingPageResponseFields())));
   }
