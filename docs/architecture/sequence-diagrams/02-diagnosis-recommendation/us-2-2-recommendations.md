@@ -37,6 +37,19 @@ sequenceDiagram
         DIAG-->>C: 200 OK<br/>data.resultCode=NO_MATCH<br/>content [], markers [], page<br/>(조정 제안 문구·액션 없음 — 에러 아님)
         C-->>U: 빈 결과 화면
     end
+
+    opt 지도 화면 — 조건에 맞는 매물 전체를 마커로
+        U->>C: 지도 보기 전환
+        C->>SEC: GET /api/v2/diagnoses/{diagnosisId}/recommendations/map<br/>(쿼리 파라미터 없음)
+        SEC->>DIAG: 요청 전달
+        Note over DIAG: 같은 상태·소유권 게이트에 확정 진단 검사를 더한다<br/>미확정 초안은 조건이 비어 전체 매물로 붕괴하는데<br/>이 경로는 페이지 상한이 없어 그 붕괴가 곧 전량 조회다
+        DIAG->>LIST: recommendMarkersByCriteria(RecommendationCriteria)<br/>(표시 언어를 넘기지 않는다 — 마커에 번역할 라벨이 없다)
+        LIST->>DB: 같은 매칭 조건 + count<br/>정렬은 추천 기본 정렬 고정(상한 경계가 흔들리지 않게 _id 타이브레이커)
+        DB-->>LIST: 상한(500)까지의 매물 + 전체 매칭 수
+        LIST-->>DIAG: 마커 목록 + total
+        DIAG-->>C: 200 OK<br/>data.markers[] (listingId/lat/lng), data.total<br/>(markers 길이 < total 이면 상한에 걸려 잘린 것)
+        C-->>U: 지도에 마커 표시
+    end
 ```
 
 ## 흐름 요약
@@ -47,4 +60,5 @@ sequenceDiagram
 - 타인 진단은 `403 FORBIDDEN`, 없는 진단과 폐기 기록은 `404 DIAGNOSIS_NOT_FOUND`로 처리된다.
 - **회원·비회원 모두 호출한다**(#181): `permitAll` 매처의 대상이 `/api/v2/diagnoses/**`라 토큰 없이도 도달하며, 게스트는 `POST /api/v2/diagnoses/start`가 발급한 세션 키를 `X-Guest-Session-Id`로 에코해 소유를 증명한다. **응답 계약은 신원과 무관하게 같고** 게스트는 label 언어만 `en`이다.
 - `getLanguage` 호출은 **회원 요청에서 매 요청 한 번**이다 — 공유 `DiagnosisRecommendationReader`가 매물 라벨 번역용 표시 언어를 `recommendByCriteria(criteria, language)`에 넘기느라 매칭 유무와 무관하게 부른다([ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)). **게스트는 부르지 않는다** — `users` 행이 없어 호출 자체가 `404 USER_NOT_FOUND`가 되므로 분기의 요점은 기본값이 아니라 호출 회피다.
+- **지도 화면은 마커 전용 경로를 쓴다** — `GET /api/v2/diagnoses/{diagnosisId}/recommendations/map`은 페이지 없이 `markers[]`·`total`만 준다(매물 카드 정보는 상세에서 가져간다). 매칭 조건은 위 목록 조회와 **완전히 동일**하고, 표시 언어를 listing에 넘기지 않는다(마커에 번역할 라벨이 0개다). **상한은 500건이고 초과분은 잘라서 준다** — 진단은 조건이 고정이라 사용자가 범위를 좁힐 수단이 없어 `400`으로 끊지 않는다(매물 지도 조회는 bbox가 있어 끊는다). 잘렸는지는 `markers` 길이와 `total`을 비교해 안다. 이 경로만 **확정 진단을 요구**한다(미확정 404) — 페이지 상한이 없어 조건이 빈 초안이 곧 전량 조회가 되기 때문이다.
 - 소유권 검사는 **신원 종류가 같고 값이 같을 때만** 통과한다 — 게스트가 만든 진단(`userId` 비어 있음)을 회원 토큰으로 조회해도 `403`이고 그 반대도 같다. 진단 id가 전역 순차 채번이라 이 검사가 유일한 IDOR 방어선이다. `listing` 모듈은 `recommendByCriteria`가 애초에 신원(userId)을 받지 않아 **코드 변경이 0건**이다(표시 언어는 신원이 아니라 문자열로 넘어간다).

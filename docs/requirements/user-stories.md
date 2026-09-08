@@ -1025,28 +1025,45 @@
 - 시나리오: 경계 — 0건 (부산/경기 또는 좁은 조건)
 
   - **Given** `region=BUSAN`처럼 MVP 데이터가 없거나 조건이 너무 좁아 매칭이 0건이다
-  - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `200 OK`(에러 아님)와 함께 `data.content=[]`, `data.markers=[]`, `data.suggestions`(완화 가능한 조건/예산/키워드 제안 목록)을 반환한다
-- 시나리오: 인증 실패 — v1 추천 조회는 회원 전용
+- 시나리오: 인증 — 회원·비회원 모두 호출한다
 
   - **Given** `Authorization` 헤더 없이 요청한다(게스트 세션 키를 실어도 마찬가지다)
-  - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `401`과 `error.code=UNAUTHENTICATED`를 반환한다 — v1에는 `permitAll` 매처를 추가하지 않는다. 게스트는 대신 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다(US-2-7)
 - 시나리오: 인가 실패 — 타인의 진단 결과 접근
 
   - **Given** 다른 사용자가 소유한 `diagnosisId`로 요청한다 — 다른 회원의 진단, 그리고 신원 종류가 엇갈리는 경우(회원 토큰으로 **게스트**가 v2에서 만든 진단을)
-  - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** 두 경우 모두 `403 Forbidden`과 `error.code=FORBIDDEN`을 반환한다(소유권 위반으로 차단) — 소유권은 **신원 종류가 같고 값이 같을 때만** 통과하며 한쪽이 비어 있으면 무조건 거절하므로, 회원이 게스트 진단을 읽는 것도 막힌다
 - 시나리오: 리소스 없음 — 존재하지 않는 진단
 
   - **Given** 어떤 사용자에게도 존재하지 않는 `diagnosisId`로 요청한다
-  - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `404 Not Found`와 `error.code=DIAGNOSIS_NOT_FOUND`를 반환한다
 - 시나리오: 입력 검증 실패 — 페이지 파라미터 범위 초과
 
   - **Given** `size=500`(최대 100 초과) 또는 정의되지 않은 `sort` 키를 보낸다
-  - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환한다(허용되지 않은 `sort` 키를 무시하지 않고 거부 — api-design-guide §5)
+- 시나리오: 지도 전체 마커 — 페이지 없이 조건에 맞는 매물 전부
+
+  - **Given** 확정 진단의 조건에 맞는 매물이 페이지 크기(20)보다 많다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations/map`을 호출한다(쿼리 파라미터 없음)
+  - **Then** `200 OK`와 `markers[]`(`listingId`/`lat`/`lng`)·`total`을 반환한다 — 페이지 메타도 매물 카드 정보도 없다
+  - **And** 같은 진단을 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`로 조회했을 때와 **같은 매물 집합**이다(매칭 조건이 동일하다)
+- 시나리오: 상한 초과 — 잘라서 주고 에러로 만들지 않는다
+
+  - **Given** 조건에 맞는 매물이 서버 상한(500건)을 넘는다
+  - **When** 마커 조회를 호출한다
+  - **Then** `200 OK`이고 `markers`는 500건까지만 실리며 `total`은 전체 매물 수다 — `markers` 길이가 `total`보다 작으면 잘린 것이다(에러가 아니다)
+  - **And** 진단은 조건이 고정이라 사용자가 범위를 좁힐 수단이 없으므로 `400`으로 끊지 않는다
+- 시나리오: 미확정 진단 — 마커 조회는 확정 진단만 본다
+
+  - **Given** 아직 확정되지 않은 진단의 `diagnosisId`를 안다
+  - **When** 마커 조회를 호출한다
+  - **Then** `404`와 `error.code=DIAGNOSIS_NOT_FOUND`를 반환한다 — 미완주 초안은 조건이 비어 있어 그대로 매칭하면 전체 매물로 붕괴하는데, 이 경로는 페이지 상한이 없어 그 붕괴가 곧 전량 조회가 된다
 
 ### US-2-3 — 진단 이력 조회 및 최근 진단 다시 보기
 

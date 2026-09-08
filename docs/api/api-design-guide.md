@@ -34,6 +34,7 @@
 - 리소스 식별자는 경로 변수로(`/listings/{listingId}`), 조회 조건은 쿼리 파라미터로 둔다.
 - 컬렉션과 단건을 구분한다: `GET /listings`(목록) ↔ `GET /listings/{id}`(단건).
 - 중첩은 **소유 관계가 분명할 때 1단계까지만** 허용한다. (`GET /posts/{postId}/comments`) 그 이상 깊어지면 쿼리 파라미터로 평탄화한다.
+- **표현(view) 접미사는 중첩으로 세지 않는다.** 경로 끝의 `/map`처럼 같은 컬렉션을 다른 모양으로 주는 세그먼트는 새 하위 리소스가 아니다 — `GET /api/v2/listings/map`, `GET /api/v2/diagnoses/{diagnosisId}/recommendations/map`이 그렇다. **표현을 쿼리 파라미터로 나누지 않는 이유는 취향이 아니라 문서 생성기 제약이다** — 같은 `(path, method, status)`에 응답 스키마가 둘 생기면 하나가 조용히 버려진다([ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md) 병합 규칙).
 
 ### 2-1. 버전 정책
 
