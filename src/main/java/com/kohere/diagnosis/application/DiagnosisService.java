@@ -1,23 +1,16 @@
 package com.kohere.diagnosis.application;
 
 import com.kohere.common.exception.InvalidInputException;
-import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.diagnosis.application.dto.AnswerSavedResponse;
 import com.kohere.diagnosis.application.dto.DiagnosisCreatedResponse;
-import com.kohere.diagnosis.application.dto.DiagnosisResponse;
-import com.kohere.diagnosis.application.dto.LatestDiagnosisResponse;
 import com.kohere.diagnosis.application.dto.QuestionResponse;
 import com.kohere.diagnosis.application.dto.RecommendationResponse;
 import com.kohere.diagnosis.domain.Diagnosis;
-import com.kohere.diagnosis.domain.DiagnosisAccessDeniedException;
-import com.kohere.diagnosis.domain.DiagnosisCondition;
 import com.kohere.diagnosis.domain.DiagnosisFlowStep;
-import com.kohere.diagnosis.domain.DiagnosisNotFoundException;
 import com.kohere.diagnosis.domain.DiagnosisQuestion;
 import com.kohere.diagnosis.domain.DiagnosisQuestionCatalog;
 import com.kohere.diagnosis.domain.DiagnosisRepository;
-import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.diagnosis.domain.Purpose;
 import com.kohere.diagnosis.presentation.dto.AnswerRequest;
 import com.kohere.listing.api.RecommendedListingView;
@@ -94,45 +87,6 @@ public class DiagnosisService {
         completed.getId(), completed.getStatus(), completed.getSubmittedAt());
   }
 
-  /** 내 완료 진단 이력(최신순, 오프셋 페이지). */
-  public PageResponse<DiagnosisResponse> getHistory(long userId, int page, int size, String sort) {
-    validatePage(page, size);
-    validateSort(sort, HISTORY_SORT_KEYS);
-    List<DiagnosisResponse> content =
-        diagnosisRepository.findCompletedByUserId(userId, page, size, isAscending(sort)).stream()
-            .map(DiagnosisService::toResponse)
-            .toList();
-    long total = diagnosisRepository.countCompletedByUserId(userId);
-    return PageResponse.of(content, pageInfo(page, size, total));
-  }
-
-  /** 최근 완료 진단 단건(없으면 completed=false). */
-  public LatestDiagnosisResponse getLatest(long userId) {
-    return diagnosisRepository
-        .findLatestCompletedByUserId(userId)
-        .map(DiagnosisService::toLatestResponse)
-        .orElseGet(
-            () ->
-                new LatestDiagnosisResponse(
-                    false, null, null, null, null, null, null, null, null, null, null));
-  }
-
-  /**
-   * 진단 단건 상세(본인 소유만, 타인 403·미존재 404).
-   *
-   * <p>v2가 남기는 폐기 기록({@code DISCARDED})은 없는 것처럼 404다 — 내부 분석 기록이라 노출 경로를 두지 않는다(ADR-0036 결정 12).
-   * 소유권만으로는 막히지 않는다: 본인 기록인 데다 진단 id가 순차 발급이라 추측 가능하다.
-   */
-  public DiagnosisResponse getDetail(long userId, Long diagnosisId) {
-    Diagnosis diagnosis =
-        diagnosisRepository.findById(diagnosisId).orElseThrow(DiagnosisNotFoundException::new);
-    if (diagnosis.getStatus() == DiagnosisStatus.DISCARDED) {
-      throw new DiagnosisNotFoundException();
-    }
-    requireOwner(diagnosis, userId);
-    return toResponse(diagnosis);
-  }
-
   /**
    * 진단 결과 추천 매물·지도 좌표(본인 소유만). 0건이면 빈 목록 + 조정 제안(번역).
    *
@@ -188,95 +142,5 @@ public class DiagnosisService {
         v.conditions().stream()
             .map(value -> new RecommendationResponse.CodeLabel(value.code(), value.label()))
             .toList());
-  }
-
-  private static DiagnosisResponse toResponse(Diagnosis d) {
-    return new DiagnosisResponse(
-        d.getId(),
-        d.getRegion(),
-        d.getPurpose(),
-        d.getUniversity(),
-        d.getDistrict(),
-        conditionsList(d),
-        d.getMonthlyRentMin() == null ? 0 : d.getMonthlyRentMin(),
-        d.getMonthlyRentMax() == null ? 0 : d.getMonthlyRentMax(),
-        d.getArcStatus(),
-        d.getStatus(),
-        d.getSubmittedAt());
-  }
-
-  private static LatestDiagnosisResponse toLatestResponse(Diagnosis d) {
-    return new LatestDiagnosisResponse(
-        true,
-        d.getId(),
-        d.getRegion(),
-        d.getPurpose(),
-        d.getUniversity(),
-        d.getDistrict(),
-        conditionsList(d),
-        d.getMonthlyRentMin(),
-        d.getMonthlyRentMax(),
-        d.getArcStatus(),
-        d.getSubmittedAt());
-  }
-
-  private static List<DiagnosisCondition> conditionsList(Diagnosis d) {
-    return d.getConditions() == null ? List.of() : List.copyOf(d.getConditions());
-  }
-
-  /**
-   * 소유권 판정은 {@link Diagnosis#isOwnedBy(Long, String)} 하나에 위임한다 — 같은 규칙이 {@link
-   * DiagnosisRecommendationReader}에도 필요한데, 규칙을 두 벌 두면 한쪽만 고쳐져 다른 경로가 뚫린다(#181).
-   *
-   * <p>v1은 회원 전용이라 게스트 키 자리에 {@code null}을 넘긴다. 그래서 회원이 v2에서 만들어진 게스트 진단 id를 찔러도 403이다 — 신원 종류가 다르면
-   * 거절이기 때문이다.
-   */
-  private static void requireOwner(Diagnosis diagnosis, long userId) {
-    if (!diagnosis.isOwnedBy(userId, null)) {
-      throw new DiagnosisAccessDeniedException();
-    }
-  }
-
-  // --- 페이지·정렬 검증 ---
-
-  private static void validatePage(int page, int size) {
-    if (page < 0) {
-      throw new InvalidInputException("page", "validation.min", 0, page);
-    }
-    if (size < 1 || size > 100) {
-      throw new InvalidInputException("size", "validation.range", 1, 100, size);
-    }
-  }
-
-  private static void validateSort(String sort, Set<String> allowedKeys) {
-    if (sort == null || sort.isBlank()) {
-      return;
-    }
-    String[] parts = sort.split(",");
-    String key = parts[0].trim();
-    if (!allowedKeys.contains(key)) {
-      throw new InvalidInputException("sort", "validation.sortKey", key);
-    }
-    if (parts.length > 1) {
-      String direction = parts[1].trim().toLowerCase();
-      if (!direction.equals("asc") && !direction.equals("desc")) {
-        throw new InvalidInputException("sort", "validation.sortDirection", parts[1]);
-      }
-    }
-  }
-
-  /** sort 문자열의 방향(asc)을 해석한다(미지정·desc면 false). 검증은 {@link #validateSort}가 선행한다. */
-  private static boolean isAscending(String sort) {
-    if (sort == null || sort.isBlank()) {
-      return false;
-    }
-    String[] parts = sort.split(",");
-    return parts.length > 1 && parts[1].trim().equalsIgnoreCase("asc");
-  }
-
-  private static PageInfo pageInfo(int page, int size, long total) {
-    int totalPages = size == 0 ? 0 : (int) Math.ceil((double) total / size);
-    boolean hasNext = (page + 1) < totalPages;
-    return new PageInfo(page, size, total, totalPages, hasNext);
   }
 }

@@ -13,6 +13,7 @@ import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.diagnosis.application.DiagnosisAnswerApplier;
 import com.kohere.diagnosis.application.DiagnosisCriteriaMapper;
+import com.kohere.diagnosis.application.DiagnosisQueryService;
 import com.kohere.diagnosis.application.DiagnosisQuestionTranslator;
 import com.kohere.diagnosis.application.DiagnosisRecommendationReader;
 import com.kohere.diagnosis.application.DiagnosisService;
@@ -68,6 +69,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @TestPropertySource(properties = "mongock.enabled=false")
 @Import({
   DiagnosisService.class,
+  DiagnosisQueryService.class,
   DiagnosisAnswerApplier.class,
   DiagnosisCriteriaMapper.class,
   DiagnosisQuestionTranslator.class,
@@ -83,6 +85,7 @@ class DiagnosisMongoIntegrationTest {
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   @Autowired DiagnosisService diagnosisService;
+  @Autowired DiagnosisQueryService diagnosisQueryService;
   @Autowired DiagnosisRepository diagnosisRepository;
   @Autowired DiagnosisMongoRepository diagnosisMongoRepository;
   @Autowired DiagnosisQuestionMongoRepository questionMongoRepository;
@@ -119,7 +122,7 @@ class DiagnosisMongoIntegrationTest {
     assertThat(created.status()).isEqualTo(DiagnosisStatus.COMPLETED);
     assertThat(created.submittedAt()).isNotNull();
 
-    DiagnosisResponse detail = diagnosisService.getDetail(userId, created.diagnosisId());
+    DiagnosisResponse detail = diagnosisQueryService.getDetail(userId, created.diagnosisId());
     assertThat(detail.region()).isEqualTo(Region.SEOUL);
     assertThat(detail.purpose()).isEqualTo(Purpose.STUDY);
     assertThat(detail.university()).isEqualTo(UniversityGroup.SNU_CAU_SOONGSIL);
@@ -131,12 +134,12 @@ class DiagnosisMongoIntegrationTest {
     assertThat(detail.arcStatus()).isEqualTo(ArcStatus.ARC_ISSUED);
     assertThat(detail.status()).isEqualTo(DiagnosisStatus.COMPLETED);
 
-    LatestDiagnosisResponse latest = diagnosisService.getLatest(userId);
+    LatestDiagnosisResponse latest = diagnosisQueryService.getLatest(userId);
     assertThat(latest.completed()).isTrue();
     assertThat(latest.diagnosisId()).isEqualTo(created.diagnosisId());
 
     PageResponse<DiagnosisResponse> history =
-        diagnosisService.getHistory(userId, 0, 20, "submittedAt,desc");
+        diagnosisQueryService.getHistory(userId, 0, 20, "submittedAt,desc");
     assertThat(history.content()).hasSize(1);
     assertThat(history.page().totalElements()).isEqualTo(1L);
   }
@@ -152,14 +155,15 @@ class DiagnosisMongoIntegrationTest {
     DiagnosisCreatedResponse second = diagnosisService.submit(userId);
 
     assertThat(second.diagnosisId()).isGreaterThan(first.diagnosisId());
-    assertThat(diagnosisService.getHistory(userId, 0, 20, "submittedAt,desc").content()).hasSize(2);
-    assertThat(diagnosisService.getDetail(userId, first.diagnosisId())).isNotNull();
+    assertThat(diagnosisQueryService.getHistory(userId, 0, 20, "submittedAt,desc").content())
+        .hasSize(2);
+    assertThat(diagnosisQueryService.getDetail(userId, first.diagnosisId())).isNotNull();
   }
 
   @Test
   @DisplayName("최근 진단 이력이 없으면 completed=false")
   void latestWhenNone() {
-    assertThat(diagnosisService.getLatest(999L).completed()).isFalse();
+    assertThat(diagnosisQueryService.getLatest(999L).completed()).isFalse();
   }
 
   @Test
@@ -208,7 +212,7 @@ class DiagnosisMongoIntegrationTest {
             .discard(Instant.now());
     Long id = diagnosisRepository.save(discarded).getId();
 
-    assertThatThrownBy(() -> diagnosisService.getDetail(userId, id))
+    assertThatThrownBy(() -> diagnosisQueryService.getDetail(userId, id))
         .isInstanceOf(DiagnosisNotFoundException.class);
   }
 
@@ -283,9 +287,9 @@ class DiagnosisMongoIntegrationTest {
     completeStudyFlow(owner);
     DiagnosisCreatedResponse created = diagnosisService.submit(owner);
 
-    assertThatThrownBy(() -> diagnosisService.getDetail(19L, created.diagnosisId()))
+    assertThatThrownBy(() -> diagnosisQueryService.getDetail(19L, created.diagnosisId()))
         .isInstanceOf(DiagnosisAccessDeniedException.class);
-    assertThatThrownBy(() -> diagnosisService.getDetail(owner, 9_999_999L))
+    assertThatThrownBy(() -> diagnosisQueryService.getDetail(owner, 9_999_999L))
         .isInstanceOf(DiagnosisNotFoundException.class);
   }
 
@@ -394,11 +398,11 @@ class DiagnosisMongoIntegrationTest {
     diagnosisRepository.save(completedAt(userId, newer));
 
     List<DiagnosisResponse> desc =
-        diagnosisService.getHistory(userId, 0, 20, "submittedAt,desc").content();
+        diagnosisQueryService.getHistory(userId, 0, 20, "submittedAt,desc").content();
     assertThat(desc).extracting(DiagnosisResponse::submittedAt).containsExactly(newer, older);
 
     List<DiagnosisResponse> asc =
-        diagnosisService.getHistory(userId, 0, 20, "submittedAt,asc").content();
+        diagnosisQueryService.getHistory(userId, 0, 20, "submittedAt,asc").content();
     assertThat(asc).extracting(DiagnosisResponse::submittedAt).containsExactly(older, newer);
   }
 
@@ -407,8 +411,9 @@ class DiagnosisMongoIntegrationTest {
   void inProgressExcludedFromHistory() {
     long userId = 23L;
     diagnosisRepository.save(Diagnosis.startInProgress(userId));
-    assertThat(diagnosisService.getHistory(userId, 0, 20, "submittedAt,desc").content()).isEmpty();
-    assertThat(diagnosisService.getLatest(userId).completed()).isFalse();
+    assertThat(diagnosisQueryService.getHistory(userId, 0, 20, "submittedAt,desc").content())
+        .isEmpty();
+    assertThat(diagnosisQueryService.getLatest(userId).completed()).isFalse();
   }
 
   @Test
@@ -424,7 +429,7 @@ class DiagnosisMongoIntegrationTest {
     DiagnosisCreatedResponse created = diagnosisService.submit(userId);
 
     // ⑥은 ④와 완전히 분리된 축이라 사용자가 고른 ④ 3개만 conditions에 남는다.
-    DiagnosisResponse detail = diagnosisService.getDetail(userId, created.diagnosisId());
+    DiagnosisResponse detail = diagnosisQueryService.getDetail(userId, created.diagnosisId());
     assertThat(detail.conditions())
         .containsExactlyInAnyOrder(
             DiagnosisCondition.FEMALE_ONLY,
@@ -450,7 +455,7 @@ class DiagnosisMongoIntegrationTest {
     long userId = 25L;
     completeStudyFlow(userId); // arcStatus=ARC_ISSUED
     DiagnosisCreatedResponse created = diagnosisService.submit(userId);
-    DiagnosisResponse detail = diagnosisService.getDetail(userId, created.diagnosisId());
+    DiagnosisResponse detail = diagnosisQueryService.getDetail(userId, created.diagnosisId());
     assertThat(detail.conditions()).containsExactly(DiagnosisCondition.FEMALE_ONLY);
     assertThat(detail.arcStatus()).isEqualTo(ArcStatus.ARC_ISSUED);
 
@@ -476,7 +481,8 @@ class DiagnosisMongoIntegrationTest {
     answer(userId, "university", "SNU_CAU_SOONGSIL");
     answerRent(userId, 200000, 500000);
     DiagnosisCreatedResponse pending = diagnosisService.submit(userId);
-    DiagnosisResponse pendingDetail = diagnosisService.getDetail(userId, pending.diagnosisId());
+    DiagnosisResponse pendingDetail =
+        diagnosisQueryService.getDetail(userId, pending.diagnosisId());
     assertThat(pendingDetail.conditions()).containsExactly(DiagnosisCondition.FEMALE_ONLY);
     assertThat(pendingDetail.arcStatus()).isEqualTo(ArcStatus.NO_ARC);
 
@@ -489,7 +495,7 @@ class DiagnosisMongoIntegrationTest {
     answer(userId, "university", "SNU_CAU_SOONGSIL");
     answerRent(userId, 200000, 500000);
     DiagnosisCreatedResponse issued = diagnosisService.submit(userId);
-    DiagnosisResponse issuedDetail = diagnosisService.getDetail(userId, issued.diagnosisId());
+    DiagnosisResponse issuedDetail = diagnosisQueryService.getDetail(userId, issued.diagnosisId());
     assertThat(issuedDetail.conditions()).containsExactly(DiagnosisCondition.PRIVATE_BATH);
     assertThat(issuedDetail.arcStatus()).isEqualTo(ArcStatus.ARC_ISSUED);
   }

@@ -3,6 +3,7 @@ package com.kohere.diagnosis.presentation;
 import com.kohere.common.response.ApiResponse;
 import com.kohere.common.response.PageResponse;
 import com.kohere.common.security.AuthPrincipal;
+import com.kohere.diagnosis.application.DiagnosisQueryService;
 import com.kohere.diagnosis.application.DiagnosisService;
 import com.kohere.diagnosis.application.dto.AnswerSavedResponse;
 import com.kohere.diagnosis.application.dto.DiagnosisCreatedResponse;
@@ -39,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DiagnosisController {
 
   private final DiagnosisService diagnosisService;
+  private final DiagnosisQueryService diagnosisQueryService;
 
   @PostMapping
   public ResponseEntity<ApiResponse<DiagnosisCreatedResponse>> submit(
@@ -66,19 +68,20 @@ public class DiagnosisController {
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size,
       @RequestParam(defaultValue = "submittedAt,desc") String sort) {
-    return ApiResponse.success(diagnosisService.getHistory(principal.userId(), page, size, sort));
+    return ApiResponse.success(
+        diagnosisQueryService.getHistory(principal.userId(), page, size, sort));
   }
 
   @GetMapping("/latest")
   public ApiResponse<LatestDiagnosisResponse> getLatest(
       @AuthenticationPrincipal AuthPrincipal principal) {
-    return ApiResponse.success(diagnosisService.getLatest(principal.userId()));
+    return ApiResponse.success(diagnosisQueryService.getLatest(principal.userId()));
   }
 
   @GetMapping("/{diagnosisId}")
   public ApiResponse<DiagnosisResponse> getDetail(
       @AuthenticationPrincipal AuthPrincipal principal, @PathVariable Long diagnosisId) {
-    return ApiResponse.success(diagnosisService.getDetail(principal.userId(), diagnosisId));
+    return ApiResponse.success(diagnosisQueryService.getDetail(principal.userId(), diagnosisId));
   }
 
   @GetMapping("/{diagnosisId}/recommendations")
