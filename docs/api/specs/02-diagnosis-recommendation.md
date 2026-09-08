@@ -688,7 +688,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
     "options": [ { "code": "SEOUL", "label": "Seoul" }, { "code": "BUSAN", "label": "Busan" }, { "code": "GYEONGGI", "label": "Gyeonggi" } ] } }, "error": null }
 ```
 
-> `question`·`label` 표시 문자열은 §1과 동일하게 사용자 표시 언어로 번역되며(미지원 언어는 `en` 폴백), `code`는 언어와 무관하게 동일하다. **게스트는 `en` 고정**이다(users 행이 없어 표시 언어를 조회하지 않으며 `Accept-Language`도 참조하지 않는다).
+> `question`·`label` 표시 문자열은 사용자 표시 언어로 번역되며(미지원 언어는 `en` 폴백), `code`는 언어와 무관하게 동일하다. **게스트는 `en` 고정**이다(users 행이 없어 표시 언어를 조회하지 않으며 `Accept-Language`도 참조하지 않는다).
 >
 > 클라이언트는 `guestSessionId`를 보관했다가 이후 `POST /next`와 `GET /api/v2/diagnoses/{id}/recommendations`에 **`X-Guest-Session-Id` 헤더**로 에코해야 한다. `/start`를 다시 부르면 **항상 새 키가 발급된다** — 게스트 키는 진단 1회 흐름 단위이며, 이전 키로 만든 세션은 교체되지 않고 남는다([게스트 접근](#게스트-접근--비회원-진단-issue-181)의 "게스트 데이터 보존" — 현재 TTL 인덱스가 하나도 없어 만료 정책 **도입 여부와 수치가 결정 필요**다).
 
@@ -700,7 +700,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 
 ### v2-2. POST `/api/v2/diagnoses/next` — 현재 문항 답 적용
 
-현재 문항의 답 **1개**를 보내면 서버가 답을 진행 세션에 적용하고 **다음에 할 일**을 결과코드로 돌려준다. `field`·`code`·`codes`·`min/max` 규약은 v1 §2(`POST /answers`)의 `AnswerRequest`와 동일하며, 지역 예외질문 응답만 `{ "field": "regionRetry", "code": "YES" | "NO" }`로 보낸다. **답(`field`)은 반드시 있어야 한다** — 무답 호출은 `INVALID_INPUT`이다.
+현재 문항의 답 **1개**를 보내면 서버가 답을 진행 세션에 적용하고 **다음에 할 일**을 결과코드로 돌려준다. `field`·`code`·`codes`·`min/max` 규약은 아래 `AnswerRequest` 표와 같으며, 지역 예외질문 응답만 `{ "field": "regionRetry", "code": "YES" | "NO" }`로 보낸다. **답(`field`)은 반드시 있어야 한다** — 무답 호출은 `INVALID_INPUT`이다.
 
 - **인증**: 선택(게스트 허용). 게스트는 `/start`가 발급한 키를 **`X-Guest-Session-Id` 헤더로 반드시 에코**해야 한다 — 이 헤더가 게스트의 진행 세션을 찾는 유일한 키다.
 - **동작**: (1) 진행 세션을 조회한다(회원은 `userId`, 게스트는 `guestSessionId` 기준) — 없으면 `400 DIAGNOSIS_SESSION_NOT_FOUND`. (2) 답(`field`)이 없으면 `INVALID_INPUT`. (3) **`field`가 `pendingField`(서버가 직전에 낸 문항의 field)와 다르면 `INVALID_INPUT`** — 정본 슬롯 문항과 예외질문이 같은 규칙으로 검증된다. (4) `pendingField`가 `regionRetry`이면 예/아니오만 처리해 `RESTART`(예) 또는 `TERMINATED`(아니오)를 반환한다(둘 다 세션 삭제·`draft` 미변경). (5) 정본 슬롯 field이면 답을 진행 세션에 적용한다. (6) 방금 ① 지역을 답했으면 매칭 존재 확인을 하고, 0건이면 `regionRetry` 문항을 `NEXT_QUESTION`으로 반환하며 `pendingField=regionRetry`로 저장한다(서버가 미리 필터링하는 유일한 지점). (7) 아니면 **정본 순서상 다음 슬롯** 문항을 `NEXT_QUESTION`으로 내고, 방금 답한 게 마지막 슬롯(⑥ `arcStatus`)이면 자동 확정 후 `COMPLETED`를 반환한다(매칭을 조회하지 않으므로 매칭 유무와 무관하게 `COMPLETED`다).
@@ -715,10 +715,10 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 
 #### Request Body (래퍼 없이)
 
-현재 문항 답 1개(v1 §2 `AnswerRequest`와 동일 구조). 지역 예외질문 응답은 `regionRetry`로 보낸다.
+현재 문항 답 1개(`AnswerRequest`). 지역 예외질문 응답은 `regionRetry`로 보낸다.
 
 ```jsonc
-// 일반 단계 답(§2와 동일) — 예: ② 입국 목적
+// 일반 단계 답 — 예: ② 입국 목적
 { "field": "purpose", "code": "STUDY" }
 
 // ① 지역 0건 예외질문 응답 — 예=재시도 / 아니오=진단 종료
@@ -771,7 +771,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 
 확정 진단(`COMPLETED`로 받은 `diagnosisId`)의 추천 매물·지도 좌표를 조회한다. **이 호출 자체가 "매물을 받겠다"는 클라이언트의 결정**이며, 시점·페이지·정렬을 클라이언트가 정한다.
 
-v1 §7(`GET /api/v1/diagnoses/{id}/recommendations`)과 필터·매핑·페이지 계약이 같고 **다른 점은 하나** — 0건일 때의 **조정 제안 문구·액션이 없다**. v1은 0건이면 `suggestions { reason: "NO_MATCH", message, actions[] }`로 **사유와 제안을 한 덩어리로** 주는데, v2는 제안 기능을 쓰지 않으므로 그 덩어리에서 **사유만** 떼어 최상위 `resultCode`로 둔다 — 제안을 안 쓰는 것과 사유를 안 주는 것은 다르다. v1의 `suggestions`는 v1 전용으로 그대로 유지된다.
+**0건일 때 조정 제안 문구·액션을 주지 않는다** — 매칭 사유만 최상위 `resultCode`로 싣는다. 제안을 쓰지 않는 것과 사유를 주지 않는 것은 다르다.
 
 `resultCode`는 **항상** 실린다(UPPER_SNAKE enum, 에러 아님):
 
@@ -784,6 +784,8 @@ v1 §7(`GET /api/v1/diagnoses/{id}/recommendations`)과 필터·매핑·페이�
 
 - **인증**: 선택(게스트 허용). 본인 소유 진단만 — 타인 `403 FORBIDDEN`, 미존재 `404 DIAGNOSIS_NOT_FOUND`. 게스트는 `X-Guest-Session-Id`가 **필수**이며 소유는 신원 종류·값이 모두 일치할 때만 인정된다(게스트↔회원 교차 조회는 양방향 모두 403 — [게스트 접근](#게스트-접근--비회원-진단-issue-181)의 소유권 규칙 표).
 - **응답 계약은 회원/게스트 동일**: 추천은 `listing` 공개 query를 부르는데 그 인터페이스가 신원을 받지 않아 `listing` 모듈 변경이 0건이다. `resultCode`·`content`·`markers`·`page`의 형태·의미가 같고, 게스트는 label 언어만 `en`이다.
+- **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다.
+- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.includedUniversityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 펼칠 멤버가 없어 대신 목록 전체를 `excludedUniversityCodes`로 넘겨 여집합 매칭)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — `RecommendationCriteria`는 ⑥ `arcStatus`를 그대로 싣고, `listing`은 `NO_ARC`를 매물 루트 `arcRequired=NOT_REQUIRED`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 현재 매칭된 방 상품만이 아니라 해당 매물의 전체 ACTIVE `roomOffers`를 기준으로 계산한다. `conditions`에는 ACTIVE 방 상품 태그 합집합이 담긴다.
 
 #### Path · Query
 
@@ -794,21 +796,42 @@ v1 §7(`GET /api/v1/diagnoses/{id}/recommendations`)과 필터·매핑·페이�
 | `size` | 선택 | `20` | 페이지 크기(1~100) |
 | `sort` | 선택 | `recommended,desc` | `recommended`·`price`·`distance` + `,asc`/`,desc` |
 
+> **현재 정렬 구현 제약:** 요청 검증은 위 세 키와 `asc`/`desc`를 허용하지만, 저장소는 `price*`를 월세 오름차순으로만 처리하고 나머지(`recommended`, `distance`)는 `favoriteCount desc, updatedAt desc` 기본 정렬로 처리한다. 따라서 `price,desc` 방향은 반영되지 않고 `distance` 거리 계산도 아직 구현되지 않았다.
+
 #### 성공 Response — 200 OK (공통 래퍼)
 
 ```jsonc
-// 매칭 있음 — MATCHED + content/markers/page (§7과 동일 형태, suggestions 없음)
+// 매칭 있음 — MATCHED + content/markers/page (조정 제안 없음)
 {
   "success": true,
   "data": {
     "resultCode": "MATCHED",
-    "content": [ /* §7과 동일: type·conditions는 {code,label}, title·label은 사용자 언어 */ ],
+    "content": [
+      {
+        "listingId": "6858e2000000000000000001",
+        "title": "Sinchon Co-living House A",
+        "type": { "code": "CO_LIVING", "label": "Co-living" },
+        "monthlyRentMin": 550000,
+        "monthlyRentMax": 700000,
+        "minDeposit": 1000000,
+        "maxDeposit": 1500000,
+        "lat": 37.555134,
+        "lng": 126.936893,
+        "conditions": [
+          { "code": "FEMALE_ONLY", "label": "Female Only" },
+          { "code": "PRIVATE_BATH", "label": "Private Bath" }
+        ],
+        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg"
+      }
+    ],
     "markers": [ { "listingId": "6858e2000000000000000001", "lat": 37.555134, "lng": 126.936893 } ],
     "page": { "number": 0, "size": 20, "totalElements": 12, "totalPages": 1, "hasNext": false }
   },
   "error": null
 }
 ```
+
+> 추천 카드의 매물명·type/conditions label은 진단 사용자가 계정에서 선택한 표시 언어가 적용된다(게스트는 `en` 고정). 프론트는 label을 표시하고 code를 필터 요청·비교에 사용한다([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md)).
 
 ```jsonc
 // 매칭 0건 — NO_MATCH(조정 제안 문구·액션 없음, 에러 아님)
