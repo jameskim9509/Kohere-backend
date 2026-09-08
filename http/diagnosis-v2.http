@@ -1,14 +1,16 @@
-# Kohere — v2 서버 주도 진단 로컬 수동 테스트 (start → next 반복 → 자동 확정 → 추천)
+# Kohere — 서버 주도 진단 로컬 수동 테스트 (start → next 반복 → 자동 확정 → 추천 → 지도 마커)
 #
-# v1(diagnosis.http)과 무엇이 다른가:
+# 진단의 정본 경로다. 확정된 진단을 읽는 조회 3종(이력·최근·상세)은 diagnosis.http 를 쓴다.
+#
+# 흐름의 성격:
 #   - 클라가 step 을 지정하지 않는다. POST /start 로 시작하고 POST /next 로 답만 이어 보낸다.
 #     다음 질문·분기·확정 시점은 서버가 판단해 resultCode 로 알려준다.
 #   - 시작·매물 조회 시점은 클라가 정한다. 확정 응답은 diagnosisId 만 주고 매물을 싣지 않는다.
 #   - 매 응답이 정상 200 이고 data.resultCode(태그드 유니온)가 다음에 할 일을 말해준다:
 #       NEXT_QUESTION(질문 있음) / RESTART(클라가 /start 로 재시도) / COMPLETED(확정) / TERMINATED(종료)
-#   - (#181) 비회원(게스트)도 이 v2 흐름을 쓴다 — 토큰 없이 /start 하면 guestSessionId(anonymous+uuid)를
-#     발급받고, 이후 /next·추천에 X-Guest-Session-Id 헤더로 에코한다(시나리오 G, 로그인 불필요).
-#     v1 진단(/api/v1/diagnoses/**)은 회원 전용이라 게스트가 호출하면 401 이다.
+#   - (#181) 비회원(게스트)도 이 흐름을 쓴다 — 토큰 없이 /start 하면 guestSessionId(anonymous+uuid)를
+#     발급받고, 이후 /next·추천·마커에 X-Guest-Session-Id 헤더로 에코한다(시나리오 G, 로그인 불필요).
+#     조회 3종(diagnosis.http)은 회원 전용이라 게스트가 호출하면 401 이다.
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis mailhog
@@ -200,7 +202,7 @@ Content-Type: application/json
 }
 
 ### A-8. 추천 매물 조회 — 이 호출이 곧 "매물을 받겠다"는 클라의 결정
-#     v1 §7과 같은 계약이되 조정 제안(suggestions)이 없고, 사유는 resultCode 로 온다.
+#     조정 제안(suggestions)은 주지 않고 사유만 resultCode 로 온다.
 #     매칭 있음 → resultCode=MATCHED + content/markers/page
 #     매칭 0건 → resultCode=NO_MATCH + 빈 content (에러 아님)
 GET {{baseUrl}}/api/v2/diagnoses/{{completed.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
@@ -324,9 +326,4 @@ Content-Type: application/json
 ### C-4. (실패 확인) 타인 진단 추천 조회 → 403 FORBIDDEN / 없는 진단 → 404 DIAGNOSIS_NOT_FOUND
 #     DISCARDED(미완주 폐기 기록)도 id 를 알아도 404 다 — 내부 분석 기록이라 노출 경로가 없다.
 GET {{baseUrl}}/api/v2/diagnoses/999999/recommendations
-Authorization: Bearer {{login.response.body.$.data.accessToken}}
-
-### C-5. v1 은 그대로 동작한다 (계약 불변) — step 1 은 여전히 region 문항
-#     카탈로그에 regionRetry 문항이 함께 있어도 v1 은 step→field 로 지목해 조회한다.
-GET {{baseUrl}}/api/v1/diagnoses/questions/1
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
