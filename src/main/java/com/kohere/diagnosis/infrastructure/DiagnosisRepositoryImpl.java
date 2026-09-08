@@ -38,13 +38,6 @@ public class DiagnosisRepositoryImpl implements DiagnosisRepository {
   }
 
   @Override
-  public Optional<Diagnosis> findInProgressByUserId(Long userId) {
-    return mongoRepository
-        .findFirstByUserIdAndStatus(userId, DiagnosisStatus.IN_PROGRESS)
-        .map(DiagnosisRepositoryImpl::toDomain);
-  }
-
-  @Override
   public Optional<Diagnosis> findLatestCompletedByUserId(Long userId) {
     return mongoRepository
         .findFirstByUserIdAndStatusOrderBySubmittedAtDesc(userId, DiagnosisStatus.COMPLETED)

@@ -65,7 +65,7 @@ public class DiagnosisQueryService {
   public DiagnosisResponse getDetail(long userId, Long diagnosisId) {
     Diagnosis diagnosis =
         diagnosisRepository.findById(diagnosisId).orElseThrow(DiagnosisNotFoundException::new);
-    DiagnosisAccessGuard.requireNotDiscarded(diagnosis);
+    DiagnosisAccessGuard.requireCompleted(diagnosis);
     DiagnosisAccessGuard.requireOwner(diagnosis, userId, null);
     return toResponse(diagnosis);
   }

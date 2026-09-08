@@ -33,11 +33,6 @@ class DiagnosisIndexInitializer implements ApplicationRunner {
           .createIndex(
               new CompoundIndexDefinition(new Document("userId", 1).append("submittedAt", -1))
                   .named("userId_submittedAt_idx"));
-      mongoOperations
-          .indexOps("diagnosisQuestions")
-          .createIndex(
-              new CompoundIndexDefinition(new Document("active", 1).append("step", 1))
-                  .named("active_step_idx"));
       log.info("Ensured diagnosis MongoDB indexes");
     } catch (RuntimeException e) {
       log.warn("진단 인덱스 생성을 생략한다(Mongo 미가용 등): {}", e.getMessage());
