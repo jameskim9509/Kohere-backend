@@ -1,6 +1,7 @@
 package com.kohere.diagnosis.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -23,9 +24,11 @@ import com.kohere.diagnosis.application.dto.FlowResultCode;
 import com.kohere.diagnosis.application.dto.QuestionResponse;
 import com.kohere.diagnosis.application.dto.RecommendationResultCode;
 import com.kohere.diagnosis.application.dto.V2RecommendationResponse;
+import com.kohere.diagnosis.domain.Diagnosis;
 import com.kohere.diagnosis.domain.DiagnosisAccessDeniedException;
 import com.kohere.diagnosis.domain.DiagnosisFlowSessionNotFoundException;
 import com.kohere.diagnosis.domain.DiagnosisNotFoundException;
+import com.kohere.diagnosis.domain.DiagnosisRepository;
 import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.diagnosis.domain.Region;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
@@ -34,6 +37,7 @@ import com.kohere.diagnosis.presentation.dto.AnswerRequest;
 import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
+import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.user.api.UserAccountService;
 import java.util.List;
@@ -87,6 +91,7 @@ class DiagnosisFlowServiceIntegrationTest {
 
   @Autowired DiagnosisFlowService flowService;
   @Autowired DiagnosisMongoRepository diagnosisMongoRepository;
+  @Autowired DiagnosisRepository diagnosisRepository;
   @Autowired DiagnosisQuestionMongoRepository questionMongoRepository;
   @Autowired DiagnosisFlowSessionMongoRepository flowSessionMongoRepository;
   @Autowired MongoTemplate mongoTemplate;
@@ -106,6 +111,13 @@ class DiagnosisFlowServiceIntegrationTest {
     // 게이트에서 NPE가 나고(regionRetry로 새는 것이 아니다), 빈 페이지면 매 흐름이 regionRetry로 빠져
     // 다음 답이 pendingField와 어긋나 INVALID_INPUT이 된다. 0건 흐름을 보려는 테스트가 직접 덮어쓴다.
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(view()));
+    given(listingRecommendationService.recommendMarkersByCriteria(any()))
+        .willReturn(
+            new RecommendedListingMarkersView(
+                List.of(
+                    new RecommendedListingMarkersView.Marker(
+                        "6858e2000000000000000001", 37.5, 126.9)),
+                1L));
     given(listingRecommendationService.recommendByCriteria(any(), anyString()))
         .willAnswer(
             invocation ->
@@ -596,6 +608,28 @@ class DiagnosisFlowServiceIntegrationTest {
     // 회원 무회귀 — 본인 진단은 그대로 조회된다.
     assertThat(flowService.getRecommendations(700L, null, memberDiagnosisId, 0, 20, null).content())
         .hasSize(1);
+  }
+
+  @Test
+  @DisplayName("마커 조회는 미확정 진단을 404로 막는다 — 조건이 비어 전체 매물로 붕괴하는 것을 막는 게이트다")
+  void markersRejectUnconfirmedDiagnosis() {
+    // 공개 API로는 이 상태를 만들 수 없다(확정만이 diagnosisId를 준다) — 저장소에 직접 심는다.
+    Long draftId = diagnosisRepository.save(Diagnosis.startInProgress(60L)).getId();
+
+    assertThatThrownBy(() -> flowService.getRecommendationMarkers(60L, null, draftId))
+        .isInstanceOf(DiagnosisNotFoundException.class);
+    // 페이지 조회는 이 게이트가 없다 — v2-3 공개 계약을 이번에 바꾸지 않았다.
+    assertThatNoException()
+        .isThrownBy(() -> flowService.getRecommendations(60L, null, draftId, 0, 20, null));
+  }
+
+  @Test
+  @DisplayName("마커 조회는 페이지 조회와 같은 소유권 규칙을 쓴다 — 타인은 403")
+  void markersRejectStranger() {
+    DiagnosisFlowResponse completed = runStudyFlow(61L);
+    assertThatThrownBy(
+            () -> flowService.getRecommendationMarkers(62L, null, completed.diagnosisId()))
+        .isInstanceOf(DiagnosisAccessDeniedException.class);
   }
 
   // --- helpers ---

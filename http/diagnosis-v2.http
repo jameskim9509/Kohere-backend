@@ -99,6 +99,10 @@ Content-Type: application/json
 GET {{baseUrl}}/api/v2/diagnoses/{{gcompleted.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
 X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
 
+### G-8b. (게스트) 지도 마커도 같은 헤더로 소유권을 증명한다.
+GET {{baseUrl}}/api/v2/diagnoses/{{gcompleted.response.body.$.data.diagnosisId}}/recommendations/map
+X-Guest-Session-Id: {{gstart.response.body.$.data.guestSessionId}}
+
 ### G-9. (실패 확인) 세션 키 없이 /next → 400 DIAGNOSIS_SESSION_NOT_FOUND
 #     서버가 임의의 세션을 골라 주지 않는다 — 게스트는 헤더가 유일한 조회 키다.
 POST {{baseUrl}}/api/v2/diagnoses/next
@@ -200,6 +204,13 @@ Content-Type: application/json
 #     매칭 있음 → resultCode=MATCHED + content/markers/page
 #     매칭 0건 → resultCode=NO_MATCH + 빈 content (에러 아님)
 GET {{baseUrl}}/api/v2/diagnoses/{{completed.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### A-9. 추천 매물 전체 지도 마커 — 페이지 없이 마커만 받는다.
+#     매칭 조건은 A-8과 동일하고 응답에서 카드 정보가 빠진다.
+#     상한 500건을 넘으면 에러가 아니라 잘려서 온다 — markers 길이 < total 이면 잘린 것이다.
+#     A-8과 달리 확정 진단만 조회된다(미확정은 404).
+GET {{baseUrl}}/api/v2/diagnoses/{{completed.response.body.$.data.diagnosisId}}/recommendations/map
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
 
 
