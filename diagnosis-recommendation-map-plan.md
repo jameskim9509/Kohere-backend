@@ -110,7 +110,7 @@ v2 회원 흐름은 `DiagnosisFlowSession:51-57`이 `Diagnosis.startInProgress(u
 | B6 | 게이트·검증 사본 | `DiagnosisAccessGuard`·`DiagnosisPageRequests` 한 벌로 정렬 | 사실 ③. **소유권 규칙 자체는 이미 한 벌**이므로 새로 통일할 것은 wrapper와 DISCARDED 게이트, 그리고 바이트 단위로 같은 page/sort 검증이다 |
 | B7 | operationId | **개명하지 않는다** | v1 조회 3개가 남아 접두사 상황이 그대로다. ADR-0017 `:42`의 목적(발행된 Examples 키 불변)은 더 강하게 유효 |
 | B8 | 인덱스 | `userId_submittedAt_idx` **존치** | 사실 ④. 죽은 `diagnosisQuestions.active_step_idx`만 제거 |
-| B9 | legacy `NO_ARC` | **`diagnoses` 문서 전량 삭제**(ChangeUnit). 심층 방어·회귀 테스트 없음 | 사실 ⑤. 운영 실측 **40건** 확인. 이 컬렉션이 아직 버려도 되는 시험 데이터라 값만 `$pull`하지 않고 문서를 지운다 — 지우면 재발이 불가능하다(`NO_ARC`를 `conditions`에 넣을 코드 경로가 0). 그래서 읽기 쪽 방어가 불필요해졌다 |
+| B9 | legacy `NO_ARC` | **`diagnoses` 문서 전량 삭제**(ChangeUnit). 심층 방어 없음 | 운영 실측 **40건**. **사실 ⑤는 틀렸다 — 실측하니 미등록 enum 원소는 예외가 아니라 조용히 버려진다**(응답에서 빠질 뿐 500이 아니다). 따라서 이 삭제는 장애 수습이 아니라 **위생 작업**이며, 근거는 「시험 데이터라 지워도 된다」이다. 읽기 쪽 방어는 불필요하고, 조용히 버려지는 성질만 회귀 테스트로 고정한다 |
 | B10 | 규약 | api-design-guide §2-1에 **선별 제거** 패턴을 명문화 | 진단 v1은 「전면 스텁」(매물 v1)도 「완전 삭제」도 아닌 **세 번째 패턴**(경로별 선별 제거 + 잔존 경로는 실데이터)이다. 문안에 **「잔존 경로에는 `deprecated`를 붙이지 않는다」**를 반드시 넣어야 `:65`와 충돌하지 않는다 |
 
 ---
