@@ -1,6 +1,7 @@
 package com.kohere.diagnosis.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -607,6 +608,17 @@ class DiagnosisFlowServiceIntegrationTest {
     // 회원 무회귀 — 본인 진단은 그대로 조회된다.
     assertThat(flowService.getRecommendations(700L, null, memberDiagnosisId, 0, 20, null).content())
         .hasSize(1);
+  }
+
+  @Test
+  @DisplayName("추천 페이지 크기는 100을 넘길 수 없다 — 상수가 조용히 갈리는 것을 막는 가드다")
+  void recommendationPageSizeIsCappedAtHundred() {
+    Long diagnosisId = runStudyFlow(710L).diagnosisId();
+
+    assertThatNoException()
+        .isThrownBy(() -> flowService.getRecommendations(710L, null, diagnosisId, 0, 100, null));
+    assertThatThrownBy(() -> flowService.getRecommendations(710L, null, diagnosisId, 0, 101, null))
+        .isInstanceOf(InvalidInputException.class);
   }
 
   @Test
