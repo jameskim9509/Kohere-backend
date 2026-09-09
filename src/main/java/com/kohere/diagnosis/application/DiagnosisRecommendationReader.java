@@ -1,12 +1,9 @@
 package com.kohere.diagnosis.application;
 
-import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageResponse;
 import com.kohere.diagnosis.domain.Diagnosis;
-import com.kohere.diagnosis.domain.DiagnosisAccessDeniedException;
 import com.kohere.diagnosis.domain.DiagnosisNotFoundException;
 import com.kohere.diagnosis.domain.DiagnosisRepository;
-import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
@@ -55,12 +52,12 @@ public class DiagnosisRecommendationReader {
    */
   PageResponse<RecommendedListingView> read(
       Long userId, String guestSessionId, Long diagnosisId, int page, int size, String sort) {
-    validatePage(page, size);
-    validateSort(sort);
+    DiagnosisPageRequests.validatePage(page, size);
+    DiagnosisPageRequests.validateSort(sort, SORT_KEYS);
     Diagnosis diagnosis =
         diagnosisRepository.findById(diagnosisId).orElseThrow(DiagnosisNotFoundException::new);
-    requireNotDiscarded(diagnosis);
-    requireOwner(diagnosis, userId, guestSessionId);
+    DiagnosisAccessGuard.requireNotDiscarded(diagnosis);
+    DiagnosisAccessGuard.requireOwner(diagnosis, userId, guestSessionId);
     return listingRecommendationService.recommendByCriteria(
         criteriaMapper.toCriteria(diagnosis, page, size, sort), resolveLanguage(userId));
   }
@@ -92,53 +89,5 @@ public class DiagnosisRecommendationReader {
    */
   private String resolveLanguage(Long userId) {
     return userId == null ? GUEST_LANGUAGE : userAccountService.getLanguage(userId);
-  }
-
-  /**
-   * 폐기 기록({@code DISCARDED})은 조회 대상이 아니다 — 없는 것처럼 취급한다.
-   *
-   * <p>이건 <b>소유권만으로 막히지 않는다</b>: 폐기 기록은 본인 것이고 진단 id가 순차 발급이라 추측 가능하다. 이력·최근은 {@code COMPLETED}만
-   * 보지만 이 경로는 id로 직접 오므로 상태를 따로 걸러야 한다. 미완주 부분 답으로 추천을 돌리는 것도 무의미하다(ADR-0036 결정 12).
-   */
-  private static void requireNotDiscarded(Diagnosis diagnosis) {
-    if (diagnosis.getStatus() == DiagnosisStatus.DISCARDED) {
-      throw new DiagnosisNotFoundException();
-    }
-  }
-
-  /**
-   * 소유권 판정은 {@link Diagnosis#isOwnedBy(Long, String)} 하나에 위임한다 — 같은 규칙이 {@link
-   * DiagnosisService#getDetail}에도 필요한데, 규칙을 두 벌 두면 한쪽만 고쳐져 다른 경로가 뚫린다(#181).
-   */
-  private static void requireOwner(Diagnosis diagnosis, Long userId, String guestSessionId) {
-    if (!diagnosis.isOwnedBy(userId, guestSessionId)) {
-      throw new DiagnosisAccessDeniedException();
-    }
-  }
-
-  private static void validatePage(int page, int size) {
-    if (page < 0) {
-      throw new InvalidInputException("page", "validation.min", 0, page);
-    }
-    if (size < 1 || size > 100) {
-      throw new InvalidInputException("size", "validation.range", 1, 100, size);
-    }
-  }
-
-  private static void validateSort(String sort) {
-    if (sort == null || sort.isBlank()) {
-      return;
-    }
-    String[] parts = sort.split(",");
-    String key = parts[0].trim();
-    if (!SORT_KEYS.contains(key)) {
-      throw new InvalidInputException("sort", "validation.sortKey", key);
-    }
-    if (parts.length > 1) {
-      String direction = parts[1].trim().toLowerCase();
-      if (!direction.equals("asc") && !direction.equals("desc")) {
-        throw new InvalidInputException("sort", "validation.sortDirection", parts[1]);
-      }
-    }
   }
 }
