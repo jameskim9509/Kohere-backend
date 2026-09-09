@@ -1,7 +1,6 @@
 package com.kohere.diagnosis.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -611,16 +610,16 @@ class DiagnosisFlowServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("마커 조회는 미확정 진단을 404로 막는다 — 조건이 비어 전체 매물로 붕괴하는 것을 막는 게이트다")
-  void markersRejectUnconfirmedDiagnosis() {
-    // 공개 API로는 이 상태를 만들 수 없다(확정만이 diagnosisId를 준다) — 저장소에 직접 심는다.
+  @DisplayName("미확정 진단은 추천 두 경로 모두 404다 — 조건이 비어 전체 매물로 붕괴하는 것을 막는 게이트다")
+  void unconfirmedDiagnosisIsRejectedByBothRecommendationPaths() {
+    // 심층 방어 — 공개 경로로는 이 상태를 만들 수 없다(확정만이 diagnosisId를 주고, diagnoses에는 종료 상태만 쌓인다).
+    // 게이트가 실제로 걸리는지 보려면 저장소에 직접 심는 수밖에 없다.
     Long draftId = diagnosisRepository.save(Diagnosis.startInProgress(60L)).getId();
 
     assertThatThrownBy(() -> flowService.getRecommendationMarkers(60L, null, draftId))
         .isInstanceOf(DiagnosisNotFoundException.class);
-    // 페이지 조회는 이 게이트가 없다 — v2-3 공개 계약을 이번에 바꾸지 않았다.
-    assertThatNoException()
-        .isThrownBy(() -> flowService.getRecommendations(60L, null, draftId, 0, 20, null));
+    assertThatThrownBy(() -> flowService.getRecommendations(60L, null, draftId, 0, 20, null))
+        .isInstanceOf(DiagnosisNotFoundException.class);
   }
 
   @Test

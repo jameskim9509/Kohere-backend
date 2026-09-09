@@ -149,7 +149,7 @@ public final class DiagnosisDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `FORBIDDEN` | 타인 소유 진단 접근 |
-      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 확정된 진단이 아님 |
       """;
 
   public static final String[] DETAIL_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
@@ -756,7 +756,7 @@ public final class DiagnosisDocsFields {
       | 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
       | 403 | `FORBIDDEN` | 타인 소유 진단, 게스트↔회원 교차 조회(양방향), 신원 없는 요청(토큰도 게스트 키도 보내지 않음) |
-      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 확정된 진단이 아님 |
       """;
 
   public static final String[] V2_RECOMMENDATIONS_400 = {"INVALID_INPUT"};
@@ -820,7 +820,7 @@ public final class DiagnosisDocsFields {
       |---|---|---|
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
       | 403 | `FORBIDDEN` | 타인 소유 진단, 게스트↔회원 교차 조회(양방향), 신원 없는 요청 |
-      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 폐기 기록이거나, 아직 확정되지 않음 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 확정된 진단이 아님 |
 
       `INVALID_INPUT`(400)은 발생하지 않는다 — 쿼리 파라미터를 받지 않는다. 다만 `diagnosisId`에 숫자가 아닌 값이 오면 공통 `MALFORMED_REQUEST`(400)다.
       """;
