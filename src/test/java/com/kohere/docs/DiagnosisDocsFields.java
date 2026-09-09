@@ -95,7 +95,7 @@ public final class DiagnosisDocsFields {
   /** 추천 매물 카드의 조건 배지 코드(listing {@code ConditionTag}) — 진단 조건과 이름이 1:1로 통일돼 있다. */
   public static final List<String> LISTING_CONDITION_CODES = withNoArc();
 
-  /** 진단 이력 정렬 허용값({@code DiagnosisService.HISTORY_SORT_KEYS} × 방향). */
+  /** 진단 이력 정렬 허용값({@code DiagnosisQueryService.HISTORY_SORT_KEYS} × 방향). */
   public static final List<String> HISTORY_SORT_VALUES =
       List.of("submittedAt,desc", "submittedAt,asc");
 

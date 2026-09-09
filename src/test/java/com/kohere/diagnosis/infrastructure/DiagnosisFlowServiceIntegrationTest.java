@@ -350,7 +350,7 @@ class DiagnosisFlowServiceIntegrationTest {
     assertThat(res.resultCode()).isEqualTo(FlowResultCode.COMPLETED);
     assertThat(res.diagnosisId()).isNotNull();
     assertThat(res.question()).isNull();
-    // 확정 진단은 v1과 동일한 diagnoses 컬렉션에 저장되고, 진행 세션은 삭제된다.
+    // 확정 진단은 정본 diagnoses 컬렉션에 저장되고, 진행 세션은 삭제된다.
     assertThat(diagnosisMongoRepository.findById(res.diagnosisId())).isPresent();
     assertThat(flowSessionMongoRepository.findByUserId(userId)).isEmpty();
   }

@@ -13,15 +13,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * 확정 진단의 추천 매물 조회를 v1({@link DiagnosisService#getRecommendations})과 v2({@link
- * DiagnosisFlowService#getRecommendations})가 공유하는 컴포넌트. 페이지·정렬 검증 → 진단 조회(미존재 404) → 소유권 검증(타인 403)
- * → 조건 매핑 → listing 공개 query 동기 호출까지가 두 버전에서 동일하기 때문이다(ADR-0002 D5).
+ * 확정 진단의 추천 매물을 페이지와 마커 두 모양으로 조회하는 컴포넌트. 페이지·정렬 검증 → 진단 조회(미존재 404) → 상태 검증(확정 아니면 404) → 소유권
+ * 검증(타인 403) → 조건 매핑 → listing 공개 query 동기 호출까지가 두 경로에서 동일하다(ADR-0002 D5).
  *
- * <p>매핑 결과 DTO만 버전별로 다르다 — v1은 0건일 때 조정 제안({@code suggestions})을 덧붙이고, v2는 붙이지 않는다. 그 차이는 호출자가 정하고
- * 여기서는 listing이 준 페이지를 그대로 돌려준다.
+ * <p>두 경로의 차이는 결과 모양뿐이다 — 페이지 조회는 오프셋 페이지를, 마커 조회는 페이지 없이 서버 상한까지의 좌표를 돌려준다.
  *
- * <p><b>게스트가 닿는 유일한 소유권 검사 지점</b>이다(#181) — v2 추천 조회만 비회원에게 열려 있고 v1은 회원 전용이라 토큰 없는 요청이 여기까지 오지
- * 못한다. 그래서 신원을 둘(회원 {@code userId} / 게스트 세션 키) 받으며, v1 호출자는 게스트 키 자리에 {@code null}을 넘긴다.
+ * <p><b>게스트가 닿는 유일한 소유권 검사 지점</b>이다(#181) — 추천 조회가 비회원에게 열려 있어 신원을 둘(회원 {@code userId} / 게스트 세션 키)
+ * 받는다. 회원 호출자는 게스트 키 자리에 {@code null}을 넘긴다.
  */
 @Component
 @RequiredArgsConstructor
@@ -48,7 +46,7 @@ public class DiagnosisRecommendationReader {
    * 본인 소유 확정 진단의 추천 매물 페이지를 조회한다(0건이면 빈 {@code content} — 에러 아님).
    *
    * @param userId 회원이면 userId, 게스트면 {@code null}
-   * @param guestSessionId 게스트 세션 키(회원·v1 호출자는 {@code null})
+   * @param guestSessionId 게스트 세션 키(회원은 {@code null})
    */
   PageResponse<RecommendedListingView> read(
       Long userId, String guestSessionId, Long diagnosisId, int page, int size, String sort) {
