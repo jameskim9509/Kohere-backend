@@ -4,6 +4,7 @@ import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.domain.ArcRequirement;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.GeoDistance;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingNotFoundException;
@@ -52,7 +53,6 @@ public class ListingRepositoryImpl implements ListingRepository {
       List.of("GURO_GU", "YEONGDEUNGPO_GU", "GEUMCHEON_GU", "GWANAK_GU", "DONGDAEMUN_GU");
 
   private static final int MAX_PAGE_SIZE = 100;
-  private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
   /**
    * 가격순 정렬 키다. 목록 조회와 추천 조회가 <b>같은 비교자</b>를 쓴다 — 카드에 표시되는 최저 월세가 곧 정렬 키라, 표시 값과 나열 순서가 갈릴 수 없다.
@@ -478,10 +478,15 @@ public class ListingRepositoryImpl implements ListingRepository {
       Criteria criteria, ListingSearchCondition condition) {
     Query query = new Query(criteria);
     if (condition.sort() == ListingSort.DISTANCE) {
+      // 하버사인은 삼각함수라 비교자 안에서 재면 비교마다 다시 돈다. 매물마다 한 번만 재고 정렬한다.
       return mongoTemplate.find(query, ListingDocument.class).stream()
           .map(ListingMongoMapper::toDomain)
           .filter(listing -> withinRadius(listing, condition))
-          .sorted(Comparator.comparingDouble(listing -> distanceSquared(listing, condition)))
+          .map(listing -> new ListingDistance(listing, distanceMeters(listing, condition)))
+          .sorted(
+              Comparator.comparingDouble(ListingDistance::meters)
+                  .thenComparing(entry -> entry.listing().getId()))
+          .map(ListingDistance::listing)
           .toList();
     }
     return mongoTemplate.find(query.with(defaultSort()), ListingDocument.class).stream()
@@ -552,12 +557,8 @@ public class ListingRepositoryImpl implements ListingRepository {
     return roomOffer.filterTags().containsAll(condition.roomOfferConditions());
   }
 
-  /** 가까운 순서 비교에만 쓰는 간단한 거리값이다. 실제 표시 거리는 application 계층에서 미터로 계산한다. */
-  private static double distanceSquared(Listing listing, ListingSearchCondition condition) {
-    double lat = listing.getLocation().latitude() - condition.centerLat();
-    double lng = listing.getLocation().longitude() - condition.centerLng();
-    return lat * lat + lng * lng;
-  }
+  /** 거리순 정렬에서 하버사인 거리를 한 번만 계산해 들고 다니기 위한 쌍이다. */
+  private record ListingDistance(Listing listing, double meters) {}
 
   /**
    * 키워드 검색처럼 중심 좌표와 반경이 있는 조회에서 실제 반경 안의 매물만 남긴다.
@@ -571,15 +572,11 @@ public class ListingRepositoryImpl implements ListingRepository {
 
   /** 두 WGS84 좌표 사이의 직선 거리를 미터 단위로 계산한다. */
   private static double distanceMeters(Listing listing, ListingSearchCondition condition) {
-    double lat1 = Math.toRadians(condition.centerLat());
-    double lat2 = Math.toRadians(listing.getLocation().latitude());
-    double latDelta = lat2 - lat1;
-    double lngDelta = Math.toRadians(listing.getLocation().longitude() - condition.centerLng());
-    double a =
-        Math.sin(latDelta / 2.0) * Math.sin(latDelta / 2.0)
-            + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lngDelta / 2.0) * Math.sin(lngDelta / 2.0);
-    double c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a));
-    return EARTH_RADIUS_METERS * c;
+    return GeoDistance.meters(
+        condition.centerLat(),
+        condition.centerLng(),
+        listing.getLocation().latitude(),
+        listing.getLocation().longitude());
   }
 
   /**
