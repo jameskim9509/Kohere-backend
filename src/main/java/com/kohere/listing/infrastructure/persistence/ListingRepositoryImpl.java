@@ -8,18 +8,20 @@ import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRecommendationCondition;
+import com.kohere.listing.domain.ListingRecommendationResult;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingValidator;
+import com.kohere.listing.domain.MatchedRoomOffers;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -36,6 +38,7 @@ import org.springframework.stereotype.Repository;
 /** MongoDB 저장 모델을 도메인 모델로 변환하는 매물 영속 어댑터다. */
 @Repository
 @RequiredArgsConstructor
+@Slf4j
 public class ListingRepositoryImpl implements ListingRepository {
 
   /** 진단 ⑥ arcStatus의 ARC 미발급 답이다. 이 값일 때만 ARC 불요 매물로 좁힌다. */
@@ -50,6 +53,16 @@ public class ListingRepositoryImpl implements ListingRepository {
 
   private static final int MAX_PAGE_SIZE = 100;
   private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+
+  /**
+   * 가격순 정렬 키다. 목록 조회와 추천 조회가 <b>같은 비교자</b>를 쓴다 — 카드에 표시되는 최저 월세가 곧 정렬 키라, 표시 값과 나열 순서가 갈릴 수 없다.
+   *
+   * <p>마지막 타이브레이커가 없으면 최저 월세·보증금이 같은 매물의 순서가 호출마다 흔들려 페이지 경계의 매물이 새로고침할 때마다 바뀐다.
+   */
+  private static final Comparator<MatchedRoomOffers> BY_MATCHED_PRICE =
+      Comparator.comparingInt(ListingRepositoryImpl::minMonthlyRent)
+          .thenComparingInt(ListingRepositoryImpl::minDeposit)
+          .thenComparing(result -> result.listing().getId());
 
   private final ListingMongoRepository mongoRepository;
   private final MongoTemplate mongoTemplate;
@@ -133,14 +146,7 @@ public class ListingRepositoryImpl implements ListingRepository {
     List<ListingSearchResult> listingResults = matchingListingResults(listings, condition);
 
     if (condition.sort() == ListingSort.PRICE_ASC) {
-      listingResults =
-          listingResults.stream()
-              .sorted(
-                  Comparator.<ListingSearchResult>comparingInt(
-                          ListingRepositoryImpl::minMonthlyRent)
-                      .thenComparingInt(ListingRepositoryImpl::minDeposit)
-                      .thenComparing(result -> result.listing().getId()))
-              .toList();
+      listingResults = listingResults.stream().sorted(BY_MATCHED_PRICE).toList();
     }
     return pageFrom(listingResults, condition.page(), condition.size());
   }
@@ -177,9 +183,47 @@ public class ListingRepositoryImpl implements ListingRepository {
    * 것을 막기 위해 기존 추천 조회와 동일하게 {@code $elemMatch} 안에서 월세 하한/상한과 roomOffer 태그 조건을 함께 묶는다.
    */
   @Override
-  public PageResponse<Listing> recommend(
+  public PageResponse<ListingRecommendationResult> recommend(
       ListingRecommendationCondition condition, int page, int size, String sort) {
-    return findPage(recommendCriteria(condition), page, size, sortBy(sort));
+    // 가격순 정렬 키가 「매칭 방의 최저 월세」라 방을 추린 뒤에만 계산할 수 있다 → 스킵·리밋을 Mongo에 밀 수 없다.
+    // 목록 조회(search)와 같은 거래다. 후보 전체를 가져와 Java에서 정렬하고 pageFrom으로 자른다.
+    List<ListingRecommendationResult> results =
+        mongoTemplate
+            .find(
+                new Query(recommendCriteria(condition)).with(defaultSort()), ListingDocument.class)
+            .stream()
+            .map(ListingMongoMapper::toDomain)
+            .map(listing -> toRecommendationResult(listing, condition))
+            .toList();
+
+    if (isPriceSort(sort)) {
+      results = results.stream().sorted(BY_MATCHED_PRICE).toList();
+    }
+    return pageFrom(results, page, size);
+  }
+
+  /**
+   * 매물 안에서 진단 조건을 만족한 방만 추린다.
+   *
+   * <p>{@code $elemMatch}가 이미 조건을 만족하는 방이 하나 이상 있는 매물만 골라 왔으므로 빈 결과는 Mongo 술어와 Java 술어가 어긋났다는 신호다.
+   * 매물을 떨어뜨리면 저장소 count에서 나온 페이지 메타가 거짓이 되고 카드 집계는 빈 스트림에서 터지므로, 전체 활성 방으로 폴백하고 로그로 드러낸다.
+   */
+  private static ListingRecommendationResult toRecommendationResult(
+      Listing listing, ListingRecommendationCondition condition) {
+    List<Listing.RoomOffer> matched =
+        listing.getRoomOffers().stream().filter(condition::matches).toList();
+    if (matched.isEmpty()) {
+      log.warn("추천 매칭 방 0건 — Mongo/Java 술어 불일치 의심: listingId={}", listing.getId());
+      return new ListingRecommendationResult(listing, activeRoomOffers(listing));
+    }
+    return new ListingRecommendationResult(listing, matched);
+  }
+
+  /** 공개 화면에 노출할 수 있는 활성 방 상품만 반환한다. 매칭 방이 비었을 때의 폴백 대상이다. */
+  private static List<Listing.RoomOffer> activeRoomOffers(Listing listing) {
+    return listing.getRoomOffers().stream()
+        .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
+        .toList();
   }
 
   @Override
@@ -244,8 +288,9 @@ public class ListingRepositoryImpl implements ListingRepository {
       roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").lte(condition.monthlyRentMax()));
     }
 
-    Set<ConditionTag> roomOfferConditions = roomOfferConditions(condition.conditions());
+    Set<ConditionTag> roomOfferConditions = condition.roomOfferConditions();
     if (!roomOfferConditions.isEmpty()) {
+      // 이 술어는 ListingRecommendationCondition.matches와 같은 값을 읽어야 한다 — 갈리면 매칭 방이 0건이 된다.
       roomOfferCriteria.add(
           Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
     }
@@ -507,11 +552,6 @@ public class ListingRepositoryImpl implements ListingRepository {
     return roomOffer.filterTags().containsAll(condition.roomOfferConditions());
   }
 
-  /** 추천 조건에서 NO_ARC 같은 매물 정책 필터를 제외하고 roomOffer 태그 조건만 남긴다. */
-  private static Set<ConditionTag> roomOfferConditions(Set<ConditionTag> conditions) {
-    return conditions.stream().collect(Collectors.toUnmodifiableSet());
-  }
-
   /** 가까운 순서 비교에만 쓰는 간단한 거리값이다. 실제 표시 거리는 application 계층에서 미터로 계산한다. */
   private static double distanceSquared(Listing listing, ListingSearchCondition condition) {
     double lat = listing.getLocation().latitude() - condition.centerLat();
@@ -562,15 +602,14 @@ public class ListingRepositoryImpl implements ListingRepository {
   }
 
   /** 문자열 정렬값을 받는 진단 추천 조회와 호환되도록 남겨 둔 정렬 변환이다. */
-  private static Sort sortBy(String sort) {
-    if (sort == null || sort.isBlank()) {
-      return defaultSort();
-    }
-    String normalized = sort.trim().toLowerCase();
-    if (normalized.startsWith("price") || normalized.equals("price_asc")) {
-      return Sort.by(Sort.Direction.ASC, "roomOffers.pricing.monthlyRent");
-    }
-    return defaultSort();
+  /**
+   * 추천 정렬 키가 가격순인지 판정한다. 방향 접미사는 보지 않는다 — 가격순은 항상 오름차순이다.
+   *
+   * <p>{@code roomOffers.pricing.monthlyRent} 같은 배열 경로로 Mongo에 정렬을 맡기면 안 된다. 배열 오름차순 정렬은 원소 전체의
+   * 최솟값을 키로 쓰므로 조건에 맞지 않는 방의 가격이 정렬 기준이 되어 카드 표시 값과 어긋난다.
+   */
+  private static boolean isPriceSort(String sort) {
+    return sort != null && sort.trim().toLowerCase().startsWith("price");
   }
 
   /** 기본 목록/추천 정렬: 찜 수와 최근 수정일을 우선한다. */
@@ -579,8 +618,8 @@ public class ListingRepositoryImpl implements ListingRepository {
         .and(Sort.by(Sort.Direction.DESC, "updatedAt"));
   }
 
-  /** 가격순 목록 정렬에서 사용할 매물 카드의 최저 월세다. */
-  private static int minMonthlyRent(ListingSearchResult result) {
+  /** 가격순 정렬에서 사용할 카드의 최저 월세다. 조회 조건을 통과한 방만 본다. */
+  private static int minMonthlyRent(MatchedRoomOffers result) {
     return result.roomOffers().stream()
         .mapToInt(roomOffer -> roomOffer.pricing().monthlyRent())
         .min()
@@ -588,7 +627,7 @@ public class ListingRepositoryImpl implements ListingRepository {
   }
 
   /** 최저 월세가 같은 매물끼리는 최저 보증금을 보조 정렬 키로 사용한다. */
-  private static int minDeposit(ListingSearchResult result) {
+  private static int minDeposit(MatchedRoomOffers result) {
     return result.roomOffers().stream()
         .mapToInt(roomOffer -> roomOffer.pricing().deposit())
         .min()
