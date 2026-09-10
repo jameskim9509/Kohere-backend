@@ -216,15 +216,19 @@ public final class DiagnosisDocsFields {
         optField(
             "data.content[].monthlyRentMin",
             JsonFieldType.NUMBER,
-            "월세 범위 하한(KRW 정수). 진단 조건에 맞는 방 상품만 반영하므로 조건 밖 방의 가격은 들어오지 않는다"),
+            "월세 범위 하한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
         optField(
             "data.content[].monthlyRentMax",
             JsonFieldType.NUMBER,
-            "월세 범위 상한(KRW 정수). 산정 기준은 하한과 같다"),
+            "월세 범위 상한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
         optField(
-            "data.content[].minDeposit", JsonFieldType.NUMBER, "보증금 범위 하한(KRW 정수). 산정 기준은 월세와 같다"),
+            "data.content[].minDeposit",
+            JsonFieldType.NUMBER,
+            "보증금 범위 하한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
         optField(
-            "data.content[].maxDeposit", JsonFieldType.NUMBER, "보증금 범위 상한(KRW 정수). 산정 기준은 월세와 같다"),
+            "data.content[].maxDeposit",
+            JsonFieldType.NUMBER,
+            "보증금 범위 상한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
         optField(
             "data.content[].thumbnailUrl", JsonFieldType.STRING, "썸네일 URL. 등록된 이미지가 없으면 `null`"),
         optField("data.content[].lat", JsonFieldType.NUMBER, "매물 위도(WGS84)"),
@@ -241,7 +245,7 @@ public final class DiagnosisDocsFields {
         optField(
             "data.content[].nearestTransit.name",
             JsonFieldType.STRING,
-            "역·정류장 이름(사용자 언어). 카드용 축약 표기라 표시 언어가 `en`인 지하철역은 `Sinchon Sta.` 형태로 줄여 내려간다 — 정식 명칭은 `GET /api/v2/listings/{listingId}`가 준다"),
+            "역·정류장 이름(사용자 언어). 카드용 축약 표기라 표시 언어가 `en`이고 이름이 `Station`으로 끝나는 지하철역만 `Sinchon Sta.`처럼 줄여 내려간다 — 정식 명칭은 `GET /api/v2/listings/{listingId}`가 준다"),
         optField("data.content[].nearestTransit.walkMinutes", JsonFieldType.NUMBER, "도보 소요 시간(분)"),
         optField(
             "data.content[].conditions",
@@ -277,7 +281,7 @@ public final class DiagnosisDocsFields {
       optCodeParam(
           "sort",
           RECOMMENDATION_SORT_VALUES,
-          "정렬 — `키,방향` 한 문자열. `recommended`는 찜 수·최근 수정 내림차순이고 `price`는 진단 조건에 맞는 방의 최저 월세 오름차순이다. 방향 접미사는 두 키 모두에서 정렬 결과를 바꾸지 않는다(기본 `recommended,desc`)")
+          "정렬 — `키,방향` 한 문자열. `recommended`는 찜 수·최근 수정 내림차순이고 `price`는 진단 조건에 맞는 방 상품의 최저 월세 오름차순이다. 방향 접미사는 두 키 모두에서 정렬 결과를 바꾸지 않는다(기본 `recommended,desc`)")
     };
   }
 
